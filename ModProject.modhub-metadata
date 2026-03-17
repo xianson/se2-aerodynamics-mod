@@ -1,0 +1,28 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.57"
+  },
+  "$Type": "VRage:Keen.VRage.ModHUB.Models.ModProject",
+  "$Value": {
+    "Id": {
+      "Id": "00000000-0000-0000-0000-000000000000",
+      "ServiceName": ""
+    },
+    "ProjectID": {
+      "Guid": "00000000-0000-0000-0000-000000000000",
+      "ModId": null,
+      "ServiceId": null
+    },
+    "Version": "0.0",
+    "BaseMetadata": null,
+    "Name": "Aerodynamics Mod",
+    "Summary": "Mod description",
+    "Tags": [
+      "UGCModTypeTag",
+      "ModTagOther",
+      "ModTagSkybox"
+    ],
+    "ProjectFile": "Aerodynamics Mod.vrgproj"
+  }
+}

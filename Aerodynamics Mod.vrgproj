@@ -1,0 +1,38 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.57"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Project.VRageProjectData",
+  "$Value": {
+    "Name": "Aerodynamics Mod",
+    "Version": null,
+    "Type": "Mod",
+    "ProjectID": {
+      "Guid": "de164d94-7a67-4832-81e4-34c06c6a65f1",
+      "ModId": null,
+      "ServiceId": ""
+    },
+    "ModSetup": null,
+    "ProjectDependencies": [
+      {
+        "Guid": "56dacb76-e25e-468a-9432-21964a9a0569",
+        "ModId": null,
+        "ServiceId": ""
+      }
+    ],
+    "ProjectDirectories": [],
+    "UsedBuildStream": "",
+    "DefinitionSetNames": [
+      "World"
+    ],
+    "GameExecutable": "SpaceEngineers2.exe",
+    "GameExecutableSearchPaths": [],
+    "ReferencedAssemblies": [],
+    "ReferencedAssembliesSearchPaths": [],
+    "EditorExtensionAssemblies": [],
+    "EditorExtensionAssembliesSearchPaths": [],
+    "SkipContentMounting": false,
+    "EnableIgnoreProcessingErrorFlags": false
+  }
+}

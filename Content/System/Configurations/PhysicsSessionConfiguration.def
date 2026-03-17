@@ -1,0 +1,41 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1904",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1904"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfigurationObjectBuilder",
+  "$Value": {
+    "Guid": "a41c4422-566f-4d10-b51d-a1cce7ed3fbe",
+    "MaximumSpeedLinear": 1000,
+    "MaximumSpeedAngular": 6.28,
+    "MaximumCharacterSpeedLinear": 310,
+    "LinearDamping": 0,
+    "AngularDamping": 0.025,
+    "GravityMultiplier": 1,
+    "LayersToExcludeFromQueries": [
+      {
+        "Key": "d984768b-8fff-4998-9089-84ad5ed40aad",
+        "Value": "Ragdolls"
+      },
+      {
+        "Key": "3721ade5-9797-4441-a353-9555a6d492ea",
+        "Value": "DeadRagdolls"
+      }
+    ],
+    "LayersToExcludeFromLodding": [
+      {
+        "Key": "46c81391-6b49-42c8-b170-216ba1a30fbb",
+        "Value": "Characters"
+      },
+      {
+        "Key": "fbbab56f-1717-4462-9b20-890442d1b885",
+        "Value": "Ragdolls"
+      },
+      {
+        "Key": "4be71b75-ce7c-457d-a534-e16c75d97174",
+        "Value": "DeadRagdolls"
+      }
+    ]
+  }
+}
