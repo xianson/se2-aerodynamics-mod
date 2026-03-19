@@ -17,6 +17,68 @@ namespace AeroMod;
 /// </summary>
 public class SmoothSurfaceProvider : ISurfaceProvider
 {
+    /// <summary>Compact fixed-size set of face indices (max 8 per vertex in cube grid).</summary>
+    private struct FaceSet
+    {
+        private int _f0, _f1, _f2, _f3, _f4, _f5, _f6, _f7;
+        public int Count;
+
+        public void Add(int value)
+        {
+            // Linear scan for duplicates
+            if (Contains(value)) return;
+            if (Count >= 8) return; // saturate
+            switch (Count)
+            {
+                case 0: _f0 = value; break; case 1: _f1 = value; break;
+                case 2: _f2 = value; break; case 3: _f3 = value; break;
+                case 4: _f4 = value; break; case 5: _f5 = value; break;
+                case 6: _f6 = value; break; case 7: _f7 = value; break;
+            }
+            Count++;
+        }
+
+        public bool Remove(int value)
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                if (Get(i) == value)
+                {
+                    // Swap with last
+                    Count--;
+                    if (i < Count) Set(i, Get(Count));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool Contains(int value)
+        {
+            for (int i = 0; i < Count; i++)
+                if (Get(i) == value) return true;
+            return false;
+        }
+
+        public int Get(int index) => index switch
+        {
+            0 => _f0, 1 => _f1, 2 => _f2, 3 => _f3,
+            4 => _f4, 5 => _f5, 6 => _f6, 7 => _f7,
+            _ => 0,
+        };
+
+        private void Set(int index, int value)
+        {
+            switch (index)
+            {
+                case 0: _f0 = value; break; case 1: _f1 = value; break;
+                case 2: _f2 = value; break; case 3: _f3 = value; break;
+                case 4: _f4 = value; break; case 5: _f5 = value; break;
+                case 6: _f6 = value; break; case 7: _f7 = value; break;
+            }
+        }
+    }
+
     private static readonly List<Vector3I> DirOffsets = new List<Vector3I>
     {
         new( 1, 0, 0), new(-1, 0, 0),
@@ -42,7 +104,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     // ─── Vertex data ───────────────────────────────────────────────
     private readonly Dictionary<long, List<float>> _vertexDirWeights = new();
-    private readonly Dictionary<long, HashSet<int>> _vertexToFaceIndex = new();
+    private readonly Dictionary<long, FaceSet> _vertexToFaceIndex = new();
 
     // ─── Adjacency & crease data ───────────────────────────────────
     private Dictionary<long, HashSet<long>> _vertexAdjacency;
@@ -311,17 +373,15 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             long vkey = PackVertex(cell, dir, v);
             if (!_vertexDirWeights.TryGetValue(vkey, out var weights))
             {
-                weights = new List<float> { 0, 0, 0, 0, 0, 0 };
+                weights = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
                 _vertexDirWeights[vkey] = weights;
             }
-            weights[dir] = weights[dir] + MathF.PI / 2f;
+            weights[dir] += MathF.PI / 2f;
 
-            if (!_vertexToFaceIndex.TryGetValue(vkey, out var faceSet))
-            {
-                faceSet = new HashSet<int>();
-                _vertexToFaceIndex[vkey] = faceSet;
-            }
+            var faceSet = _vertexToFaceIndex.TryGetValue(vkey, out var existing)
+                ? existing : default;
             faceSet.Add(index);
+            _vertexToFaceIndex[vkey] = faceSet;
         }
 
         if (_vertexAdjacency != null)
@@ -342,7 +402,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             long vkey = PackVertex(cell, dir, v);
             if (_vertexDirWeights.TryGetValue(vkey, out var weights))
             {
-                weights[dir] = weights[dir] - MathF.PI / 2f;
+                weights[dir] -= MathF.PI / 2f;
                 if (weights[dir] < 1e-6f) weights[dir] = 0f;
             }
             if (_vertexToFaceIndex.TryGetValue(vkey, out var faceSet))
@@ -352,6 +412,10 @@ public class SmoothSurfaceProvider : ISurfaceProvider
                 {
                     _vertexToFaceIndex.Remove(vkey);
                     _vertexDirWeights.Remove(vkey);
+                }
+                else
+                {
+                    _vertexToFaceIndex[vkey] = faceSet;
                 }
             }
         }
@@ -374,6 +438,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
                 {
                     faceSet.Remove(lastIndex);
                     faceSet.Add(index);
+                    _vertexToFaceIndex[vkey] = faceSet;
                 }
             }
         }
@@ -416,14 +481,14 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         {
             if (_vertexToFaceIndex.TryGetValue(vkey, out var faceSet))
             {
-                foreach (int fi in faceSet)
-                    dirtyFaceIndices.Add(fi);
+                for (int fi = 0; fi < faceSet.Count; fi++)
+                    dirtyFaceIndices.Add(faceSet.Get(fi));
             }
         }
 
         Dictionary<long, Vector3> vertexNormals = null;
         if (SmoothingRings > 1)
-            vertexNormals = ComputeDiffusedVertexNormals();
+            vertexNormals = ComputeDiffusedVertexNormals(dirtyVertices);
 
         // Sync _faces size
         while (_faces.Count < _rawFaceKeys.Count)
@@ -431,10 +496,10 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         while (_faces.Count > _rawFaceKeys.Count)
             _faces.RemoveAt(_faces.Count - 1);
 
-        for (int i = 0; i < _rawFaceKeys.Count; i++)
+        // Only iterate dirty faces instead of all faces
+        foreach (int i in dirtyFaceIndices)
         {
-            if (!dirtyFaceIndices.Contains(i))
-                continue;
+            if (i >= _rawFaceKeys.Count) continue;
             var cell = UnpackCell(_rawFaceKeys[i]);
             int dir = _rawFaceDirs[i];
             _faces[i] = ComputeFaceNormal(cell, dir, faceArea, vertexNormals);
@@ -503,9 +568,42 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     // ─── Multi-ring Laplacian diffusion ────────────────────────────
 
     private Dictionary<long, Vector3> ComputeDiffusedVertexNormals()
+        => ComputeDiffusedVertexNormals(null);
+
+    /// <summary>
+    /// Compute diffused vertex normals. When dirtyVertices is non-null, only computes
+    /// normals for the dirty set expanded by SmoothingRings hops (localized diffusion).
+    /// </summary>
+    private Dictionary<long, Vector3> ComputeDiffusedVertexNormals(HashSet<long> dirtyVertices)
     {
-        var vertexNormals = new Dictionary<long, Vector3>(_vertexDirWeights.Count);
-        foreach (var kvp in _vertexDirWeights)
+        // Determine which vertices to process
+        IEnumerable<KeyValuePair<long, List<float>>> source;
+        int capacity;
+
+        if (dirtyVertices != null)
+        {
+            // Expand dirty set to cover diffusion neighborhood
+            var expanded = _vertexAdjacency != null && SmoothingRings > 1
+                ? ExpandDirtyVertices(dirtyVertices, SmoothingRings)
+                : dirtyVertices;
+
+            capacity = expanded.Count;
+            var filtered = new Dictionary<long, List<float>>(capacity);
+            foreach (long vkey in expanded)
+            {
+                if (_vertexDirWeights.TryGetValue(vkey, out var weights))
+                    filtered[vkey] = weights;
+            }
+            source = filtered;
+        }
+        else
+        {
+            capacity = _vertexDirWeights.Count;
+            source = _vertexDirWeights;
+        }
+
+        var vertexNormals = new Dictionary<long, Vector3>(capacity);
+        foreach (var kvp in source)
         {
             var vw = kvp.Value;
             Vector3 n = Vector3.Zero;
@@ -694,8 +792,9 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         Vector3 normal2 = default;
         int found = 0;
 
-        foreach (int fi in facesA)
+        for (int ai = 0; ai < facesA.Count; ai++)
         {
+            int fi = facesA.Get(ai);
             if (!facesB.Contains(fi)) continue;
             if (fi >= _rawFaceDirs.Count) continue;
 
@@ -710,96 +809,115 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     // ─── Dirty vertex expansion ──────────────────────────────────
 
+    private HashSet<long> _frontierA = new();
+    private HashSet<long> _frontierB = new();
+
     private HashSet<long> ExpandDirtyVertices(HashSet<long> dirty, int hops)
     {
         if (_vertexAdjacency == null || hops <= 0) return dirty;
 
         var expanded = new HashSet<long>(dirty);
-        var frontier = new HashSet<long>(dirty);
+
+        _frontierA.Clear();
+        foreach (long v in dirty) _frontierA.Add(v);
 
         for (int h = 0; h < hops; h++)
         {
-            var nextFrontier = new HashSet<long>();
-            foreach (long v in frontier)
+            _frontierB.Clear();
+            foreach (long v in _frontierA)
             {
                 if (!_vertexAdjacency.TryGetValue(v, out var neighbors)) continue;
                 foreach (long n in neighbors)
                 {
                     if (expanded.Add(n))
-                        nextFrontier.Add(n);
+                        _frontierB.Add(n);
                 }
             }
-            frontier = nextFrontier;
-            if (frontier.Count == 0) break;
+            if (_frontierB.Count == 0) break;
+            // Swap
+            (_frontierA, _frontierB) = (_frontierB, _frontierA);
         }
 
         return expanded;
     }
 
-    // ─── Groups ───────────────────────────────────────────────────
+    // ─── Groups (persistent accumulators) ────────────────────────
+
+    private readonly List<float> _grpArea = new() { 0f, 0f, 0f, 0f, 0f, 0f };
+    private readonly List<Vector3> _grpWeightedPos = new() { Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero };
+    private readonly List<Vector3> _grpNormalSum = new() { Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero };
+    private readonly List<int> _grpCount = new() { 0, 0, 0, 0, 0, 0 };
+    private readonly List<float> _grpSxx = new() { 0f, 0f, 0f, 0f, 0f, 0f }, _grpSyy = new() { 0f, 0f, 0f, 0f, 0f, 0f }, _grpSzz = new() { 0f, 0f, 0f, 0f, 0f, 0f };
+    private readonly List<float> _grpSxy = new() { 0f, 0f, 0f, 0f, 0f, 0f }, _grpSxz = new() { 0f, 0f, 0f, 0f, 0f, 0f }, _grpSyz = new() { 0f, 0f, 0f, 0f, 0f, 0f };
 
     private void RebuildGroups()
     {
-        _groups.Clear();
-
-        var groupArea = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var groupWeightedPos = new List<Vector3>
+        for (int d = 0; d < 6; d++)
         {
-            Vector3.Zero, Vector3.Zero, Vector3.Zero,
-            Vector3.Zero, Vector3.Zero, Vector3.Zero
-        };
-        var groupNormalSum = new List<Vector3>
-        {
-            Vector3.Zero, Vector3.Zero, Vector3.Zero,
-            Vector3.Zero, Vector3.Zero, Vector3.Zero
-        };
-        var groupCount = new List<int> { 0, 0, 0, 0, 0, 0 };
-        var rSxx = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rSyy = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rSzz = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rSxy = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rSxz = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rSyz = new List<float> { 0, 0, 0, 0, 0, 0 };
+            _grpArea[d] = 0f; _grpCount[d] = 0;
+            _grpSxx[d] = 0f; _grpSyy[d] = 0f; _grpSzz[d] = 0f;
+            _grpSxy[d] = 0f; _grpSxz[d] = 0f; _grpSyz[d] = 0f;
+            _grpWeightedPos[d] = Vector3.Zero; _grpNormalSum[d] = Vector3.Zero;
+        }
 
         for (int i = 0; i < _faces.Count; i++)
         {
             var face = _faces[i];
             int dir = _rawFaceDirs[i];
 
-            groupArea[dir] = groupArea[dir] + face.Area;
-            groupWeightedPos[dir] = groupWeightedPos[dir] + face.Position * face.Area;
-            groupNormalSum[dir] = groupNormalSum[dir] + face.Normal;
-            groupCount[dir] = groupCount[dir] + 1;
-            rSxx[dir] = rSxx[dir] + face.Area * face.Position.X * face.Position.X;
-            rSyy[dir] = rSyy[dir] + face.Area * face.Position.Y * face.Position.Y;
-            rSzz[dir] = rSzz[dir] + face.Area * face.Position.Z * face.Position.Z;
-            rSxy[dir] = rSxy[dir] + face.Area * face.Position.X * face.Position.Y;
-            rSxz[dir] = rSxz[dir] + face.Area * face.Position.X * face.Position.Z;
-            rSyz[dir] = rSyz[dir] + face.Area * face.Position.Y * face.Position.Z;
+            _grpArea[dir] += face.Area;
+            _grpWeightedPos[dir] += face.Position * face.Area;
+            _grpNormalSum[dir] += face.Normal;
+            _grpCount[dir]++;
+            _grpSxx[dir] += face.Area * face.Position.X * face.Position.X;
+            _grpSyy[dir] += face.Area * face.Position.Y * face.Position.Y;
+            _grpSzz[dir] += face.Area * face.Position.Z * face.Position.Z;
+            _grpSxy[dir] += face.Area * face.Position.X * face.Position.Y;
+            _grpSxz[dir] += face.Area * face.Position.X * face.Position.Z;
+            _grpSyz[dir] += face.Area * face.Position.Y * face.Position.Z;
         }
+
+        FinalizeGroups();
+    }
+
+    private void FinalizeGroups()
+    {
+        _groups.Clear();
 
         for (int d = 0; d < 6; d++)
         {
-            if (groupCount[d] == 0) continue;
+            if (_grpCount[d] == 0) continue;
 
-            float a = groupArea[d];
-            var centroid = groupWeightedPos[d] / a;
+            float a = _grpArea[d];
+            var centroid = _grpWeightedPos[d] / a;
 
-            Vector3 avgNormal = groupNormalSum[d];
+            Vector3 avgNormal = _grpNormalSum[d];
             float avgLen = avgNormal.Length();
             Vector3 groupNormal = avgLen > 1e-6f ? avgNormal / avgLen : DirNormals[d];
 
-            float sxx = rSxx[d] - a * centroid.X * centroid.X;
-            float syy = rSyy[d] - a * centroid.Y * centroid.Y;
-            float szz = rSzz[d] - a * centroid.Z * centroid.Z;
-            float sxy = rSxy[d] - a * centroid.X * centroid.Y;
-            float sxz = rSxz[d] - a * centroid.X * centroid.Z;
-            float syz = rSyz[d] - a * centroid.Y * centroid.Z;
+            float sxx = _grpSxx[d] - a * centroid.X * centroid.X;
+            float syy = _grpSyy[d] - a * centroid.Y * centroid.Y;
+            float szz = _grpSzz[d] - a * centroid.Z * centroid.Z;
+            float sxy = _grpSxy[d] - a * centroid.X * centroid.Y;
+            float sxz = _grpSxz[d] - a * centroid.X * centroid.Z;
+            float syz = _grpSyz[d] - a * centroid.Y * centroid.Z;
 
             _groups.Add(new NormalGroup(
-                groupNormal, a, centroid, groupCount[d],
+                groupNormal, a, centroid, _grpCount[d],
                 sxx, syy, szz, sxy, sxz, syz));
         }
+    }
+
+    // ─── Public face lookup ────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the face index for a given cell and direction, or -1 if no such face exists.
+    /// Used by face override systems to map cell+direction to face indices.
+    /// </summary>
+    public int GetFaceIndex(Vector3I cell, int dir)
+    {
+        long key = PackCellDir(cell, dir);
+        return _faceIndex.TryGetValue(key, out int index) ? index : -1;
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

@@ -30,6 +30,9 @@ public static class PhysicsHack
     // For applying impulse
     private static MethodInfo _getWritePtrMethod;
 
+    // Cached Set<RigidBodyData> method (avoid per-frame reflection)
+    private static MethodInfo _setRbDataMethod;
+
     // Speed limit override
     private static Type _speedLimitType;
     private static FieldInfo _speedLimitField;
@@ -138,6 +141,18 @@ public static class PhysicsHack
             }
             if (getWritePtrGeneric != null)
                 _getWritePtrMethod = getWritePtrGeneric.MakeGenericMethod(_rbDataType);
+
+            // Cache Set<RigidBodyData>(T) method
+            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (m.Name == "Set" && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 1
+                    && !m.GetParameters()[0].IsOut)
+                {
+                    _setRbDataMethod = m.MakeGenericMethod(_rbDataType);
+                    break;
+                }
+            }
 
             // Create args array via Array.CreateInstance to dodge VRS1001 ban on T[]
             _invokeArgs = Array.CreateInstance(typeof(object), 1);
@@ -271,8 +286,8 @@ public static class PhysicsHack
     }
 
     /// <summary>
-    /// Find PhysicsSessionConfiguration singleton and set GravityMultiplier to 1.
-    /// Also sets MaximumSpeedLinear to 1000.
+    /// Set GravityMultiplier and MaximumSpeedLinear on PhysicsSessionConfiguration
+    /// via DefinitionManager.Instance.GetConfiguration&lt;T&gt;().SetPropValue().
     /// </summary>
     public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f)
     {
@@ -280,6 +295,32 @@ public static class PhysicsHack
 
         try
         {
+            // Resolve DefinitionManager type and its static Instance property
+            var defManagerType = Type.GetType(
+                "Keen.VRage.Library.Definitions.DefinitionManager, VRage.Library",
+                throwOnError: false);
+            if (defManagerType == null)
+            {
+                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager type not found");
+                return;
+            }
+
+            var instanceProp = defManagerType.GetProperty("Instance",
+                BindingFlags.Public | BindingFlags.Static);
+            if (instanceProp == null)
+            {
+                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager.Instance not found");
+                return;
+            }
+
+            object defManager = instanceProp.GetValue(null);
+            if (defManager == null)
+            {
+                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager.Instance is null");
+                return;
+            }
+
+            // Resolve PhysicsSessionConfiguration type
             var configType = Type.GetType(
                 "Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfiguration, Game2.Simulation",
                 throwOnError: false);
@@ -289,95 +330,108 @@ public static class PhysicsHack
                 return;
             }
 
-            // PhysicsSessionConfiguration is a Configuration (singleton in session).
-            // Find the static Instance or iterate known definition stores.
-            // Try the Keen.VRage.Library.Definitions.DefinitionManager approach:
-            // Get all instances of this type via reflection on the definition system.
-
-            var gravProp = configType.GetProperty("GravityMultiplier",
-                BindingFlags.Public | BindingFlags.Instance);
-            var speedProp = configType.GetProperty("MaximumSpeedLinear",
-                BindingFlags.Public | BindingFlags.Instance);
-
-            if (gravProp == null && speedProp == null)
+            // Call DefinitionManager.Instance.GetConfiguration<PhysicsSessionConfiguration>()
+            MethodInfo getConfigGeneric = null;
+            foreach (var m in defManagerType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
-                Log.Default?.Info("[AERO] TryFixGravity: properties not found");
+                if (m.Name == "GetConfiguration" && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 0)
+                {
+                    getConfigGeneric = m;
+                    break;
+                }
+            }
+
+            if (getConfigGeneric == null)
+            {
+                Log.Default?.Info("[AERO] TryFixGravity: GetConfiguration method not found");
                 return;
             }
 
-            // The setter is private, get the backing field instead
-            var gravField = configType.GetField("<GravityMultiplier>k__BackingField",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-            var speedField = configType.GetField("<MaximumSpeedLinear>k__BackingField",
-                BindingFlags.NonPublic | BindingFlags.Instance);
+            var getConfig = getConfigGeneric.MakeGenericMethod(configType);
+            object config = getConfig.Invoke(defManager, null);
 
-            if (gravField == null)
+            if (config == null)
             {
-                // Try other field name patterns
-                foreach (var f in configType.GetFields(BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (f.Name.Contains("Gravity") || f.Name.Contains("gravity"))
-                    {
-                        gravField = f;
-                        Log.Default?.Info($"[AERO] Found gravity field: {f.Name}");
-                    }
-                    if (f.Name.Contains("SpeedLinear") || f.Name.Contains("speedLinear"))
-                    {
-                        speedField = f;
-                        Log.Default?.Info($"[AERO] Found speed field: {f.Name}");
-                    }
-                }
+                Log.Default?.Info("[AERO] TryFixGravity: GetConfiguration returned null");
+                return;
             }
 
-            // Find all loaded instances via DefinitionManager
-            var defManagerType = Type.GetType(
-                "Keen.VRage.Library.Definitions.DefinitionManager, VRage.Library",
-                throwOnError: false);
+            // Use SetPropValue to set properties (extension method or instance method on Configuration)
+            MethodInfo setPropValue = config.GetType().GetMethod("SetPropValue",
+                BindingFlags.Public | BindingFlags.Instance);
 
-            // Alternative: enumerate all objects of this type using GC or type registry
-            // Simpler: the Configuration base class may have a static accessor
-            // Let's try to find any instance via reflection on loaded assemblies
-
-            // Actually, SceneSettings has GlobalGravity. Let's also try that.
-            var sceneSettingsType = Type.GetType(
-                "Keen.VRage.Physics.SceneSettings, VRage.Physics",
-                throwOnError: false);
-            if (sceneSettingsType != null)
+            if (setPropValue == null)
             {
-                var gmField = sceneSettingsType.GetField("GravityMultiplier",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
-                if (gmField != null)
-                {
-                    Log.Default?.Info($"[AERO] Found SceneSettings.GravityMultiplier: {gmField.FieldType}");
-                }
+                // Try as extension method — search all loaded types
+                Log.Default?.Info("[AERO] TryFixGravity: SetPropValue not found on config, trying direct property set");
 
-                // Log all static fields for discovery
-                foreach (var f in sceneSettingsType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                {
-                    Log.Default?.Info($"[AERO] SceneSettings static: {f.Name} ({f.FieldType.Name})");
-                }
+                // Fallback: set backing fields directly
+                SetConfigField(config, "MaximumSpeedLinear", targetSpeed);
+                SetConfigField(config, "GravityMultiplier", targetGravity);
+            }
+            else
+            {
+                // SetPropValue(string name, object value)
+                var setPropArgs = Array.CreateInstance(typeof(object), 2);
+                setPropArgs.SetValue("MaximumSpeedLinear", 0);
+                setPropArgs.SetValue(targetSpeed, 1);
+                setPropValue.Invoke(config, Unsafe.As<System.Array, object[]>(ref setPropArgs));
+
+                setPropArgs.SetValue("GravityMultiplier", 0);
+                setPropArgs.SetValue(targetGravity, 1);
+                setPropValue.Invoke(config, Unsafe.As<System.Array, object[]>(ref setPropArgs));
+
+                Log.Default?.Info($"[AERO] Physics config set: MaximumSpeedLinear={targetSpeed}, GravityMultiplier={targetGravity}");
             }
 
-            Log.Default?.Info("[AERO] TryFixGravity: searching for config instance...");
-
-            // Use HavokSessionComponent which reads PhysicsSessionConfiguration
-            var havokType = Type.GetType(
-                "Keen.VRage.Physics.Havok.HavokSessionComponent, VRage.Physics",
-                throwOnError: false);
-            if (havokType != null)
-            {
-                foreach (var f in havokType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                {
-                    Log.Default?.Info($"[AERO] HavokSession static: {f.Name} ({f.FieldType.Name})");
-                }
-            }
-
-            _gravityFixed = true; // Don't spam logs, run once
+            _gravityFixed = true;
         }
         catch (Exception ex)
         {
             Log.Default?.Info($"[AERO] TryFixGravity failed: {ex.Message}");
             _gravityFixed = true;
+        }
+    }
+
+    /// <summary>
+    /// Fallback: set a config property via its auto-property backing field.
+    /// </summary>
+    private static void SetConfigField(object config, string propName, float value)
+    {
+        var type = config.GetType();
+
+        // Try auto-property backing field first
+        var field = type.GetField($"<{propName}>k__BackingField",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        if (field == null)
+        {
+            // Try direct field
+            field = type.GetField(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        }
+
+        if (field == null)
+        {
+            // Search for partial name match
+            foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (f.Name.Contains(propName, StringComparison.OrdinalIgnoreCase) && f.FieldType == typeof(float))
+                {
+                    field = f;
+                    break;
+                }
+            }
+        }
+
+        if (field != null)
+        {
+            field.SetValue(config, value);
+            Log.Default?.Info($"[AERO] Set {propName} = {value} via field {field.Name}");
+        }
+        else
+        {
+            Log.Default?.Info($"[AERO] Could not find field for {propName}");
         }
     }
 
@@ -509,18 +563,10 @@ public static class PhysicsHack
             // Write back using Data.Set<RigidBodyData>(modified)
             _invokeArgs.SetValue(rbData, 0);
 
-            var contextType = typeof(DEntityContext);
-            foreach (var m in contextType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            if (_setRbDataMethod != null)
             {
-                if (m.Name == "Set" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1
-                    && !m.GetParameters()[0].IsOut)
-                {
-                    var setMethod = m.MakeGenericMethod(_rbDataType);
-                    setMethod.Invoke(boxedContext,
-                        Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-                    break;
-                }
+                _setRbDataMethod.Invoke(boxedContext,
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
             }
 
             return true;

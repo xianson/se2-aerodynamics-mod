@@ -19,6 +19,9 @@ public class AtmosphereBridge
     // LUT sorted by descending density (sea level first, high altitude last)
     private readonly List<(double density, double temperature)> _lut;
 
+    // Pre-computed log(density) for each LUT entry (avoids per-frame Math.Log calls)
+    private readonly double[] _logDensities;
+
     // Gas constants from the reference model
     private readonly double _R;     // specific gas constant J/(kg·K)
     private readonly double _gamma; // heat capacity ratio
@@ -64,6 +67,11 @@ public class AtmosphereBridge
         // Sort by descending density (sea level = highest density first)
         samples.Sort((a, b) => b.density.CompareTo(a.density));
         _lut = samples;
+
+        // Pre-compute log(density) for each LUT entry
+        _logDensities = new double[samples.Count];
+        for (int i = 0; i < samples.Count; i++)
+            _logDensities[i] = Math.Log(samples[i].density);
     }
 
     /// <summary>
@@ -119,9 +127,8 @@ public class AtmosphereBridge
         }
 
         // Interpolate linearly in log-density space (density varies exponentially)
-        double d0 = _lut[lo].density;
-        double d1 = _lut[lo + 1].density;
-        double t = (Math.Log(density) - Math.Log(d0)) / (Math.Log(d1) - Math.Log(d0));
+        double logD = Math.Log(density);
+        double t = (logD - _logDensities[lo]) / (_logDensities[lo + 1] - _logDensities[lo]);
 
         return _lut[lo].temperature + t * (_lut[lo + 1].temperature - _lut[lo].temperature);
     }

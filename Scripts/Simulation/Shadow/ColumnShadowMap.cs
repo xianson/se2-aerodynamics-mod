@@ -53,13 +53,15 @@ public class ColumnShadowMap : IShadowMap
 
     private readonly Dictionary<long, float> _depthBuffer = new();
     private readonly HashSet<long> _wingBlockerColumns = new();
-    private List<bool> _visibility = new List<bool>();
-    private List<float> _visibilityFactor = new List<float>();
+    private Dictionary<long, Vector3I>? _blockerCells;
+    private List<bool> _visibility = new();
+    private List<float> _visibilityFactor = new();
     private Vector3 _cachedDirection;
     private bool _hasCachedDirection;
     private IGridAccessor? _cachedGrid;
     private ISurfaceProvider? _cachedProvider;
     private int _cachedSurfaceVersion = -1;
+    private int _cachedGridVersion = -1;
 
     private Vector3 _flowDir, _axisU, _axisV;
 
@@ -72,8 +74,8 @@ public class ColumnShadowMap : IShadowMap
         float speed = flowDirection.Length();
         if (speed < 0.001f)
         {
-            EnsureArrays(provider.FaceCount);
-            for (int i = 0; i < _visibility.Count; i++) _visibility[i] = false;
+            EnsureLists(provider.FaceCount);
+            for (int ci = 0; ci < _visibility.Count; ci++) _visibility[ci] = false;
             VisibleCount = 0;
             ShadowedCount = 0;
             Version++;
@@ -83,8 +85,9 @@ public class ColumnShadowMap : IShadowMap
 
         Vector3 flowDir = flowDirection / speed;
 
+        bool surfaceChanged = _cachedSurfaceVersion != provider.Version;
         if (_hasCachedDirection && _cachedGrid == grid && _cachedProvider == provider
-            && _cachedSurfaceVersion == provider.Version)
+            && !surfaceChanged)
         {
             float dot = Vector3.Dot(flowDir, _cachedDirection);
             if (dot > MathF.Cos(DirectionThreshold))
@@ -114,8 +117,13 @@ public class ColumnShadowMap : IShadowMap
         float invBlock = 1f / blockSize;
         var wingCells = WingCells;
 
+        if (wingCells is { Count: > 0 })
+        {
+            _blockerCells ??= new Dictionary<long, Vector3I>();
+            _blockerCells.Clear();
+        }
         Dictionary<long, Vector3I>? blockerCells = wingCells is { Count: > 0 }
-            ? new Dictionary<long, Vector3I>() : null;
+            ? _blockerCells : null;
 
         foreach (var cell in grid.EnumerateOccupiedCells())
         {
@@ -149,7 +157,7 @@ public class ColumnShadowMap : IShadowMap
     private void EvaluateFaces(ISurfaceProvider provider)
     {
         var faces = provider.Faces;
-        EnsureArrays(faces.Count);
+        EnsureLists(faces.Count);
 
         int visible = 0, shadowed = 0;
         float invBlock = 1f / provider.BlockSize;
@@ -209,17 +217,15 @@ public class ColumnShadowMap : IShadowMap
 
     // ─── Helpers ────────────────────────────────────────────────
 
-    private void EnsureArrays(int count)
+    private void EnsureLists(int count)
     {
-        if (_visibility.Count < count)
+        if (_visibility.Count >= count) return;
+        _visibility.Clear();
+        _visibilityFactor.Clear();
+        for (int i = 0; i < count; i++)
         {
-            _visibility = new List<bool>(count);
-            _visibilityFactor = new List<float>(count);
-            for (int i = 0; i < count; i++)
-            {
-                _visibility.Add(false);
-                _visibilityFactor.Add(0f);
-            }
+            _visibility.Add(false);
+            _visibilityFactor.Add(0f);
         }
     }
 

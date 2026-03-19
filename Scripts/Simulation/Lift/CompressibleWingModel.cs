@@ -17,6 +17,49 @@ public class CompressibleWingModel : IWingLiftModel
     public float SubsonicBlendLimit { get; set; } = 0.85f;
     public float SupersonicBlendLimit { get; set; } = 1.15f;
 
+    // Cached work arrays — reused across frames to avoid per-frame allocations
+    private float[] _alphas = Array.Empty<float>();
+    private float[] _localSpeeds = Array.Empty<float>();
+    private Vector3[] _vHats = Array.Empty<Vector3>();
+    private float[] _clAlphas = Array.Empty<float>();
+    private float[] _alphaStalls = Array.Empty<float>();
+    private float[] _alphaEff = Array.Empty<float>();
+    private float[] _efficiency = Array.Empty<float>();
+    private float[] _oswaldMod = Array.Empty<float>();
+    private float[] _influence = Array.Empty<float>();
+    private bool _influenceValid;
+    private int _influenceN;
+    private readonly List<WingForceResult> _resultsList = new();
+    private static readonly List<WingForceResult> EmptyResults = new();
+
+    /// <summary>Invalidate cached influence matrix (call when wings change).</summary>
+    public void InvalidateInfluence()
+    {
+        _influenceValid = false;
+    }
+
+    private void EnsureArrays(int n)
+    {
+        if (_alphas.Length >= n) return;
+        _alphas = new float[n];
+        _localSpeeds = new float[n];
+        _vHats = new Vector3[n];
+        _clAlphas = new float[n];
+        _alphaStalls = new float[n];
+        _alphaEff = new float[n];
+        _efficiency = new float[n];
+        _oswaldMod = new float[n];
+        // Influence is n*n, allocated separately
+    }
+
+    private void EnsureInfluenceArray(int n)
+    {
+        int nn = n * n;
+        if (_influence.Length >= nn) return;
+        _influence = new float[nn];
+        _influenceValid = false;
+    }
+
     /// <summary>
     /// Subsonic compressible lift slope (Diederich/Helmbold form).
     /// At M=0, sweep=0 reduces to standard Helmbold: 2π·AR / (2 + √(4 + AR²)).
@@ -65,116 +108,108 @@ public class CompressibleWingModel : IWingLiftModel
     public List<WingForceResult> ComputeWingForces(ReadOnlySpan<LiftingSurface> wings, in AeroContext ctx)
     {
         int n = wings.Length;
-        if (n == 0) return new List<WingForceResult>();
+        if (n == 0) return EmptyResults;
 
         float comSpeed = ctx.Velocity.Length();
         if (comSpeed < MinSpeed || ctx.Atmosphere.Density < 1e-8)
         {
-            var empty = new List<WingForceResult>(n);
-            for (int ei = 0; ei < n; ei++) empty.Add(default);
-            return empty;
+            _resultsList.Clear();
+            for (int ei = 0; ei < n; ei++) _resultsList.Add(default);
+            return _resultsList;
         }
+
+        EnsureArrays(n);
+        EnsureInfluenceArray(n);
 
         float rho = (float)ctx.Atmosphere.Density;
         float speedOfSound = (float)ctx.Atmosphere.SpeedOfSound;
 
         // Step 1: Compute raw AoA and runtime CLAlpha for each wing
-        var alphas = new List<float>(n);
-        var localSpeeds = new List<float>(n);
-        var vHats = new List<Vector3>(n);
-        var clAlphas = new List<float>(n);
-        var alphaStalls = new List<float>(n);
-        for (int ei = 0; ei < n; ei++)
-        {
-            alphas.Add(0f);
-            localSpeeds.Add(0f);
-            vHats.Add(Vector3.Zero);
-            clAlphas.Add(0f);
-            alphaStalls.Add(0f);
-        }
-
         for (int i = 0; i < n; i++)
         {
             ref readonly var w = ref wings[i];
             var v = ctx.VelocityAtPoint(w.AeroCenter);
             float speed = v.Length();
-            localSpeeds[i] = speed;
+            _localSpeeds[i] = speed;
             if (speed < MinSpeed)
             {
-                alphas[i] = 0;
-                vHats[i] = Vector3.UnitX;
-                clAlphas[i] = w.CLAlpha;
-                alphaStalls[i] = w.AlphaStall;
+                _alphas[i] = 0;
+                _vHats[i] = Vector3.UnitX;
+                _clAlphas[i] = w.CLAlpha;
+                _alphaStalls[i] = w.AlphaStall;
                 continue;
             }
-            vHats[i] = v / speed;
+            _vHats[i] = v / speed;
 
             // AoA
             float vDotN = -Vector3.Dot(v, w.Normal);
             var vInPlane = v - Vector3.Dot(v, w.Normal) * w.Normal;
             float vPlaneSpeed = vInPlane.Length();
-            alphas[i] = MathF.Atan2(vDotN, vPlaneSpeed + 1e-6f);
+            _alphas[i] = MathF.Atan2(vDotN, vPlaneSpeed + 1e-6f);
 
             // Runtime CLAlpha from Mach regime
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
             float machPerp = mach * MathF.Cos(w.SweepAngle);
-            clAlphas[i] = ComputeCLAlpha(machPerp, w.AspectRatio, w.SweepAngle,
+            _clAlphas[i] = ComputeCLAlpha(machPerp, w.AspectRatio, w.SweepAngle,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
             // Runtime stall angle, floored at 3 degrees
-            alphaStalls[i] = clAlphas[i] > 0.01f
-                ? MathF.Max(3f * MathF.PI / 180f, w.CLMax / clAlphas[i])
+            _alphaStalls[i] = _clAlphas[i] > 0.01f
+                ? MathF.Max(3f * MathF.PI / 180f, w.CLMax / _clAlphas[i])
                 : MathF.PI / 4f;
         }
 
         // Step 2: Prandtl biplane interference — mutual downwash
-        var alphaEff = new List<float>(n);
-        var efficiency = new List<float>(n);
-        for (int ei = 0; ei < n; ei++)
-        {
-            alphaEff.Add(alphas[ei]);
-            efficiency.Add(1f);
-        }
-
-        var oswaldMod = new List<float>(n);
-        for (int ei = 0; ei < n; ei++) oswaldMod.Add(wings[ei].OswaldE);
-
-        // Flat list for n×n influence matrix
-        var influence = new List<float>(n * n);
-        for (int ei = 0; ei < n * n; ei++) influence.Add(0f);
-
         for (int i = 0; i < n; i++)
         {
-            for (int j = 0; j < n; j++)
+            _alphaEff[i] = _alphas[i];
+            _efficiency[i] = 1f;
+        }
+
+        if (!_influenceValid || _influenceN != n)
+        {
+            // Rebuild influence matrix and oswald modifiers
+            for (int i = 0; i < n; i++)
+                _oswaldMod[i] = wings[i].OswaldE;
+
+            Array.Clear(_influence, 0, n * n);
+
+            for (int i = 0; i < n; i++)
             {
-                if (i == j) continue;
-                ref readonly var wi = ref wings[i];
-                ref readonly var wj = ref wings[j];
-
-                float normalDot = MathF.Abs(Vector3.Dot(wi.Normal, wj.Normal));
-                if (normalDot < 0.9f) continue;
-
-                var delta = wj.Centroid - wi.Centroid;
-                float gap = MathF.Abs(Vector3.Dot(delta, wi.Normal));
-                float overlap = ComputePlanformOverlap(wi, wj);
-                if (overlap <= 0) continue;
-
-                float maxSpan = MathF.Max(wi.Span, wj.Span);
-                if (gap >= maxSpan) continue;
-
-                float gbRatio = gap / maxSpan;
-                float sigma = gbRatio / (1f + gbRatio);
-
-                float arJ = MathF.Max(wj.AspectRatio, 0.1f);
-                influence[i * n + j] = overlap * (1f - sigma) / (MathF.PI * arJ);
-
-                if (j > i)
+                for (int j = 0; j < n; j++)
                 {
-                    float eFactor = sigma + (1f - sigma) * 0.5f;
-                    oswaldMod[i] *= eFactor;
-                    oswaldMod[j] *= eFactor;
+                    if (i == j) continue;
+                    ref readonly var wi = ref wings[i];
+                    ref readonly var wj = ref wings[j];
+
+                    float normalDot = MathF.Abs(Vector3.Dot(wi.Normal, wj.Normal));
+                    if (normalDot < 0.9f) continue;
+
+                    var delta = wj.Centroid - wi.Centroid;
+                    float gap = MathF.Abs(Vector3.Dot(delta, wi.Normal));
+                    float overlap = ComputePlanformOverlap(wi, wj);
+                    if (overlap <= 0) continue;
+
+                    float maxSpan = MathF.Max(wi.Span, wj.Span);
+                    if (gap >= maxSpan) continue;
+
+                    float gbRatio = gap / maxSpan;
+                    float sigma = gbRatio / (1f + gbRatio);
+
+                    float arJ = MathF.Max(wj.AspectRatio, 0.1f);
+                    _influence[i * n + j] = overlap * (1f - sigma) / (MathF.PI * arJ);
+
+                    if (j > i)
+                    {
+                        float eFactor = sigma + (1f - sigma) * 0.5f;
+                        _oswaldMod[i] *= eFactor;
+                        _oswaldMod[j] *= eFactor;
+                    }
                 }
             }
+
+            _influenceValid = true;
+            _influenceN = n;
         }
 
         // Iterative solve using runtime clAlphas
@@ -186,13 +221,13 @@ public class CompressibleWingModel : IWingLiftModel
                 float downwash = 0;
                 for (int j = 0; j < n; j++)
                 {
-                    if (influence[i * n + j] == 0) continue;
-                    float clJ = clAlphas[j] * alphaEff[j];
-                    downwash += influence[i * n + j] * clJ;
+                    if (_influence[i * n + j] == 0) continue;
+                    float clJ = _clAlphas[j] * _alphaEff[j];
+                    downwash += _influence[i * n + j] * clJ;
                 }
-                float newAlpha = alphas[i] - downwash;
-                maxChange = MathF.Max(maxChange, MathF.Abs(newAlpha - alphaEff[i]));
-                alphaEff[i] = newAlpha;
+                float newAlpha = _alphas[i] - downwash;
+                maxChange = MathF.Max(maxChange, MathF.Abs(newAlpha - _alphaEff[i]));
+                _alphaEff[i] = newAlpha;
             }
             if (maxChange < 1e-5f) break;
         }
@@ -200,27 +235,27 @@ public class CompressibleWingModel : IWingLiftModel
         // Clamp
         for (int i = 0; i < n; i++)
         {
-            oswaldMod[i] = MathF.Max(0.3f, MathF.Min(0.95f, oswaldMod[i]));
-            if (float.IsNaN(alphaEff[i]) || float.IsInfinity(alphaEff[i]))
-                alphaEff[i] = 0;
-            alphaEff[i] = MathF.Max(-MathF.PI / 2f, MathF.Min(MathF.PI / 2f, alphaEff[i]));
+            _oswaldMod[i] = MathF.Max(0.3f, MathF.Min(0.95f, _oswaldMod[i]));
+            if (float.IsNaN(_alphaEff[i]) || float.IsInfinity(_alphaEff[i]))
+                _alphaEff[i] = 0;
+            _alphaEff[i] = MathF.Max(-MathF.PI / 2f, MathF.Min(MathF.PI / 2f, _alphaEff[i]));
         }
 
         // Step 3: Compute forces per wing
-        var results = new List<WingForceResult>(n);
-        for (int ei = 0; ei < n; ei++) results.Add(default);
+        _resultsList.Clear();
+        for (int ei = 0; ei < n; ei++) _resultsList.Add(default);
 
         for (int i = 0; i < n; i++)
         {
             ref readonly var w = ref wings[i];
-            float speed = localSpeeds[i];
+            float speed = _localSpeeds[i];
             if (speed < MinSpeed) continue;
 
-            float alpha = alphaEff[i];
+            float alpha = _alphaEff[i];
             float absAlpha = MathF.Abs(alpha);
             float signAlpha = alpha >= 0 ? 1f : -1f;
-            float clAlpha = clAlphas[i];
-            float alphaStall = alphaStalls[i];
+            float clAlpha = _clAlphas[i];
+            float alphaStall = _alphaStalls[i];
 
             // CL via Kirchhoff stall model using runtime clAlpha and alphaStall
             float cl;
@@ -245,7 +280,7 @@ public class CompressibleWingModel : IWingLiftModel
             float q = 0.5f * rho * speed * speed;
 
             // Lift force direction
-            var vHat = vHats[i];
+            var vHat = _vHats[i];
             var liftDir = w.Normal - Vector3.Dot(w.Normal, vHat) * vHat;
             float liftDirLen = liftDir.Length();
             if (liftDirLen > 1e-6f)
@@ -257,7 +292,7 @@ public class CompressibleWingModel : IWingLiftModel
             var liftForce = liftDir * liftMag;
 
             // Induced drag: CDi = CL²/(π·e·AR)
-            float e = oswaldMod[i];
+            float e = _oswaldMod[i];
             float cdi = w.AspectRatio > 0.1f ? cl * cl / (MathF.PI * e * w.AspectRatio) : 0;
 
             float cd0 = 0.010f;
@@ -265,12 +300,12 @@ public class CompressibleWingModel : IWingLiftModel
             float dragMag = q * w.PlanformArea * totalCd;
             var inducedDrag = vHat * dragMag;
 
-            results[i] = new WingForceResult(
+            _resultsList[i] = new WingForceResult(
                 liftForce, inducedDrag, w.AeroCenter,
-                cl, cdi, alpha, efficiency[i]);
+                cl, cdi, alpha, _efficiency[i]);
         }
 
-        return results;
+        return _resultsList;
     }
 
     private static float ComputePlanformOverlap(in LiftingSurface a, in LiftingSurface b)

@@ -48,12 +48,11 @@ public class CubeSurfaceProvider : ISurfaceProvider
         const float CellSize = 0.25f;
         float faceArea = CellSize * CellSize;
 
-        var accum = new List<float> { 0, 0, 0, 0, 0, 0 };
+        var accum = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
         var weighted = new List<Vector3> { Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero };
         var counts = new List<int> { 0, 0, 0, 0, 0, 0 };
-
-        var rawSxx = new List<float> { 0, 0, 0, 0, 0, 0 }; var rawSyy = new List<float> { 0, 0, 0, 0, 0, 0 }; var rawSzz = new List<float> { 0, 0, 0, 0, 0, 0 };
-        var rawSxy = new List<float> { 0, 0, 0, 0, 0, 0 }; var rawSxz = new List<float> { 0, 0, 0, 0, 0, 0 }; var rawSyz = new List<float> { 0, 0, 0, 0, 0, 0 };
+        var rawSxx = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f }; var rawSyy = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f }; var rawSzz = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
+        var rawSxy = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f }; var rawSxz = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f }; var rawSyz = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
 
         foreach (var cell in grid.EnumerateOccupiedCells())
         {
@@ -65,16 +64,16 @@ public class CubeSurfaceProvider : ISurfaceProvider
                 var pos = CellFaceCenter(cell, DirOffsets[d], blockSize);
                 _faces.Add(new SurfaceFace(pos, DirNormals[d], faceArea));
 
-                accum[d] = accum[d] + faceArea;
-                weighted[d] = weighted[d] + pos * faceArea;
-                counts[d] = counts[d] + 1;
+                accum[d] += faceArea;
+                weighted[d] += pos * faceArea;
+                counts[d]++;
 
-                rawSxx[d] = rawSxx[d] + faceArea * pos.X * pos.X;
-                rawSyy[d] = rawSyy[d] + faceArea * pos.Y * pos.Y;
-                rawSzz[d] = rawSzz[d] + faceArea * pos.Z * pos.Z;
-                rawSxy[d] = rawSxy[d] + faceArea * pos.X * pos.Y;
-                rawSxz[d] = rawSxz[d] + faceArea * pos.X * pos.Z;
-                rawSyz[d] = rawSyz[d] + faceArea * pos.Y * pos.Z;
+                rawSxx[d] += faceArea * pos.X * pos.X;
+                rawSyy[d] += faceArea * pos.Y * pos.Y;
+                rawSzz[d] += faceArea * pos.Z * pos.Z;
+                rawSxy[d] += faceArea * pos.X * pos.Y;
+                rawSxz[d] += faceArea * pos.X * pos.Z;
+                rawSyz[d] += faceArea * pos.Y * pos.Z;
             }
         }
 

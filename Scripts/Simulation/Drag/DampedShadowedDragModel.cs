@@ -37,16 +37,15 @@ public class DampedShadowedDragModel : IAeroDragModel
     public ColumnShadowMap ShadowMap => _shadowMap;
 
     /// <summary>Per-face Cp from the last Compute() call (for debug draw).</summary>
-    public List<float> FaceCp => _faceCp;
-    private readonly List<float> _faceCp = new();
+    public List<float> FaceCp => _cpOut;
 
-    // ─── SoA arrays (padded to multiple of 8) ─────────────────────────
+    // ─── SoA lists (padded to multiple of 8) ─────────────────────────
 
-    private float[] _px = Array.Empty<float>(), _py = Array.Empty<float>(), _pz = Array.Empty<float>();
-    private float[] _nx = Array.Empty<float>(), _ny = Array.Empty<float>(), _nz = Array.Empty<float>();
-    private float[] _area = Array.Empty<float>();
-    private float[] _visArea = Array.Empty<float>(); // area × visibility (baked)
-    private float[] _cpOut = Array.Empty<float>();
+    private List<float> _px = new(), _py = new(), _pz = new();
+    private List<float> _nx = new(), _ny = new(), _nz = new();
+    private List<float> _area = new();
+    private List<float> _visArea = new(); // area × visibility (baked)
+    private List<float> _cpOut = new();
     private int _faceCount;
     private int _padded;
     private int _lastShadowVersion = -1;
@@ -57,33 +56,37 @@ public class DampedShadowedDragModel : IAeroDragModel
         int n = faces.Count;
         int padded = (n + 7) & ~7;
 
-        if (_faceCount == n && _px.Length >= padded && _lastSurfaceVersion == surfaceVersion)
+        if (_faceCount == n && _px.Count >= padded && _lastSurfaceVersion == surfaceVersion)
             return;
 
         _lastSurfaceVersion = surfaceVersion;
         _faceCount = n;
         _padded = padded;
 
-        // Only allocate if arrays are too small; reuse existing when possible
-        if (_px.Length < padded)
+        // Only allocate if lists are too small; reuse existing when possible
+        if (_px.Count < padded)
         {
-            _px = new float[padded]; _py = new float[padded]; _pz = new float[padded];
-            _nx = new float[padded]; _ny = new float[padded]; _nz = new float[padded];
-            _area = new float[padded];
-            _visArea = new float[padded];
-            _cpOut = new float[padded];
-
-            while (_faceCp.Count < padded) _faceCp.Add(0f);
-            while (_faceCp.Count > padded) _faceCp.RemoveAt(_faceCp.Count - 1);
+            _px = new List<float>(padded); _py = new List<float>(padded); _pz = new List<float>(padded);
+            _nx = new List<float>(padded); _ny = new List<float>(padded); _nz = new List<float>(padded);
+            _area = new List<float>(padded);
+            _visArea = new List<float>(padded);
+            _cpOut = new List<float>(padded);
+            for (int j = 0; j < padded; j++)
+            {
+                _px.Add(0f); _py.Add(0f); _pz.Add(0f);
+                _nx.Add(0f); _ny.Add(0f); _nz.Add(0f);
+                _area.Add(0f); _visArea.Add(0f); _cpOut.Add(0f);
+            }
         }
         else
         {
             // Zero out padding zone (old data from larger face set)
-            Array.Clear(_px, n, padded - n); Array.Clear(_py, n, padded - n); Array.Clear(_pz, n, padded - n);
-            Array.Clear(_nx, n, padded - n); Array.Clear(_ny, n, padded - n); Array.Clear(_nz, n, padded - n);
-            Array.Clear(_area, n, padded - n);
-            Array.Clear(_visArea, n, padded - n);
-            Array.Clear(_cpOut, n, padded - n);
+            for (int j = n; j < padded; j++)
+            {
+                _px[j] = 0f; _py[j] = 0f; _pz[j] = 0f;
+                _nx[j] = 0f; _ny[j] = 0f; _nz[j] = 0f;
+                _area[j] = 0f; _visArea[j] = 0f; _cpOut[j] = 0f;
+            }
         }
 
         for (int i = 0; i < n; i++)
@@ -143,9 +146,6 @@ public class DampedShadowedDragModel : IAeroDragModel
                 out totalFx, out totalFy, out totalFz,
                 out totalTx, out totalTy, out totalTz,
                 out frontalArea);
-
-        // Copy Cp to List for debug draw
-        _cpOut.AsSpan(0, _padded).CopyTo(CollectionsMarshal.AsSpan(_faceCp));
 
         var totalForce = new Vector3(totalFx, totalFy, totalFz);
         var totalTorque = new Vector3(totalTx, totalTy, totalTz);
@@ -217,14 +217,14 @@ public class DampedShadowedDragModel : IAeroDragModel
         var accTx = zeroV; var accTy = zeroV; var accTz = zeroV;
         var accArea = zeroV;
 
-        ref float pxRef = ref MemoryMarshal.GetArrayDataReference(_px);
-        ref float pyRef = ref MemoryMarshal.GetArrayDataReference(_py);
-        ref float pzRef = ref MemoryMarshal.GetArrayDataReference(_pz);
-        ref float nxRef = ref MemoryMarshal.GetArrayDataReference(_nx);
-        ref float nyRef = ref MemoryMarshal.GetArrayDataReference(_ny);
-        ref float nzRef = ref MemoryMarshal.GetArrayDataReference(_nz);
-        ref float vaRef = ref MemoryMarshal.GetArrayDataReference(_visArea);
-        ref float cpRef = ref MemoryMarshal.GetArrayDataReference(_cpOut);
+        ref float pxRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_px));
+        ref float pyRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_py));
+        ref float pzRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_pz));
+        ref float nxRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_nx));
+        ref float nyRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_ny));
+        ref float nzRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_nz));
+        ref float vaRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_visArea));
+        ref float cpRef = ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(_cpOut));
 
         for (int i = 0; i < n; i += 8)
         {

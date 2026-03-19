@@ -91,6 +91,9 @@ public partial class AeroGridComponent
         // ── Wings ──
         DrawWingInfo(aero, dd, wt);
 
+        // ── Aero block components ──
+        DrawAeroComponents(aero, dd, wt, linVel);
+
         // ── Apply forces + torques ──
         if (aero.HasResult && mass > 0f)
         {
@@ -364,8 +367,125 @@ public partial class AeroGridComponent
         }
     }
 
+    private static void DrawAeroComponents(AeroGridComponent aero, MeshBuilder dd,
+        in WorldTransform wt, Vector3 linVel)
+    {
+        var comps = aero._components;
+        if (comps == null || comps.Count == 0) return;
+
+        float speed = linVel.Length();
+
+        for (int i = 0; i < comps.Components.Count; i++)
+        {
+            var comp = comps.Components[i];
+            Vector3D posWorld = WorldTransform.Transform((Vector3D)comp.Position, in wt);
+
+            if (comp is ControlSurface cs)
+            {
+                // Hinge axis (blue arrow)
+                Vector3 hingeWorld = WorldTransform.TransformDirection(cs.HingeAxis, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(hingeWorld * 1.5f),
+                    ColorSRGB.DodgerBlue, null, 0.08);
+
+                // Undeflected chord direction (cyan arrow, thin)
+                Vector3 chordWorld = WorldTransform.TransformDirection(cs.ChordDirection, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(chordWorld * 1.5f),
+                    ColorSRGB.Cyan, null, 0.05);
+
+                // Deflected chord direction (yellow arrow) — Rodrigues rotation
+                float deflRad = -cs.DeflectionInput * cs.MaxDeflection * MathF.PI / 180f;
+                float cosD = MathF.Cos(deflRad);
+                float sinD = MathF.Sin(deflRad);
+                Vector3 deflChord = cs.ChordDirection * cosD +
+                    Vector3.Cross(cs.HingeAxis, cs.ChordDirection) * sinD +
+                    cs.HingeAxis * Vector3.Dot(cs.HingeAxis, cs.ChordDirection) * (1f - cosD);
+                Vector3 deflChordWorld = WorldTransform.TransformDirection(deflChord, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(deflChordWorld * 2.0f),
+                    ColorSRGB.Yellow, null, 0.10);
+
+                // Surface normal of deflected surface (green arrow)
+                Vector3 surfNorm = Vector3.Cross(cs.HingeAxis, deflChord);
+                float snLen = surfNorm.Length();
+                if (snLen > 1e-6f) surfNorm /= snLen;
+                Vector3 surfNormWorld = WorldTransform.TransformDirection(surfNorm, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(surfNormWorld * 1.5f),
+                    ColorSRGB.LimeGreen, null, 0.10);
+
+                // Resultant force vector (red arrow, scaled)
+                // Recompute force direction from last Compute results
+                if (speed > 1f)
+                {
+                    Vector3 localVel = aero._lastVelocityLocal;
+                    float localSpeed = localVel.Length();
+                    if (localSpeed > 0.1f)
+                    {
+                        Vector3 vHat = localVel / localSpeed;
+                        // Lift direction: surfNormal component perpendicular to velocity
+                        Vector3 liftDir = surfNorm - Vector3.Dot(surfNorm, vHat) * vHat;
+                        float ldLen = liftDir.Length();
+                        if (ldLen > 1e-6f) liftDir /= ldLen;
+
+                        // Total force = lift + drag
+                        Vector3 forceLocal = liftDir * cs.CurrentLift - vHat * cs.CurrentDrag;
+                        float forceMag = forceLocal.Length();
+                        if (forceMag > 1f)
+                        {
+                            Vector3 forceWorld = WorldTransform.TransformDirection(forceLocal, wt);
+                            float fScale = MathF.Min(5f, forceMag * 0.0005f); // scale for visibility
+                            dd.AddArrow(posWorld, posWorld + (Vector3D)(forceWorld * (fScale / forceMag)),
+                                ColorSRGB.Red, null, 0.12);
+                        }
+                    }
+                }
+
+                // Show gridAngVel on each CS so we know the input at this exact frame
+                Vector3 gAV = aero._lastGridAngVel;
+                string info = $"CS#{i} defl={cs.DeflectionInput:F2}\nAoA={cs.EffectiveAoA:F1}°" +
+                    $"\nL={cs.CurrentLift:F0}N D={cs.CurrentDrag:F0}N" +
+                    $"\ngAV=({gAV.X:F2},{gAV.Y:F2},{gAV.Z:F2})";
+
+                dd.AddText(posWorld + (Vector3D)(hingeWorld * 0.3f), info, ColorSRGB.Cyan, 0.35f);
+            }
+            else if (comp is Airbrake ab)
+            {
+                // Facing direction (orange)
+                Vector3 facingWorld = WorldTransform.TransformDirection(ab.FacingDirection, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(facingWorld * 1.5f),
+                    ColorSRGB.Orange, null, 0.08);
+
+                string info = $"AB deploy={ab.DeployFraction:F2}\neff={ab.Effectiveness:F2}" +
+                    $"\nD={ab.DragForce:F0}N Cp={ab.EffectiveCp:F3}";
+                dd.AddText(posWorld + (Vector3D)(facingWorld * 0.3f), info, ColorSRGB.Orange, 0.35f);
+            }
+            else if (comp is AtmosphericScoop sc)
+            {
+                // Facing direction (green)
+                Vector3 facingWorld = WorldTransform.TransformDirection(sc.FacingDirection, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(facingWorld * 1.5f),
+                    ColorSRGB.LimeGreen, null, 0.08);
+
+                string info = $"SCOOP mdot={sc.MassFlowRate:F2}kg/s" +
+                    $"\ncoll={sc.CollectionRate:F2}kg/s" +
+                    $"\nD={sc.DragForce:F0}N";
+                dd.AddText(posWorld + (Vector3D)(facingWorld * 0.3f), info, ColorSRGB.LimeGreen, 0.35f);
+            }
+            else if (comp is AirIntake ai)
+            {
+                // Facing direction (white)
+                Vector3 facingWorld = WorldTransform.TransformDirection(ai.FacingDirection, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(facingWorld * 1.5f),
+                    ColorSRGB.White, null, 0.08);
+
+                string info = $"INTAKE mdot={ai.MassFlowRate:F2}kg/s" +
+                    $"\nPtot={ai.TotalPressure:F0}Pa ram={ai.RamPressureRatio:F2}";
+                dd.AddText(posWorld + (Vector3D)(facingWorld * 0.3f), info, ColorSRGB.White, 0.35f);
+            }
+        }
+    }
+
     // ── Cached values for debug ──
     private Vector3 _lastVelocityLocal;
     private Vector3 _lastComLocal;
+    internal Vector3 _lastGridAngVel;
     private float _lastDensity;
 }

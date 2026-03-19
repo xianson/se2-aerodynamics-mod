@@ -6,6 +6,11 @@
   "$Type": "VRage:Keen.VRage.ContentPipeline.Metafiles.MetaData",
   "$Value": {
     "AssetID": "07394aff-f3ce-4112-9935-3add442e3359",
-    "InternalItems": []
+    "InternalItems": [
+      {
+        "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.DefinitionSetItem",
+        "DefinitionSetName": "World"
+      }
+    ]
   }
 }

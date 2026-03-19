@@ -28,6 +28,9 @@ public readonly struct AeroContext
     /// <summary>Block size in meters (2.5 for SE2 large grid).</summary>
     public readonly float BlockSize;
 
+    /// <summary>Pre-computed speed (magnitude of Velocity).</summary>
+    public readonly float Speed;
+
     public AeroContext(IGridAccessor gridAccessor, ISurfaceProvider surfaceCache, Vector3 velocity,
         AtmosphereState atmosphere, Vector3 centerOfMass, float blockSize = 2.5f,
         Vector3 angularVelocity = default)
@@ -39,11 +42,10 @@ public readonly struct AeroContext
         Atmosphere = atmosphere;
         CenterOfMass = centerOfMass;
         BlockSize = blockSize;
+        Speed = velocity.Length();
     }
 
     /// <summary>Compute velocity at a point offset from CoM, accounting for rotation.</summary>
     public Vector3 VelocityAtPoint(Vector3 point)
         => Velocity + Vector3.Cross(AngularVelocity, point - CenterOfMass);
-
-    public float Speed => Velocity.Length();
 }

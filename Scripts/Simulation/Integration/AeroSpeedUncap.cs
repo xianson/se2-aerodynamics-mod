@@ -23,11 +23,11 @@ public partial class AeroGridComponent
     {
         if (_physicsFixed) return;
 
-        // Uncap speed to 1000 m/s
-        PhysicsHack.UncapSpeed(vlp, 1000f);
+        // Uncap speed via VelocityLimitProvider
+        PhysicsHack.UncapSpeed(vlp, 99999f);
 
-        // Fix gravity: find PhysicsSessionConfiguration and set multiplier to 1
-        PhysicsHack.TryFixGravity();
+        // Override PhysicsSessionConfiguration: uncap MaximumSpeedLinear, set GravityMultiplier
+        PhysicsHack.TryFixGravity(targetGravity: 1f, targetSpeed: 99999f);
 
         _physicsFixed = true;
     }

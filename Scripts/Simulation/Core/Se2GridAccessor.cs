@@ -11,38 +11,42 @@ namespace AeroMod;
 public class Se2GridAccessor : IGridAccessor
 {
     private BlockOctreeComponent _octree;
-    private int _cellCount;
+    private HashSet<Vector3I>? _occupiedCells;
 
     public Se2GridAccessor(BlockOctreeComponent octree)
     {
         _octree = octree;
-        _cellCount = -1; // lazy
     }
 
     public void SetOctree(BlockOctreeComponent octree)
     {
         _octree = octree;
-        _cellCount = -1;
+        _occupiedCells?.Clear();
     }
 
     public bool IsCellOccupied(Vector3I position)
     {
-        return _octree.TryGetCubeBlock(position) != null;
+        return GetOccupiedCells().Contains(position);
     }
 
     public IEnumerable<Vector3I> EnumerateOccupiedCells()
     {
-        // Copy Span to List first — Span cannot cross yield boundary (CS4007)
+        return GetOccupiedCells();
+    }
+
+    public int CellCount => GetOccupiedCells().Count;
+
+    private HashSet<Vector3I> GetOccupiedCells()
+    {
+        if (_occupiedCells != null && _occupiedCells.Count > 0)
+            return _occupiedCells;
+
+        _occupiedCells ??= new HashSet<Vector3I>();
         var blocks = _octree.GetAllCubeBlocks();
-        var blockList = new List<CubeBlockComponent>(blocks.Length);
         foreach (var block in blocks)
         {
-            if (block != null)
-                blockList.Add(block);
-        }
-
-        foreach (var block in blockList)
-        {
+            if (block == null)
+                continue;
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var min = cellGroup.Min;
@@ -50,32 +54,10 @@ public class Se2GridAccessor : IGridAccessor
                 for (int x = min.X; x <= max.X; x++)
                     for (int y = min.Y; y <= max.Y; y++)
                         for (int z = min.Z; z <= max.Z; z++)
-                        {
-                            var pos = new Vector3I(x, y, z);
-                            // Cell groups are bounding boxes — slopes/corners
-                            // don't fill every cell. Verify with the octree,
-                            // and ensure the cell belongs to THIS block (not an
-                            // adjacent block whose cell falls in our bbox).
-                            var occupant = _octree.TryGetCubeBlock(pos);
-                            if (occupant != null && occupant == block)
-                                yield return pos;
-                        }
+                            _occupiedCells.Add(new Vector3I(x, y, z));
             }
         }
-    }
 
-    public int CellCount
-    {
-        get
-        {
-            if (_cellCount < 0)
-            {
-                int count = 0;
-                foreach (var _ in EnumerateOccupiedCells())
-                    count++;
-                _cellCount = count;
-            }
-            return _cellCount;
-        }
+        return _occupiedCells;
     }
 }
