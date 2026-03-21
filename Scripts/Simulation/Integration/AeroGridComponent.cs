@@ -36,9 +36,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private bool _fullRebuildNeeded;
     private bool _initialized;
 
-    // ── Staggered rebuild ──
+    // ── Staggered rebuild (managed by AeroScheduler) ──
     private bool _staggeredBuildActive;
-    private const int CellsPerTick = 5000;
+    private bool _rebuildRestartNeeded; // topology changed mid-build
 
     // ── Deferred full wing re-detection ──
     private bool _wingsDirty;
@@ -47,6 +47,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     // ── Face override index (for Cp heatmap) ──
     private bool _faceOverridesDirty = true;
+
+    // ── Cascaded flight controller state ──
+    private Vector3 _rateIntegral = Vector3.Zero;  // inner loop integrator (per-axis)
 
     // ── Accumulated changes for incremental wing update ──
     private List<Vector3I> _wingAddedCells = new();
@@ -99,6 +102,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         _initialized = false;
+        AeroScheduler.Remove(this);
         ObservedWorldTransform.DetachFrom(Data, Data);
     }
 
@@ -176,56 +180,25 @@ public partial class AeroGridComponent : Component, IInSceneListener
         HasResult = false;
 
         if (!_initialized) return;
+
+        // ── Global scheduler tick (first grid each frame drives all rebuilds) ──
+        AeroScheduler.EnsureTicked();
+
         if (density < AeroConfig.MinDensity) return;
 
         float speed = linearVelocity.Length();
         if (speed < AeroConfig.MinSpeed) return;
 
-        // ── Staggered rebuild: continue processing cell batches ──
-        if (_staggeredBuildActive)
-        {
-            if (_dirty)
-            {
-                // Topology changed mid-build — restart the staggered build
-                _buildSurface.AbortBuild();
-                _gridAccessor.SetOctree(_octree);
-                _blockSize = DetectBlockSize();
-                _buildSurface.BeginBuild(_gridAccessor, _blockSize);
-                _dirty = false;
-                _fullRebuildNeeded = false;
-                _pendingAddedCells.Clear();
-                _pendingRemovedCells.Clear();
-            }
-
-            bool done = _buildSurface.AddCellBatch(CellsPerTick);
-            if (done)
-            {
-                _buildSurface.FinalizeBuild();
-
-                // Swap: buildSurface becomes active, old active becomes next build buffer
-                (_surface, _buildSurface) = (_buildSurface, _surface);
-                _staggeredBuildActive = false;
-
-                _model.InvalidateWings();
-                _model.DetectWings(_gridAccessor, _surface, _blockSize);
-
-                // Rebuild all block-level aero components from scratch
-                _components.Clear();
-                _factory.CreateAll(_octree, _blockSize, _components);
-                _faceOverridesDirty = true;
-            }
-            // Fall through — use _surface (old data) for force computation this tick
-        }
-        else if (_dirty)
+        // ── Handle dirty state: enqueue full rebuild or do incremental update ──
+        if (_dirty && !_staggeredBuildActive)
         {
             _gridAccessor.SetOctree(_octree);
             _blockSize = DetectBlockSize();
 
             if (_fullRebuildNeeded || _surface.FaceCount == 0)
             {
-                // Start staggered full rebuild
-                _buildSurface.BeginBuild(_gridAccessor, _blockSize);
-                _staggeredBuildActive = true;
+                // Enqueue for scheduler-managed staggered rebuild
+                AeroScheduler.EnqueueRebuild(this);
                 _fullRebuildNeeded = false;
             }
             else
@@ -251,6 +224,14 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _pendingAddedCells.Clear();
             _pendingRemovedCells.Clear();
             _dirty = false;
+        }
+        else if (_dirty && _staggeredBuildActive)
+        {
+            // Topology changed mid-build — flag for restart on next scheduler tick
+            _rebuildRestartNeeded = true;
+            _dirty = false;
+            _pendingAddedCells.Clear();
+            _pendingRemovedCells.Clear();
         }
 
         // ── Deferred full wing detection (correctness pass with ray-march) ──
@@ -292,7 +273,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         // ── Control surface input from player ──
         float q = (float)(0.5 * atmo.Density * speed * speed);
-        UpdateControlSurfaceInputs(centerOfMass, wt, localAngVel, q);
+        UpdateControlSurfaceInputs(centerOfMass, wt, localAngVel, q, LastResult.Torque);
 
         // ── Block component forces ──
         if (_components.Count > 0)
@@ -336,7 +317,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _csLogOnceCountdown = 300; // log once after 5s regardless of input
 
     private void UpdateControlSurfaceInputs(Vector3 centerOfMass, WorldTransform wt,
-        Vector3 localAngVel, float dynamicPressure)
+        Vector3 localAngVel, float dynamicPressure, Vector3 bodyTorque)
     {
         if (_components.Count == 0) return;
 
@@ -385,6 +366,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         if (shouldLog)
         {
+            // Log gyro capability
+            float gyroMaxTorque = PhysicsHack.TryGetGyroMaxTorque(Data);
+            if (gyroMaxTorque > 0)
+                Log.Default?.Info($"[AERO-CS] STEP2 gyro MaxTorque={gyroMaxTorque:F0} N·m");
+
             Log.Default?.Info($"[AERO-CS] STEP2 hasTargetControlData={hasTargetData} hasAngularControlData={hasAngularData}");
 
             if (hasTargetData)
@@ -406,10 +392,67 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ══════════════════════════════════════════════════════════════════════
         if (hasTargetData)
         {
-            // DISABLED — reticle targeting bypassed, fall through to keyboard
+            inputMode = "RETICLE";
+
+            // ── OUTER LOOP: Attitude → Desired angular rate ──
+            // Orientation error in local frame (same as GridGyroscopesComponent.ComputeTorqueTarget)
+            Quaternion errorQuat = Quaternion.Inverse(gridOrientation) * targetData.TargetOrientation;
+            Vector3 eulerError = -errorQuat.ConvertToEuler(); // radians, local frame
+
+            // Desired angular rate proportional to attitude error, clamped.
+            //
+            // Axis mapping: keyboard/euler convention is (Pitch, Yaw, Roll) = (X, Y, Z)
+            // but the effectiveness space is (Roll, Yaw, Pitch) = (X, Y, Z).
+            // Ailerons are differential on X, elevators collective on Z, rudder on Y.
+            //
+            // So: euler.X (pitch error) → desiredRate.Z (elevator axis)
+            //     euler.Y (yaw error)   → desiredRate.Y (rudder axis)
+            //     keyboard roll (TAV.Z) → desiredRate.X (aileron axis)
+            const float Kouter = 3.0f;    // rad/s per rad of error
+            const float maxRate = 1.5f;    // max desired angular rate (rad/s)
+
+            // Roll: direct rate command from AngularControlData (keyboard Q/E)
+            // Maps to X axis where ailerons respond differentially
+            float rollDesired = 0f;
+            if (hasAngularData)
+            {
+                float rollInput = MathF.Max(-1f, MathF.Min(1f, angularData.TargetAngularVelocity.Z));
+                rollDesired = rollInput * maxRate;
+            }
+
+            Vector3 desiredRate = new Vector3(
+                rollDesired,                                                      // X = roll (ailerons)
+                MathF.Max(-maxRate, MathF.Min(maxRate, eulerError.Y * Kouter)),   // Y = yaw (rudder)
+                MathF.Max(-maxRate, MathF.Min(maxRate, eulerError.X * Kouter)));  // Z = pitch (elevators)
+
+            desiredRate.Y *= targetData.PerAxisDampeningMultiplier.Y;
+
+            // ── INNER LOOP: Rate error → deflection command ──
+            // P controller on angular rate error
+            Vector3 rateError = desiredRate - localAngVel;
+
+            const float Kp_rate = 10.0f;  // proportional on rate error (high to catch instabilities early)
+
+            // targetAngVel here is the deflection command signal (not a velocity)
+            // It will be projected onto each surface's effectiveness axis in STEP 5
+            targetAngVel = rateError * Kp_rate;
+
+            // ── FEEDFORWARD: counter body aero torque ──
+            // bodyTorque is in local frame from the body aero model (drag, lift on hull).
+            // Negate it so surfaces preemptively oppose destabilizing moments.
+            // Applied AFTER geometric normalization in STEP 4b, so we add it there instead.
+            // (stored for use in STEP 4b)
+
+            if (shouldLog)
+            {
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE eulerError=({eulerError.X:F5},{eulerError.Y:F5},{eulerError.Z:F5}) rad");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE desiredRate=({desiredRate.X:F5},{desiredRate.Y:F5},{desiredRate.Z:F5})");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE localAngVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE rateError=({rateError.X:F5},{rateError.Y:F5},{rateError.Z:F5})");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE bodyTorque=({bodyTorque.X:F1},{bodyTorque.Y:F1},{bodyTorque.Z:F1})");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE command=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
+            }
         }
-        if (false) // placeholder to keep else-if chain valid
-        {
         else if (hasAngularData)
         {
             inputMode = "KEYBOARD";
@@ -447,6 +490,66 @@ public partial class AeroGridComponent : Component, IInSceneListener
             Log.Default?.Info($"[AERO-CS] STEP4 flowDir=({flowDir.X:F4},{flowDir.Y:F4},{flowDir.Z:F4})");
             Log.Default?.Info($"[AERO-CS] STEP4 dynPressure={dynamicPressure:F1} QRef={QRef:F0} gainScale={gainScale:F5}");
             Log.Default?.Info($"[AERO-CS] STEP4 CoM=({centerOfMass.X:F3},{centerOfMass.Y:F3},{centerOfMass.Z:F3}) blockSize={_blockSize} components={_components.Count}");
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // STEP 4b: Compute geometric authority per axis (for auto-scaling)
+        // ══════════════════════════════════════════════════════════════════════
+        // Sum |dot(effNorm, axis)| for each surface on each axis.
+        // This counts how many surfaces contribute to each axis, weighted by alignment.
+        // No area/q — those affect force magnitude but the controller just sets deflection [-1,1].
+        // Result: command=1 → all surfaces deflect to ~1 on that axis.
+        Vector3 totalAuthority = Vector3.Zero;     // geometric (for normalizing inner loop)
+        Vector3 torqueAuthority = Vector3.Zero;   // physical (N·m per unit deflection, for feedforward)
+        for (int i = 0; i < _components.Components.Count; i++)
+        {
+            if (_components.Components[i] is ControlSurface csAuth)
+            {
+                Vector3 r = csAuth.Position - centerOfMass;
+                Vector3 ld = Vector3.Cross(csAuth.HingeAxis, csAuth.ChordDirection);
+                Vector3 eff = Vector3.Cross(ld, r);
+                float el = eff.Length();
+                if (el < 0.01f) continue;
+                Vector3 en = eff / el;
+                totalAuthority += new Vector3(
+                    MathF.Abs(en.X),
+                    MathF.Abs(en.Y),
+                    MathF.Abs(en.Z));
+                // Torque authority: how much torque (N·m) full deflection produces per axis
+                // ≈ effLen * area * q * clAlpha_estimate * maxDeflection_rad
+                float torquePerDefl = el * csAuth.Area * dynamicPressure * 6.0f * (10f * MathF.PI / 180f);
+                torqueAuthority += new Vector3(
+                    MathF.Abs(en.X) * torquePerDefl,
+                    MathF.Abs(en.Y) * torquePerDefl,
+                    MathF.Abs(en.Z) * torquePerDefl);
+            }
+        }
+
+        // Normalize reticle command by geometric authority
+        // After this, command=1 means "full deflection on this axis"
+        if (inputMode == "RETICLE")
+        {
+            targetAngVel = new Vector3(
+                totalAuthority.X > 0.01f ? targetAngVel.X / totalAuthority.X : targetAngVel.X,
+                totalAuthority.Y > 0.01f ? targetAngVel.Y / totalAuthority.Y : targetAngVel.Y,
+                totalAuthority.Z > 0.01f ? targetAngVel.Z / totalAuthority.Z : targetAngVel.Z);
+
+            // Feedforward: oppose body aero torque, scaled by surface torque authority
+            // Result is in deflection units: bodyTorque / torqueAuthority = fraction of max deflection needed
+            const float Kff = 1.0f;  // 0-1: how much of the body torque to counter (1 = full cancel)
+            Vector3 ffTrim = new Vector3(
+                torqueAuthority.X > 1f ? -bodyTorque.X / torqueAuthority.X * Kff : 0f,
+                torqueAuthority.Y > 1f ? -bodyTorque.Y / torqueAuthority.Y * Kff : 0f,
+                torqueAuthority.Z > 1f ? -bodyTorque.Z / torqueAuthority.Z * Kff : 0f);
+            targetAngVel += ffTrim;
+
+            if (shouldLog)
+            {
+                Log.Default?.Info($"[AERO-CS] STEP4b geoAuthority=({totalAuthority.X:F3},{totalAuthority.Y:F3},{totalAuthority.Z:F3})");
+                Log.Default?.Info($"[AERO-CS] STEP4b torqueAuth=({torqueAuthority.X:F0},{torqueAuthority.Y:F0},{torqueAuthority.Z:F0})");
+                Log.Default?.Info($"[AERO-CS] STEP4b ffTrim=({ffTrim.X:F5},{ffTrim.Y:F5},{ffTrim.Z:F5})");
+                Log.Default?.Info($"[AERO-CS] STEP4b finalCmd=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -491,19 +594,29 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 // 5d. Normalize effectiveness to unit vector
                 Vector3 effNorm = effectiveness / effLen;
 
-                // 5e. PD controller on grid orientation (direct feedback, no lag)
-                const float Kp = 1.0f;
-                const float Kd = 1.5f;
+                // 5e. Control law — mode-dependent
+                float scaledInput;
+                float command;
+                float damping;
 
-                // 5e-i. Command: project target angular velocity onto effectiveness axis
-                float command = Vector3.Dot(effNorm, targetAngVel) * Kp;
-
-                // 5e-ii. Damping: project actual angular velocity onto effectiveness axis
-                float damping = Vector3.Dot(effNorm, localAngVel) * Kd;
-
-                // 5e-iii. Final input — gainScale only on command (proportional) term,
-                //         damping stays at full strength regardless of speed
-                float scaledInput = command * gainScale - damping;
+                if (inputMode == "RETICLE")
+                {
+                    // Reticle mode: cascaded controller already computed the
+                    // deflection command in STEP 3 (inner PI loop on rate error).
+                    // Just project onto this surface's effectiveness axis.
+                    command = Vector3.Dot(effNorm, targetAngVel);
+                    damping = 0f;
+                    scaledInput = command;
+                }
+                else
+                {
+                    // Keyboard mode: PD controller with speed-dependent gain
+                    const float Kp = 1.0f;
+                    const float Kd = 1.5f;
+                    command = Vector3.Dot(effNorm, targetAngVel) * Kp;
+                    damping = Vector3.Dot(effNorm, localAngVel) * Kd;
+                    scaledInput = command * gainScale - damping;
+                }
                 float clampedInput = MathF.Max(-1f, MathF.Min(1f, scaledInput));
                 cs.DeflectionInput = clampedInput;
 
@@ -541,8 +654,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
                     Log.Default?.Info($"[AERO-CS] CS#{i} ARM CoM=({centerOfMass.X:F3},{centerOfMass.Y:F3},{centerOfMass.Z:F3}) r=({r.X:F3},{r.Y:F3},{r.Z:F3}) |r|={r.Length():F3}");
                     Log.Default?.Info($"[AERO-CS] CS#{i} EFF liftDir=({liftDir.X:F3},{liftDir.Y:F3},{liftDir.Z:F3}) eff_raw=cross(liftDir,r)=({torqueFromLift.X:F5},{torqueFromLift.Y:F5},{torqueFromLift.Z:F5}) |eff|={effLen:F5}");
                     Log.Default?.Info($"[AERO-CS] CS#{i} EFF effNorm=({effNorm.X:F5},{effNorm.Y:F5},{effNorm.Z:F5})");
-                    Log.Default?.Info($"[AERO-CS] CS#{i} PD dot(eff,target)={dotEffTarget:F5}*Kp={Kp}->cmd={command:F5} dot(eff,angVel)={dotEffAngVel:F5}*Kd={Kd}->damp={damping:F5}");
-                    Log.Default?.Info($"[AERO-CS] CS#{i} PD cmd*gScale={command * gainScale:F5}-damp={damping:F5}->scaled={scaledInput:F5}->clamped={clampedInput:F5}");
+                    Log.Default?.Info($"[AERO-CS] CS#{i} PD dot(eff,target)={dotEffTarget:F5} cmd={command:F5} dot(eff,angVel)={dotEffAngVel:F5} damp={damping:F5} mode={inputMode}");
+                    Log.Default?.Info($"[AERO-CS] CS#{i} PD scaled={scaledInput:F5}->clamped={clampedInput:F5}");
                     Log.Default?.Info($"[AERO-CS] CS#{i} DEFL input={cs.DeflectionInput:F5} deg={cs.DeflectionInput * cs.MaxDeflection:F2} maxDefl={cs.MaxDeflection:F1} deflRad={deflRad:F5}");
                     Log.Default?.Info($"[AERO-CS] CS#{i} DEFL deflChord=({deflChord.X:F5},{deflChord.Y:F5},{deflChord.Z:F5}) surfNorm=({deflSurfNormal.X:F5},{deflSurfNormal.Y:F5},{deflSurfNormal.Z:F5})");
                     Log.Default?.Info($"[AERO-CS] CS#{i} FLOW vel=({_lastVelocityLocal.X:F2},{_lastVelocityLocal.Y:F2},{_lastVelocityLocal.Z:F2}) spd={localSpeed:F1} flowDir=({localFlowDir.X:F4},{localFlowDir.Y:F4},{localFlowDir.Z:F4})");
@@ -556,6 +669,74 @@ public partial class AeroGridComponent : Component, IInSceneListener
         {
             Log.Default?.Info($"[AERO-CS] ═══ FULL TRACE END ═══");
         }
+    }
+
+    // ── Scheduler callbacks (called by AeroScheduler) ──
+
+    /// <summary>
+    /// Called by the scheduler when this grid's turn arrives.
+    /// Starts (or restarts) the staggered surface build on the back buffer.
+    /// </summary>
+    internal void BeginStaggeredBuild()
+    {
+        if (_staggeredBuildActive)
+        {
+            // Restart: topology changed mid-build
+            _buildSurface.AbortBuild();
+        }
+
+        _gridAccessor.SetOctree(_octree);
+        _blockSize = DetectBlockSize();
+        _buildSurface.BeginBuild(_gridAccessor, _blockSize);
+        _staggeredBuildActive = true;
+        _rebuildRestartNeeded = false;
+        _fullRebuildNeeded = false;
+        _pendingAddedCells.Clear();
+        _pendingRemovedCells.Clear();
+    }
+
+    /// <summary>
+    /// Called by the scheduler each tick with this grid's share of the global cell budget.
+    /// Returns true when the build is complete.
+    /// </summary>
+    internal bool TickStaggeredBuild(int cellBudget)
+    {
+        if (!_staggeredBuildActive) return true;
+
+        // If topology changed mid-build, restart
+        if (_rebuildRestartNeeded)
+        {
+            _buildSurface.AbortBuild();
+            _gridAccessor.SetOctree(_octree);
+            _blockSize = DetectBlockSize();
+            _buildSurface.BeginBuild(_gridAccessor, _blockSize);
+            _rebuildRestartNeeded = false;
+            _pendingAddedCells.Clear();
+            _pendingRemovedCells.Clear();
+        }
+
+        return _buildSurface.AddCellBatch(cellBudget);
+    }
+
+    /// <summary>
+    /// Called by the scheduler when TickStaggeredBuild returns true.
+    /// Swaps buffers and runs wing detection.
+    /// </summary>
+    internal void FinalizeStaggeredBuild()
+    {
+        _buildSurface.FinalizeBuild();
+
+        // Swap: buildSurface becomes active, old active becomes next build buffer
+        (_surface, _buildSurface) = (_buildSurface, _surface);
+        _staggeredBuildActive = false;
+
+        _model.InvalidateWings();
+        _model.DetectWings(_gridAccessor, _surface, _blockSize);
+
+        // Rebuild all block-level aero components from scratch
+        _components.Clear();
+        _factory.CreateAll(_octree, _blockSize, _components);
+        _faceOverridesDirty = true;
     }
 
     private float DetectBlockSize()

@@ -100,7 +100,7 @@ public partial class AeroGridComponent
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
             float dt = 1f / 60f;
             Vector3 deltaV = worldForce * (dt / mass);
-            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, aero.LastResult.Torque, dt);
+            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, aero.LastResult.Torque, dt, wt.Orientation);
         }
     }
 
@@ -146,34 +146,38 @@ public partial class AeroGridComponent
             }
         }
 
-        // ── Center of Pressure ──
-        // CoP = CoM + (Torque × Force) / |Force|²  (local space)
+        // ── Center of Pressure (smoothed) ──
+        // CoP = CoM + (Force × Torque) / |Force|²  (local space)
+        // Derivation: T = r × F → r_perp = (F × T) / |F|²
         float forceSq = r.Force.LengthSquared();
         if (forceSq > 1f)
         {
-            Vector3 copOffset = Vector3.Cross(r.Torque, r.Force) / forceSq;
-            Vector3D copWorld = WorldTransform.Transform((Vector3D)(com + copOffset), in wt);
+            Vector3 copOffset = Vector3.Cross(r.Force, r.Torque) / forceSq;
+            Vector3 copLocal = com + copOffset;
 
-            // CoP marker — magenta sphere-like cross
-            float markerSize = 0.3f;
-            dd.AddLine(copWorld - (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitX, wt) * markerSize),
-                       copWorld + (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitX, wt) * markerSize),
-                       ColorSRGB.Magenta, 3f);
-            dd.AddLine(copWorld - (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitY, wt) * markerSize),
-                       copWorld + (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitY, wt) * markerSize),
-                       ColorSRGB.Magenta, 3f);
-            dd.AddLine(copWorld - (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitZ, wt) * markerSize),
-                       copWorld + (Vector3D)(WorldTransform.TransformDirection(Vector3.UnitZ, wt) * markerSize),
-                       ColorSRGB.Magenta, 3f);
+            // Lerp in local space for smooth motion
+            const float LerpRate = 0.1f;
+            if (!aero._copInitialized)
+            {
+                aero._smoothedCopLocal = copLocal;
+                aero._copInitialized = true;
+            }
+            else
+            {
+                aero._smoothedCopLocal = Vector3.Lerp(aero._smoothedCopLocal, copLocal, LerpRate);
+            }
 
-            // Line from CoM to CoP
-            dd.AddLine(comWorld, copWorld, ColorSRGB.Magenta, 1.5f);
+            Vector3D copWorld = WorldTransform.Transform((Vector3D)aero._smoothedCopLocal, in wt);
+
+            // CoP marker — solid sphere, always on top
+            dd.AddSphere(new WorldTransform(copWorld), 0.35, cFill: ColorSRGB.Magenta, depth: false);
 
             dd.AddText(copWorld, "CoP", ColorSRGB.Magenta, 0.3f);
         }
 
-        // CoM marker
-        dd.AddText(comWorld, "CoM", ColorSRGB.White, 0.3f);
+        // CoM marker — solid sphere, always on top
+        dd.AddSphere(new WorldTransform(comWorld), 0.4, cFill: ColorSRGB.Yellow, depth: false);
+        dd.AddText(comWorld, "CoM", ColorSRGB.Yellow, 0.3f);
     }
 
     /// <summary>
@@ -312,7 +316,7 @@ public partial class AeroGridComponent
 
             // Engine convention: quad internal normal must point inward (away from viewer).
             // Swapping p1↔p3 reverses winding so the visible side faces outward.
-            dd.AddQuadClockWise(p0, p3, p2, p1, color, false);
+            dd.AddQuadClockWise(p0, p3, p2, p1, color, true);
         }
     }
 
@@ -488,4 +492,6 @@ public partial class AeroGridComponent
     private Vector3 _lastComLocal;
     internal Vector3 _lastGridAngVel;
     private float _lastDensity;
+    private Vector3 _smoothedCopLocal = Vector3.Zero;
+    private bool _copInitialized;
 }

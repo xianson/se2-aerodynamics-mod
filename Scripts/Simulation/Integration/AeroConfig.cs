@@ -20,4 +20,10 @@ public static class AeroConfig
 
     /// <summary>Small grid block size in meters (2×2×2 cells at 0.25m each).</summary>
     public const float SmallBlockSize = 0.5f;
+
+    /// <summary>Total cell budget per tick shared across all grids doing staggered rebuilds.</summary>
+    public const int GlobalCellBudget = 8000;
+
+    /// <summary>Max grids allowed to run staggered rebuilds concurrently.</summary>
+    public const int MaxConcurrentRebuilds = 2;
 }

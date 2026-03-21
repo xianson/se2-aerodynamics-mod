@@ -42,6 +42,10 @@ public static class PhysicsHack
     private static FieldInfo _gravityMultField;
     private static bool _gravityFixed;
 
+    // Gyro max torque
+    private static MethodInfo _tryGetMaxTorqueMethod;
+    private static FieldInfo _maxTorqueField;
+
     // Pre-allocated args list to avoid creating object[] (banned by VRS1001)
     private static System.Array _invokeArgs;
 
@@ -218,12 +222,50 @@ public static class PhysicsHack
                 }
             }
             catch { }
+
+            // Resolve MaxTorqueData for gyro torque logging
+            try
+            {
+                var maxTorqueType = Type.GetType(
+                    "Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxTorqueData, Game2.Simulation",
+                    throwOnError: false);
+                if (maxTorqueType != null)
+                {
+                    _maxTorqueField = maxTorqueType.GetField("MaxTorque",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (tryGetGeneric != null)
+                        _tryGetMaxTorqueMethod = tryGetGeneric.MakeGenericMethod(maxTorqueType);
+                    if (_maxTorqueField != null)
+                        Log.Default?.Info("[AERO] PhysicsHack: MaxTorqueData field found");
+                }
+            }
+            catch { }
         }
         catch (Exception ex)
         {
             Log.Default?.Info($"[AERO] PhysicsHack: init failed: {ex.Message}");
             _available = false;
         }
+    }
+
+    /// <summary>
+    /// Read gyro MaxTorque from an entity's MaxTorqueData.
+    /// </summary>
+    public static float TryGetGyroMaxTorque(DEntityContext data)
+    {
+        if (!Available || _tryGetMaxTorqueMethod == null || _maxTorqueField == null)
+            return -1f;
+        try
+        {
+            _invokeArgs.SetValue(null, 0);
+            object boxedContext = data;
+            bool found = (bool)_tryGetMaxTorqueMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            if (found && _invokeArgs.GetValue(0) != null)
+                return (float)_maxTorqueField.GetValue(_invokeArgs.GetValue(0));
+        }
+        catch { }
+        return -1f;
     }
 
     /// <summary>
@@ -481,9 +523,10 @@ public static class PhysicsHack
 
     /// <summary>
     /// Apply both linear and angular velocity deltas in one read-modify-write.
-    /// torqueLocal is in grid-local space; converted to angular deltaV via inertia tensor.
+    /// torqueLocal is in grid-local space; converted to angular deltaV via inertia tensor,
+    /// then transformed to world space before applying (AngularVelocity is world-space).
     /// </summary>
-    public static bool ApplyDeltaVAndTorque(DEntityContext data, Vector3 deltaV, Vector3 torqueLocal, float dt = 1f / 60f)
+    public static bool ApplyDeltaVAndTorque(DEntityContext data, Vector3 deltaV, Vector3 torqueLocal, float dt = 1f / 60f, Quaternion? gridOrientation = null)
     {
         if (!Available)
             return false;
@@ -540,6 +583,13 @@ public static class PhysicsHack
                     {
                         Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
                         deltaOmega = Vector3.Transform(deltaOmega, majorAxisRot);
+                    }
+
+                    // Transform deltaOmega from local to world space
+                    // (RigidBodyData.AngularVelocity is stored in world space)
+                    if (gridOrientation.HasValue)
+                    {
+                        deltaOmega = Vector3.Transform(deltaOmega, gridOrientation.Value);
                     }
 
                     // Re-get RigidBodyData (we clobbered _invokeArgs with mass query)
