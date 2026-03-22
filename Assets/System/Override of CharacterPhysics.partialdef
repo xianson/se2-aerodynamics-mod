@@ -1,0 +1,17 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "80400e4a-57d6-4478-9b46-8a6fe652f5c9",
+    "PartialDefinitionKind": "Override",
+    "Manipulator": {
+      "MaxVelocity": 1000
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.Characters.CharacterPhysicsEntityComponentDefinition",
+    "PriorityOverride": false
+  }
+}

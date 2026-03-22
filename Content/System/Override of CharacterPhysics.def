@@ -1,0 +1,11 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.Characters.CharacterPhysicsEntityComponentDefinitionObjectBuilder",
+  "$Value": {
+    "MaxVelocity": 1000
+  }
+}

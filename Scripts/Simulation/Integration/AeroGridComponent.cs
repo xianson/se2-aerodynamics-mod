@@ -51,6 +51,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // ── Cascaded flight controller state ──
     private Vector3 _rateIntegral = Vector3.Zero;  // inner loop integrator (per-axis)
 
+    // ── SAS (hidden stability augmentation) ──
+    // Direct torque applied to physics, independent of aero surfaces.
+    internal Vector3 SasTorque;  // local frame, computed per frame
+
+    // ── Diagnostic calibration ──
+    internal int _diagPhase = 0;       // 0=not started, 1=torqueX, 2=brakeX, 3=torqueY, 4=brakeY, 5=torqueZ, 6=brakeZ, 7=done, 8+=done
+    private int _diagFrames = 0;
+    private Vector3 _diagStartAngVel;
+
     // ── Accumulated changes for incremental wing update ──
     private List<Vector3I> _wingAddedCells = new();
     private List<Vector3I> _wingRemovedCells = new();
@@ -306,6 +315,188 @@ public partial class AeroGridComponent : Component, IInSceneListener
         HasResult = true;
     }
 
+    // ── Self-test (math-only, no physics) ──
+
+    private bool _selfTestDone;
+
+    private void RunSelfTest(WorldTransform wt, Vector3 localAngVel)
+    {
+        if (_selfTestDone) return;
+        _selfTestDone = true;
+
+        Log.Default?.Info("[AERO-TEST] ═══ MATH SELF-TEST ═══");
+        int passed = 0, failed = 0;
+
+        Quaternion q = wt.Orientation;
+
+        // Test 1: Round-trip transform (local → world → local = identity)
+        Vector3 toWorld = Vector3.Transform(localAngVel, q);
+        Vector3 backToLocal = Vector3.Transform(toWorld, Quaternion.Inverse(q));
+        float roundTripError = (backToLocal - localAngVel).Length();
+        LogTest(ref passed, ref failed, 1, "Round-trip transform",
+            roundTripError < 1e-4f, $"error={roundTripError:E3}");
+
+        // Test 2: Damping sign — negation in local opposes world velocity
+        Vector3 worldAngVel = Vector3.Transform(localAngVel, q);
+        Vector3 dampLocal = -localAngVel;
+        Vector3 dampWorld = Vector3.Transform(dampLocal, q);
+        float dotProduct = Vector3.Dot(dampWorld, worldAngVel);
+        LogTest(ref passed, ref failed, 2, "Damping opposes velocity",
+            dotProduct <= 0.001f || worldAngVel.LengthSquared() < 1e-10f,
+            $"dot={dotProduct:F6} (should be ≤0)");
+
+        // Tests 3-5: Per-axis damping maps correctly
+        for (int axis = 0; axis < 3; axis++)
+        {
+            Vector3 testLocal = Vector3.Zero;
+            if (axis == 0) testLocal.X = 1f;
+            else if (axis == 1) testLocal.Y = 1f;
+            else testLocal.Z = 1f;
+
+            Vector3 dampedWorld = Vector3.Transform(-testLocal, q);
+            Vector3 originalWorld = Vector3.Transform(testLocal, q);
+            float axisDot = Vector3.Dot(dampedWorld, originalWorld);
+            string axisName = axis == 0 ? "X" : (axis == 1 ? "Y" : "Z");
+            LogTest(ref passed, ref failed, 3 + axis, $"Damping axis {axisName}",
+                axisDot < -0.99f, $"dot={axisDot:F6} (should be -1.0)");
+        }
+
+        // Test 6: Euler error direction (informational)
+        Vector3 testEuler = new Vector3(0.1f, 0f, 0f);
+        Vector3 attWorld = Vector3.Transform(testEuler, q);
+        Log.Default?.Info($"[AERO-TEST] Test 6: Euler +X(0.1) → worldTorque=({attWorld.X:F5},{attWorld.Y:F5},{attWorld.Z:F5})");
+
+        // Test 7: PhysicsHack available
+        bool physOk = PhysicsHack.Available;
+        LogTest(ref passed, ref failed, 7, "PhysicsHack available", physOk, "");
+
+        // Test 8: Grid orientation is unit quaternion
+        float qLen = MathF.Sqrt(q.X * q.X + q.Y * q.Y + q.Z * q.Z + q.W * q.W);
+        LogTest(ref passed, ref failed, 8, "Orientation is unit quaternion",
+            MathF.Abs(qLen - 1f) < 0.01f, $"|q|={qLen:F6}");
+
+        Log.Default?.Info($"[AERO-TEST] ═══ RESULTS: {passed}/{passed + failed} PASSED ═══");
+    }
+
+    private void LogTest(ref int passed, ref int failed, int num, string name, bool pass, string detail)
+    {
+        if (pass) { passed++; Log.Default?.Info($"[AERO-TEST] Test {num}: {name} — PASS ✓ {detail}"); }
+        else { failed++; Log.Default?.Info($"[AERO-TEST] Test {num}: {name} — FAIL ✗ {detail}"); }
+    }
+
+    // ── Diagnostic calibration ──
+
+    private Vector3 ComputeDiagSasTorque(Vector3 localAngVel, Vector3 eulerError, Vector3 targetAngVel)
+    {
+        // Direct angular velocity delta per frame (rad/s added each frame)
+        // 0.01 rad/s per frame × 60 frames = 0.6 rad/s expected after 1 second
+        const float testDelta = 0.01f;
+        const int testDuration = 60;   // 1 second
+        const int brakeDuration = 60;  // 1 second braking
+        const float brakeGain = 0.5f;  // fraction of angVel to remove per frame
+
+        // Phase 0: stabilize first — brake to near-zero before starting tests
+        if (_diagPhase == 0)
+        {
+            _diagFrames++;
+            if (_diagFrames == 1)
+                Log.Default?.Info("[AERO-DIAG] ═══ STABILIZING (braking to zero)... ═══");
+            if (_diagFrames % 60 == 0)
+                Log.Default?.Info($"[AERO-DIAG]   stabilizing... angVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5}) |v|={localAngVel.Length():F5}");
+
+            if (localAngVel.LengthSquared() < 0.0001f && _diagFrames > 60)
+            {
+                _diagPhase = 1;
+                _diagFrames = 0;
+                _diagStartAngVel = localAngVel;
+                Log.Default?.Info("[AERO-DIAG] ═══ STARTING DIRECT ANGVEL CALIBRATION ═══");
+                Log.Default?.Info($"[AERO-DIAG] testDelta={testDelta} rad/s per frame, expected after {testDuration} frames: {testDelta * testDuration:F3} rad/s");
+                Log.Default?.Info($"[AERO-DIAG] Baseline angVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
+            }
+            return -localAngVel * brakeGain; // brake to zero
+        }
+
+        _diagFrames++;
+
+        // Phases 1,3,5 = apply torque on X,Y,Z
+        // Phases 2,4,6 = brake
+        // Phase 7 = done, hold still
+        int torqueAxis = (_diagPhase - 1) / 2; // 0=X, 1=Y, 2=Z
+        bool isTorquePhase = _diagPhase % 2 == 1 && _diagPhase <= 6;
+        bool isBrakePhase = _diagPhase % 2 == 0 && _diagPhase <= 6;
+
+        if (isTorquePhase)
+        {
+            if (_diagFrames == 1)
+            {
+                _diagStartAngVel = localAngVel;
+                string axisName = torqueAxis == 0 ? "X" : (torqueAxis == 1 ? "Y" : "Z");
+                Log.Default?.Info($"[AERO-DIAG] --- Test: +{axisName} delta ({testDelta} rad/s per frame for {testDuration} frames) ---");
+            }
+
+            if (_diagFrames <= testDuration)
+            {
+                Vector3 delta = Vector3.Zero;
+                if (torqueAxis == 0) delta.X = testDelta;
+                else if (torqueAxis == 1) delta.Y = testDelta;
+                else delta.Z = testDelta;
+
+                if (_diagFrames % 15 == 0)
+                    Log.Default?.Info($"[AERO-DIAG]   frame {_diagFrames} angVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
+
+                return delta;
+            }
+            else
+            {
+                // Test complete
+                Vector3 delta = localAngVel - _diagStartAngVel;
+                string axisName = torqueAxis == 0 ? "X" : (torqueAxis == 1 ? "Y" : "Z");
+                Log.Default?.Info($"[AERO-DIAG] ═══ RESULT: Torque +{axisName} ═══");
+                Log.Default?.Info($"[AERO-DIAG]   startAngVel=({_diagStartAngVel.X:F5},{_diagStartAngVel.Y:F5},{_diagStartAngVel.Z:F5})");
+                Log.Default?.Info($"[AERO-DIAG]   endAngVel  =({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
+                Log.Default?.Info($"[AERO-DIAG]   deltaAngVel=({delta.X:F5},{delta.Y:F5},{delta.Z:F5})");
+
+                float absX = MathF.Abs(delta.X), absY = MathF.Abs(delta.Y), absZ = MathF.Abs(delta.Z);
+                string physical = "UNKNOWN";
+                if (absX > absY && absX > absZ) physical = delta.X > 0 ? "+X (positive)" : "-X (negative)";
+                else if (absY > absZ) physical = delta.Y > 0 ? "+Y (positive)" : "-Y (negative)";
+                else physical = delta.Z > 0 ? "+Z (positive)" : "-Z (negative)";
+                Log.Default?.Info($"[AERO-DIAG]   Torque +{axisName} → angVel dominant axis: {physical}");
+
+                _diagPhase++;
+                _diagFrames = 0;
+                return -localAngVel * brakeGain; // brake // brake: remove fraction of velocity
+            }
+        }
+
+        if (isBrakePhase)
+        {
+            if (_diagFrames >= brakeDuration && localAngVel.LengthSquared() < 0.001f)
+            {
+                _diagPhase++;
+                _diagFrames = 0;
+            }
+            return -localAngVel * brakeGain; // brake
+        }
+
+        // Phase 7+: calibration done
+        if (_diagPhase == 7)
+        {
+            Log.Default?.Info("[AERO-DIAG] ═══ CALIBRATION COMPLETE ═══");
+            Log.Default?.Info("[AERO-DIAG] Check [AERO-DIAG] RESULT lines above for axis mapping.");
+            Log.Default?.Info("[AERO-DIAG] Now holding still (damping only). Press controls to test TAV mapping.");
+            _diagPhase = 8;
+        }
+
+        // Post-calibration: damp + log TAV when user presses controls
+        if (targetAngVel.LengthSquared() > 0.001f)
+            Log.Default?.Info($"[AERO-DIAG] TAV=({targetAngVel.X:F3},{targetAngVel.Y:F3},{targetAngVel.Z:F3})");
+        if (eulerError.LengthSquared() > 0.0001f)
+            Log.Default?.Info($"[AERO-DIAG] eulerError=({eulerError.X:F5},{eulerError.Y:F5},{eulerError.Z:F5})");
+
+        return -localAngVel * brakeGain; // brake // hold still
+    }
+
     // ── Helpers ──
 
     /// <summary>
@@ -319,6 +510,27 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private void UpdateControlSurfaceInputs(Vector3 centerOfMass, WorldTransform wt,
         Vector3 localAngVel, float dynamicPressure, Vector3 bodyTorque)
     {
+        // ══════════════════════════════════════════════════════════════════════
+        // SAS: runs regardless of control surface count (Bug 1 fix)
+        // ══════════════════════════════════════════════════════════════════════
+        SasTorque = Vector3.Zero;
+
+        bool hasTargetDataEarly = Data.TryGet<TargetControlData>(out var targetDataEarly);
+        bool hasAngularDataEarly = Data.TryGet<AngularControlData>(out var angularDataEarly);
+        if (hasTargetDataEarly)
+        {
+            // Run self-test on first frame
+            RunSelfTest(wt, localAngVel);
+
+            // Compute orientation error
+            Quaternion errorQuat = Quaternion.Inverse(wt.Orientation) * targetDataEarly.TargetOrientation;
+            Vector3 eulerErr = -errorQuat.ConvertToEuler();
+
+            // Run diagnostic calibration (applies direct angVel deltas, no real torque)
+            SasTorque = ComputeDiagSasTorque(localAngVel, eulerErr,
+                hasAngularDataEarly ? angularDataEarly.TargetAngularVelocity : Vector3.Zero);
+        }
+
         if (_components.Count == 0) return;
 
         // ══════════════════════════════════════════════════════════════════════
@@ -443,6 +655,33 @@ public partial class AeroGridComponent : Component, IInSceneListener
             // Applied AFTER geometric normalization in STEP 4b, so we add it there instead.
             // (stored for use in STEP 4b)
 
+            // ── SAS: PD orientation tracker (verified pipeline) ──
+            // Local frame torque — transformed to world by ApplyDeltaVAndTorque.
+            // Pipeline confirmed: +local torque → +local angular acceleration.
+            const float SasDamping = 2000000f;   // N·m per rad/s — oppose rotation
+            const float SasAttitude = 1000000f;   // N·m per rad — track reticle
+            const float SasMaxTorque = 10000000f; // clamp per axis
+
+            // Damping: oppose angular velocity (all axes)
+            Vector3 sasDamp = -localAngVel * SasDamping;
+
+            // Attitude hold: track reticle orientation (euler error is local frame)
+            // Clamp euler error to avoid gimbal lock instability at ±180°
+            const float maxEulerCmd = 0.5f; // max ~29° of error drives attitude
+            Vector3 clampedEuler = new Vector3(
+                MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.X)),
+                MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.Y)),
+                MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.Z)));
+            Vector3 sasAtt = clampedEuler * SasAttitude;
+
+            SasTorque = sasDamp + sasAtt;
+
+            // Clamp
+            SasTorque = new Vector3(
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.X)),
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Y)),
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Z)));
+
             if (shouldLog)
             {
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE eulerError=({eulerError.X:F5},{eulerError.Y:F5},{eulerError.Z:F5}) rad");
@@ -450,6 +689,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE localAngVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE rateError=({rateError.X:F5},{rateError.Y:F5},{rateError.Z:F5})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE bodyTorque=({bodyTorque.X:F1},{bodyTorque.Y:F1},{bodyTorque.Z:F1})");
+                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE SAS=({SasTorque.X:F0},{SasTorque.Y:F0},{SasTorque.Z:F0})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE command=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
             }
         }
@@ -463,11 +703,17 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 MathF.Max(-1f, MathF.Min(1f, raw.Y)),
                 MathF.Max(-1f, MathF.Min(1f, raw.Z)));
 
+            SasTorque = Vector3.Zero; // no SAS in keyboard mode
+
             if (shouldLog)
             {
                 Log.Default?.Info($"[AERO-CS] STEP3 KEYBOARD raw=({raw.X:F5},{raw.Y:F5},{raw.Z:F5})");
                 Log.Default?.Info($"[AERO-CS] STEP3 targetAngVel_clamped=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
             }
+        }
+        else
+        {
+            SasTorque = Vector3.Zero;
         }
 
         _lastGridAngVel = targetAngVel;

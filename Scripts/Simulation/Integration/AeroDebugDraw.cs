@@ -100,7 +100,10 @@ public partial class AeroGridComponent
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
             float dt = 1f / 60f;
             Vector3 deltaV = worldForce * (dt / mass);
-            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, aero.LastResult.Torque, dt, wt.Orientation);
+
+            // Merge SAS torque with aero torque (both in local frame)
+            Vector3 totalTorque = aero.LastResult.Torque + aero.SasTorque;
+            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
         }
     }
 
