@@ -114,10 +114,15 @@ public static class OffsetThrustJob
             // Throttled diagnostic: log first active thrust detection
             if (_executeLogCooldown == 0)
             {
-                Log.Default?.Info($"[AERO] OffsetThrust active: thruster[{i}] vanillaThrust={vanillaThrust:F0}N " +
-                    $"override={overridePower:F2} dir=({thruster.ThrustDirection.X:F1},{thruster.ThrustDirection.Y:F1},{thruster.ThrustDirection.Z:F1}) " +
-                    $"profile={thruster.Profile?.GetType().Name ?? "null"} mach={mach:F2}");
-                _executeLogCooldown = 600; // ~10s at 60Hz
+                float cosIntake = Vector3.Dot(velocityLocalHat, thruster.IntakeDirection);
+                float logScale = thruster.Profile != null
+                    ? (float)thruster.Profile.Evaluate(mach, velocityLocalHat, thruster.IntakeDirection) : 1f;
+                Log.Default?.Info($"[AERO] OffsetThrust active: [{i}] thrust={vanillaThrust:F0}N " +
+                    $"dir=({thruster.ThrustDirection.X:F1},{thruster.ThrustDirection.Y:F1},{thruster.ThrustDirection.Z:F1}) " +
+                    $"intake=({thruster.IntakeDirection.X:F1},{thruster.IntakeDirection.Y:F1},{thruster.IntakeDirection.Z:F1}) " +
+                    $"mach={mach:F2} cosIntake={cosIntake:F3} scale={logScale:F3}" +
+                    (thruster.Profile != null ? $" [{thruster.Profile.Name}]" : ""));
+                _executeLogCooldown = 600;
             }
 
             // ── Mach-dependent thrust scaling ──
@@ -366,7 +371,7 @@ public static class OffsetThrustJob
                         ThrustDirection = thrustDir,
                         MaxPower = maxPower,
                         Profile = profile,
-                        IntakeDirection = -thrustDir,
+                        IntakeDirection = thrustDir, // intake faces into airflow = same direction as thrust
                     });
                 }
             }
