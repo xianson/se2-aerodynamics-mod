@@ -1002,6 +1002,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
             const int CSSettleHoldRequired = 60;  // 1s hold
             const float CSTestSpeed = 200f;       // m/s — consistent for all tests
 
+            // Initialize target orientation on first entry (skipped if jumping to phase 5 directly)
+            if (_fixedTargetQ.W == 0 && _fixedTargetQ.X == 0 && _fixedTargetQ.Y == 0 && _fixedTargetQ.Z == 0)
+            {
+                _fixedTargetQ = wt.Orientation;
+                if (Data.TryGet<TargetControlData>(out var tcdInit5))
+                    _fixedTargetQ = tcdInit5.TargetOrientation != default ? tcdInit5.TargetOrientation : wt.Orientation;
+                Log.Default?.Info($"[CS-TEST] Initialized _fixedTargetQ from current orientation");
+            }
+
             // Re-apply our fixed target every frame
             if (Data.TryGet<TargetControlData>(out var tcd5))
             {
