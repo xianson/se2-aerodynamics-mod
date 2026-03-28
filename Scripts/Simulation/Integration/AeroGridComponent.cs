@@ -57,7 +57,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Vector3 SasTorque;  // local frame, computed per frame
 
     // ── Orientation settling test ──
-    internal int _diagPhase = 6;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only attitude, 100+=done
+    internal int _diagPhase = 100;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only attitude, 100+=done
     // NOTE: set to 0 to run full SAS settling tests, 4 to skip straight to CS testing, 6 for thrust-only
     private int _diagFrames = 0;
     private bool _diagGyrosKilled;
