@@ -42,6 +42,15 @@ public class BlockComponentFactory
     }
 
     /// <summary>
+    /// Non-generic overload for runtime-resolved component types.
+    /// The component is passed as object to the factory.
+    /// </summary>
+    public void RegisterByComponent(Type componentType, Func<BlockInfo, object, IAeroBlockComponent> factory)
+    {
+        _componentFactories.Add(new(componentType, factory));
+    }
+
+    /// <summary>
     /// Try to create an aero component for a single block.
     /// Returns null if no factory matches this block.
     /// </summary>
@@ -69,9 +78,24 @@ public class BlockComponentFactory
         }
 
         // 2. Component match (vanilla blocks with specific SE2 components)
-        // TODO: Per-block entity component access. SE2 blocks may expose
-        // sibling components via block.Entity or block.Data. When confirmed,
-        // iterate _componentFactories and check for matches.
+        // Iterate Entity.Components to find matching types. This bypasses
+        // the tag-based Entity.TryGet which fails due to DEntityContext boxing
+        // when invoked via reflection.
+        for (int i = 0; i < _componentFactories.Count; i++)
+        {
+            var reg = _componentFactories[i];
+            var siblingComp = PhysicsHack.FindComponentByType(block.Entity, reg.ComponentType);
+            if (siblingComp != null)
+            {
+                var info = BuildBlockInfo(block, blockSize);
+                var comp = reg.Factory(info, siblingComp);
+                if (comp != null)
+                {
+                    Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} (by component {reg.ComponentType.Name}) at {info.BlockPosition}");
+                    return comp;
+                }
+            }
+        }
 
         return null;
     }

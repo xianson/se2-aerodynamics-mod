@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Keen.VRage.Core;
 using Keen.VRage.Core.Game.GameSystems.OWT;
 using Keen.VRage.Core.Game.RuntimeSystems.DebugDraw;
@@ -17,6 +18,14 @@ public partial class AeroGridComponent
     private const float ForceScale = 1f / 50000f;
     private const float VectorScale = 0.05f; // m/s → draw length
     private const int MaxFacesToDraw = 20000; // limit for perf
+    private const float DebugDrawMaxDistance = 200f; // only draw debug for grids within this range
+
+    /// <summary>Master toggle for all debug drawing (text, arrows, faces). DiagActive grids always draw.</summary>
+    internal static bool EnableDebugDraw = false;
+    private static int _dragLogCooldown;
+
+    /// <summary>Set by the active player grid each frame so other grids can cull debug draw.</summary>
+    internal static Vector3D DebugFocusPosition;
 
 [After(typeof(RenderSubmissionBegin))]
     private class OnAeroDraw : JobGroup;
@@ -32,69 +41,90 @@ public partial class AeroGridComponent
         var wt = owt.Transform;
         if (!aero._initialized) return;
 
+        AeroStats.BeginGrid();
+        long frameStart = AeroStats.Timestamp();
+
         // Read physics data via reflection hack
+        long readStart = AeroStats.Timestamp();
         PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
         PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
             density = air.Density;
 
-        // Trigger aero computation
-        aero.TryCompute(wt, density, linVel, angVel, com);
+        // ── Ground height for ground effect (async raycast downward) ──
+        if (!PhysicsHack.GroundSystemReady)
+            PhysicsHack.InitGroundSystem(aero.Entity.Scene);
 
-        var dd = ddp.GlobalBuilder;
+        Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
+        aero.GroundHeight = PhysicsHack.GetGroundDistance(wt.Position, gravity);
+        AeroStats.SetRead(AeroStats.ElapsedUs(readStart));
+
+        // Trigger aero computation (passes ground height for ground effect)
+        aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+
         float speed = linVel.Length();
 
-        // ── Info text ──
-        Vector3 up = WorldTransform.TransformDirection(Vector3.UnitY, wt);
-        Vector3D textPos = wt.Position + (Vector3D)(up * 5f);
+        // Update focus position if this is the active test grid or fastest grid
+        if (aero.DiagActive || speed > 50f)
+            DebugFocusPosition = wt.Position;
 
-        int faces = aero._surface?.FaceCount ?? 0;
-        int wings = aero._model?.Wings?.Count ?? 0;
+        // Skip debug drawing for grids far from focus
+        double distSq = (wt.Position - DebugFocusPosition).LengthSquared();
+        bool drawDebug = distSq < DebugDrawMaxDistance * DebugDrawMaxDistance;
 
-        if (aero.HasResult)
+        long ddStart = AeroStats.Timestamp();
+        if (drawDebug && (EnableDebugDraw || aero.DiagActive))
         {
-            var r = aero.LastResult;
-            // Decompose in world space for display
-            Vector3 fWorld = WorldTransform.TransformDirection(r.Force, wt);
-            float fDotV = speed > 0.1f ? Vector3.Dot(fWorld, linVel / speed) : 0f;
-            Vector3 liftW = fWorld - fDotV * (speed > 0.1f ? linVel / speed : Vector3.Zero);
+            var dd = ddp.GlobalBuilder;
 
-            float dragN = MathF.Abs(fDotV);
-            float liftN = liftW.Length();
-            float ld = dragN > 1f ? liftN / dragN : 0f;
-            float weight = mass * 9.81f;
-            float lw = weight > 1f ? liftN / weight : 0f;
+            // ── Info text ──
+            Vector3 up = WorldTransform.TransformDirection(Vector3.UnitY, wt);
+            Vector3D textPos = wt.Position + (Vector3D)(up * 5f);
 
-            dd.AddText(textPos,
-                $"AERO faces={faces} wings={wings} mass={mass:F0}kg\n" +
-                $"v={speed:F1}m/s M={r.Mach:F2} q={r.DynamicPressure:F0}Pa\n" +
-                $"D={dragN:F0}N L={liftN:F0}N F={r.Force.Length():F0}N\n" +
-                $"L/D={ld:F2} L/W={lw:F2} d={density:F4}",
-                ColorSRGB.White, 0.5f);
+            int faces = aero._surface?.FaceCount ?? 0;
+            int wings = aero._model?.Wings?.Count ?? 0;
 
-            // ── Force vectors ──
-            DrawForceVectors(aero, dd, wt, linVel, com);
+            if (aero.HasResult)
+            {
+                var r = aero.LastResult;
+                Vector3 fWorld = WorldTransform.TransformDirection(r.Force, wt);
+                float fDotV = speed > 0.1f ? Vector3.Dot(fWorld, linVel / speed) : 0f;
+                Vector3 liftW = fWorld - fDotV * (speed > 0.1f ? linVel / speed : Vector3.Zero);
+
+                float dragN = MathF.Abs(fDotV);
+                float liftN = liftW.Length();
+                float ld = dragN > 1f ? liftN / dragN : 0f;
+                float weight = mass * 9.81f;
+                float lw = weight > 1f ? liftN / weight : 0f;
+
+                dd.AddText(textPos,
+                    $"AERO faces={faces} wings={wings} mass={mass:F0}kg\n" +
+                    $"v={speed:F1}m/s M={r.Mach:F2} q={r.DynamicPressure:F0}Pa\n" +
+                    $"D={dragN:F0}N L={liftN:F0}N F={r.Force.Length():F0}N\n" +
+                    $"L/D={ld:F2} L/W={lw:F2} d={density:F4}",
+                    ColorSRGB.White, 0.5f);
+
+                DrawForceVectors(aero, dd, wt, linVel, com);
+            }
+            else
+            {
+                dd.AddText(textPos,
+                    $"AERO faces={faces} wings={wings}\nv={speed:F1} d={density:F4}",
+                    ColorSRGB.White, 0.5f);
+            }
+
+            // ── Per-face pressure (disabled) ──
+            //if (aero.HasResult && aero._surface != null && speed > 1f)
+            //    DrawFacePressure(aero, dd, wt, density, speed);
+
+            DrawWingInfo(aero, dd, wt);
+            DrawAeroComponents(aero, dd, wt, linVel);
         }
-        else
-        {
-            dd.AddText(textPos,
-                $"AERO faces={faces} wings={wings}\nv={speed:F1} d={density:F4}",
-                ColorSRGB.White, 0.5f);
-        }
-
-        // ── Per-face pressure ──
-        if (aero.HasResult && aero._surface != null && speed > 1f)
-            DrawFacePressure(aero, dd, wt, density, speed);
-
-        // ── Wings ──
-        // ── Wings ──
-        DrawWingInfo(aero, dd, wt);
-
-        // ── Aero block components ──
-        DrawAeroComponents(aero, dd, wt, linVel);
+        AeroStats.SetDraw(AeroStats.ElapsedUs(ddStart));
 
         // ── Apply forces + torques ──
+        long physicsStart = AeroStats.Timestamp();
         if (aero.HasResult && mass > 0f)
         {
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
@@ -102,9 +132,122 @@ public partial class AeroGridComponent
             Vector3 deltaV = worldForce * (dt / mass);
 
             // Merge SAS torque with aero torque (both in local frame)
-            Vector3 totalTorque = aero.LastResult.Torque + aero.SasTorque;
+            // During diag: suppress body aero, keep only CS contributions
+            Vector3 aeroTorque = aero.LastResult.Torque;
+            if (aero.DiagActive)
+            {
+                if (aero._diagPhase >= 5)
+                {
+                    // Phase 5: only CS component torque + force, no body aero
+                    aeroTorque = aero.LastComponentTorque;
+                    // Replace body+CS deltaV with CS-only force
+                    Vector3 csWorldForce = WorldTransform.TransformDirection(aero.LastComponentForce, wt);
+                    deltaV = csWorldForce * (dt / mass);
+                }
+                else
+                {
+                    aeroTorque = Vector3.Zero;
+                    deltaV = Vector3.Zero;
+                }
+            }
+            Vector3 totalTorque = aeroTorque + aero.SasTorque;
+
+            // ── Probe: before/after logging ──
+            bool probeLog = aero.DiagActive && totalTorque.LengthSquared() > 1f;
+            Vector3 preAngWorld = Vector3.Zero;
+            if (probeLog)
+                PhysicsHack.TryGetVelocity(aero.Data, out _, out preAngWorld);
+
             PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
+
+            if (probeLog)
+            {
+                PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 postAngWorld);
+                Vector3 preLocal = WorldTransform.TransformDirectionInv(preAngWorld, wt);
+                Vector3 postLocal = WorldTransform.TransformDirectionInv(postAngWorld, wt);
+                Vector3 dWorld = postAngWorld - preAngWorld;
+                Vector3 dLocal = postLocal - preLocal;
+
+                Log.Default?.Info($"[PROBE-APPLY] torqueLocal=({totalTorque.X:F0},{totalTorque.Y:F0},{totalTorque.Z:F0}) orientation=({wt.Orientation.X:F4},{wt.Orientation.Y:F4},{wt.Orientation.Z:F4},{wt.Orientation.W:F4})");
+                Log.Default?.Info($"[PROBE-APPLY] preAngW=({preAngWorld.X:F6},{preAngWorld.Y:F6},{preAngWorld.Z:F6}) postAngW=({postAngWorld.X:F6},{postAngWorld.Y:F6},{postAngWorld.Z:F6})");
+                Log.Default?.Info($"[PROBE-APPLY] dWorld=({dWorld.X:F6},{dWorld.Y:F6},{dWorld.Z:F6}) dLocal=({dLocal.X:F6},{dLocal.Y:F6},{dLocal.Z:F6})");
+            }
         }
+
+        AeroStats.SetPhys(AeroStats.ElapsedUs(physicsStart));
+
+        // ── Offset thrust (RCS) ──
+        long thrustStart = AeroStats.Timestamp();
+        // Rebuild thruster cache if needed
+        if (aero._thrusterCacheDirty)
+        {
+            // Ensure block size is known even if TryCompute hasn't run yet
+            if (aero._blockSize <= 0)
+                aero._blockSize = aero.DetectBlockSize();
+
+            if (aero._blockSize > 0)
+            {
+                OffsetThrustJob.RebuildThrusterCache(aero._octree, aero._blockSize, aero._thrusterCache, aero.Entity);
+                aero._thrusterCacheDirty = false;
+            }
+        }
+
+        // Rebuild gyro cache if needed
+        if (aero._gyroCacheDirty)
+        {
+            OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
+            aero._gyroCacheDirty = false;
+        }
+
+        // Apply offset thrust correction + Mach-dependent scaling + angular dampening
+        if (aero._thrusterCache.Count > 0)
+        {
+            // Compute Mach and local velocity direction for thrust profiles
+            float thrustMach = 0f;
+            Vector3 velLocalHat = Vector3.Zero;
+            if (speed > 1f)
+            {
+                // Transform world velocity to grid-local for intake dot product
+                Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
+                velLocalHat = velLocal / velLocal.Length();
+
+                if (aero.HasResult)
+                    thrustMach = (float)aero.LastResult.Mach;
+            }
+
+            OffsetThrustJob.Execute(
+                aero._thrusterCache,
+                aero.Data,
+                wt,
+                angVel,
+                enableDampening: true,
+                mach: thrustMach,
+                velocityLocalHat: velLocalHat,
+                attitudeTorqueLocal: aero.SasTorque);
+        }
+        AeroStats.SetThrust(AeroStats.ElapsedUs(thrustStart));
+
+        // ── Commit grid stats ──
+        float gridTotalUs = AeroStats.ElapsedUs(frameStart);
+        bool isFocused = aero.DiagActive || speed > 50f;
+
+        // ── Throttled drag-vs-Mach log ──
+        if (aero.HasResult && isFocused && --_dragLogCooldown <= 0)
+        {
+            _dragLogCooldown = 60;
+            var r = aero.LastResult;
+            Log.Default?.Info(
+                $"[AERO-DRAG] M={r.Mach:F2} v={speed:F0}m/s " +
+                $"D={r.DragMagnitude:F0}N L={r.LiftMagnitude:F0}N " +
+                $"q={r.DynamicPressure:F0}Pa A={r.FrontalArea:F1}m² " +
+                $"Cd={r.DragMagnitude / (r.DynamicPressure * r.FrontalArea + 1):F4}");
+        }
+        AeroStats.CommitGrid(gridTotalUs, isFocused,
+            aero._surface?.FaceCount ?? 0,
+            aero._model?.Wings?.Count ?? 0,
+            aero._components?.Count ?? 0,
+            speed,
+            aero.HasResult ? (float)aero.LastResult.Mach : 0f);
     }
 
     private static void DrawForceVectors(AeroGridComponent aero, MeshBuilder dd,
@@ -264,7 +407,6 @@ public partial class AeroGridComponent
         var faces = aero._surface.Faces;
         if (faces == null || faces.Count == 0) return;
 
-        // Get real per-face Cp from the drag model
         var dragModel = (aero._model?.InnerModel as DampedShadowedDragModel);
         if (dragModel == null) return;
 
@@ -273,54 +415,106 @@ public partial class AeroGridComponent
 
         int step = Math.Max(1, faces.Count / MaxFacesToDraw);
 
-        // Cell size for quad extents (SE2 cells are 0.25m)
         const float HalfCell = 0.125f;
         const float NormalOffset = 0.03f;
 
-        // Find max front Cp for normalization
+        // ── Pre-compute rotation matrix from quaternion (once) ──
+        Quaternion q = wt.Orientation;
+        float x2 = q.X + q.X, y2 = q.Y + q.Y, z2 = q.Z + q.Z;
+        float xx = q.X * x2, xy = q.X * y2, xz = q.X * z2;
+        float yy = q.Y * y2, yz = q.Y * z2, zz = q.Z * z2;
+        float wx = q.W * x2, wy = q.W * y2, wz = q.W * z2;
+        float m00 = 1f - (yy + zz), m01 = xy - wz,        m02 = xz + wy;
+        float m10 = xy + wz,        m11 = 1f - (xx + zz),  m12 = yz - wx;
+        float m20 = xz - wy,        m21 = yz + wx,         m22 = 1f - (xx + yy);
+        double wpx = wt.Position.X, wpy = wt.Position.Y, wpz = wt.Position.Z;
+
+        // ── Pre-compute 4 corner offsets per axis direction (6 dirs × 4 corners) ──
+        // Tangent pairs per axis-aligned normal (same logic as GetFaceTangents)
+        Span<Vector3> normals = stackalloc Vector3[6];
+        normals[0] = Vector3.UnitX;  normals[1] = -Vector3.UnitX;
+        normals[2] = Vector3.UnitY;  normals[3] = -Vector3.UnitY;
+        normals[4] = Vector3.UnitZ;  normals[5] = -Vector3.UnitZ;
+
+        // For each direction: 4 local corner offsets (already rotated to world)
+        Span<Vector3D> wOff0 = stackalloc Vector3D[6];
+        Span<Vector3D> wOff1 = stackalloc Vector3D[6];
+        Span<Vector3D> wOff2 = stackalloc Vector3D[6];
+        Span<Vector3D> wOff3 = stackalloc Vector3D[6];
+
+        for (int d = 0; d < 6; d++)
+        {
+            GetFaceTangents(normals[d], out Vector3 t1, out Vector3 t2);
+            Vector3 nOff = normals[d] * NormalOffset;
+
+            Vector3 c0 = nOff + (-t1 - t2) * HalfCell;
+            Vector3 c1 = nOff + ( t1 - t2) * HalfCell;
+            Vector3 c2 = nOff + ( t1 + t2) * HalfCell;
+            Vector3 c3 = nOff + (-t1 + t2) * HalfCell;
+
+            // Rotate offsets to world (no translation — these are offsets)
+            wOff0[d] = RotateByMatrix(c0, m00, m01, m02, m10, m11, m12, m20, m21, m22);
+            wOff1[d] = RotateByMatrix(c1, m00, m01, m02, m10, m11, m12, m20, m21, m22);
+            wOff2[d] = RotateByMatrix(c2, m00, m01, m02, m10, m11, m12, m20, m21, m22);
+            wOff3[d] = RotateByMatrix(c3, m00, m01, m02, m10, m11, m12, m20, m21, m22);
+        }
+
+        // ── Find max Cp for normalization (strided scan) ──
         float frontMax = 0f;
         for (int i = 0; i < faceCp.Count; i += step)
         {
             float cp = faceCp[i];
             if (cp > frontMax) frontMax = cp;
         }
-
         float invFrontMax = frontMax > 0.001f ? 1f / frontMax : 1f;
 
-        // Draw colored quads for front-facing faces only
+        // ── Draw quads ──
         for (int i = 0; i < faces.Count; i += step)
         {
-            var face = faces[i];
             float cp = faceCp[i];
-
-            // Only draw faces that produce force (Cp > 0)
             if (cp <= 0f) continue;
 
+            var face = faces[i];
             float t = MathF.Sqrt(cp * invFrontMax);
             ColorSRGB color = CpToColorFront(t);
 
-            // Compute quad corners in local space
-            GetFaceTangents(face.Normal, out Vector3 tan1, out Vector3 tan2);
+            // Classify face to nearest axis direction
+            int dir = FaceDirIndex(face.Normal);
 
-            // Offset position slightly along normal to sit above surface
-            Vector3 pos = face.Position + face.Normal * NormalOffset;
+            // Rotate face position to world, add world origin
+            float px = face.Position.X, py = face.Position.Y, pz = face.Position.Z;
+            double wx0 = wpx + (m00 * px + m01 * py + m02 * pz);
+            double wy0 = wpy + (m10 * px + m11 * py + m12 * pz);
+            double wz0 = wpz + (m20 * px + m21 * py + m22 * pz);
 
-            // 4 corners of the face quad (local space, full cell size)
-            Vector3 p0Local = pos + (-tan1 - tan2) * HalfCell;
-            Vector3 p1Local = pos + ( tan1 - tan2) * HalfCell;
-            Vector3 p2Local = pos + ( tan1 + tan2) * HalfCell;
-            Vector3 p3Local = pos + (-tan1 + tan2) * HalfCell;
+            Vector3D p0 = new(wx0 + wOff0[dir].X, wy0 + wOff0[dir].Y, wz0 + wOff0[dir].Z);
+            Vector3D p1 = new(wx0 + wOff1[dir].X, wy0 + wOff1[dir].Y, wz0 + wOff1[dir].Z);
+            Vector3D p2 = new(wx0 + wOff2[dir].X, wy0 + wOff2[dir].Y, wz0 + wOff2[dir].Z);
+            Vector3D p3 = new(wx0 + wOff3[dir].X, wy0 + wOff3[dir].Y, wz0 + wOff3[dir].Z);
 
-            // Transform to world
-            Vector3D p0 = WorldTransform.Transform((Vector3D)p0Local, in wt);
-            Vector3D p1 = WorldTransform.Transform((Vector3D)p1Local, in wt);
-            Vector3D p2 = WorldTransform.Transform((Vector3D)p2Local, in wt);
-            Vector3D p3 = WorldTransform.Transform((Vector3D)p3Local, in wt);
-
-            // Engine convention: quad internal normal must point inward (away from viewer).
-            // Swapping p1↔p3 reverses winding so the visible side faces outward.
             dd.AddQuadClockWise(p0, p3, p2, p1, color, true);
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector3D RotateByMatrix(Vector3 v,
+        float m00, float m01, float m02,
+        float m10, float m11, float m12,
+        float m20, float m21, float m22)
+    {
+        return new Vector3D(
+            m00 * v.X + m01 * v.Y + m02 * v.Z,
+            m10 * v.X + m11 * v.Y + m12 * v.Z,
+            m20 * v.X + m21 * v.Y + m22 * v.Z);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int FaceDirIndex(Vector3 n)
+    {
+        float ax = MathF.Abs(n.X), ay = MathF.Abs(n.Y), az = MathF.Abs(n.Z);
+        if (ax >= ay && ax >= az) return n.X >= 0 ? 0 : 1;
+        if (ay >= az) return n.Y >= 0 ? 2 : 3;
+        return n.Z >= 0 ? 4 : 5;
     }
 
 
@@ -486,6 +680,42 @@ public partial class AeroGridComponent
                 string info = $"INTAKE mdot={ai.MassFlowRate:F2}kg/s" +
                     $"\nPtot={ai.TotalPressure:F0}Pa ram={ai.RamPressureRatio:F2}";
                 dd.AddText(posWorld + (Vector3D)(facingWorld * 0.3f), info, ColorSRGB.White, 0.35f);
+            }
+            else if (comp is HelicopterRotor rotor)
+            {
+                // Disc axis (magenta arrow)
+                Vector3 discWorld = WorldTransform.TransformDirection(rotor.DiscAxis, wt);
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(discWorld * 2.5f),
+                    ColorSRGB.Magenta, null, 0.12);
+
+                // Thrust vector (green, scaled)
+                if (rotor.CurrentThrust > 1f)
+                {
+                    Vector3 thrustWorld = WorldTransform.TransformDirection(rotor.DiscAxis * rotor.CurrentThrust, wt);
+                    dd.AddArrow(posWorld, posWorld + (Vector3D)(thrustWorld * ForceScale),
+                        ColorSRGB.LimeGreen, null, 0.10);
+                }
+
+                // Cyclic torque visualization (yellow arrows on pitch/roll axes)
+                if (rotor.CyclicTorque.LengthSquared() > 100f)
+                {
+                    Vector3 cyclicWorld = WorldTransform.TransformDirection(rotor.CyclicTorque, wt);
+                    float tScale = 1f / 2_000_000f; // torque → draw scale
+                    dd.AddArrow(posWorld, posWorld + (Vector3D)(cyclicWorld * tScale),
+                        ColorSRGB.Yellow, null, 0.08);
+                }
+
+                string spinDir = rotor.SpinSign > 0 ? "CCW" : "CW";
+                string autoStr = rotor.AutorotationThrust > 1f ? $"\nAUTO={rotor.AutorotationThrust:F0}N" : "";
+                string info = $"ROTOR({spinDir}) T={rotor.CurrentThrust:F0}N" +
+                    $"\nrho={rotor.DensityScale:F3} ETL={rotor.TranslationalLiftFactor:F3}" +
+                    $"\nGE={rotor.GroundEffectFactor:F3}" +
+                    $"\ncoll={rotor.CollectivePitch:F2} hold={rotor.OrientationHoldActive}" +
+                    autoStr +
+                    $"\nreaction={rotor.ReactionTorque:F0}N·m" +
+                    $"\ncyclic=({rotor.CyclicTorque.X:F0},{rotor.CyclicTorque.Y:F0},{rotor.CyclicTorque.Z:F0})" +
+                    $"\nyaw={rotor.YawTorqueApplied:F0}N·m";
+                dd.AddText(posWorld + (Vector3D)(discWorld * 0.5f), info, ColorSRGB.Magenta, 0.35f);
             }
         }
     }

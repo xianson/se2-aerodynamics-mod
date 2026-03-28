@@ -283,7 +283,7 @@ public static class CompressibleFlow
     {
         if (mach <= criticalMach) return 1.0;
 
-        const double peakMach = 1.2;
+        const double peakMach = 1.05;
 
         if (mach <= peakMach)
         {
@@ -294,7 +294,7 @@ public static class CompressibleFlow
 
         double excess = peakMultiplier - 1.0;
         double ratio = peakMach / mach;
-        return 1.0 + excess * ratio * ratio;
+        return 1.0 + excess * Math.Pow(ratio, 1.3);
     }
 
     /// <summary>Supersonic pressure drag coefficient for a flat plate normal to flow.</summary>

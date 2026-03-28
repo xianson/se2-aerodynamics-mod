@@ -41,6 +41,39 @@ public class ConnectedComponentWingDetector : IWingDetector
     private List<LiftingSurface> _cachedWings;
     private Dictionary<Vector3I, int> _cellToWing = new();
 
+    /// <summary>
+    /// Optional manifold classifier for filtering out internal cavity faces.
+    /// Set before calling Detect/Update. When set, only hull faces are considered
+    /// as wing candidates, preventing phantom wings on large interior walls.
+    /// </summary>
+    public ManifoldClassifier Manifold { get; set; }
+
+    /// <summary>
+    /// Surface provider reference for manifold face-index lookups.
+    /// Set alongside Manifold.
+    /// </summary>
+    public SmoothSurfaceProvider ManifoldSurface { get; set; }
+
+    /// <summary>Check if a face at (cell, normalDir) is a cavity face that should be excluded.</summary>
+    private bool IsCavityFace(Vector3I cell, Vector3I normalDir)
+    {
+        if (Manifold == null || !Manifold.IsClassified || ManifoldSurface == null)
+            return false;
+
+        // Convert normal vector to direction index
+        int dir;
+        if (normalDir.X == 1) dir = 0;
+        else if (normalDir.X == -1) dir = 1;
+        else if (normalDir.Y == 1) dir = 2;
+        else if (normalDir.Y == -1) dir = 3;
+        else if (normalDir.Z == 1) dir = 4;
+        else dir = 5; // -Z
+
+        int faceIdx = ManifoldSurface.GetFaceIndex(cell, dir);
+        if (faceIdx < 0) return false; // face not in surface provider (shouldn't happen)
+        return !Manifold.IsHull(faceIdx);
+    }
+
     public void Invalidate()
     {
         _cachedWings = null;
@@ -210,13 +243,20 @@ public class ConnectedComponentWingDetector : IWingDetector
             var negNormal = new Vector3I(-posNormal.X, -posNormal.Y, -posNormal.Z);
 
             // Simple exposure check: cell is in region AND neighbor in normal direction is empty
+            // If manifold classifier is available, also require the face to be hull (not cavity)
             var exposed = new HashSet<Vector3I>();
             foreach (var cell in regionCells)
             {
                 if (!grid.IsCellOccupied(cell + posNormal))
-                    exposed.Add(cell);
+                {
+                    if (!IsCavityFace(cell, posNormal))
+                        exposed.Add(cell);
+                }
                 if (!grid.IsCellOccupied(cell + negNormal))
-                    exposed.Add(cell);
+                {
+                    if (!IsCavityFace(cell, negNormal))
+                        exposed.Add(cell);
+                }
             }
 
             if (exposed.Count < MinFaceCount) continue;
@@ -278,27 +318,62 @@ public class ConnectedComponentWingDetector : IWingDetector
                     var a = wings[i];
                     var b = wings[j];
 
-                    if (Vector3.Dot(a.Normal, b.Normal) < 0.99f) continue;
+                    float nDot = Vector3.Dot(a.Normal, b.Normal);
+                    if (nDot < 0.99f) continue;
 
+                    // Project both wings onto a's span axis for consistent comparison
                     float aMinS = spanMin[i], aMaxS = spanMax[i];
-                    float bMinS = spanMin[j], bMaxS = spanMax[j];
+                    // Re-project b onto a's span axis
+                    float bMinS2 = float.MaxValue, bMaxS2 = float.MinValue;
+                    foreach (var c in b.Cells)
+                    {
+                        float s = (c.X + 0.5f) * CellSize * a.SpanAxis.X
+                                + (c.Y + 0.5f) * CellSize * a.SpanAxis.Y
+                                + (c.Z + 0.5f) * CellSize * a.SpanAxis.Z;
+                        bMinS2 = MathF.Min(bMinS2, s);
+                        bMaxS2 = MathF.Max(bMaxS2, s);
+                    }
 
-                    float gap = MathF.Max(aMinS, bMinS) - MathF.Min(aMaxS, bMaxS);
-                    if (gap > maxGapM) continue;
+                    float gap = MathF.Max(aMinS, bMinS2) - MathF.Min(aMaxS, bMaxS2);
+                    float maxSpan = MathF.Max(aMaxS - aMinS, bMaxS2 - bMinS2);
+                    float gapLimit = MathF.Max(maxGapM, maxSpan * 0.20f);
+                    if (gap > gapLimit)
+                    {
+                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                            Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT gap={gap:F2}>{gapLimit:F2} aS=[{aMinS:F1},{aMaxS:F1}] bS=[{bMinS2:F1},{bMaxS2:F1}] spanAx=({a.SpanAxis.X:F3},{a.SpanAxis.Y:F3},{a.SpanAxis.Z:F3})");
+                        continue;
+                    }
 
                     float normalSep = MathF.Abs(Vector3.Dot(a.Centroid - b.Centroid, a.Normal));
-                    if (normalSep > CellSize * 6f) continue; // ~1.5 blocks
+                    if (normalSep > CellSize * 6f)
+                    {
+                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                            Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT normalSep={normalSep:F2}>{CellSize * 6f:F2}");
+                        continue;
+                    }
 
                     float chordSep = MathF.Abs(Vector3.Dot(a.Centroid - b.Centroid, a.ChordAxis));
                     float maxChord = MathF.Max(a.MeanChord, b.MeanChord);
-                    if (chordSep > maxChord * 2f) continue;
+                    if (chordSep > maxChord * 2f)
+                    {
+                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                            Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT chordSep={chordSep:F2}>{maxChord * 2f:F2}");
+                        continue;
+                    }
+
+                    Log.Default?.Info(
+                        $"[AERO-MERGE] W{i}+W{j} MERGING " +
+                        $"nDot={nDot:F4} gap={gap:F2} gapLim={gapLimit:F2} " +
+                        $"normSep={normalSep:F2} chordSep={chordSep:F2}/{maxChord * 2f:F2} " +
+                        $"aS=[{aMinS:F1},{aMaxS:F1}] bS=[{bMinS2:F1},{bMaxS2:F1}] " +
+                        $"aSpan=({a.SpanAxis.X:F3},{a.SpanAxis.Y:F3},{a.SpanAxis.Z:F3})");
 
                     var allCells = new List<Vector3I>(a.Cells.Count + b.Cells.Count);
                     allCells.AddRange(a.Cells);
                     allCells.AddRange(b.Cells);
 
                     float totalArea = a.PlanformArea + b.PlanformArea;
-                    float fullSpan = MathF.Max(aMaxS, bMaxS) - MathF.Min(aMinS, bMinS) + CellSize;
+                    float fullSpan = MathF.Max(aMaxS, bMaxS2) - MathF.Min(aMinS, bMinS2) + CellSize;
 
                     var centroid = (a.Centroid * a.PlanformArea + b.Centroid * b.PlanformArea) / totalArea;
                     var aeroCenter = (a.AeroCenter * a.PlanformArea + b.AeroCenter * b.PlanformArea) / totalArea;
@@ -313,8 +388,8 @@ public class ConnectedComponentWingDetector : IWingDetector
 
                     wings[i] = merged;
                     // Update span extents for merged wing
-                    spanMin[i] = MathF.Min(aMinS, bMinS);
-                    spanMax[i] = MathF.Max(aMaxS, bMaxS);
+                    spanMin[i] = MathF.Min(aMinS, bMinS2);
+                    spanMax[i] = MathF.Max(aMaxS, bMaxS2);
 
                     wings.RemoveAt(j);
                     // Shift span arrays: move last element into j's slot
@@ -345,7 +420,7 @@ public class ConnectedComponentWingDetector : IWingDetector
     /// Returns Dictionary keyed by axis index (0=X, 1=Y, 2=Z), each containing
     /// cells exposed on either side of that axis.
     /// </summary>
-    private static Dictionary<int, HashSet<Vector3I>> CollectAllExposedFaces(
+    private Dictionary<int, HashSet<Vector3I>> CollectAllExposedFaces(
         IGridAccessor grid, out GridBBox bbox)
     {
         bbox = new GridBBox
@@ -401,23 +476,29 @@ public class ConnectedComponentWingDetector : IWingDetector
         {
             // X-axis: check if at min/max of its (Y,Z) column
             long kx = ((long)cell.Y << 32) | (uint)cell.Z;
-            if (cell.X == colMinX[kx] && !grid.IsCellOccupied(new Vector3I(cell.X - 1, cell.Y, cell.Z)))
+            if (cell.X == colMinX[kx] && !grid.IsCellOccupied(new Vector3I(cell.X - 1, cell.Y, cell.Z))
+                && !IsCavityFace(cell, new Vector3I(-1, 0, 0)))
                 result[0].Add(cell);
-            if (cell.X == colMaxX[kx] && !grid.IsCellOccupied(new Vector3I(cell.X + 1, cell.Y, cell.Z)))
+            if (cell.X == colMaxX[kx] && !grid.IsCellOccupied(new Vector3I(cell.X + 1, cell.Y, cell.Z))
+                && !IsCavityFace(cell, new Vector3I(1, 0, 0)))
                 result[0].Add(cell);
 
             // Y-axis: check if at min/max of its (X,Z) column
             long ky = ((long)cell.X << 32) | (uint)cell.Z;
-            if (cell.Y == colMinY[ky] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y - 1, cell.Z)))
+            if (cell.Y == colMinY[ky] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y - 1, cell.Z))
+                && !IsCavityFace(cell, new Vector3I(0, -1, 0)))
                 result[1].Add(cell);
-            if (cell.Y == colMaxY[ky] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y + 1, cell.Z)))
+            if (cell.Y == colMaxY[ky] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y + 1, cell.Z))
+                && !IsCavityFace(cell, new Vector3I(0, 1, 0)))
                 result[1].Add(cell);
 
             // Z-axis: check if at min/max of its (X,Y) column
             long kz = ((long)cell.X << 32) | (uint)cell.Y;
-            if (cell.Z == colMinZ[kz] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y, cell.Z - 1)))
+            if (cell.Z == colMinZ[kz] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y, cell.Z - 1))
+                && !IsCavityFace(cell, new Vector3I(0, 0, -1)))
                 result[2].Add(cell);
-            if (cell.Z == colMaxZ[kz] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y, cell.Z + 1)))
+            if (cell.Z == colMaxZ[kz] && !grid.IsCellOccupied(new Vector3I(cell.X, cell.Y, cell.Z + 1))
+                && !IsCavityFace(cell, new Vector3I(0, 0, 1)))
                 result[2].Add(cell);
         }
 

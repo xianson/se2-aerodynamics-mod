@@ -250,12 +250,29 @@ public class ThinAirfoilWingModel : IWingLiftModel
             float cdi = w.AspectRatio > 0.1f ? cl * cl / (MathF.PI * e * w.AspectRatio) : 0;
 
             float cd0 = 0.010f;
+
+            // ── Ground effect: reduce induced drag near the surface ──
+            float groundFactor = 1f;
+            if (ctx.GroundHeight >= 0f && w.Span > 0.1f)
+            {
+                float hb = ctx.GroundHeight / w.Span;
+                groundFactor = hb * hb / (1f + hb * hb);
+                groundFactor = MathF.Max(0.1f, groundFactor);
+            }
+            cdi *= groundFactor;
+
             float totalCd = cdi + cd0;
             float dragMag = q * w.PlanformArea * totalCd;
             var inducedDrag = vHat * dragMag;
 
+            // ── Center of pressure shift with AoA ──
+            float absAlphaFrac = absAlpha / (MathF.PI * 0.5f);
+            float cpBlend = absAlphaFrac * absAlphaFrac;
+            Vector3 cpShift = w.ChordAxis * (w.MeanChord * 0.25f * cpBlend);
+            Vector3 applicationPoint = w.AeroCenter + cpShift;
+
             _resultsList[i] = new WingForceResult(
-                liftForce, inducedDrag, w.AeroCenter,
+                liftForce, inducedDrag, applicationPoint,
                 cl, cdi, alpha, _efficiency[i]);
         }
 

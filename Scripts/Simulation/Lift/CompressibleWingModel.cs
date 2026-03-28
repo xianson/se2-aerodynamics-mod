@@ -17,11 +17,14 @@ public class CompressibleWingModel : IWingLiftModel
     public float SubsonicBlendLimit { get; set; } = 0.85f;
     public float SupersonicBlendLimit { get; set; } = 1.15f;
 
+    private static int _logCooldown;
+
     // Cached work arrays — reused across frames to avoid per-frame allocations
     private float[] _alphas = Array.Empty<float>();
     private float[] _localSpeeds = Array.Empty<float>();
     private Vector3[] _vHats = Array.Empty<Vector3>();
     private float[] _clAlphas = Array.Empty<float>();
+    private float[] _machPerps = Array.Empty<float>();
     private float[] _alphaStalls = Array.Empty<float>();
     private float[] _alphaEff = Array.Empty<float>();
     private float[] _efficiency = Array.Empty<float>();
@@ -45,6 +48,7 @@ public class CompressibleWingModel : IWingLiftModel
         _localSpeeds = new float[n];
         _vHats = new Vector3[n];
         _clAlphas = new float[n];
+        _machPerps = new float[n];
         _alphaStalls = new float[n];
         _alphaEff = new float[n];
         _efficiency = new float[n];
@@ -150,6 +154,7 @@ public class CompressibleWingModel : IWingLiftModel
             // Runtime CLAlpha from Mach regime
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
             float machPerp = mach * MathF.Cos(w.SweepAngle);
+            _machPerps[i] = machPerp;
             _clAlphas[i] = ComputeCLAlpha(machPerp, w.AspectRatio, w.SweepAngle,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
@@ -296,13 +301,61 @@ public class CompressibleWingModel : IWingLiftModel
             float cdi = w.AspectRatio > 0.1f ? cl * cl / (MathF.PI * e * w.AspectRatio) : 0;
 
             float cd0 = 0.010f;
+
+            // ── Ground effect: reduce induced drag near the surface ──
+            // φ = (h / b)² / (1 + (h / b)²), where h = ground height, b = span
+            // CDi_eff = CDi * φ  (approaches 0 at h→0, 1 at h→∞)
+            // Also boosts effective CL slightly (reduced downwash = more effective AoA)
+            float groundFactor = 1f;
+            if (ctx.GroundHeight >= 0f && w.Span > 0.1f)
+            {
+                float hb = ctx.GroundHeight / w.Span;
+                groundFactor = hb * hb / (1f + hb * hb);
+                groundFactor = MathF.Max(0.1f, groundFactor); // never fully eliminate drag
+            }
+            cdi *= groundFactor;
+
             float totalCd = cdi + cd0;
             float dragMag = q * w.PlanformArea * totalCd;
             var inducedDrag = vHat * dragMag;
 
+            // ── Center of pressure shift with AoA ──
+            float absAlphaFrac = absAlpha / (MathF.PI * 0.5f);
+            float cpBlend = absAlphaFrac * absAlphaFrac;
+            Vector3 cpShiftAoA = w.ChordAxis * (w.MeanChord * 0.25f * cpBlend);
+
+            // ── Mach tuck: CoP shifts aft at transonic (uses machPerp for sweep) ──
+            float machTuck = MachTuckFactor(_machPerps[i]);
+            Vector3 cpShiftMach = w.ChordAxis * (w.MeanChord * machTuck);
+
+            Vector3 applicationPoint = w.AeroCenter + cpShiftAoA + cpShiftMach;
+
             _resultsList[i] = new WingForceResult(
-                liftForce, inducedDrag, w.AeroCenter,
+                liftForce, inducedDrag, applicationPoint,
                 cl, cdi, alpha, _efficiency[i]);
+        }
+
+        // Throttled wing diagnostics (~1/sec)
+        if (--_logCooldown <= 0 && n > 0)
+        {
+            _logCooldown = 60;
+            float mach = speedOfSound > 0 ? comSpeed / speedOfSound : 0;
+            for (int i = 0; i < n; i++)
+            {
+                ref readonly var w = ref wings[i];
+                var wf = _resultsList[i];
+                float sweepDeg = w.SweepAngle * 180f / MathF.PI;
+                float alphaDeg = _alphas[i] * 180f / MathF.PI;
+                float tuck = MachTuckFactor(_machPerps[i]);
+                Log.Default?.Info(
+                    $"[AERO-WING] W{i} M={mach:F2} Mperp={_machPerps[i]:F2} sweep={sweepDeg:F1}° " +
+                    $"AoA={alphaDeg:F1}° CL={wf.CL:F3} CLa={_clAlphas[i]:F3} " +
+                    $"L={wf.LiftForce.Length():F0}N Di={wf.InducedDrag.Length():F0}N " +
+                    $"AR={w.AspectRatio:F1} S={w.PlanformArea:F1}m² span={w.Span:F1}m " +
+                    $"tuck={tuck:F3} chord={w.MeanChord:F2}m " +
+                    $"n=({w.Normal.X:F3},{w.Normal.Y:F3},{w.Normal.Z:F3}) " +
+                    $"cen=({w.Centroid.X:F1},{w.Centroid.Y:F1},{w.Centroid.Z:F1})");
+            }
         }
 
         return _resultsList;
@@ -323,5 +376,29 @@ public class CompressibleWingModel : IWingLiftModel
         float chordFrac = maxChord > 0 ? chordOverlap / maxChord : 0;
 
         return spanFrac * chordFrac;
+    }
+
+    /// <summary>
+    /// CoP rearward shift fraction as a function of Mach perpendicular to leading edge.
+    /// Swept wings naturally delay onset because machPerp = M∞ × cos(Λ).
+    /// Returns fraction of chord to shift CoP aft (0 = no shift, 0.22 = 22% chord).
+    /// </summary>
+    private static float MachTuckFactor(float machPerp)
+    {
+        if (machPerp < 0.7f) return 0f;
+
+        if (machPerp < 1.0f)
+        {
+            float t = (machPerp - 0.7f) / 0.3f;
+            return 0.20f * t * t;
+        }
+
+        if (machPerp < 1.3f)
+        {
+            float t = (machPerp - 1.0f) / 0.3f;
+            return 0.20f + 0.02f * t;
+        }
+
+        return 0.22f;
     }
 }

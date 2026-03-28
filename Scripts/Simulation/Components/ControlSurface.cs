@@ -134,6 +134,9 @@ public class ControlSurface : IAeroBlockComponent, IFaceOverride
             float sqrtF0 = MathF.Sqrt(f0);
             float kirchhoffFactor = 0.25f * (1f + sqrtF0) * (1f + sqrtF0);
 
+            // Floor at 15% — control surfaces retain residual effectiveness in deep stall
+            kirchhoffFactor = MathF.Max(0.15f, kirchhoffFactor);
+
             float clAttached = clAlpha * alphaStall * signAlpha;
             float clFlatPlate = MathF.Sin(2f * alpha);
 

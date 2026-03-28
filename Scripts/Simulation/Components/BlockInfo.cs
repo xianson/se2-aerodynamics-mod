@@ -35,6 +35,6 @@ public readonly struct BlockInfo
         BlockSize = blockSize;
         // Control surface planform area — one block face worth of lifting surface
         // Real aircraft: aileron ~1-2 m² on a 10m wing. A 2.5m block ≈ 1 m²
-        FaceArea = 3.0f;
+        FaceArea = 30.0f;
     }
 }

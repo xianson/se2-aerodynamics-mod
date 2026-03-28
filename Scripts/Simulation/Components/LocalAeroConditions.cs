@@ -29,8 +29,12 @@ public readonly struct LocalAeroConditions
     /// <summary>Grid-local position (meters).</summary>
     public readonly Vector3 Position;
 
+    /// <summary>Height above ground in meters (-1 if unknown/no ground).</summary>
+    public readonly float GroundHeight;
+
     public LocalAeroConditions(Vector3 velocity, float speed, Vector3 flowDirection,
-        float dynamicPressure, float mach, AtmosphereState atmosphere, Vector3 position)
+        float dynamicPressure, float mach, AtmosphereState atmosphere, Vector3 position,
+        float groundHeight = -1f)
     {
         Velocity = velocity;
         Speed = speed;
@@ -39,6 +43,7 @@ public readonly struct LocalAeroConditions
         Mach = mach;
         Atmosphere = atmosphere;
         Position = position;
+        GroundHeight = groundHeight;
     }
 
     /// <summary>
@@ -54,6 +59,7 @@ public readonly struct LocalAeroConditions
             ? speed / (float)ctx.Atmosphere.SpeedOfSound
             : 0f;
 
-        return new LocalAeroConditions(vel, speed, flowDir, q, mach, ctx.Atmosphere, position);
+        return new LocalAeroConditions(vel, speed, flowDir, q, mach, ctx.Atmosphere, position,
+            ctx.GroundHeight);
     }
 }

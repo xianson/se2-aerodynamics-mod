@@ -16,4 +16,8 @@ public static class AeroBlockGuids
 
     // ── Atmospheric Scoops ──
     public static readonly Guid Scoop_1x1          = new("ae200001-ae00-5c01-0001-000000000001");
+
+    // ── Helicopter Rotors ──
+    public static readonly Guid HelicopterRotor_1x1    = new("ae200001-ae00-4801-0001-000000000001"); // CCW (standard)
+    public static readonly Guid HelicopterRotorCW_1x1  = new("ae200001-ae00-4801-0001-000000000002"); // CW (counter-rotating)
 }

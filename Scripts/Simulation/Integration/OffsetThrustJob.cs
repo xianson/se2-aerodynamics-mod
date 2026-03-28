@@ -1,0 +1,677 @@
+#pragma warning disable
+using System;
+using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
+using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
+using Keen.VRage.Core;
+
+namespace AeroMod;
+
+/// <summary>
+/// Cached info about a thruster on the grid.
+/// </summary>
+public struct ThrusterInfo
+{
+    public Entity ThrusterEntity;
+    public Component ThrusterComponent; // ThrusterComponent instance (for reading/writing override)
+    public Vector3 GridLocalPosition;  // block center in grid-local space (meters)
+    public Vector3 ThrustDirection;    // unit vector in grid-local space (direction force pushes the ship)
+    public float MaxPower;             // Newtons (impulse per frame = MaxPower / 60)
+    public ThrustProfile Profile;      // Mach-dependent thrust scaling (null = rocket/flat)
+    public Vector3 IntakeDirection;    // unit vector pointing into intake (opposite ThrustDirection for air-breathers)
+}
+
+/// <summary>
+/// Cached info about a gyroscope on the grid.
+/// </summary>
+public struct GyroInfo
+{
+    public Entity GyroEntity;
+    public Component BlockComponent;   // PowerableBlockComponent (for Enabled toggle)
+    public float MaxTorque;            // N·m
+}
+
+/// <summary>
+/// Offset thrust control: cancel vanilla's CoM-only linear impulse and
+/// re-apply at thruster block position so offset thrusters create torque.
+///
+/// Pattern from SE1 BobSurvival/RealRCSThrusterLogic.cs lines 460-471:
+///   grid.Physics.AddForce(-force, CoM);   // cancel linear
+///   grid.Physics.AddForce(+force, blockPos); // re-apply at offset → torque
+/// </summary>
+public static class OffsetThrustJob
+{
+    private const float DT = 1f / 60f;
+    private const float DampeningThreshold = 0.01f;
+    private const float DampeningGain = 1.0f;  // D-term: how aggressively to counter angular velocity
+    private const float AttitudeGain = 0.5f;   // P-term: thrust fraction per unit attitude error direction
+    private static int _executeLogCooldown; // throttle diagnostic logging
+
+    // Track which thrusters have dampening overrides so we can clear them next frame
+    private static readonly HashSet<int> _dampeningOverrideIndices = new();
+
+    /// <summary>
+    /// Run offset thrust correction for one grid.
+    /// Call once per physics frame AFTER vanilla thrust has been applied.
+    ///
+    /// Mach-dependent thrust scaling: for air-breathing profiles, the vanilla
+    /// thrust is treated as the "rated" (static) value. We compute the profile
+    /// scale factor, then apply a delta impulse = (scaled - vanilla) so the net
+    /// thrust matches the profile curve. Rockets (null profile) pass through 1:1.
+    /// </summary>
+    public static void Execute(
+        List<ThrusterInfo> thrusters,
+        DEntityContext gridData,
+        WorldTransform gridWt,
+        Vector3 angularVelocity,
+        bool enableDampening,
+        float mach = 0f,
+        Vector3 velocityLocalHat = default,
+        Vector3 attitudeTorqueLocal = default)
+    {
+        if (thrusters.Count == 0) return;
+        if (!PhysicsHack.ThrusterAccessAvailable) return;
+        _executeLogCooldown = Math.Max(0, _executeLogCooldown - 1);
+
+        // Clear previous dampening overrides before re-evaluating
+        foreach (int idx in _dampeningOverrideIndices)
+        {
+            if (idx < thrusters.Count)
+            {
+                if (GetComponentThrustOverride(thrusters[idx].ThrusterComponent) > 0f)
+                    SetComponentThrustOverride(thrusters[idx].ThrusterComponent, 0f);
+            }
+        }
+        _dampeningOverrideIndices.Clear();
+
+        // Pre-read mass properties for dampening (need CoM in local space)
+        Vector3 comLocal = Vector3.Zero;
+        if (enableDampening)
+            PhysicsHack.TryGetMassProperties(gridData, out _, out comLocal);
+
+        for (int i = 0; i < thrusters.Count; i++)
+        {
+            var thruster = thrusters[i];
+
+            // ── Read actual thrust state via ThrusterComponent ──
+            float overridePower = GetComponentThrustOverride(thruster.ThrusterComponent);
+
+            // Determine actual thrust force this frame (vanilla value)
+            // ThrustOverride > 0 means override active (0-1 normalized).
+            // Otherwise, check IsThrusting data tag via DEntityContext (may fail due to boxing).
+            float vanillaThrust = 0f;
+            if (overridePower > 0f)
+            {
+                vanillaThrust = thruster.MaxPower * overridePower;
+            }
+            else if (IsComponentThrusting(thruster.ThrusterComponent))
+            {
+                vanillaThrust = thruster.MaxPower;
+            }
+
+            if (vanillaThrust < 0.01f)
+                continue;
+
+            // Throttled diagnostic: log first active thrust detection
+            if (_executeLogCooldown == 0)
+            {
+                Log.Default?.Info($"[AERO] OffsetThrust active: thruster[{i}] vanillaThrust={vanillaThrust:F0}N " +
+                    $"override={overridePower:F2} dir=({thruster.ThrustDirection.X:F1},{thruster.ThrustDirection.Y:F1},{thruster.ThrustDirection.Z:F1}) " +
+                    $"profile={thruster.Profile?.GetType().Name ?? "null"} mach={mach:F2}");
+                _executeLogCooldown = 600; // ~10s at 60Hz
+            }
+
+            // ── Mach-dependent thrust scaling ──
+            // Vanilla applies full rated thrust. We scale to the profile curve
+            // and apply the delta so the net matches the profile.
+            float profileScale = 1f;
+            if (thruster.Profile != null)
+            {
+                profileScale = (float)thruster.Profile.Evaluate(
+                    mach, velocityLocalHat, thruster.IntakeDirection);
+            }
+            float scaledThrust = vanillaThrust * profileScale;
+            if (float.IsNaN(scaledThrust) || float.IsInfinity(scaledThrust)) continue;
+
+            // ── Dual-force pattern ──
+            // Force vector in grid-local space (at scaled magnitude)
+            Vector3 localForce = thruster.ThrustDirection * scaledThrust;
+
+            // Convert to world-space impulse
+            Vector3 worldImpulse = WorldTransform.TransformDirection(localForce * DT, gridWt);
+
+            // Vanilla impulse to cancel (full rated, applied at CoM by game)
+            Vector3 vanillaLocalForce = thruster.ThrustDirection * vanillaThrust;
+            Vector3 vanillaImpulse = WorldTransform.TransformDirection(vanillaLocalForce * DT, gridWt);
+
+            // NaN guard — don't write bad values to physics
+            if (float.IsNaN(worldImpulse.X) || float.IsNaN(vanillaImpulse.X)) continue;
+
+            // Block center in world space
+            Vector3D blockWorldPos = WorldTransform.Transform((Vector3D)thruster.GridLocalPosition, gridWt);
+
+            // Step 1: Cancel the vanilla linear impulse at CoM
+            PhysicsHack.CancelLinearImpulse(gridData, vanillaImpulse);
+
+            // Step 2: Re-apply scaled thrust at the thruster's offset position
+            PhysicsHack.ApplyImpulseAt(gridData, worldImpulse, blockWorldPos, gridWt);
+        }
+
+        // ── Angular dampening + attitude correction ──
+        if (enableDampening)
+            ApplyAngularDampening(thrusters, gridData, gridWt, angularVelocity, comLocal, attitudeTorqueLocal);
+    }
+
+    /// <summary>
+    /// Angular dampening: use thrusters to counter unwanted angular velocity.
+    /// Port of SE1 RealRCSThrusterLogic.cs lines 378-397.
+    /// For each thruster, project angular velocity onto the torque axis
+    /// that thruster can produce, and apply opposing thrust.
+    /// </summary>
+    private static void ApplyAngularDampening(
+        List<ThrusterInfo> thrusters,
+        DEntityContext gridData,
+        WorldTransform gridWt,
+        Vector3 angularVelocity,
+        Vector3 comLocal,
+        Vector3 attitudeTorqueLocal = default)
+    {
+        // Get angular velocity in grid-local space
+        Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, gridWt);
+
+        // Skip if no angular velocity to damp AND no attitude correction requested
+        bool hasAngVel = localAngVel.LengthSquared() >= DampeningThreshold * DampeningThreshold;
+        bool hasAttitude = attitudeTorqueLocal.LengthSquared() > 0.001f;
+        if (!hasAngVel && !hasAttitude)
+            return;
+
+        // Normalize attitude torque to unit direction — SasTorque magnitude is in N·m
+        // (millions), way too large for thrust fraction control. We only care about direction.
+        Vector3 attitudeDir = Vector3.Zero;
+        if (hasAttitude)
+        {
+            float attLen = attitudeTorqueLocal.Length();
+            attitudeDir = attitudeTorqueLocal / attLen;
+        }
+
+        for (int i = 0; i < thrusters.Count; i++)
+        {
+            var thruster = thrusters[i];
+
+            // Moment arm: position relative to CoM
+            Vector3 r = thruster.GridLocalPosition - comLocal;
+
+            // Torque axis this thruster produces: cross(r, thrustDirection)
+            Vector3 torqueAxis = Vector3.Cross(r, thruster.ThrustDirection);
+            float torqueLen = torqueAxis.Length();
+            if (torqueLen < 0.001f) continue; // thruster at CoM or aligned with r
+
+            torqueAxis /= torqueLen; // normalize
+
+            float desiredThrust = 0f;
+
+            // D-term: counter angular velocity
+            if (hasAngVel)
+            {
+                float angVelComponent = Vector3.Dot(localAngVel, torqueAxis);
+                desiredThrust += -angVelComponent * DampeningGain;
+            }
+
+            // P-term: attitude correction
+            // attitudeDir is the normalized desired torque direction from SAS.
+            // Fire thrusters whose torque axis aligns with desired direction:
+            // positive dot → this thruster produces torque in the desired direction → fire it.
+            if (hasAttitude)
+            {
+                float attitudeComponent = Vector3.Dot(attitudeDir, torqueAxis);
+                desiredThrust += attitudeComponent * AttitudeGain;
+            }
+
+            // This thruster can only push in one direction, so clamp to [0, 1]
+            float thrustFraction = Math.Clamp(desiredThrust * torqueLen, 0f, 1f);
+
+            if (thrustFraction < 0.01f || float.IsNaN(thrustFraction))
+                continue;
+
+            // Set thrust override via ThrusterComponent property.
+            SetComponentThrustOverride(thruster.ThrusterComponent, thrustFraction);
+            _dampeningOverrideIndices.Add(i);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thruster cache building
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GUID → ThrustProfile mapping for custom thruster blocks.
+    /// Register entries before the first RebuildThrusterCache call.
+    /// Vanilla SE2 thrusters (hydrogen, ion) get null profile (= rocket, flat 1.0).
+    /// </summary>
+    public static readonly Dictionary<Guid, ThrustProfile> ProfileByGuid = new();
+
+    static OffsetThrustJob()
+    {
+        // Atmospheric thrusters = Turbofan (air-breathing, thrust drops at transonic)
+        var atmo = ThrustProfiles.Turbofan;
+        ProfileByGuid[new Guid("8dfddd91-eb3a-4979-8b16-2fdf43061486")] = atmo; // Atmo 100
+        ProfileByGuid[new Guid("272859d7-957d-41ba-9f9c-8f84cddb5cb3")] = atmo; // Atmo 250
+        ProfileByGuid[new Guid("8a005c16-0a05-444d-ab26-786653199b52")] = atmo; // Atmo 500
+        ProfileByGuid[new Guid("bfbbff3e-7396-428a-a12c-3f32ec14c712")] = atmo; // Atmo 1000
+        // Hydrogen & Ion = Rocket (no Mach penalty, null profile by default)
+    }
+
+    // Cached reflection for reading block definition GUID
+    private static System.Reflection.PropertyInfo _blockDefProp;
+    private static System.Reflection.PropertyInfo _blockGuidProp;
+
+    /// <summary>
+    /// Scan all blocks on the grid and build a cache of thruster info.
+    /// Call on grid init and when blocks change.
+    ///
+    /// Detection strategy: iterate Entity.Components on each block to find
+    /// ThrusterComponent by type. This bypasses the tag-based Entity.TryGet
+    /// and DEntityContext.TryGet which fail when invoked via reflection
+    /// (DEntityContext is a struct; boxing breaks the archetype-based
+    /// ref-returning data lookup).
+    /// </summary>
+    public static void RebuildThrusterCache(
+        BlockOctreeComponent octree,
+        float blockSize,
+        List<ThrusterInfo> outThrusters,
+        Entity gridEntity = null)
+    {
+        outThrusters.Clear();
+        EnsureThrusterReflectionResolved();
+
+        if (_thrusterCompType == null)
+        {
+            Log.Default?.Info("[AERO] OffsetThrust: ThrusterComponent type not resolved, skipping");
+            return;
+        }
+
+        // Strategy: iterate grid's HierarchyComponent.Children to find entities
+        // with ThrusterComponent. The block octree only stores structural
+        // CubeBlockComponents — functional components like ThrusterComponent
+        // live on the same entity but aren't findable via the octree's type.
+        // HierarchyComponent.Children contains ALL child entities.
+        int totalChildren = 0, thrustBlocks = 0;
+
+        if (gridEntity != null)
+        {
+            var hierarchy = gridEntity.TryGet<HierarchyComponent>();
+            if (hierarchy != null && hierarchy.Children != null)
+            {
+                foreach (var childEntity in hierarchy.Children)
+                {
+                    if (childEntity == null) continue;
+                    totalChildren++;
+
+                    // Find ThrusterComponent — try both approaches:
+                    // 1. Entity.TryGet(tag) — uses CompositionData lookup
+                    // 2. FindComponentByType — iterates Entity.Components via reflection
+                    var tag = DefaultTag.Get(_thrusterCompType);
+                    Component thrusterComp = childEntity.TryGet(tag);
+                    thrusterComp ??= PhysicsHack.FindComponentByType(childEntity, _thrusterCompType);
+                    if (thrusterComp == null) continue;
+                    thrustBlocks++;
+
+                    // Get CubeBlockComponent from this entity for orientation/position
+                    var block = childEntity.TryGet<CubeBlockComponent>();
+                    if (block == null) continue;
+
+                    float maxPower = 0;
+                    int directionInt = 0;
+
+                    if (_thrusterDefField != null)
+                    {
+                        var def = _thrusterDefField.GetValue(thrusterComp);
+                        if (def != null)
+                        {
+                            if (_thrusterMaxPowerProp != null)
+                                maxPower = (float)_thrusterMaxPowerProp.GetValue(def);
+                            if (_thrusterDirProp != null)
+                            {
+                                var rawDir = _thrusterDirProp.GetValue(def);
+                                // Unbox enum to its underlying type first, then convert
+                                directionInt = Convert.ToInt32(rawDir);
+                                var orientedDir = block.BlockOrientation.TransformDirection(
+                                    (Base6Directions.Direction)directionInt);
+                                directionInt = (int)orientedDir;
+                            }
+                        }
+                    }
+
+                    if (maxPower <= 0f) continue;
+
+                    var aabb = block.AABB;
+                    Vector3 gridCenter = new Vector3(
+                        (aabb.Min.X + aabb.Max.X + 1) * 0.5f,
+                        (aabb.Min.Y + aabb.Max.Y + 1) * 0.5f,
+                        (aabb.Min.Z + aabb.Max.Z + 1) * 0.5f);
+                    Vector3 localPos = gridCenter * blockSize;
+
+                    Vector3 thrustDir = DirectionToVector(directionInt);
+
+                    // Classify by ThrustClass from ThrusterDefinition
+                    ThrustProfile profile = null;
+                    string thrustClass = GetThrustClass(thrusterComp);
+                    if (thrustClass != null && thrustClass.Contains("Atmospheric"))
+                        profile = ThrustProfiles.Turbofan;
+
+                    outThrusters.Add(new ThrusterInfo
+                    {
+                        ThrusterEntity = childEntity,
+                        ThrusterComponent = thrusterComp,
+                        GridLocalPosition = localPos,
+                        ThrustDirection = thrustDir,
+                        MaxPower = maxPower,
+                        Profile = profile,
+                        IntakeDirection = -thrustDir,
+                    });
+                }
+            }
+        }
+
+        int airBreathing = 0;
+        for (int i = 0; i < outThrusters.Count; i++)
+            if (outThrusters[i].Profile != null) airBreathing++;
+
+        Log.Default?.Info($"[AERO] OffsetThrust: scanned {totalChildren} hierarchy children, {thrustBlocks} with ThrusterComponent, cached {outThrusters.Count} thrusters ({airBreathing} air-breathing)");
+    }
+
+    /// <summary>
+    /// Read block definition GUID via reflection (same pattern as BlockComponentFactory).
+    /// </summary>
+    private static Guid? GetBlockDefinitionGuid(CubeBlockComponent block)
+    {
+        _blockDefProp ??= typeof(CubeBlockComponent).GetProperty("Definition",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+        var def = _blockDefProp?.GetValue(block);
+        if (def == null) return null;
+
+        _blockGuidProp ??= def.GetType().GetProperty("Guid",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+        if (_blockGuidProp != null)
+            return (Guid)_blockGuidProp.GetValue(def);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Convert Base6Directions.Direction (int) to a unit vector.
+    /// Forward=0, Backward=1, Left=2, Right=3, Up=4, Down=5
+    /// </summary>
+    private static Vector3 DirectionToVector(int dir)
+    {
+        switch (dir)
+        {
+            case 0: return -Vector3.UnitZ; // Forward
+            case 1: return Vector3.UnitZ;  // Backward
+            case 2: return -Vector3.UnitX; // Left
+            case 3: return Vector3.UnitX;  // Right
+            case 4: return Vector3.UnitY;  // Up
+            case 5: return -Vector3.UnitY; // Down
+            default: return Vector3.Zero;
+        }
+    }
+
+    // ─── ThrusterComponent reflection resolution ─────────
+
+    private static Type _thrusterCompType;
+    private static System.Reflection.FieldInfo _thrusterDefField;
+    private static System.Reflection.PropertyInfo _thrusterMaxPowerProp;
+    private static System.Reflection.PropertyInfo _thrusterDirProp;
+    private static System.Reflection.PropertyInfo _thrusterClassProp;
+    private static System.Reflection.PropertyInfo _thrustOverrideProp; // ThrusterComponent.ThrustOverride (float, get/set)
+    private static System.Reflection.MethodInfo _hasIsThrustingMethod; // Component.HasData<IsThrusting>()
+    private static bool _thrusterReflectionResolved;
+
+    private static void EnsureThrusterReflectionResolved()
+    {
+        if (_thrusterReflectionResolved) return;
+        _thrusterReflectionResolved = true;
+
+        try
+        {
+            _thrusterCompType = Type.GetType(
+                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent, Game2.Simulation",
+                throwOnError: false);
+
+            if (_thrusterCompType != null)
+            {
+                // ThrusterComponent has private field _definition (ThrusterDefinition)
+                _thrusterDefField = _thrusterCompType.GetField("_definition",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                if (_thrusterDefField != null)
+                {
+                    var defType = _thrusterDefField.FieldType;
+                    _thrusterMaxPowerProp = defType.GetProperty("ThrustPower",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    _thrusterDirProp = defType.GetProperty("ThrustDirection",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    _thrusterClassProp = defType.GetProperty("ThrustClass",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                }
+
+                // ThrusterComponent.ThrustOverride (public float property)
+                _thrustOverrideProp = _thrusterCompType.GetProperty("ThrustOverride",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+                // Component.HasData<IsThrusting>() — protected, call via reflection on the
+                // Component class instance (no DEntityContext boxing needed).
+                var isThrustingType = Type.GetType(
+                    "Keen.Game2.Simulation.WorldObjects.Movement.IsThrusting, Game2.Simulation",
+                    throwOnError: false);
+                if (isThrustingType != null)
+                {
+                    // Find the protected HasData<T>() on Component base class
+                    foreach (var m in typeof(Component).GetMethods(
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (m.Name == "HasData" && m.IsGenericMethodDefinition
+                            && m.GetParameters().Length == 0)
+                        {
+                            _hasIsThrustingMethod = m.MakeGenericMethod(isThrustingType);
+                            break;
+                        }
+                    }
+                }
+
+                Log.Default?.Info($"[AERO] ThrusterComponent resolved: type={_thrusterCompType != null} def={_thrusterDefField != null} maxPower={_thrusterMaxPowerProp != null} dir={_thrusterDirProp != null} override={_thrustOverrideProp != null} isThrusting={_hasIsThrustingMethod != null}");
+            }
+            else
+            {
+                Log.Default?.Info("[AERO] ThrusterComponent type not found in Game2.Simulation");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Default?.Info($"[AERO] ThrusterComponent resolution failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Check if thruster is actively firing via Component.HasData&lt;IsThrusting&gt;().</summary>
+    private static bool IsComponentThrusting(Component thrusterComp)
+    {
+        if (_hasIsThrustingMethod == null || thrusterComp == null) return false;
+        try { return (bool)_hasIsThrustingMethod.Invoke(thrusterComp, null); }
+        catch { return false; }
+    }
+
+    /// <summary>Read ThrustOverride from ThrusterComponent (0 = no override).</summary>
+    private static float GetComponentThrustOverride(Component thrusterComp)
+    {
+        if (_thrustOverrideProp == null || thrusterComp == null) return 0f;
+        try { return (float)_thrustOverrideProp.GetValue(thrusterComp); }
+        catch { return 0f; }
+    }
+
+    /// <summary>Set ThrustOverride on ThrusterComponent.</summary>
+    private static void SetComponentThrustOverride(Component thrusterComp, float value)
+    {
+        if (_thrustOverrideProp == null || thrusterComp == null) return;
+        if (float.IsNaN(value) || float.IsInfinity(value)) value = 0f;
+        try { _thrustOverrideProp.SetValue(thrusterComp, value); }
+        catch { }
+    }
+
+    /// <summary>Read ThrustClass (StringId) from ThrusterDefinition on a ThrusterComponent.</summary>
+    private static string GetThrustClass(Component thrusterComp)
+    {
+        if (_thrusterDefField == null || _thrusterClassProp == null) return null;
+        try
+        {
+            var def = _thrusterDefField.GetValue(thrusterComp);
+            if (def == null) return null;
+            var tc = _thrusterClassProp.GetValue(def);
+            return tc?.ToString();
+        }
+        catch { return null; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Gyroscope detection and control
+    // ═══════════════════════════════════════════════════════════════
+
+    private static Type _gyroCompType;
+    private static System.Reflection.FieldInfo _gyroDefField;
+    private static System.Reflection.PropertyInfo _gyroMaxTorqueProp;
+    private static Type _powerableBlockType;
+    private static System.Reflection.PropertyInfo _enabledProp; // PowerableBlockComponent.Enabled
+    private static bool _gyroReflectionResolved;
+
+    private static void EnsureGyroReflectionResolved()
+    {
+        if (_gyroReflectionResolved) return;
+        _gyroReflectionResolved = true;
+
+        try
+        {
+            _gyroCompType = Type.GetType(
+                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.GyroscopeComponent, Game2.Simulation",
+                throwOnError: false);
+
+            if (_gyroCompType != null)
+            {
+                _gyroDefField = _gyroCompType.GetField("_definition",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (_gyroDefField != null)
+                {
+                    var defType = _gyroDefField.FieldType;
+                    _gyroMaxTorqueProp = defType.GetProperty("MaxTorque",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                }
+            }
+
+            // PowerableBlockComponent.Enabled — used to toggle gyros (and any powerable block)
+            _powerableBlockType = Type.GetType(
+                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockComponent, Game2.Simulation",
+                throwOnError: false);
+            if (_powerableBlockType != null)
+            {
+                _enabledProp = _powerableBlockType.GetProperty("Enabled",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            }
+
+            Log.Default?.Info($"[AERO] GyroscopeComponent resolved: type={_gyroCompType != null} " +
+                $"def={_gyroDefField != null} maxTorque={_gyroMaxTorqueProp != null} " +
+                $"powerable={_powerableBlockType != null} enabled={_enabledProp != null}");
+        }
+        catch (Exception ex)
+        {
+            Log.Default?.Info($"[AERO] GyroscopeComponent resolution failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Scan grid hierarchy for gyroscope blocks. Same pattern as thruster detection.
+    /// </summary>
+    public static void RebuildGyroCache(Entity gridEntity, List<GyroInfo> outGyros)
+    {
+        outGyros.Clear();
+        EnsureGyroReflectionResolved();
+        if (_gyroCompType == null || gridEntity == null) return;
+
+        var hierarchy = gridEntity.TryGet<HierarchyComponent>();
+        if (hierarchy == null || hierarchy.Children == null) return;
+
+        var tag = DefaultTag.Get(_gyroCompType);
+
+        foreach (var child in hierarchy.Children)
+        {
+            if (child == null) continue;
+
+            var gyroComp = child.TryGet(tag);
+            gyroComp ??= PhysicsHack.FindComponentByType(child, _gyroCompType);
+            if (gyroComp == null) continue;
+
+            // Read MaxTorque from definition
+            float maxTorque = 0f;
+            if (_gyroDefField != null && _gyroMaxTorqueProp != null)
+            {
+                try
+                {
+                    var def = _gyroDefField.GetValue(gyroComp);
+                    if (def != null)
+                        maxTorque = (float)_gyroMaxTorqueProp.GetValue(def);
+                }
+                catch { }
+            }
+
+            // Find the PowerableBlockComponent on the same entity for Enabled toggle
+            Component blockComp = null;
+            if (_powerableBlockType != null)
+            {
+                var blockTag = DefaultTag.Get(_powerableBlockType);
+                blockComp = child.TryGet(blockTag);
+                blockComp ??= PhysicsHack.FindComponentByType(child, _powerableBlockType);
+            }
+
+            outGyros.Add(new GyroInfo
+            {
+                GyroEntity = child,
+                BlockComponent = blockComp,
+                MaxTorque = maxTorque,
+            });
+        }
+
+        if (outGyros.Count > 0)
+            Log.Default?.Info($"[AERO] GyroCache: found {outGyros.Count} gyros, totalTorque={outGyros.Sum(g => g.MaxTorque):F0} N·m");
+    }
+
+    /// <summary>
+    /// Enable or disable all gyros on a grid via PowerableBlockComponent.Enabled.
+    /// </summary>
+    public static void SetGyrosEnabled(List<GyroInfo> gyros, bool enabled)
+    {
+        if (_enabledProp == null) return;
+        int toggled = 0;
+        for (int i = 0; i < gyros.Count; i++)
+        {
+            if (gyros[i].BlockComponent == null) continue;
+            try
+            {
+                bool current = (bool)_enabledProp.GetValue(gyros[i].BlockComponent);
+                if (current != enabled)
+                {
+                    _enabledProp.SetValue(gyros[i].BlockComponent, enabled);
+                    toggled++;
+                }
+            }
+            catch { }
+        }
+        if (toggled > 0)
+            Log.Default?.Info($"[AERO] Gyros: {(enabled ? "enabled" : "disabled")} {toggled}/{gyros.Count}");
+    }
+
+    /// <summary>Check if gyros are currently enabled.</summary>
+    public static bool AreGyrosEnabled(List<GyroInfo> gyros)
+    {
+        if (_enabledProp == null || gyros.Count == 0) return true;
+        try { return (bool)_enabledProp.GetValue(gyros[0].BlockComponent); }
+        catch { return true; }
+    }
+}

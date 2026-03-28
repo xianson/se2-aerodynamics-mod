@@ -129,6 +129,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     public IReadOnlyList<SurfaceFace> Faces => _faces;
     public IReadOnlyList<NormalGroup> NormalGroups => _groups;
     public int FaceCount => _faces.Count;
+    public int RawFaceCount => _rawFaceKeys.Count;
     public int GroupCount => _groups.Count;
     public float BlockSize => _blockSize;
     public int Version { get; private set; }
@@ -430,6 +431,10 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             _rawFaceDirs[index] = movedDir;
             _faceIndex[movedKey] = index;
 
+            // Also move the SurfaceFace data so _faces[index] stays consistent
+            if (index < _faces.Count && lastIndex < _faces.Count)
+                _faces[index] = _faces[lastIndex];
+
             var movedCell = UnpackCell(movedKey);
             for (int v = 0; v < 4; v++)
             {
@@ -446,6 +451,10 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         _rawFaceKeys.RemoveAt(lastIndex);
         _rawFaceDirs.RemoveAt(lastIndex);
         _faceIndex.Remove(key);
+
+        // Keep _faces in sync with _rawFaceKeys
+        if (_faces.Count > _rawFaceKeys.Count)
+            _faces.RemoveAt(_faces.Count - 1);
     }
 
     // ─── Normal computation ────────────────────────────────────────
@@ -918,6 +927,17 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     {
         long key = PackCellDir(cell, dir);
         return _faceIndex.TryGetValue(key, out int index) ? index : -1;
+    }
+
+    /// <summary>
+    /// Get the cell position and direction for a face by raw index.
+    /// Used by ManifoldClassifier for face adjacency computation.
+    /// </summary>
+    public void GetFaceCellDir(int rawIndex, out Vector3I cell, out int dir)
+    {
+        long key = _rawFaceKeys[rawIndex];
+        cell = UnpackCell(key);
+        dir = (int)(key & 0xF);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

@@ -31,9 +31,22 @@ public readonly struct AeroContext
     /// <summary>Pre-computed speed (magnitude of Velocity).</summary>
     public readonly float Speed;
 
+    /// <summary>
+    /// Height above ground in meters (-1 if unknown/no ground).
+    /// Used for ground effect: reduces induced drag when close to surface.
+    /// </summary>
+    public readonly float GroundHeight;
+
+    /// <summary>
+    /// Hull/cavity face classifier (null if not available).
+    /// When set, drag models skip faces where IsHull(i) == false.
+    /// </summary>
+    public readonly ManifoldClassifier Manifold;
+
     public AeroContext(IGridAccessor gridAccessor, ISurfaceProvider surfaceCache, Vector3 velocity,
         AtmosphereState atmosphere, Vector3 centerOfMass, float blockSize = 2.5f,
-        Vector3 angularVelocity = default)
+        Vector3 angularVelocity = default, float groundHeight = -1f,
+        ManifoldClassifier manifold = null)
     {
         GridAccessor = gridAccessor;
         SurfaceCache = surfaceCache;
@@ -43,6 +56,8 @@ public readonly struct AeroContext
         CenterOfMass = centerOfMass;
         BlockSize = blockSize;
         Speed = velocity.Length();
+        GroundHeight = groundHeight;
+        Manifold = manifold;
     }
 
     /// <summary>Compute velocity at a point offset from CoM, accounting for rotation.</summary>

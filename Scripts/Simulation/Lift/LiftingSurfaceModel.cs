@@ -86,9 +86,11 @@ public class LiftingSurfaceModel : IAeroDragModel
         if (_wings == null || _wings.Count == 0)
         {
             _lastWingForces = null;
+            AeroStats.SetLift(0);
             return inner;
         }
 
+        long liftStart = AeroStats.Timestamp();
         var wingForces = LiftModel.ComputeWingForces(CollectionsMarshal.AsSpan(_wings), ctx);
         _lastWingForces = wingForces;
 
@@ -168,6 +170,8 @@ public class LiftingSurfaceModel : IAeroDragModel
         // Recompute after floor
         forceDotV = Vector3.Dot(totalForce, vHat);
         Vector3 liftVec = totalForce - forceDotV * vHat;
+
+        AeroStats.SetLift(AeroStats.ElapsedUs(liftStart));
 
         return new AeroResult(
             totalForce, totalTorque,

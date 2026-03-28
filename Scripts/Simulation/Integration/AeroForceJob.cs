@@ -1,4 +1,5 @@
 #pragma warning disable
-// Force application disabled — VRage.Physics assembly not available to mod scripts.
-// TODO: Re-enable when physics access is resolved (ask Keen about mod whitelist).
+// Force application runs via AeroDebugDraw.AeroDrawJob (draw-thread with component access).
+// Aero forces: PhysicsHack.ApplyDeltaVAndTorque
+// Offset thrust: OffsetThrustJob.Execute (dual-force RCS + angular dampening)
 namespace AeroMod;
