@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using Keen.VRage.Core;
 using Keen.VRage.Core.Game.GameSystems.OWT;
 using Keen.VRage.Core.Game.RuntimeSystems.DebugDraw;
@@ -12,17 +11,17 @@ namespace AeroMod;
 
 /// <summary>
 /// Debug draw for aero data: per-face pressure, force vectors, wing visualization.
+/// Visualization only — physics computation and force application are in AeroSimJob.cs.
 /// </summary>
 public partial class AeroGridComponent
 {
     private const float ForceScale = 1f / 50000f;
     private const float VectorScale = 0.05f; // m/s → draw length
     private const int MaxFacesToDraw = 20000; // limit for perf
-    private const float DebugDrawMaxDistance = 200f; // only draw debug for grids within this range
+    private const float DebugDrawMaxDistance = 200f;
 
-    /// <summary>Master toggle for all debug drawing (text, arrows, faces). DiagActive grids always draw.</summary>
+    /// <summary>Master toggle for all debug drawing. DiagActive grids always draw.</summary>
     internal static bool EnableDebugDraw = false;
-    private static int _dragLogCooldown;
 
     /// <summary>Set by the active player grid each frame so other grids can cull debug draw.</summary>
     internal static Vector3D DebugFocusPosition;
@@ -41,39 +40,17 @@ public partial class AeroGridComponent
         var wt = owt.Transform;
         if (!aero._initialized) return;
 
-        AeroStats.BeginGrid();
-        long frameStart = AeroStats.Timestamp();
-
-        // Read physics data via reflection hack
-        long readStart = AeroStats.Timestamp();
-        PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
-        PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
-        float density = 0f;
-        if (aero.Data.TryGet<AirData>(out var air))
-            density = air.Density;
-
-        // ── Ground height for ground effect (async raycast downward) ──
-        if (!PhysicsHack.GroundSystemReady)
-            PhysicsHack.InitGroundSystem(aero.Entity.Scene);
-
-        Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
-        aero.GroundHeight = PhysicsHack.GetGroundDistance(wt.Position, gravity);
-        AeroStats.SetRead(AeroStats.ElapsedUs(readStart));
-
-        // Trigger aero computation (passes ground height for ground effect)
-        aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
-
-        float speed = linVel.Length();
-
-        // Update focus position if this is the active test grid or fastest grid
-        if (aero.DiagActive || speed > 50f)
-            DebugFocusPosition = wt.Position;
+        // Read cached physics state (written by AeroSimJob at 60Hz)
+        Vector3 linVel = aero.LastLinVel;
+        Vector3 com = aero.LastCoM;
+        float mass = aero.LastMass;
+        float speed = aero.LastSpeed;
+        float density = aero.LastDensity;
 
         // Skip debug drawing for grids far from focus
         double distSq = (wt.Position - DebugFocusPosition).LengthSquared();
         bool drawDebug = distSq < DebugDrawMaxDistance * DebugDrawMaxDistance;
 
-        long ddStart = AeroStats.Timestamp();
         if (drawDebug && (EnableDebugDraw || aero.DiagActive))
         {
             var dd = ddp.GlobalBuilder;
@@ -114,140 +91,11 @@ public partial class AeroGridComponent
                     ColorSRGB.White, 0.5f);
             }
 
-            // ── Per-face pressure (disabled) ──
-            //if (aero.HasResult && aero._surface != null && speed > 1f)
-            //    DrawFacePressure(aero, dd, wt, density, speed);
-
             DrawWingInfo(aero, dd, wt);
             DrawAeroComponents(aero, dd, wt, linVel);
         }
-        AeroStats.SetDraw(AeroStats.ElapsedUs(ddStart));
 
-        // ── Apply forces + torques ──
-        long physicsStart = AeroStats.Timestamp();
-        if (aero.HasResult && mass > 0f)
-        {
-            Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
-            float dt = 1f / 60f;
-            Vector3 deltaV = worldForce * (dt / mass);
-
-            // Merge SAS torque with aero torque (both in local frame)
-            // During diag: suppress body aero, keep only CS contributions
-            Vector3 aeroTorque = aero.LastResult.Torque;
-            if (aero.DiagActive)
-            {
-                if (aero._diagPhase >= 5)
-                {
-                    // Phase 5: only CS component torque + force, no body aero
-                    aeroTorque = aero.LastComponentTorque;
-                    // Replace body+CS deltaV with CS-only force
-                    Vector3 csWorldForce = WorldTransform.TransformDirection(aero.LastComponentForce, wt);
-                    deltaV = csWorldForce * (dt / mass);
-                }
-                else
-                {
-                    aeroTorque = Vector3.Zero;
-                    deltaV = Vector3.Zero;
-                }
-            }
-            Vector3 totalTorque = aeroTorque + aero.SasTorque;
-
-            // ── Probe: before/after logging ──
-            bool probeLog = aero.DiagActive && totalTorque.LengthSquared() > 1f;
-            Vector3 preAngWorld = Vector3.Zero;
-            if (probeLog)
-                PhysicsHack.TryGetVelocity(aero.Data, out _, out preAngWorld);
-
-            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
-
-            if (probeLog)
-            {
-                PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 postAngWorld);
-                Vector3 preLocal = WorldTransform.TransformDirectionInv(preAngWorld, wt);
-                Vector3 postLocal = WorldTransform.TransformDirectionInv(postAngWorld, wt);
-                Vector3 dWorld = postAngWorld - preAngWorld;
-                Vector3 dLocal = postLocal - preLocal;
-
-                Log.Default?.Info($"[PROBE-APPLY] torqueLocal=({totalTorque.X:F0},{totalTorque.Y:F0},{totalTorque.Z:F0}) orientation=({wt.Orientation.X:F4},{wt.Orientation.Y:F4},{wt.Orientation.Z:F4},{wt.Orientation.W:F4})");
-                Log.Default?.Info($"[PROBE-APPLY] preAngW=({preAngWorld.X:F6},{preAngWorld.Y:F6},{preAngWorld.Z:F6}) postAngW=({postAngWorld.X:F6},{postAngWorld.Y:F6},{postAngWorld.Z:F6})");
-                Log.Default?.Info($"[PROBE-APPLY] dWorld=({dWorld.X:F6},{dWorld.Y:F6},{dWorld.Z:F6}) dLocal=({dLocal.X:F6},{dLocal.Y:F6},{dLocal.Z:F6})");
-            }
-        }
-
-        AeroStats.SetPhys(AeroStats.ElapsedUs(physicsStart));
-
-        // ── Offset thrust (RCS) ──
-        long thrustStart = AeroStats.Timestamp();
-        // Rebuild thruster cache if needed
-        if (aero._thrusterCacheDirty)
-        {
-            // Ensure block size is known even if TryCompute hasn't run yet
-            if (aero._blockSize <= 0)
-                aero._blockSize = aero.DetectBlockSize();
-
-            if (aero._blockSize > 0)
-            {
-                OffsetThrustJob.RebuildThrusterCache(aero._octree, aero._blockSize, aero._thrusterCache, aero.Entity);
-                aero._thrusterCacheDirty = false;
-            }
-        }
-
-        // Rebuild gyro cache if needed
-        if (aero._gyroCacheDirty)
-        {
-            OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
-            aero._gyroCacheDirty = false;
-        }
-
-        // Apply offset thrust correction + Mach-dependent scaling + angular dampening
-        if (aero._thrusterCache.Count > 0)
-        {
-            // Compute Mach and local velocity direction for thrust profiles
-            float thrustMach = 0f;
-            Vector3 velLocalHat = Vector3.Zero;
-            if (speed > 1f)
-            {
-                // Transform world velocity to grid-local for intake dot product
-                Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
-                velLocalHat = velLocal / velLocal.Length();
-
-                if (aero.HasResult)
-                    thrustMach = (float)aero.LastResult.Mach;
-            }
-
-            OffsetThrustJob.Execute(
-                aero._thrusterCache,
-                aero.Data,
-                wt,
-                angVel,
-                enableDampening: true,
-                mach: thrustMach,
-                velocityLocalHat: velLocalHat,
-                attitudeTorqueLocal: aero.SasTorque);
-        }
-        AeroStats.SetThrust(AeroStats.ElapsedUs(thrustStart));
-
-        // ── Commit grid stats ──
-        float gridTotalUs = AeroStats.ElapsedUs(frameStart);
-        bool isFocused = aero.DiagActive || speed > 50f;
-
-        // ── Throttled drag-vs-Mach log ──
-        if (aero.HasResult && isFocused && --_dragLogCooldown <= 0)
-        {
-            _dragLogCooldown = 60;
-            var r = aero.LastResult;
-            Log.Default?.Info(
-                $"[AERO-DRAG] M={r.Mach:F2} v={speed:F0}m/s " +
-                $"D={r.DragMagnitude:F0}N L={r.LiftMagnitude:F0}N " +
-                $"q={r.DynamicPressure:F0}Pa A={r.FrontalArea:F1}m² " +
-                $"Cd={r.DragMagnitude / (r.DynamicPressure * r.FrontalArea + 1):F4}");
-        }
-        AeroStats.CommitGrid(gridTotalUs, isFocused,
-            aero._surface?.FaceCount ?? 0,
-            aero._model?.Wings?.Count ?? 0,
-            aero._components?.Count ?? 0,
-            speed,
-            aero.HasResult ? (float)aero.LastResult.Mach : 0f);
+        // Stats are committed by AeroSimJob at 60Hz — draw job is visualization only.
     }
 
     private static void DrawForceVectors(AeroGridComponent aero, MeshBuilder dd,
