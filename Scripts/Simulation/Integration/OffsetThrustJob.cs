@@ -13,11 +13,14 @@ public struct ThrusterInfo
 {
     public Entity ThrusterEntity;
     public Component ThrusterComponent; // ThrusterComponent instance (for reading/writing override)
-    public Vector3 GridLocalPosition;  // block center in grid-local space (meters)
+    public Vector3 GridLocalPosition;  // block center in grid-local space (meters) — physics formula
+    public Vector3 DrawPosition;       // block center for debug draw (cell-center formula, matches aero components)
     public Vector3 ThrustDirection;    // unit vector in grid-local space (direction force pushes the ship)
     public float MaxPower;             // Newtons (impulse per frame = MaxPower / 60)
     public ThrustProfile Profile;      // Mach-dependent thrust scaling (null = rocket/flat)
     public Vector3 IntakeDirection;    // unit vector pointing into intake (opposite ThrustDirection for air-breathers)
+    public float AttitudeFraction;     // 0..1: fraction of capacity reserved for attitude (from terminal slider)
+    public AeroThrustSettingsComponent Settings; // live reference for reading slider changes
 }
 
 /// <summary>
@@ -28,6 +31,21 @@ public struct GyroInfo
     public Entity GyroEntity;
     public Component BlockComponent;   // PowerableBlockComponent (for Enabled toggle)
     public float MaxTorque;            // N·m
+}
+
+/// <summary>
+/// Per-thruster debug snapshot, written each physics frame for debug draw.
+/// </summary>
+public struct ThrusterDebugState
+{
+    public float VanillaThrust;     // N (before profile scaling)
+    public float ScaledThrust;      // N (after Mach profile)
+    public float AttitudeOverride;  // 0..1 fraction commanded for attitude
+    public float DTermComponent;    // D-term contribution (rate nulling)
+    public float PTermComponent;    // P-term contribution (SAS attitude)
+    public Vector3 TorqueAxis;      // normalized torque axis (r × dir / |r × dir|)
+    public float TorqueArm;         // |r × dir| in meters
+    public bool IsActive;           // thruster fired this frame
 }
 
 /// <summary>
@@ -42,12 +60,33 @@ public static class OffsetThrustJob
 {
     private const float DT = 1f / 60f;
     private const float DampeningThreshold = 0.01f;
-    private const float DampeningGain = 1.0f;  // D-term: how aggressively to counter angular velocity
-    private const float AttitudeGain = 0.5f;   // P-term: thrust fraction per unit attitude error direction
-    private static int _executeLogCooldown; // throttle diagnostic logging
+
+    private const float DampGain = 0.5f;      // D-term scaling (proportional zone up to ~2 rad/s)
+    private const float IntegralGain = 0.3f;  // accumulation rate per frame
+    private const float IntegralMax = 0.3f;   // max integral contribution (before attFrac scaling)
+
+    private static int _executeLogCooldown;
+
+    // ── Per-thruster trace logging ──
+    private static int _traceGridHash;
+    private static int _traceIndex = -1;
+    private static int _traceFrame;
+    private static int _traceLockedCount = int.MaxValue;
+    private static int _traceSkipCount = 1; // skip first N grids before locking
+    private static bool _traceActive;
+    // Net torque accumulators (written by Execute offset loop, read for NET log)
+    private static Vector3 _traceNetOffsetTorque;
+    private static Vector3 _traceNetAttitudeTorque;
 
     // Track which thrusters have dampening overrides so we can clear them next frame
     private static readonly HashSet<int> _dampeningOverrideIndices = new();
+
+    /// <summary>Per-grid debug states, keyed by thruster list reference. Written by Execute, read by draw.</summary>
+    public static readonly Dictionary<List<ThrusterInfo>, List<ThrusterDebugState>> DebugStatesByGrid = new();
+    private static int _debugLogCooldown;
+
+    /// <summary>Per-grid integral state for I-term. Same indexing as thruster cache.</summary>
+    private static readonly Dictionary<List<ThrusterInfo>, List<float>> _integralState = new();
 
     /// <summary>
     /// Run offset thrust correction for one grid.
@@ -66,27 +105,62 @@ public static class OffsetThrustJob
         bool enableDampening,
         float mach = 0f,
         Vector3 velocityLocalHat = default,
-        Vector3 attitudeTorqueLocal = default)
+        Vector3 targetAngVel = default,
+        Vector3 aeroTorqueLocal = default)
     {
         if (thrusters.Count == 0) return;
         if (!PhysicsHack.ThrusterAccessAvailable) return;
         _executeLogCooldown = Math.Max(0, _executeLogCooldown - 1);
 
-        // Clear previous dampening overrides before re-evaluating
-        foreach (int idx in _dampeningOverrideIndices)
+        // Auto-lock trace: skip first grid, lock onto second active grid
+        int gridHash = thrusters.GetHashCode();
+        _traceActive = (_traceGridHash == gridHash);
+        if (!_traceActive && thrusters.Count > 2 && _traceIndex < 0)
         {
-            if (idx < thrusters.Count)
+            // Only lock if at least one thruster is actually firing
+            bool hasActive = false;
+            for (int j = 0; j < thrusters.Count; j++)
             {
-                if (GetComponentThrustOverride(thrusters[idx].ThrusterComponent) > 0f)
-                    SetComponentThrustOverride(thrusters[idx].ThrusterComponent, 0f);
+                if (GetComponentThrustOverride(thrusters[j].ThrusterComponent) > 0f ||
+                    IsComponentThrusting(thrusters[j].ThrusterComponent))
+                { hasActive = true; break; }
+            }
+            if (hasActive)
+            {
+                if (_traceSkipCount > 0)
+                {
+                    _traceSkipCount--;
+                    Log.Default?.Info($"[AERO-TRACE] SKIPPED grid={gridHash:X8} count={thrusters.Count} (skipsLeft={_traceSkipCount})");
+                }
+                else
+                {
+                    _traceGridHash = gridHash;
+                    _traceIndex = 0;
+                    _traceFrame = 0;
+                    _traceLockedCount = thrusters.Count;
+                    _traceActive = true;
+                    Log.Default?.Info($"[AERO-TRACE] LOCKED grid={gridHash:X8} thruster=0 count={thrusters.Count}");
+                }
             }
         }
-        _dampeningOverrideIndices.Clear();
+        if (_traceActive) _traceFrame++;
+        _traceNetOffsetTorque = Vector3.Zero;
 
-        // Pre-read mass properties for dampening (need CoM in local space)
-        Vector3 comLocal = Vector3.Zero;
-        if (enableDampening)
-            PhysicsHack.TryGetMassProperties(gridData, out _, out comLocal);
+        // Reset per-grid debug states for this frame
+        if (!DebugStatesByGrid.TryGetValue(thrusters, out var debugStates))
+        {
+            debugStates = new List<ThrusterDebugState>();
+            DebugStatesByGrid[thrusters] = debugStates;
+        }
+        while (debugStates.Count < thrusters.Count)
+            debugStates.Add(default);
+        while (debugStates.Count > thrusters.Count)
+            debugStates.RemoveAt(debugStates.Count - 1);
+        for (int i = 0; i < debugStates.Count; i++)
+            debugStates[i] = default;
+
+        // Read CoM in local space (needed for coupling torque computation)
+        PhysicsHack.TryGetMassProperties(gridData, out _, out Vector3 comLocal);
 
         for (int i = 0; i < thrusters.Count; i++)
         {
@@ -137,15 +211,23 @@ public static class OffsetThrustJob
             float scaledThrust = vanillaThrust * profileScale;
             if (float.IsNaN(scaledThrust) || float.IsInfinity(scaledThrust)) continue;
 
+            // Record debug state for this thruster
+            var dbg = debugStates[i];
+            dbg.VanillaThrust = vanillaThrust;
+            dbg.ScaledThrust = scaledThrust;
+            dbg.IsActive = true;
+            debugStates[i] = dbg;
+
             // ── Dual-force pattern ──
-            // Force vector in grid-local space (at scaled magnitude)
-            Vector3 localForce = thruster.ThrustDirection * scaledThrust;
+            // ThrustDirection is the exhaust direction; force pushes the ship opposite
+            Vector3 forceDir = -thruster.ThrustDirection;
+            Vector3 localForce = forceDir * scaledThrust;
 
             // Convert to world-space impulse
             Vector3 worldImpulse = WorldTransform.TransformDirection(localForce * DT, gridWt);
 
-            // Vanilla impulse to cancel (full rated, applied at CoM by game)
-            Vector3 vanillaLocalForce = thruster.ThrustDirection * vanillaThrust;
+            // Vanilla impulse to cancel (applied at CoM by game in force direction)
+            Vector3 vanillaLocalForce = forceDir * vanillaThrust;
             Vector3 vanillaImpulse = WorldTransform.TransformDirection(vanillaLocalForce * DT, gridWt);
 
             // NaN guard — don't write bad values to physics
@@ -159,87 +241,180 @@ public static class OffsetThrustJob
 
             // Step 2: Re-apply scaled thrust at the thruster's offset position
             PhysicsHack.ApplyImpulseAt(gridData, worldImpulse, blockWorldPos, gridWt);
+
+            // Accumulate net offset coupling torque
+            Vector3 rOffset = thruster.GridLocalPosition - comLocal;
+            Vector3 couplingTorqueI = Vector3.Cross(rOffset, localForce);
+            _traceNetOffsetTorque += couplingTorqueI;
+
+            // Phase 1 trace: every variable for tracked thruster
+            if (_traceActive && i == _traceIndex)
+            {
+                bool isThrustingFlag = IsComponentThrusting(thruster.ThrusterComponent);
+                Log.Default?.Info($"[AERO-TRACE] OFFSET f={_traceFrame}" +
+                    $" pos=({thruster.GridLocalPosition.X:F2},{thruster.GridLocalPosition.Y:F2},{thruster.GridLocalPosition.Z:F2})" +
+                    $" dir=({thruster.ThrustDirection.X:F2},{thruster.ThrustDirection.Y:F2},{thruster.ThrustDirection.Z:F2})" +
+                    $" com=({comLocal.X:F2},{comLocal.Y:F2},{comLocal.Z:F2})" +
+                    $" r=({rOffset.X:F2},{rOffset.Y:F2},{rOffset.Z:F2})" +
+                    $" override={overridePower:F3} isThrusting={isThrustingFlag}" +
+                    $" van={vanillaThrust:F0} profScale={profileScale:F3} scaled={scaledThrust:F0}" +
+                    $" localF=({localForce.X:F0},{localForce.Y:F0},{localForce.Z:F0})" +
+                    $" coupling=({couplingTorqueI.X:F0},{couplingTorqueI.Y:F0},{couplingTorqueI.Z:F0})");
+            }
         }
 
-        // ── Angular dampening + attitude correction ──
-        if (enableDampening)
-            ApplyAngularDampening(thrusters, gridData, gridWt, angularVelocity, comLocal, attitudeTorqueLocal);
+        // Clear previous dampening overrides now that the main loop has read them
+        foreach (int idx in _dampeningOverrideIndices)
+        {
+            if (idx < thrusters.Count)
+            {
+                if (GetComponentThrustOverride(thrusters[idx].ThrusterComponent) > 0f)
+                    SetComponentThrustOverride(thrusters[idx].ThrusterComponent, 0f);
+            }
+        }
+        _dampeningOverrideIndices.Clear();
+
+        // ── Attitude control (direct torque) ──
+        // Apply attitude torque directly via physics API. When dampeners are on,
+        // counteracts offset coupling torque as feedforward (same pattern as aero torque).
+        // With dampeners off, coupling passes through naturally — asymmetric thrust spins the ship.
+        ApplyAttitudeTorqueDirect(thrusters, gridData, gridWt, angularVelocity, comLocal,
+            enableDampening, _traceNetOffsetTorque, targetAngVel, aeroTorqueLocal);
+
+        // Phase 3 trace: net torque summary
+        if (_traceActive)
+        {
+            Vector3 residual = _traceNetOffsetTorque + _traceNetAttitudeTorque;
+            Log.Default?.Info($"[AERO-TRACE] NET f={_traceFrame}" +
+                $" offset=({_traceNetOffsetTorque.X:F0},{_traceNetOffsetTorque.Y:F0},{_traceNetOffsetTorque.Z:F0})" +
+                $" att=({_traceNetAttitudeTorque.X:F0},{_traceNetAttitudeTorque.Y:F0},{_traceNetAttitudeTorque.Z:F0})" +
+                $" residual=({residual.X:F0},{residual.Y:F0},{residual.Z:F0})" +
+                $" |res|={residual.Length():F0}");
+        }
+
+        // ── Throttled debug log ──
+        _debugLogCooldown = Math.Max(0, _debugLogCooldown - 1);
+        if (_debugLogCooldown == 0)
+        {
+            _debugLogCooldown = 120; // every 2 seconds
+            for (int i = 0; i < debugStates.Count && i < thrusters.Count; i++)
+            {
+                var dbg = debugStates[i];
+                var t = thrusters[i];
+                Log.Default?.Info(
+                    $"[AERO-THR] T{i} active={dbg.IsActive} " +
+                    $"vanilla={dbg.VanillaThrust:F0}N scaled={dbg.ScaledThrust:F0}N max={t.MaxPower:F0}N " +
+                    $"pos=({t.GridLocalPosition.X:F1},{t.GridLocalPosition.Y:F1},{t.GridLocalPosition.Z:F1}) " +
+                    $"dir=({t.ThrustDirection.X:F1},{t.ThrustDirection.Y:F1},{t.ThrustDirection.Z:F1}) " +
+                    $"arm={dbg.TorqueArm:F1}m att={dbg.AttitudeOverride:P0} " +
+                    $"D={dbg.DTermComponent:F3} P={dbg.PTermComponent:F3} " +
+                    $"frac={t.AttitudeFraction:F2}");
+            }
+        }
     }
 
     /// <summary>
-    /// Angular dampening: use thrusters to counter unwanted angular velocity.
-    /// Port of SE1 RealRCSThrusterLogic.cs lines 378-397.
-    /// For each thruster, project angular velocity onto the torque axis
-    /// that thruster can produce, and apply opposing thrust.
+    /// Attitude controller — applies damping/SAS/feedforward torque directly via physics API.
+    /// Counteracts offset coupling torque when dampeners are on so asymmetric thrust
+    /// doesn't spin the ship uncontrollably. Still computes per-thruster debug state.
     /// </summary>
-    private static void ApplyAngularDampening(
+    private static void ApplyAttitudeTorqueDirect(
         List<ThrusterInfo> thrusters,
         DEntityContext gridData,
         WorldTransform gridWt,
         Vector3 angularVelocity,
         Vector3 comLocal,
-        Vector3 attitudeTorqueLocal = default)
+        bool enableDampening,
+        Vector3 offsetCouplingTorque,
+        Vector3 targetAngVel = default,
+        Vector3 aeroTorqueLocal = default)
     {
-        // Get angular velocity in grid-local space
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, gridWt);
 
-        // Skip if no angular velocity to damp AND no attitude correction requested
-        bool hasAngVel = localAngVel.LengthSquared() >= DampeningThreshold * DampeningThreshold;
-        bool hasAttitude = attitudeTorqueLocal.LengthSquared() > 0.001f;
-        if (!hasAngVel && !hasAttitude)
-            return;
+        bool hasInput = targetAngVel.LengthSquared() > 0.0001f;
+        bool hasDamp = enableDampening &&
+            localAngVel.LengthSquared() >= DampeningThreshold * DampeningThreshold;
+        bool hasAeroFF = aeroTorqueLocal.LengthSquared() > 1f;
+        bool hasCoupling = enableDampening && offsetCouplingTorque.LengthSquared() > 1f;
 
-        // Normalize attitude torque to unit direction — SasTorque magnitude is in N·m
-        // (millions), way too large for thrust fraction control. We only care about direction.
-        Vector3 attitudeDir = Vector3.Zero;
-        if (hasAttitude)
+        _traceNetAttitudeTorque = Vector3.Zero;
+
+        if (!hasInput && !hasDamp && !hasAeroFF && !hasCoupling) return;
+
+        // Desired torque: damping + SAS + aero feedforward + coupling feedforward
+        Vector3 desiredTorque = Vector3.Zero;
+
+        if (hasDamp)
+            desiredTorque -= localAngVel * DampGain;
+
+        if (hasInput)
+            desiredTorque += targetAngVel;
+
+        // Feedforward: counter aero torque so it doesn't build angular velocity
+        if (hasAeroFF)
+            desiredTorque -= aeroTorqueLocal;
+
+        // Feedforward: counter offset thrust coupling torque when dampeners are on
+        if (hasCoupling)
+            desiredTorque -= offsetCouplingTorque;
+
+        // Clamp to available torque capacity (sum of all thruster torque arms × max thrust)
+        // For now, use a simple gain limit based on total grid thrust
+        float totalTorqueCapacity = 0f;
+        for (int i = 0; i < thrusters.Count; i++)
         {
-            float attLen = attitudeTorqueLocal.Length();
-            attitudeDir = attitudeTorqueLocal / attLen;
+            Vector3 r = thrusters[i].GridLocalPosition - comLocal;
+            float arm = Vector3.Cross(r, thrusters[i].ThrustDirection).Length();
+            totalTorqueCapacity += arm * thrusters[i].MaxPower * 0.5f; // 50% attitude budget
         }
 
+        float desiredMag = desiredTorque.Length();
+        if (desiredMag > 0.001f && totalTorqueCapacity > 0f)
+        {
+            // Scale desired torque to not exceed capacity (both in N·m;
+            // the dt conversion to angular velocity happens inside ApplyDeltaVAndTorque)
+            float scale = MathF.Min(1f, totalTorqueCapacity / desiredMag);
+            Vector3 torqueToApply = desiredTorque * scale;
+
+            PhysicsHack.ApplyDeltaVAndTorque(gridData, Vector3.Zero, torqueToApply, DT, gridWt.Orientation);
+            _traceNetAttitudeTorque = torqueToApply;
+        }
+
+        // Record debug state for all thrusters (for visualization)
         for (int i = 0; i < thrusters.Count; i++)
         {
             var thruster = thrusters[i];
-
-            // Moment arm: position relative to CoM
             Vector3 r = thruster.GridLocalPosition - comLocal;
+            Vector3 cross = Vector3.Cross(r, thruster.ThrustDirection);
+            float torqueLen = cross.Length();
+            Vector3 torqueAxis = torqueLen > 0.001f ? cross / torqueLen : Vector3.Zero;
 
-            // Torque axis this thruster produces: cross(r, thrustDirection)
-            Vector3 torqueAxis = Vector3.Cross(r, thruster.ThrustDirection);
-            float torqueLen = torqueAxis.Length();
-            if (torqueLen < 0.001f) continue; // thruster at CoM or aligned with r
+            float dampComponent = hasDamp ? -Vector3.Dot(localAngVel, torqueAxis) * DampGain : 0f;
+            float inputComponent = hasInput ? -Vector3.Dot(targetAngVel, torqueAxis) : 0f;
 
-            torqueAxis /= torqueLen; // normalize
-
-            float desiredThrust = 0f;
-
-            // D-term: counter angular velocity
-            if (hasAngVel)
+            if (DebugStatesByGrid.TryGetValue(thrusters, out var attDebugStates) && i < attDebugStates.Count)
             {
-                float angVelComponent = Vector3.Dot(localAngVel, torqueAxis);
-                desiredThrust += -angVelComponent * DampeningGain;
+                var dbg = attDebugStates[i];
+                dbg.DTermComponent = dampComponent;
+                dbg.PTermComponent = inputComponent;
+                dbg.TorqueAxis = torqueAxis;
+                dbg.TorqueArm = torqueLen;
+                attDebugStates[i] = dbg;
             }
 
-            // P-term: attitude correction
-            // attitudeDir is the normalized desired torque direction from SAS.
-            // Fire thrusters whose torque axis aligns with desired direction:
-            // positive dot → this thruster produces torque in the desired direction → fire it.
-            if (hasAttitude)
+            // Phase 2 trace
+            if (_traceActive && i == _traceIndex)
             {
-                float attitudeComponent = Vector3.Dot(attitudeDir, torqueAxis);
-                desiredThrust += attitudeComponent * AttitudeGain;
+                Log.Default?.Info($"[AERO-TRACE] ATT f={_traceFrame}" +
+                    $" angVelW=({angularVelocity.X:F4},{angularVelocity.Y:F4},{angularVelocity.Z:F4})" +
+                    $" angVelL=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
+                    $" targAV=({targetAngVel.X:F4},{targetAngVel.Y:F4},{targetAngVel.Z:F4})" +
+                    $" hasIn={hasInput} hasDmp={hasDamp}" +
+                    $" desiredTorque=({desiredTorque.X:F1},{desiredTorque.Y:F1},{desiredTorque.Z:F1})" +
+                    $" aeroFF=({aeroTorqueLocal.X:F0},{aeroTorqueLocal.Y:F0},{aeroTorqueLocal.Z:F0})" +
+                    $" cplFF=({offsetCouplingTorque.X:F0},{offsetCouplingTorque.Y:F0},{offsetCouplingTorque.Z:F0})" +
+                    $" capacity={totalTorqueCapacity:F0}");
             }
-
-            // This thruster can only push in one direction, so clamp to [0, 1]
-            float thrustFraction = Math.Clamp(desiredThrust * torqueLen, 0f, 1f);
-
-            if (thrustFraction < 0.01f || float.IsNaN(thrustFraction))
-                continue;
-
-            // Set thrust override via ThrusterComponent property.
-            SetComponentThrustOverride(thruster.ThrusterComponent, thrustFraction);
-            _dampeningOverrideIndices.Add(i);
         }
     }
 
@@ -355,6 +530,12 @@ public static class OffsetThrustJob
                         (aabb.Min.Z + aabb.Max.Z + 1) * 0.5f);
                     Vector3 localPos = gridCenter * blockSize;
 
+                    const float CellSize = 0.25f;
+                    Vector3 drawPos = new Vector3(
+                        (aabb.Min.X + aabb.Max.X) * 0.5f * CellSize,
+                        (aabb.Min.Y + aabb.Max.Y) * 0.5f * CellSize,
+                        (aabb.Min.Z + aabb.Max.Z) * 0.5f * CellSize);
+
                     Vector3 thrustDir = DirectionToVector(directionInt);
 
                     // Classify by ThrustClass from ThrusterDefinition
@@ -363,15 +544,22 @@ public static class OffsetThrustJob
                     if (thrustClass != null && thrustClass.Contains("Atmospheric"))
                         profile = ThrustProfiles.Turbofan;
 
+                    // Read per-thruster attitude fraction from injected component
+                    var aeroSettings = childEntity.TryGet<AeroThrustSettingsComponent>();
+                    float attFrac = 0.5f; // hardcoded default — terminal slider can override later
+
                     outThrusters.Add(new ThrusterInfo
                     {
                         ThrusterEntity = childEntity,
                         ThrusterComponent = thrusterComp,
                         GridLocalPosition = localPos,
+                        DrawPosition = drawPos,
                         ThrustDirection = thrustDir,
                         MaxPower = maxPower,
                         Profile = profile,
                         IntakeDirection = thrustDir, // intake faces into airflow = same direction as thrust
+                        AttitudeFraction = attFrac,
+                        Settings = aeroSettings,
                     });
                 }
             }
@@ -522,6 +710,10 @@ public static class OffsetThrustJob
         try { _thrustOverrideProp.SetValue(thrusterComp, value); }
         catch { }
     }
+
+    /// <summary>Public wrapper to force a thrust override from outside (e.g. test harness).</summary>
+    public static void ForceOverride(Component thrusterComp, float value)
+        => SetComponentThrustOverride(thrusterComp, value);
 
     /// <summary>Read ThrustClass (StringId) from ThrusterDefinition on a ThrusterComponent.</summary>
     private static string GetThrustClass(Component thrusterComp)
