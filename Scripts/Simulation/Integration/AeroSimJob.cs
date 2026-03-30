@@ -176,6 +176,7 @@ public partial class AeroGridComponent
                 ? aero.LastResult.Torque + aero.SasTorque
                 : Vector3.Zero;
 
+            Vector3 gravLocal = WorldTransform.TransformDirectionInv(gravity, wt);
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
                 aero.Data,
@@ -185,6 +186,7 @@ public partial class AeroGridComponent
                 mach: thrustMach,
                 velocityLocalHat: velLocalHat,
                 velocityLocal: velLocal,
+                gravityLocal: gravLocal,
                 mass: mass,
                 targetAngVel: aero._lastGridAngVel,
                 aeroTorqueLocal: aeroTorqueFF);
