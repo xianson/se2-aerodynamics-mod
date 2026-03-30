@@ -371,20 +371,26 @@ public static class OffsetThrustJob
             }
 
             // ── Rotation component: oppose angular velocity + SAS + aero FF ──
+            // SE1 RealRCS pattern: dot(angVel, torqueVec) where torqueVec is the
+            // unnormalized cross product. Arm length is baked in — thrusters further
+            // from CoM naturally get more authority (larger dot product).
             float rotation = 0f;
             if (arm > 0.001f)
             {
-                // Angular dampening: fire if this thruster opposes spin
+                // Angular dampening: dot(-angVel, torqueVec) — SE1 pattern
                 if (enableDampening && hasAngVel)
-                    rotation = Math.Clamp(Vector3.Dot(-localAngVel, torqueAxis), -1f, 1f);
+                    rotation = Math.Clamp(Vector3.Dot(-localAngVel, torqueVec), -1f, 1f);
 
-                // SAS hold input
+                // SAS hold input (rad/s, dotted with torqueVec for arm scaling)
                 if (hasInput)
-                    rotation += Math.Clamp(Vector3.Dot(targetAngVel, torqueAxis), -1f, 1f);
+                    rotation += Math.Clamp(Vector3.Dot(targetAngVel, torqueVec), -1f, 1f);
 
-                // Aero torque feedforward
+                // Aero torque feedforward (N·m, normalize by torque capacity)
                 if (hasAeroFF)
-                    rotation += Math.Clamp(Vector3.Dot(-aeroTorqueLocal, torqueAxis) * 0.001f, -1f, 1f);
+                {
+                    float torqueCapacity = arm * t.MaxPower;
+                    rotation += Math.Clamp(Vector3.Dot(-aeroTorqueLocal, torqueAxis) / torqueCapacity, -1f, 1f);
+                }
 
                 rotation = Math.Clamp(rotation, -1f, 1f);
             }

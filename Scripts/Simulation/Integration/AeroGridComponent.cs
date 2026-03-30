@@ -64,8 +64,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private bool _holdOrientationValid;                        // true once captured
 
     // ── Orientation settling test ──
-    internal int _diagPhase = 100;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only attitude, 100+=done
-    // NOTE: set to 0 to run full SAS settling tests, 4 to skip straight to CS testing, 6 for thrust-only
+    internal int _diagPhase = 100;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only, 7=pilotless hover, 100+=done
+    // NOTE: set to 7 for pilotless hover test (no pilot needed)
     private int _diagFrames = 0;
     private bool _diagGyrosKilled;
     private bool _diagGyrosDisabledViaTerminal;
@@ -1449,6 +1449,132 @@ public partial class AeroGridComponent : Component, IInSceneListener
             return Vector3.Zero;
         }
 
+        // ────────────────────────────────────────────────────
+        // Phase 7: PILOTLESS THRUST-ONLY HOVER SETTLE TEST
+        // ────────────────────────────────────────────────────
+        if (_diagPhase == 7)
+        {
+            const int HoverMaxFrames = 900;
+            const float HoverErrorDeg = 5f;
+            const float HoverAngSpeedMax = 0.1f;
+            const int HoverHoldRequired = 60;
+            const int HoverStabilizeFrames = 180;
+
+            _diagFrames++;
+
+            // Stabilize 3s, disable gyros, capture orientation
+            if (!_diagGyrosDisabledViaTerminal)
+            {
+                if (_diagFrames == 1)
+                    Log.Default?.Info("[HOVER-TEST] Stabilizing for 3s...");
+                if (_diagFrames >= HoverStabilizeFrames)
+                {
+                    _fixedTargetQ = wt.Orientation;
+                    _holdOrientation = _fixedTargetQ;
+                    _holdOrientationValid = true;
+                    if (_gyroCache.Count > 0)
+                    {
+                        OffsetThrustJob.SetGyrosEnabled(_gyroCache, false);
+                        Log.Default?.Info($"[HOVER-TEST] Gyros disabled ({_gyroCache.Count})");
+                    }
+                    PhysicsHack.TryZeroGyroTorque(Data);
+                    _diagGyrosDisabledViaTerminal = true;
+                    _diagFrames = 0;
+                    _settleTestIndex = 0;
+                    _settleSubPhase = 0;
+                    _settleResults.Clear();
+                    Log.Default?.Info("[HOVER-TEST] ══════════════════════════════════════════════");
+                    Log.Default?.Info("[HOVER-TEST] PILOTLESS THRUST-ONLY HOVER SETTLE TEST");
+                    Log.Default?.Info($"[HOVER-TEST] {SettleTests.Length} tests, gyros OFF, no pilot");
+                    Log.Default?.Info("[HOVER-TEST] ══════════════════════════════════════════════");
+                }
+                return Vector3.Zero;
+            }
+
+            // All tests done?
+            if (_settleTestIndex >= SettleTests.Length)
+            {
+                int p7pass = 0, p7fail = 0;
+                Log.Default?.Info("[HOVER-TEST] ══════════════════════════════════════════════");
+                Log.Default?.Info("[HOVER-TEST] RESULTS");
+                foreach (var (name, ok, err, time) in _settleResults)
+                {
+                    Log.Default?.Info($"[HOVER-TEST]  {(ok ? "PASS" : "FAIL")}  {name,-16} err={err:F2}deg  t={time:F2}s");
+                    if (ok) p7pass++; else p7fail++;
+                }
+                Log.Default?.Info($"[HOVER-TEST] {p7pass}/{p7pass + p7fail} PASSED" +
+                    (p7fail > 0 ? $"  ({p7fail} FAILED)" : ""));
+                Log.Default?.Info("[HOVER-TEST] ══════════════════════════════════════════════");
+                if (_diagGyrosDisabledViaTerminal && _gyroCache.Count > 0)
+                {
+                    OffsetThrustJob.SetGyrosEnabled(_gyroCache, true);
+                    _diagGyrosDisabledViaTerminal = false;
+                }
+                PhysicsHack.TryRestoreGyroTorque(Data);
+                _diagPhase = 100;
+                _diagFrames = 0;
+                return Vector3.Zero;
+            }
+
+            var ht = SettleTests[_settleTestIndex];
+            Quaternion gq7 = wt.Orientation;
+            Quaternion errQ7 = Quaternion.Inverse(gq7) * _fixedTargetQ;
+            Vector3 eu7 = errQ7.ConvertToEuler();
+            float errDeg7 = eu7.Length() * Rad2Deg;
+
+            // Sub-phase 0: kick
+            if (_settleSubPhase == 0)
+            {
+                if (_diagFrames <= 1)
+                {
+                    Log.Default?.Info($"[HOVER-TEST] ── TEST {_settleTestIndex + 1}/{SettleTests.Length}: {ht.Name} ──");
+                    float rad7 = ht.TargetDeg * MathF.PI / 180f;
+                    Quaternion pQ7 = Quaternion.CreateFromAxisAngle(ht.KickDir, rad7);
+                    PhysicsHack.TrySetOrientation(Data, _fixedTargetQ * pQ7);
+                    PhysicsHack.TryZeroAngularVelocity(Data);
+                    _holdOrientation = _fixedTargetQ;
+                }
+                if (_diagFrames >= 3)
+                {
+                    _settleSubPhase = 1;
+                    _diagFrames = 0;
+                    _settleHoldFrames = 0;
+                }
+                return Vector3.Zero;
+            }
+
+            // Sub-phase 1: settle
+            if (_settleSubPhase == 1)
+            {
+                if (_diagFrames % 60 == 0)
+                    Log.Default?.Info($"[HOVER-TEST] t={_diagFrames / 60f:F1}s err={errDeg7:F2}deg w={localAngVel.Length():F4}");
+
+                if (errDeg7 < HoverErrorDeg && localAngVel.Length() < HoverAngSpeedMax)
+                {
+                    _settleHoldFrames++;
+                    if (_settleHoldFrames >= HoverHoldRequired)
+                    {
+                        float st7 = _diagFrames / 60f;
+                        Log.Default?.Info($"[HOVER-TEST] >> PASS: {ht.Name} settled in {st7:F2}s (err={errDeg7:F2}deg)");
+                        _settleResults.Add((ht.Name, true, errDeg7, st7));
+                        _settleSubPhase = 0; _settleTestIndex++; _diagFrames = 0;
+                        return Vector3.Zero;
+                    }
+                }
+                else { _settleHoldFrames = 0; }
+
+                if (_diagFrames >= HoverMaxFrames)
+                {
+                    float st7 = _diagFrames / 60f;
+                    Log.Default?.Info($"[HOVER-TEST] >> FAIL: {ht.Name} timeout (err={errDeg7:F2}deg)");
+                    _settleResults.Add((ht.Name, false, errDeg7, st7));
+                    _settleSubPhase = 0; _settleTestIndex++; _diagFrames = 0;
+                    return Vector3.Zero;
+                }
+            }
+            return Vector3.Zero;
+        }
+
         // Phase 100+: done, normal SAS resumes
         return Vector3.Zero;
     }
@@ -1545,7 +1671,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// Map player angular control input to control surface deflections.
     /// Each surface's effectiveness axis = cross(posFromCoM, hingeAxis).normalized
     /// <summary>
-    /// <summary>
     /// Attitude hold: when no pilot is present, hold the current orientation.
     /// Runs every frame before early returns so it works even without atmosphere.
     /// Sets _lastGridAngVel and SasTorque when no pilot input is detected.
@@ -1597,17 +1722,25 @@ public partial class AeroGridComponent : Component, IInSceneListener
         Vector3 eulerError = errorQuat.ConvertToEuler();
         EulerError = eulerError;
 
-        const float Kp = 5.0f;
-        const float Kd = 0.5f;
-        const float maxCmd = 5.0f;
+        // Output targetAngVel in rad/s — the per-thruster system uses
+        // dot(targetAngVel, torqueVec) where torqueVec = Cross(r, forceDir)
+        // (unnormalized, arm length included). This matches SE1 RealRCS pattern:
+        // thrusters further from CoM naturally get more authority.
+        const float HoldKp = 3.0f;   // rad/s per rad error
+        const float HoldKd = 1.5f;   // damping
+        const float HoldMax = 2.0f;  // max command rad/s
 
-        Vector3 attitudeCmd = eulerError * Kp;
-        attitudeCmd = new Vector3(
-            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.X)),
-            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Y)),
-            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Z)));
+        const float HoldMaxEuler = 0.5f;
+        Vector3 holdEulerClamped = new Vector3(
+            Math.Clamp(eulerError.X, -HoldMaxEuler, HoldMaxEuler),
+            Math.Clamp(eulerError.Y, -HoldMaxEuler, HoldMaxEuler),
+            Math.Clamp(eulerError.Z, -HoldMaxEuler, HoldMaxEuler));
 
-        _lastGridAngVel = attitudeCmd - localAngVel * Kd;
+        Vector3 attitudeCmd = holdEulerClamped * HoldKp - localAngVel * HoldKd;
+        _lastGridAngVel = new Vector3(
+            Math.Clamp(attitudeCmd.X, -HoldMax, HoldMax),
+            Math.Clamp(attitudeCmd.Y, -HoldMax, HoldMax),
+            Math.Clamp(attitudeCmd.Z, -HoldMax, HoldMax));
 
         if (_simFrameCount % 120 == 0)
             Log.Default?.Info($"[AERO-HOLD] euler=({eulerError.X:F4},{eulerError.Y:F4},{eulerError.Z:F4})" +
@@ -1663,6 +1796,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
             // Run torque probe diagnostic (applies real torques, logs results)
             SasTorque = ComputeDiagSasTorque(localAngVel, eulerErr,
                 hasAngularDataEarly ? angularDataEarly.TargetAngularVelocity : Vector3.Zero, wt);
+        }
+        else if (DiagActive)
+        {
+            // Pilotless diagnostic (Phase 7): use hold orientation as target
+            Quaternion errQ = Quaternion.Inverse(wt.Orientation) * _holdOrientation;
+            Vector3 eulerErr = errQ.ConvertToEuler();
+            SasTorque = ComputeDiagSasTorque(localAngVel, eulerErr, Vector3.Zero, wt);
         }
 
         if (_components.Count == 0) return;
