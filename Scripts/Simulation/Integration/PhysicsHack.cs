@@ -1102,6 +1102,24 @@ public static class PhysicsHack
     }
 
     /// <summary>
+    /// Teleport grid to a new position while preserving orientation.
+    /// Call TrySetOrientation first at least once to resolve the transform methods.
+    /// </summary>
+    public static bool TrySetPosition(DEntityContext data, Vector3D newPosition)
+    {
+        try
+        {
+            if (_getWorldTransformMethod == null || _setWorldTransformMethod == null)
+                return false;
+            WorldTransform wt = (WorldTransform)_getWorldTransformMethod.Invoke(null, new object[] { data });
+            var newWt = new WorldTransform(newPosition, wt.Orientation);
+            _setWorldTransformMethod.Invoke(null, new object[] { data, newWt });
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
     /// Zero angular velocity using the exact same read-modify-write pattern as ApplyDeltaVAndTorque.
     /// Call on a frame AFTER TrySetOrientation so the physics engine has processed the teleport.
     /// </summary>
@@ -1143,6 +1161,32 @@ public static class PhysicsHack
             Log.Default?.Info($"[AERO] TryZeroAngularVelocity failed: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Set angular velocity (world space) directly.
+    /// </summary>
+    public static bool TrySetAngularVelocity(DEntityContext data, Vector3 angVel)
+    {
+        if (!Available) return false;
+        try
+        {
+            _invokeArgs.SetValue(null, 0);
+            object boxedContext = data;
+            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            if (!found || _invokeArgs.GetValue(0) == null) return false;
+
+            object rbData = _invokeArgs.GetValue(0);
+            _angularVelField.SetValue(rbData, angVel);
+
+            _invokeArgs.SetValue(rbData, 0);
+            if (_setRbDataMethod != null)
+                _setRbDataMethod.Invoke(boxedContext,
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            return true;
+        }
+        catch { return false; }
     }
 
     /// <summary>

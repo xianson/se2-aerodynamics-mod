@@ -64,6 +64,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private bool _holdOrientationValid;                        // true once captured
 
     // ── Orientation settling test ──
+    private static AeroGridComponent _diagOwner;  // only one grid runs Phase 7 at a time
+    private const int DiagMinThrusters = 20;      // only run Phase 7 on grids with enough thrusters
     internal int _diagPhase = 100;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only, 7=pilotless hover, 100+=done
     // NOTE: set to 7 for pilotless hover test (no pilot needed)
     private int _diagFrames = 0;
@@ -1454,6 +1456,23 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ────────────────────────────────────────────────────
         if (_diagPhase == 7)
         {
+            // Single-grid guard: only run on grids with enough thrusters
+            if (_thrusterCache.Count < DiagMinThrusters)
+            {
+                _diagPhase = 100;
+                return Vector3.Zero;
+            }
+            if (_diagOwner == null)
+            {
+                _diagOwner = this;
+                Log.Default?.Info($"[HOVER-TEST] Grid claimed Phase 7 ({_thrusterCache.Count} thrusters)");
+            }
+            if (_diagOwner != this)
+            {
+                _diagPhase = 100;
+                return Vector3.Zero;
+            }
+
             const int HoverMaxFrames = 900;
             const float HoverErrorDeg = 5f;
             const float HoverAngSpeedMax = 0.1f;
@@ -1513,6 +1532,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 PhysicsHack.TryRestoreGyroTorque(Data);
                 _diagPhase = 100;
                 _diagFrames = 0;
+                _diagOwner = null;  // release so another grid can run tests
                 return Vector3.Zero;
             }
 
@@ -1547,7 +1567,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
             if (_settleSubPhase == 1)
             {
                 if (_diagFrames % 60 == 0)
-                    Log.Default?.Info($"[HOVER-TEST] t={_diagFrames / 60f:F1}s err={errDeg7:F2}deg w={localAngVel.Length():F4}");
+                {
+                    Log.Default?.Info($"[HOVER-TEST] t={_diagFrames / 60f:F1}s err={errDeg7:F2}deg w={localAngVel.Length():F4}" +
+                        $" cmd=({_lastGridAngVel.X:F3},{_lastGridAngVel.Y:F3},{_lastGridAngVel.Z:F3})" +
+                        $" eu=({eu7.X:F4},{eu7.Y:F4},{eu7.Z:F4})");
+                }
 
                 if (errDeg7 < HoverErrorDeg && localAngVel.Length() < HoverAngSpeedMax)
                 {
@@ -1704,7 +1728,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _holdOrientationValid = true;
             Log.Default?.Info("[AERO-HOLD] Captured hold orientation (no pilot)");
         }
-        else
+        else if (!DiagActive)  // Don't re-capture during Phase 7 — test controls _holdOrientation
         {
             // Re-capture if error is too large (stale target from long ago)
             Quaternion checkErr = Quaternion.Inverse(gridOrientation) * _holdOrientation;
@@ -1730,7 +1754,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         const float HoldKd = 1.5f;   // damping
         const float HoldMax = 2.0f;  // max command rad/s
 
-        const float HoldMaxEuler = 0.5f;
+        const float HoldMaxEuler = 1.0f;  // ~57 degrees max euler contribution
         Vector3 holdEulerClamped = new Vector3(
             Math.Clamp(eulerError.X, -HoldMaxEuler, HoldMaxEuler),
             Math.Clamp(eulerError.Y, -HoldMaxEuler, HoldMaxEuler),

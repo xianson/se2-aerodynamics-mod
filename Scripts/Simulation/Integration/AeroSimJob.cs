@@ -189,7 +189,40 @@ public partial class AeroGridComponent
                 gravityLocal: gravLocal,
                 mass: mass,
                 targetAngVel: aero._lastGridAngVel,
-                aeroTorqueLocal: aeroTorqueFF);
+                aeroTorqueLocal: aeroTorqueFF,
+                skipOffsetLoop: false);
+
+            // ── Phantom attitude + coupling cancellation ──
+            // 1. Cancel ALL offset coupling (prevents asymmetric thrust from spinning grid)
+            // 2. Apply attitude correction phantom (PD controller → torque)
+            // The per-thruster overrides handle hover/dampening (real thrust, visual, fuel).
+            // Attitude comes from phantom torque (clean, no cross-coupling artifacts).
+            Vector3 couplingCancel = -OffsetThrustJob.NetOffsetCouplingTorque;
+            Vector3 localAngVel2 = WorldTransform.TransformDirectionInv(angVel, wt);
+            // Scale by inertia so gains are ship-size-independent
+            // Kp_norm: desired angular accel per rad/s of target (rad/s²)
+            // Kd_norm: desired angular accel per rad/s of spin (rad/s²)
+            const float Kp_norm = 8.0f;   // 8 rad/s² per rad/s target
+            const float Kd_norm = 12.0f;  // 12 rad/s² per rad/s spin (strong damping)
+            // Approximate inertia from mass and grid extent
+            // For a uniform box: I ≈ mass * L² / 6. Typical grid L ≈ 10m.
+            // Better: use actual inverse inertia if available
+            float approxInertia = mass * 12f; // rough: mass * (average_radius)²
+            if (aero.LastInvInertia.LengthSquared() > 0f)
+            {
+                // Use actual inertia (inverse of inverse)
+                float avgInvI = (Math.Abs(aero.LastInvInertia.X) + Math.Abs(aero.LastInvInertia.Y) + Math.Abs(aero.LastInvInertia.Z)) / 3f;
+                if (avgInvI > 1e-10f) approxInertia = 1f / avgInvI;
+            }
+            Vector3 attTorque = (aero._lastGridAngVel * Kp_norm - localAngVel2 * Kd_norm) * approxInertia;
+            const float MaxAttTorque = 20000000f;
+            attTorque = new Vector3(
+                Math.Clamp(attTorque.X, -MaxAttTorque, MaxAttTorque),
+                Math.Clamp(attTorque.Y, -MaxAttTorque, MaxAttTorque),
+                Math.Clamp(attTorque.Z, -MaxAttTorque, MaxAttTorque));
+            Vector3 totalPhantom = couplingCancel + attTorque;
+            if (totalPhantom.LengthSquared() > 1f)
+                PhysicsHack.ApplyDeltaVAndTorque(aero.Data, Vector3.Zero, totalPhantom, dt, wt.Orientation);
         }
 
         // ── Throttled drag-vs-Mach log ──

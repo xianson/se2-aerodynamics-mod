@@ -95,6 +95,13 @@ public partial class AeroGridComponent
             DrawAeroComponents(aero, dd, wt, linVel);
         }
 
+        // Thruster debug draw: always on, no distance/toggle gating
+        if (aero._thrusterCache.Count > 0)
+        {
+            var dd2 = ddp.GlobalBuilder;
+            DrawThrusterDebug(aero, dd2, wt);
+        }
+
         // Stats are committed by AeroSimJob at 60Hz — draw job is visualization only.
     }
 
@@ -565,6 +572,59 @@ public partial class AeroGridComponent
                     $"\nyaw={rotor.YawTorqueApplied:F0}N·m";
                 dd.AddText(posWorld + (Vector3D)(discWorld * 0.5f), info, ColorSRGB.Magenta, 0.35f);
             }
+        }
+    }
+
+    private static void DrawThrusterDebug(AeroGridComponent aero, MeshBuilder dd, in WorldTransform wt)
+    {
+        var thrusters = aero._thrusterCache;
+        if (thrusters.Count == 0) return;
+        if (!OffsetThrustJob.DebugStatesByGrid.TryGetValue(thrusters, out var debugStates)) return;
+        if (debugStates.Count != thrusters.Count) return;
+
+        Vector3 comLocal = aero.LastCoM;
+
+        for (int i = 0; i < thrusters.Count; i++)
+        {
+            var t = thrusters[i];
+            var dbg = debugStates[i];
+
+            Vector3D posWorld = WorldTransform.Transform((Vector3D)t.DrawPosition, in wt);
+            Vector3 thrustDirWorld = WorldTransform.TransformDirection(t.ThrustDirection, wt);
+
+            // ── Thrust vector (white arrow, scaled by actual force) ──
+            if (dbg.IsActive)
+            {
+                float thrustScale = dbg.ScaledThrust * ForceScale;
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(thrustDirWorld * thrustScale),
+                    ColorSRGB.White, null, 0.12);
+            }
+
+            // ── Attitude override (orange arrow along torque axis) ──
+            if (dbg.AttitudeOverride > 0.01f)
+            {
+                Vector3 torqueWorld = WorldTransform.TransformDirection(dbg.TorqueAxis, wt);
+                float overrideScale = dbg.AttitudeOverride * 3f; // visual scale
+                dd.AddArrow(posWorld, posWorld + (Vector3D)(torqueWorld * overrideScale),
+                    ColorSRGB.Orange, null, 0.08);
+            }
+
+            // ── Moment arm line (gray, from CoM to thruster) ──
+            Vector3 r = t.GridLocalPosition - comLocal;
+            if (r.LengthSquared() > 0.1f)
+            {
+                Vector3D comWorld = WorldTransform.Transform((Vector3D)comLocal, in wt);
+                dd.AddLine(comWorld, posWorld, new ColorSRGB(0.4f, 0.4f, 0.4f));
+            }
+
+            // ── Text overlay ──
+            float liveFrac = t.Settings != null ? t.Settings.AttitudeFraction : t.AttitudeFraction;
+            string status = dbg.IsActive ? "ON" : "off";
+            string info = $"T{i} {status} {dbg.ScaledThrust:F0}/{t.MaxPower:F0}N" +
+                $"\narm={dbg.TorqueArm:F1}m frac={liveFrac:F2}" +
+                $"\nATT={dbg.AttitudeOverride:P0} D={dbg.DTermComponent:F2} P={dbg.PTermComponent:F2}";
+
+            dd.AddText(posWorld + (Vector3D)(thrustDirWorld * 0.4f), info, ColorSRGB.White, 0.3f);
         }
     }
 
