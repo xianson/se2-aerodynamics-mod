@@ -46,6 +46,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _wingCooldownTicks;
     private const int WingDetectCooldown = 60; // ~1s at 60Hz — full detection with ray-march
 
+    // ── Surface update cooldown (suppress rapid incremental updates during impacts) ──
+    private int _surfaceCooldownTicks;
+    private const int SurfaceCooldown = 60; // ~1s at 60Hz
+
     // ── Face override index (for Cp heatmap) ──
     private bool _faceOverridesDirty = true;
 
@@ -55,6 +59,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // ── SAS (hidden stability augmentation) ──
     // Direct torque applied to physics, independent of aero surfaces.
     internal Vector3 SasTorque;  // local frame, computed per frame
+    internal Vector3 EulerError; // local frame, orientation error in radians
+    private Quaternion _holdOrientation = Quaternion.Identity; // orientation to hold when unpiloted
+    private bool _holdOrientationValid;                        // true once captured
 
     // ── Orientation settling test ──
     internal int _diagPhase = 100;       // 0=stabilize, 1=running tests, 2=summary, 4=level flight, 5=CS only, 6=thrust-only attitude, 100+=done
@@ -70,6 +77,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private List<(string name, bool passed, float errorDeg, float timeSec)> _settleResults = new();
     private Quaternion _fixedTargetQ;  // stored target for phase 4 (re-applied every frame)
     private Vector3 _fixedHeadingDir;  // desired horizontal forward direction (world space)
+    private Vector3D _testStartPosition; // saved position for teleporting back between tests
+    private Vector3 _testStartVelocity;  // saved velocity for restoring between tests
 
     // ── Accumulated changes for incremental wing update ──
     private List<Vector3I> _wingAddedCells = new();
@@ -98,6 +107,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float LastMass;
     internal float LastDensity;
     internal float LastSpeed;
+    internal Vector3 LastInvInertia;      // (1/Ixx, 1/Iyy, 1/Izz) principal axes
+    internal Quaternion LastInertiaMajorAxisRot = Quaternion.Identity; // principal → body rotation
 
     // Shared across all grids
     private static AtmosphereBridge _atmosphereBridge;
@@ -230,6 +241,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         _dirty = true;
         _thrusterCacheDirty = true;
+        _surfaceCooldownTicks = SurfaceCooldown;
     }
 
     // ── Compute (called from debug draw for now) ──
@@ -237,6 +249,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal void TryCompute(WorldTransform wt, float density, Vector3 linearVelocity, Vector3 angularVelocity, Vector3 centerOfMass, float groundHeight = -1f)
     {
         HasResult = false;
+
+        // ── Attitude hold (runs every frame, even without atmosphere/speed) ──
+        UpdateAttitudeHold(wt, angularVelocity);
 
         if (!_initialized) return;
 
@@ -253,42 +268,66 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _blockSize = DetectBlockSize();
 
         // ── Handle dirty state: enqueue full rebuild or do incremental update ──
+        // Cooldown: suppress incremental updates while blocks are still actively
+        // changing (e.g., ground impact). Cells keep accumulating in _pending lists;
+        // a single batched update runs once the cooldown expires.
         long surfaceStart = AeroStats.Timestamp();
         if (_dirty && !_staggeredBuildActive)
         {
-            _gridAccessor.SetOctree(_octree);
-            _blockSize = DetectBlockSize();
-
+            // Full rebuilds bypass cooldown — staggered builder handles its own pacing
             if (_fullRebuildNeeded || _surface.FaceCount == 0)
             {
-                // Enqueue for scheduler-managed staggered rebuild
+                _gridAccessor.SetOctree(_octree);
+                _blockSize = DetectBlockSize();
                 AeroScheduler.EnqueueRebuild(this);
                 _fullRebuildNeeded = false;
+                _pendingAddedCells.Clear();
+                _pendingRemovedCells.Clear();
+                _dirty = false;
+            }
+            else if (_surfaceCooldownTicks > 0)
+            {
+                // Still receiving rapid changes — keep accumulating
+                _surfaceCooldownTicks--;
             }
             else
             {
-                // Incremental surface update (immediate, single tick)
-                var args = new BlocksChangedArgs(
-                    added: _pendingAddedCells.Count > 0 ? _pendingAddedCells : null,
-                    removed: _pendingRemovedCells.Count > 0 ? _pendingRemovedCells : null);
-                _surface.OnBlocksChanged(_gridAccessor, args);
-                _manifold.Classify(_surface); // reclassify hull vs cavity
+                // Cooldown expired — flush all accumulated changes
+                _gridAccessor.SetOctree(_octree);
+                _blockSize = DetectBlockSize();
 
-                // Incremental wing update (cheap — only re-processes affected wings)
-                _model.UpdateWings(_gridAccessor, _surface, _blockSize,
-                    _pendingAddedCells, _pendingRemovedCells);
-                _faceOverridesDirty = true;
+                int changedCells = _pendingAddedCells.Count + _pendingRemovedCells.Count;
+                int faceCount = _surface.RawFaceCount;
 
-                // Accumulate for deferred full detection (ray-march correctness pass)
-                _wingAddedCells.AddRange(_pendingAddedCells);
-                _wingRemovedCells.AddRange(_pendingRemovedCells);
-                _wingsDirty = true;
-                _wingCooldownTicks = WingDetectCooldown;
+                if (faceCount > 0 && changedCells > faceCount / 5)
+                {
+                    // Too many accumulated changes — incremental would fall through
+                    // to a synchronous full Build(). Route to staggered builder instead.
+                    AeroScheduler.EnqueueRebuild(this);
+                }
+                else
+                {
+                    // Small enough for incremental update
+                    var args = new BlocksChangedArgs(
+                        added: _pendingAddedCells.Count > 0 ? _pendingAddedCells : null,
+                        removed: _pendingRemovedCells.Count > 0 ? _pendingRemovedCells : null);
+                    _surface.OnBlocksChanged(_gridAccessor, args);
+                    _manifold.Classify(_surface);
+
+                    _model.UpdateWings(_gridAccessor, _surface, _blockSize,
+                        _pendingAddedCells, _pendingRemovedCells);
+                    _faceOverridesDirty = true;
+
+                    _wingAddedCells.AddRange(_pendingAddedCells);
+                    _wingRemovedCells.AddRange(_pendingRemovedCells);
+                    _wingsDirty = true;
+                    _wingCooldownTicks = WingDetectCooldown;
+                }
+
+                _pendingAddedCells.Clear();
+                _pendingRemovedCells.Clear();
+                _dirty = false;
             }
-
-            _pendingAddedCells.Clear();
-            _pendingRemovedCells.Clear();
-            _dirty = false;
         }
         else if (_dirty && _staggeredBuildActive)
         {
@@ -1217,10 +1256,35 @@ public partial class AeroGridComponent : Component, IInSceneListener
             const float ThrustSettleErrorDeg = 5f;
             const float ThrustSettleAngSpeedMax = 0.1f;
             const int ThrustSettleHoldRequired = 60;  // 1s hold
+            const int CruiseDelayFrames = 300;        // 5s cruise before tests start
 
-            // First entry: initialize target orientation and disable gyros
+            // Boost to 250 m/s and maintain, then start tests after 5s
+            if (!_diagGyrosDisabledViaTerminal && _diagFrames < CruiseDelayFrames)
+            {
+                _diagFrames++;
+                // Compute horizon-forward + 5° up: grid +X projected flat, then pitched up
+                Vector3 gridFwd = WorldTransform.TransformDirection(Vector3.UnitX, wt);
+                float horizLen = MathF.Sqrt(gridFwd.X * gridFwd.X + gridFwd.Z * gridFwd.Z);
+                Vector3 horizFwd = horizLen > 0.01f
+                    ? new Vector3(gridFwd.X / horizLen, 0f, gridFwd.Z / horizLen)
+                    : new Vector3(1f, 0f, 0f);
+                // 15° climb: sin(15°) ≈ 0.259, cos(15°) ≈ 0.966
+                Vector3 climbDir = horizFwd * 0.966f + Vector3.UnitY * 0.259f;
+                PhysicsHack.TrySetVelocity(Data, climbDir * 500f);
+                if (_diagFrames == 1)
+                    Log.Default?.Info("[THRUST-TEST] Boosting to 250 m/s horizon-forward, 5s cruise...");
+                if (_diagFrames % 60 == 0)
+                    Log.Default?.Info($"[THRUST-TEST] Cruise: {_diagFrames / 60}s / 5s at {LastSpeed:F0} m/s");
+                return Vector3.Zero;
+            }
+
+            // First entry after cruise: save position, initialize target orientation, disable gyros
             if (!_diagGyrosDisabledViaTerminal)
             {
+                _diagFrames = 0; // reset for test timing
+                _testStartPosition = wt.Position;
+                _testStartVelocity = LastLinVel;
+                Log.Default?.Info($"[THRUST-TEST] Saved start pos=({wt.Position.X:F0},{wt.Position.Y:F0},{wt.Position.Z:F0}) vel={LastSpeed:F0} m/s");
                 // Capture current orientation as target (level flight)
                 _fixedTargetQ = wt.Orientation;
                 if (Data.TryGet<TargetControlData>(out var tcdInit))
@@ -1246,6 +1310,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
             {
                 tcd6.TargetOrientation = _fixedTargetQ;
                 Data.Set(tcd6);
+            }
+
+            // Keep forward thrusters firing at full power during tests
+            for (int t = 0; t < _thrusterCache.Count; t++)
+            {
+                var ti = _thrusterCache[t];
+                // Forward thrusters push +X
+                if (ti.ThrustDirection.X > 0.9f)
+                    OffsetThrustJob.ForceOverride(ti.ThrusterComponent, 1.0f);
             }
 
             _diagFrames++;
@@ -1306,6 +1379,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 if (_diagFrames == 1)
                 {
                     Log.Default?.Info($"[THRUST-TEST] ── TEST {_settleTestIndex + 1}/{SettleTests.Length}: {thrTest.Name} ── teleporting...");
+                    // Restore position and velocity to start point
+                    PhysicsHack.TrySetPosition(Data, _testStartPosition);
+                    PhysicsHack.TrySetVelocity(Data, _testStartVelocity);
+                    // Apply perturbed orientation
                     float perturbRad6 = thrTest.TargetDeg * MathF.PI / 180f;
                     Quaternion perturbQ6 = Quaternion.CreateFromAxisAngle(thrTest.KickDir, perturbRad6);
                     Quaternion perturbedQ6 = _fixedTargetQ * perturbQ6;
@@ -1467,6 +1544,87 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>
     /// Map player angular control input to control surface deflections.
     /// Each surface's effectiveness axis = cross(posFromCoM, hingeAxis).normalized
+    /// <summary>
+    /// <summary>
+    /// Attitude hold: when no pilot is present, hold the current orientation.
+    /// Runs every frame before early returns so it works even without atmosphere.
+    /// Sets _lastGridAngVel and SasTorque when no pilot input is detected.
+    /// </summary>
+    private void UpdateAttitudeHold(WorldTransform wt, Vector3 angularVelocity)
+    {
+        // Check if a pilot is providing input
+        bool hasTargetData = Data.TryGet<TargetControlData>(out _);
+        bool hasAngularData = Data.TryGet<AngularControlData>(out _);
+
+        // AngularControlData persists on entity even without a pilot (stale ECS component).
+        // Check if there's actual nonzero input, not just component existence.
+        bool hasRealInput = hasTargetData;
+        if (!hasRealInput && hasAngularData)
+        {
+            var angData = Data.Get<AngularControlData>();
+            hasRealInput = angData.TargetAngularVelocity.LengthSquared() > 0.0001f;
+        }
+
+        if (hasRealInput)
+        {
+            _holdOrientationValid = false;
+            return;
+        }
+
+        // No pilot — hold orientation
+        Quaternion gridOrientation = wt.Orientation;
+        if (!_holdOrientationValid)
+        {
+            _holdOrientation = gridOrientation;
+            _holdOrientationValid = true;
+            Log.Default?.Info("[AERO-HOLD] Captured hold orientation (no pilot)");
+        }
+
+        Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, wt);
+
+        Quaternion errorQuat = Quaternion.Inverse(gridOrientation) * _holdOrientation;
+        Vector3 eulerError = errorQuat.ConvertToEuler();
+        EulerError = eulerError;
+
+        const float Kp = 5.0f;
+        const float Kd = 0.5f;
+        const float maxCmd = 5.0f;
+
+        Vector3 attitudeCmd = eulerError * Kp;
+        attitudeCmd = new Vector3(
+            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.X)),
+            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Y)),
+            MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Z)));
+
+        _lastGridAngVel = attitudeCmd - localAngVel * Kd;
+
+        if (_simFrameCount % 120 == 0)
+            Log.Default?.Info($"[AERO-HOLD] euler=({eulerError.X:F4},{eulerError.Y:F4},{eulerError.Z:F4})" +
+                $" angVel=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
+                $" cmd=({_lastGridAngVel.X:F4},{_lastGridAngVel.Y:F4},{_lastGridAngVel.Z:F4})");
+
+        // SAS torque for the hidden stability system
+        if (!DiagActive)
+        {
+            const float SasDamping = 2000000f;
+            const float SasAttitude = 1000000f;
+            const float SasMaxTorque = 10000000f;
+
+            Vector3 sasDamp = -localAngVel * SasDamping;
+            Vector3 clampedEuler = new Vector3(
+                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.X)),
+                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Y)),
+                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Z)));
+            Vector3 sasAtt = clampedEuler * SasAttitude;
+
+            SasTorque = sasDamp + sasAtt;
+            SasTorque = new Vector3(
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.X)),
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Y)),
+                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Z)));
+        }
+    }
+
     /// DeflectionInput = dot(effectivenessAxis, targetAngularVelocity), clamped [-1,+1].
     /// </summary>
     private int _csLogCooldown;
@@ -1570,11 +1728,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (hasTargetData)
         {
             inputMode = "RETICLE";
+            _holdOrientationValid = false; // re-capture when pilot exits
 
             // ── OUTER LOOP: Attitude → Desired angular rate ──
             // Orientation error in local frame (same as GridGyroscopesComponent.ComputeTorqueTarget)
             Quaternion errorQuat = Quaternion.Inverse(gridOrientation) * targetData.TargetOrientation;
             Vector3 eulerError = errorQuat.ConvertToEuler(); // radians, local frame (matches game convention)
+            EulerError = eulerError; // expose for thruster attitude controller
 
             // Simple PD controller: proportional on attitude error, derivative on angular rate.
             // ConvertToEuler returns (Pitch, Yaw, Roll) = (X, Y, Z) — same frame as
@@ -1641,9 +1801,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE PD_cmd=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
             }
         }
-        else if (hasAngularData)
+        else if (hasAngularData && angularData.TargetAngularVelocity.LengthSquared() > 0.0001f)
         {
             inputMode = "KEYBOARD";
+            _holdOrientationValid = false; // re-capture when pilot exits
 
             Vector3 raw = angularData.TargetAngularVelocity;
             targetAngVel = new Vector3(
@@ -1661,6 +1822,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
         else
         {
+            inputMode = "HOLD";
+            // _lastGridAngVel and SasTorque already set by UpdateAttitudeHold()
+            // which runs before early returns in TryCompute
+            targetAngVel = _lastGridAngVel;
             if (_diagPhase == 5) SasTorque = Vector3.Zero;
         }
 

@@ -15,6 +15,7 @@ namespace AeroMod;
 public partial class AeroGridComponent
 {
     private static int _simDragLogCooldown;
+    private int _simFrameCount;
 
     [During(typeof(GridUpdateOrder.UpdateSystems.Update))]
     [After(typeof(ThrustComponent.OnComputeThrust))]
@@ -26,12 +27,16 @@ public partial class AeroGridComponent
     {
         if (!aero._initialized) return;
 
+        aero._simFrameCount++;
         AeroStats.BeginGrid();
+
+        // Zero angular velocity on first frame to clear saved-world spin
+        if (aero._simFrameCount == 1)
+            PhysicsHack.TryZeroAngularVelocity(aero.Data);
 
         // ── Read physics state ──
         PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
-        PhysicsHack.TryGetMassProperties(aero.Data, out float invMass, out Vector3 com);
-        float mass = invMass > 1e-12f ? 1f / invMass : 0f;
+        PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
 
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
@@ -51,9 +56,21 @@ public partial class AeroGridComponent
         aero.LastMass = mass;
         aero.LastDensity = density;
         aero.LastSpeed = linVel.Length();
+        if (PhysicsHack.TryGetInertiaData(aero.Data, out var invI, out var majorAxisRot))
+        {
+            aero.LastInvInertia = invI;
+            aero.LastInertiaMajorAxisRot = majorAxisRot;
+        }
 
         // ── Aero computation ──
         aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+
+        if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
+        {
+            Log.Default?.Info($"[AERO-SIM] EARLY f={aero._simFrameCount} v={aero.LastSpeed:F1} " +
+                $"d={density:F4} mass={mass:F0} hasResult={aero.HasResult} " +
+                $"angVel=({angVel.X:F3},{angVel.Y:F3},{angVel.Z:F3})");
+        }
 
         // ── Apply aero forces + torques ──
         float dt = 1f / 60f;
@@ -61,6 +78,16 @@ public partial class AeroGridComponent
         {
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
             Vector3 deltaV = worldForce * (dt / mass);
+
+            // Log first 120 frames of force application to diagnose launch acceleration
+            if (aero._simFrameCount < 120 && aero._simFrameCount % 10 == 0)
+            {
+                float fDotV = aero.LastSpeed > 0.1f ? Vector3.Dot(worldForce, linVel / aero.LastSpeed) : 0f;
+                Log.Default?.Info($"[AERO-SIM] f={aero._simFrameCount} v={aero.LastSpeed:F1} " +
+                    $"|dV|={deltaV.Length():F4} |F|={worldForce.Length():F0} " +
+                    $"FdotV={fDotV:F0} d={density:F4} " +
+                    $"localF=({aero.LastResult.Force.X:F0},{aero.LastResult.Force.Y:F0},{aero.LastResult.Force.Z:F0})");
+            }
 
             // Merge SAS torque with aero torque (both in local frame)
             Vector3 aeroTorque = aero.LastResult.Torque;
@@ -119,18 +146,35 @@ public partial class AeroGridComponent
             aero._gyroCacheDirty = false;
         }
 
+        // ── Clear stale ThrustOverride values on first frame (persisted from save) ──
+        if (aero._simFrameCount == 1 && aero._thrusterCache.Count > 0)
+        {
+            for (int i = 0; i < aero._thrusterCache.Count; i++)
+                OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+        }
+
         // ── Offset thrust (RCS) correction ──
         if (aero._thrusterCache.Count > 0)
         {
             float thrustMach = 0f;
             Vector3 velLocalHat = Vector3.Zero;
+            Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
             if (aero.LastSpeed > 1f)
             {
-                Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
                 velLocalHat = velLocal / velLocal.Length();
+
+                // Compute Mach from speed + atmosphere, independent of aero HasResult.
+                // Without atmosphere model, use standard sea-level speed of sound (343 m/s).
                 if (aero.HasResult)
                     thrustMach = (float)aero.LastResult.Mach;
+                else
+                    thrustMach = aero.LastSpeed / 343f;
             }
+
+            // Pass aero torque for feedforward cancellation in attitude controller
+            Vector3 aeroTorqueFF = (aero.HasResult && !aero.DiagActive)
+                ? aero.LastResult.Torque + aero.SasTorque
+                : Vector3.Zero;
 
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
@@ -140,7 +184,10 @@ public partial class AeroGridComponent
                 enableDampening: true,
                 mach: thrustMach,
                 velocityLocalHat: velLocalHat,
-                attitudeTorqueLocal: aero.SasTorque);
+                velocityLocal: velLocal,
+                mass: mass,
+                targetAngVel: aero._lastGridAngVel,
+                aeroTorqueLocal: aeroTorqueFF);
         }
 
         // ── Throttled drag-vs-Mach log ──
