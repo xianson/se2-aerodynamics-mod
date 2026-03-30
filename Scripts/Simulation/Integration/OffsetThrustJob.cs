@@ -443,7 +443,63 @@ public static class OffsetThrustJob
         }
 
         // ════════════════════════════════════════════════════════════════
-        // Apply overrides ONLY where Phase 2 changed throttle above vanilla floor.
+        // PHASE 3: Force nulling
+        // Phase 2 attitude thrusters create net linear force as a side-effect.
+        // Fire additional thrusters to cancel that force, like real RCS pairs.
+        // Uses force effectiveness (not torque) to find opposing thrusters.
+        // ════════════════════════════════════════════════════════════════
+        Vector3 attForce = Vector3.Zero;
+        for (int i = 0; i < n; i++)
+        {
+            float delta = throttle[i] - vanFloor[i];
+            if (delta > 0.001f)
+                attForce += forceDir[i] * (delta * thrusters[i].MaxPower);
+        }
+
+        float attForceMag = attForce.Length();
+        if (attForceMag > 100f) // only bother if > 100 N
+        {
+            Vector3 cancelDir = -attForce / attForceMag;
+
+            float maxCancelForce = 0f;
+            Span<float> fProj = n <= 64 ? stackalloc float[n] : new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float p = Vector3.Dot(forceDir[i], cancelDir);
+                fProj[i] = p > 0f ? p : 0f;
+                if (fProj[i] > 0f)
+                {
+                    float available = 1f - throttle[i];
+                    if (available > 0.001f)
+                        maxCancelForce += fProj[i] * available * thrusters[i].MaxPower;
+                }
+            }
+
+            if (maxCancelForce > 1f)
+            {
+                float fScale = MathF.Min(attForceMag / maxCancelForce, 1f);
+                for (int i = 0; i < n; i++)
+                {
+                    if (fProj[i] <= 0f) continue;
+                    float available = 1f - throttle[i];
+                    throttle[i] += fScale * available;
+                    throttle[i] = MathF.Min(throttle[i], 1f);
+                }
+            }
+
+            if (_traceActive)
+            {
+                int p3candidates = 0;
+                for (int i = 0; i < n; i++) if (fProj[i] > 0f) p3candidates++;
+                Log.Default?.Info($"[AERO-TRACE] P3 f={_traceFrame}" +
+                    $" attF=({attForce.X:F0},{attForce.Y:F0},{attForce.Z:F0})" +
+                    $" cancelDir=({cancelDir.X:F2},{cancelDir.Y:F2},{cancelDir.Z:F2})" +
+                    $" maxCancel={maxCancelForce:F0} candidates={p3candidates}");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // Apply overrides ONLY where allocation changed throttle above vanilla floor.
         // Leave vanilla-controlled thrusters alone so dampening isn't disrupted.
         // ════════════════════════════════════════════════════════════════
         Vector3 producedTorque = Vector3.Zero;
@@ -510,22 +566,22 @@ public static class OffsetThrustJob
                     $" fd=({forceDir[_traceIndex].X:F2},{forceDir[_traceIndex].Y:F2},{forceDir[_traceIndex].Z:F2})" +
                     $" maxPow={tt.MaxPower:F0}");
 
-                // Log force from our attitude additions only (delta above vanilla)
-                Vector3 attForce = Vector3.Zero;
+                // Log force from our additions (delta above vanilla) — after force nulling
+                Vector3 totalAttForce = Vector3.Zero;
                 int overrideCount = 0;
                 for (int j = 0; j < n; j++)
                 {
                     float d = throttle[j] - vanFloor[j];
                     if (d > 0.001f)
                     {
-                        attForce += forceDir[j] * (d * thrusters[j].MaxPower);
+                        totalAttForce += forceDir[j] * (d * thrusters[j].MaxPower);
                         overrideCount++;
                     }
                 }
                 Log.Default?.Info($"[AERO-TRACE] FORCE f={_traceFrame}" +
-                    $" attF=({attForce.X:F0},{attForce.Y:F0},{attForce.Z:F0})" +
-                    $" |attF|={attForce.Length():F0} nOverrides={overrideCount}" +
-                    $" gravDemand={mass * 9.81f:F0}");
+                    $" preNull=({attForce.X:F0},{attForce.Y:F0},{attForce.Z:F0}) |pre|={attForceMag:F0}" +
+                    $" postNull=({totalAttForce.X:F0},{totalAttForce.Y:F0},{totalAttForce.Z:F0}) |post|={totalAttForce.Length():F0}" +
+                    $" nOverrides={overrideCount}");
             }
         }
     }

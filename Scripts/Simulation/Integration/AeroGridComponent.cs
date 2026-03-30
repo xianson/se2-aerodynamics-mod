@@ -1579,6 +1579,17 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _holdOrientationValid = true;
             Log.Default?.Info("[AERO-HOLD] Captured hold orientation (no pilot)");
         }
+        else
+        {
+            // Re-capture if error is too large (stale target from long ago)
+            Quaternion checkErr = Quaternion.Inverse(gridOrientation) * _holdOrientation;
+            Vector3 checkEuler = checkErr.ConvertToEuler();
+            if (checkEuler.LengthSquared() > 1f) // > ~1 radian total error
+            {
+                _holdOrientation = gridOrientation;
+                Log.Default?.Info("[AERO-HOLD] Re-captured hold orientation (error too large)");
+            }
+        }
 
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, wt);
 
