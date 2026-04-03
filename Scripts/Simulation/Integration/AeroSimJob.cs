@@ -108,6 +108,18 @@ public partial class AeroGridComponent
 
         // ── Apply aero forces + torques ──
         float dt = 1f / 60f;
+
+        // Gyro handoff: when a pilot is present (TargetControlData) and error is large,
+        // let game gyros handle coarse correction (smooth, no coupling artifacts).
+        // Phantom + SAS take over for fine hold below threshold.
+        // Without a pilot, game gyros are passive — phantom must handle all errors.
+        const float GyroHandoffRad = 0.087f; // ~5 degrees
+        bool gyroCoarseMode = !aero.SuppressPhantomTorque
+            && !aero.HarnessControlsAttitude
+            && aero._gyroCache.Count > 0
+            && aero.Data.Has<TargetControlData>()
+            && aero.EulerError.LengthSquared() > GyroHandoffRad * GyroHandoffRad;
+
         if (aero.HasResult && mass > 0f)
         {
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
@@ -123,8 +135,7 @@ public partial class AeroGridComponent
                     $"localF=({aero.LastResult.Force.X:F0},{aero.LastResult.Force.Y:F0},{aero.LastResult.Force.Z:F0})");
             }
 
-            // Merge SAS torque with aero torque (both in local frame)
-            Vector3 sasTorque = aero.SuppressPhantomTorque ? Vector3.Zero : aero.SasTorque;
+            Vector3 sasTorque = (aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;
             Vector3 totalTorque = aero.LastResult.Torque + sasTorque;
 
             PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
@@ -201,7 +212,9 @@ public partial class AeroGridComponent
                 Math.Clamp(attTorque.X, -MaxAttTorque, MaxAttTorque),
                 Math.Clamp(attTorque.Y, -MaxAttTorque, MaxAttTorque),
                 Math.Clamp(attTorque.Z, -MaxAttTorque, MaxAttTorque));
-            Vector3 totalPhantom = couplingCancel + attTorque;
+            // In gyro coarse mode, only apply coupling cancel (no phantom attitude).
+            // Gyros handle coarse correction smoothly; phantom takes over for fine hold.
+            Vector3 totalPhantom = gyroCoarseMode ? couplingCancel : couplingCancel + attTorque;
             if (!aero.SuppressPhantomTorque && totalPhantom.LengthSquared() > 1f)
                 PhysicsHack.ApplyDeltaVAndTorque(aero.Data, Vector3.Zero, totalPhantom, dt, wt.Orientation);
         }

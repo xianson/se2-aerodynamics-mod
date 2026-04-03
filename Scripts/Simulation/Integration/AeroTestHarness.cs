@@ -436,6 +436,7 @@ public static class AeroTestHarness
             Math.Clamp(axisAngleError.Y, -0.5f, 0.5f),
             Math.Clamp(axisAngleError.Z, -0.5f, 0.5f));
         Vector3 attitudeCmd = errorClamped * Kp - localAngVel * Kd;
+        aero.EulerError = axisAngleError; // for gyro handoff threshold in AeroSimJob
         aero._lastGridAngVel = new Vector3(
             Math.Clamp(attitudeCmd.X, -HoldMax, HoldMax),
             Math.Clamp(attitudeCmd.Y, -HoldMax, HoldMax),
