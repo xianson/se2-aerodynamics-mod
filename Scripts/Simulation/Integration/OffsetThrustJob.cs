@@ -2,6 +2,7 @@
 using System;
 using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
+using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
 
 namespace AeroMod;
@@ -59,11 +60,9 @@ public struct ThrusterDebugState
 public static class OffsetThrustJob
 {
     private const float DT = 1f / 60f;
-    private const float DampeningThreshold = 0.001f;
+    private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
+    private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 
-    private const float DampGain = 0.5f;      // D-term scaling (proportional zone up to ~2 rad/s)
-    private const float IntegralGain = 0.3f;  // accumulation rate per frame
-    private const float IntegralMax = 0.3f;   // max integral contribution (before attFrac scaling)
 
     private static int _executeLogCooldown;
 
@@ -89,8 +88,6 @@ public static class OffsetThrustJob
     public static readonly Dictionary<List<ThrusterInfo>, List<ThrusterDebugState>> DebugStatesByGrid = new();
     private static int _debugLogCooldown;
 
-    /// <summary>Per-grid integral state for I-term. Same indexing as thruster cache.</summary>
-    private static readonly Dictionary<List<ThrusterInfo>, List<float>> _integralState = new();
 
     /// <summary>
     /// Run offset thrust correction for one grid.
@@ -118,6 +115,15 @@ public static class OffsetThrustJob
     {
         if (thrusters.Count == 0) return;
         if (!PhysicsHack.ThrusterAccessAvailable) return;
+
+        // Read raw player input from grid entity (WASD → Movement, mouse → Rotation)
+        Vector3 playerMovement = Vector3.Zero;
+        Vector3 playerRotation = Vector3.Zero;
+        if (gridData.TryGet<ControlData>(out var controlData))
+        {
+            playerMovement = controlData.Movement;
+            playerRotation = controlData.Rotation;
+        }
         _executeLogCooldown = Math.Max(0, _executeLogCooldown - 1);
 
         // Auto-lock trace: skip first grid, lock onto second active grid
@@ -313,7 +319,7 @@ public static class OffsetThrustJob
         // With dampeners off, coupling passes through naturally — asymmetric thrust spins the ship.
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, gridWt);
         ApplyAttitudeViaOverrides(thrusters, comLocal, enableDampening, localAngVel,
-            velocityLocal, gravityLocal, mass, _traceNetOffsetTorque, targetAngVel, aeroTorqueLocal);
+            velocityLocal, playerMovement, playerRotation, targetAngVel);
 
         // Phase 3 trace: net torque summary
         if (_traceActive)
@@ -348,11 +354,14 @@ public static class OffsetThrustJob
     }
 
     /// <summary>
-    /// Per-thruster independent blending (SE1 RealRCS pattern).
-    /// Each thruster independently computes movement (linear dampening + gravity) and
-    /// rotation (angular dampening + SAS + aero FF), then blends them using AttitudeFraction.
-    /// No centralized allocator — inherently force-balanced because translation and rotation
-    /// share each thruster's budget.
+    /// Pure Bob RCS pattern with raw vanilla inputs.
+    ///
+    /// Each thruster independently:
+    ///   1. movement = Dot(-movementInput, forceDir) — player WASD
+    ///   2. rotation = Dot(-rotationInput, torqueArm) — player mouse/roll
+    ///   3. If movement == 0, linear damping: Dot(-velocity, forceDir)
+    ///   4. If rotation == 0, angular damping: Dot(-angVel, torqueArm)
+    ///   5. throttle = rotation * limiter + movement * (1 - limiter)
     /// </summary>
     private static void ApplyAttitudeViaOverrides(
         List<ThrusterInfo> thrusters,
@@ -360,46 +369,29 @@ public static class OffsetThrustJob
         bool enableDampening,
         Vector3 localAngVel,
         Vector3 velocityLocal,
-        Vector3 gravityLocal,
-        float mass,
-        Vector3 offsetCouplingTorque,
-        Vector3 targetAngVel = default,
-        Vector3 aeroTorqueLocal = default)
+        Vector3 playerMovement,
+        Vector3 playerRotation,
+        Vector3 targetAngVel = default)
     {
         int n = thrusters.Count;
         _traceNetAttitudeTorque = Vector3.Zero;
 
-        bool hasInput = targetAngVel.LengthSquared() > 0.0001f;
-        bool hasAngVel = localAngVel.LengthSquared() >= DampeningThreshold * DampeningThreshold;
-        bool hasLinVel = velocityLocal.LengthSquared() > 0.25f; // > 0.5 m/s
-        bool hasAeroFF = aeroTorqueLocal.LengthSquared() > 1f;
-        bool hasGravity = gravityLocal.LengthSquared() > 0.1f;
+        bool hasPlayerMove = playerMovement.LengthSquared() > 0.0001f;
+        bool hasPlayerRot = playerRotation.LengthSquared() > 0.0001f;
+        bool hasAngVel = localAngVel.Length() > AngularDampeningThreshold;
+        bool hasLinVel = velocityLocal.Length() > LinearDampeningThreshold;
 
-        // If dampeners off and no SAS input, nothing to do
-        if (!enableDampening && !hasInput) return;
-
-        // Gravity compensation: constant force to hover (vanilla pattern: -gravity * mass)
-        // Normalized per-thruster: project onto forceDir, scale by (mass / MaxPower)
-        // so a thruster aligned with anti-gravity gets throttle ≈ gravityForce / totalThrust
-
-        const float AngDampGain = 0.5f;  // proportional up to ~2 rad/s
-        const float SasGain = 0.5f;      // proportional up to ~2 rad/s command
-
-        // Precompute total gravity-opposing thrust capacity so each thruster gets
-        // its share of the load. Without this, each thruster computes
-        // (mass * g / MaxPower) which is ~10x too large when 25 thrusters share the load.
-        float totalGravCapacity = 0f;
-        if (hasGravity)
+        // Throttled debug: log inputs every 2 seconds
+        if (_traceActive && _traceFrame % 120 == 0)
         {
-            for (int j = 0; j < n; j++)
-            {
-                float align = Vector3.Dot(-gravityLocal, -thrusters[j].ThrustDirection);
-                if (align > 0f)
-                    totalGravCapacity += align * thrusters[j].MaxPower;
-            }
+            Log.Default?.Info($"[AERO-INPUT] damp={enableDampening}" +
+                $" move=({playerMovement.X:F2},{playerMovement.Y:F2},{playerMovement.Z:F2})" +
+                $" rot=({playerRotation.X:F2},{playerRotation.Y:F2},{playerRotation.Z:F2})" +
+                $" |w|={localAngVel.Length():F4} |v|={velocityLocal.Length():F2}");
         }
-        // Weight force magnitude along gravity direction
-        float weightForce = hasGravity ? gravityLocal.Length() * mass : 0f;
+
+        // If dampeners off and no player input, nothing to do
+        if (!enableDampening && !hasPlayerMove && !hasPlayerRot) return;
 
         int overrideCount = 0;
         Vector3 producedTorque = Vector3.Zero;
@@ -407,80 +399,97 @@ public static class OffsetThrustJob
         for (int i = 0; i < n; i++)
         {
             var t = thrusters[i];
-            Vector3 forceDir = -t.ThrustDirection; // direction this thruster pushes
+            Vector3 forceDir = -t.ThrustDirection;
             Vector3 r = t.GridLocalPosition - comLocal;
-            Vector3 torqueVec = Vector3.Cross(r, forceDir);
-            float arm = torqueVec.Length();
-            Vector3 torqueAxis = arm > 0.001f ? torqueVec / arm : Vector3.Zero;
+            Vector3 torqueArm = Vector3.Cross(r, forceDir);
+            float arm = torqueArm.Length();
 
-            // ── Baseline: gravity compensation + linear dampening ──
-            // Each thruster gets its proportional share of the weight based on
-            // alignment with anti-gravity, distributed across total capacity.
-            float baseline = 0f;
+            // Live-read attitude fraction from terminal slider (falls back to cached value)
+            float limiter = t.Settings != null ? t.Settings.AttitudeFraction : t.AttitudeFraction;
+
+            float movement = 0f;
+            float rotation = 0f;
+
+            // ── Step 1: movement from player WASD ──
+            if (hasPlayerMove)
+                movement = Math.Clamp(Vector3.Dot(-playerMovement, forceDir), -1f, 1f);
+
+            // ── Step 2: rotation from player mouse/roll ──
+            if (hasPlayerRot && arm > 0.001f)
+                rotation = Math.Clamp(Vector3.Dot(-playerRotation, torqueArm), -1f, 1f);
+
             if (enableDampening)
             {
-                // Gravity compensation: share of weight proportional to alignment
-                if (hasGravity && totalGravCapacity > 1f)
+                // ── Step 3: if THIS thruster's movement == 0, linear damping ──
+                if (movement == 0f && hasLinVel)
                 {
-                    float align = Vector3.Dot(-gravityLocal, forceDir);
-                    float gravComp = align > 0f ? (align * weightForce) / totalGravCapacity : 0f;
-                    baseline += Math.Clamp(gravComp, 0f, 1f);
+                    float rawMov = Vector3.Dot(-velocityLocal, forceDir);
+                    movement = Math.Abs(rawMov) < LinearDampeningThreshold ? 0f
+                        : Math.Clamp(rawMov, -1f, 1f);
                 }
 
-                // Linear dampening: fire if this thruster opposes velocity
-                if (hasLinVel)
-                    baseline += Math.Clamp(Vector3.Dot(-velocityLocal, forceDir), -1f, 1f);
+                // ── Step 4: if THIS thruster's rotation == 0, attitude command + angular damping ──
+                // SE1 Bob pattern: attitude command and rate-nulling are INDEPENDENT per-thruster.
+                // Combine: project attitude command onto torqueArm, PLUS rate-nulling damping.
+                // This avoids the cross-axis coupling that happens when D-term is in the command.
+                if (rotation == 0f && arm > 0.001f)
+                {
+                    float attRot = 0f;
+                    float dampRot = 0f;
+
+                    // Attitude command (P-only from harness/attitude hold)
+                    if (targetAngVel.LengthSquared() > AngularDampeningThreshold * AngularDampeningThreshold)
+                    {
+                        float rawAtt = Vector3.Dot(targetAngVel, torqueArm);
+                        attRot = Math.Abs(rawAtt) < AngularDampeningThreshold ? 0f
+                            : Math.Clamp(rawAtt, -1f, 1f);
+                    }
+
+                    // Rate-nulling damping (always active, independent of attitude command)
+                    if (hasAngVel)
+                    {
+                        float rawDamp = Vector3.Dot(-localAngVel, torqueArm);
+                        dampRot = Math.Abs(rawDamp) < AngularDampeningThreshold ? 0f
+                            : Math.Clamp(rawDamp, -1f, 1f);
+                    }
+
+                    // Blend: attitude drives toward target, damping prevents overshoot
+                    rotation = Math.Clamp(attRot + dampRot, -1f, 1f);
+                }
             }
 
-            // ── Rotation component: oppose angular velocity + SAS + aero FF ──
-            // Uses normalized torqueAxis with explicit gain scaling for proportional
-            // response. Without scaling, Dot(angVel, torqueVec) always saturates at ±1
-            // giving bang-bang control that causes oscillation.
-            float rotation = 0f;
-            if (arm > 0.001f)
+            // ── Step 5: Bob blend ──
+            float throttle = Math.Clamp(rotation * limiter + movement * (1f - limiter), 0f, 1f);
+
+            // Both non-positive → release to vanilla (override=0)
+            float overrideValue;
+            if (movement <= 0f && rotation <= 0f)
+                overrideValue = 0f;
+            else
+                overrideValue = throttle > 0.0001f ? throttle : 0.0001f;
+
+            // Temporary debug: log first 4 thrusters every 60 frames
+            if (i < 4 && _traceFrame % 60 == 1)
             {
-                // Angular dampening: project angVel onto torque axis, scale for proportional response
-                if (enableDampening && hasAngVel)
-                    rotation = Vector3.Dot(-localAngVel, torqueAxis) * AngDampGain;
-
-                // SAS hold input: project targetAngVel onto torque axis
-                if (hasInput)
-                    rotation += Vector3.Dot(targetAngVel, torqueAxis) * SasGain;
-
-                // Aero torque feedforward (N·m, normalize by torque capacity)
-                if (hasAeroFF)
-                {
-                    float torqueCapacity = arm * t.MaxPower;
-                    rotation += Vector3.Dot(-aeroTorqueLocal, torqueAxis) / torqueCapacity;
-                }
-
-                rotation = Math.Clamp(rotation, -1f, 1f);
+                Log.Default?.Info($"[BOB-DBG] T{i} mov={movement:F4} rot={rotation:F4} thr={throttle:F4} ovr={overrideValue:F4}" +
+                    $" arm={arm:F1} lim={limiter:F2}" +
+                    $" tgtAV=({targetAngVel.X:F3},{targetAngVel.Y:F3},{targetAngVel.Z:F3})" +
+                    $" locAV=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
+                    $" damp={enableDampening}");
             }
 
-            // ── Additive: baseline + rotation adjustment ──
-            // Gravity/dampening provides the base throttle. Rotation is added on top,
-            // scaled by AttitudeFraction. This ensures gravity hover is maintained while
-            // attitude correction is applied differentially.
-            // CRITICAL: we control ALL thrusters (never return to vanilla) to prevent
-            // vanilla from firing "wrong" thrusters at full power and overwhelming our
-            // attitude correction with coupling torque.
-            float limiter = t.AttitudeFraction; // 0..1, default 0.5
-            float throttle = Math.Clamp(baseline + rotation * limiter, 0f, 1f);
-
-            // Set override on ALL thrusters. Use minimum 0.001 for thrusters we want off
-            // to prevent vanilla from independently firing them (override=0 means vanilla control).
-            float overrideValue = throttle > 0.001f ? throttle : 0.001f;
             SetComponentThrustOverride(t.ThrusterComponent, overrideValue);
             overrideCount++;
             if (throttle > 0.001f)
-                producedTorque += torqueVec * (throttle * t.MaxPower);
+                producedTorque += torqueArm * (throttle * t.MaxPower);
 
             // Record debug state
+            Vector3 torqueAxis = arm > 0.001f ? torqueArm / arm : Vector3.Zero;
             if (DebugStatesByGrid.TryGetValue(thrusters, out var attDebugStates) && i < attDebugStates.Count)
             {
                 var dbg = attDebugStates[i];
-                dbg.DTermComponent = hasAngVel ? Vector3.Dot(-localAngVel, torqueAxis) * AngDampGain : 0f;
-                dbg.PTermComponent = hasInput ? Vector3.Dot(targetAngVel, torqueAxis) * SasGain : 0f;
+                dbg.DTermComponent = rotation;
+                dbg.PTermComponent = movement;
                 dbg.TorqueAxis = torqueAxis;
                 dbg.TorqueArm = arm;
                 dbg.AttitudeOverride = throttle;
@@ -489,34 +498,34 @@ public static class OffsetThrustJob
         }
         _traceNetAttitudeTorque = producedTorque;
 
-        // Trace logging for tracked thruster
+        // Trace logging
         if (_traceActive && _traceIndex >= 0 && _traceIndex < n)
         {
             var tt = thrusters[_traceIndex];
             Vector3 fd = -tt.ThrustDirection;
-            Vector3 tv = Vector3.Cross(tt.GridLocalPosition - comLocal, fd);
-            float ta = tv.Length();
-            Vector3 tax = ta > 0.001f ? tv / ta : Vector3.Zero;
+            Vector3 ta = Vector3.Cross(tt.GridLocalPosition - comLocal, fd);
 
-            float damp = hasLinVel ? Math.Clamp(Vector3.Dot(-velocityLocal, fd), -1f, 1f) : 0f;
-            float gravAlign = Vector3.Dot(-gravityLocal, fd);
-            float grav = (hasGravity && totalGravCapacity > 1f && gravAlign > 0f)
-                ? Math.Clamp(gravAlign * weightForce / totalGravCapacity, 0f, 1f) : 0f;
-            float rot = hasAngVel ? Vector3.Dot(-localAngVel, tax) * AngDampGain : 0f;
-            float sas = hasInput ? Vector3.Dot(targetAngVel, tax) * SasGain : 0f;
-            float trBase = grav + damp;
-            float trThrottle = Math.Clamp(trBase + rot * tt.AttitudeFraction, 0f, 1f);
+            float mov = hasPlayerMove ? Math.Clamp(Vector3.Dot(-playerMovement, fd), -1f, 1f) : 0f;
+            if (mov == 0f && hasLinVel) mov = Math.Clamp(Vector3.Dot(-velocityLocal, fd), -1f, 1f);
+            float rot = hasPlayerRot ? Math.Clamp(Vector3.Dot(-playerRotation, ta), -1f, 1f) : 0f;
+            if (rot == 0f && ta.Length() > 0.001f)
+            {
+                if (targetAngVel.LengthSquared() > AngularDampeningThreshold * AngularDampeningThreshold)
+                    rot = Math.Clamp(Vector3.Dot(targetAngVel, ta), -1f, 1f);
+                else if (hasAngVel)
+                    rot = Math.Clamp(Vector3.Dot(-localAngVel, ta), -1f, 1f);
+            }
+            float trLim = tt.Settings != null ? tt.Settings.AttitudeFraction : tt.AttitudeFraction;
+            float trThrottle = Math.Clamp(rot * trLim + mov * (1f - trLim), 0f, 1f);
 
             Log.Default?.Info($"[AERO-TRACE] ATT f={_traceFrame}" +
-                $" velL=({velocityLocal.X:F1},{velocityLocal.Y:F1},{velocityLocal.Z:F1})" +
-                $" angVelL=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
-                $" gravL=({gravityLocal.X:F1},{gravityLocal.Y:F1},{gravityLocal.Z:F1})" +
-                $" targAV=({targetAngVel.X:F3},{targetAngVel.Y:F3},{targetAngVel.Z:F3})" +
-                $" thr[{_traceIndex}] damp={damp:F3} grav={grav:F3} rot={rot:F3} sas={sas:F3}" +
-                $" base={trBase:F3} thr={trThrottle:F3}" +
-                $" lim={tt.AttitudeFraction:F2} overrides={overrideCount}");
+                $" vel=({velocityLocal.X:F1},{velocityLocal.Y:F1},{velocityLocal.Z:F1})" +
+                $" angVel=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
+                $" thr[{_traceIndex}] mov={mov:F3} rot={rot:F3}" +
+                $" thr={trThrottle:F3} lim={trLim:F2} overrides={overrideCount}");
         }
     }
+
 
     // ═══════════════════════════════════════════════════════════════
     // Thruster cache building
@@ -811,7 +820,7 @@ public static class OffsetThrustJob
         catch { }
     }
 
-    /// <summary>Public wrapper to force a thrust override from outside (e.g. test harness).</summary>
+    /// <summary>Public wrapper to force a thrust override from outside.</summary>
     public static void ForceOverride(Component thrusterComp, float value)
         => SetComponentThrustOverride(thrusterComp, value);
 

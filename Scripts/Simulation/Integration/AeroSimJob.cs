@@ -1,6 +1,7 @@
 #pragma warning disable
 using System;
 using Keen.Game2.Simulation;
+using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
 using Keen.VRage.Core;
 using Keen.VRage.DCS.Annotations;
@@ -26,6 +27,13 @@ public partial class AeroGridComponent
     private static void AeroSimJob(AeroGridComponent aero, WorldTransform wt)
     {
         if (!aero._initialized) return;
+
+        // Test harness: skip frozen grids
+        if (AeroTestHarness.ShouldSkipGrid(aero))
+        {
+            PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
+            return;
+        }
 
         aero._simFrameCount++;
         AeroStats.BeginGrid();
@@ -62,6 +70,32 @@ public partial class AeroGridComponent
             aero.LastInertiaMajorAxisRot = majorAxisRot;
         }
 
+        // ── Thruster cache rebuild (before TryCompute so Phase 8 sees thrusters) ──
+        if (aero._thrusterCacheDirty)
+        {
+            if (aero._blockSize <= 0)
+                aero._blockSize = aero.DetectBlockSize();
+            if (aero._blockSize > 0)
+            {
+                OffsetThrustJob.RebuildThrusterCache(aero._octree, aero._blockSize, aero._thrusterCache, aero.Entity);
+                aero._thrusterCacheDirty = false;
+            }
+        }
+
+        // ── Gyro cache rebuild ──
+        if (aero._gyroCacheDirty)
+        {
+            OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
+            aero._gyroCacheDirty = false;
+        }
+
+        // ── Clear stale ThrustOverride values on first frame (persisted from save) ──
+        if (aero._simFrameCount == 1 && aero._thrusterCache.Count > 0)
+        {
+            for (int i = 0; i < aero._thrusterCache.Count; i++)
+                OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+        }
+
         // ── Aero computation ──
         aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
 
@@ -90,67 +124,10 @@ public partial class AeroGridComponent
             }
 
             // Merge SAS torque with aero torque (both in local frame)
-            Vector3 aeroTorque = aero.LastResult.Torque;
-            if (aero.DiagActive)
-            {
-                if (aero._diagPhase >= 5)
-                {
-                    // Phase 5+: only CS component torque + force, no body aero
-                    aeroTorque = aero.LastComponentTorque;
-                    Vector3 csWorldForce = WorldTransform.TransformDirection(aero.LastComponentForce, wt);
-                    deltaV = csWorldForce * (dt / mass);
-                }
-                else
-                {
-                    aeroTorque = Vector3.Zero;
-                    deltaV = Vector3.Zero;
-                }
-            }
-            Vector3 totalTorque = aeroTorque + aero.SasTorque;
-
-            // ── Diagnostic probe: before/after angular velocity ──
-            bool probeLog = aero.DiagActive && totalTorque.LengthSquared() > 1f;
-            Vector3 preAngWorld = Vector3.Zero;
-            if (probeLog)
-                PhysicsHack.TryGetVelocity(aero.Data, out _, out preAngWorld);
+            Vector3 sasTorque = aero.SuppressPhantomTorque ? Vector3.Zero : aero.SasTorque;
+            Vector3 totalTorque = aero.LastResult.Torque + sasTorque;
 
             PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
-
-            if (probeLog)
-            {
-                PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 postAngWorld);
-                Vector3 preLocal = WorldTransform.TransformDirectionInv(preAngWorld, wt);
-                Vector3 postLocal = WorldTransform.TransformDirectionInv(postAngWorld, wt);
-                Vector3 dLocal = postLocal - preLocal;
-                Log.Default?.Info($"[PROBE-APPLY] torqueLocal=({totalTorque.X:F0},{totalTorque.Y:F0},{totalTorque.Z:F0}) " +
-                    $"dLocal=({dLocal.X:F6},{dLocal.Y:F6},{dLocal.Z:F6})");
-            }
-        }
-
-        // ── Thruster cache rebuild ──
-        if (aero._thrusterCacheDirty)
-        {
-            if (aero._blockSize <= 0)
-                aero._blockSize = aero.DetectBlockSize();
-            if (aero._blockSize > 0)
-            {
-                OffsetThrustJob.RebuildThrusterCache(aero._octree, aero._blockSize, aero._thrusterCache, aero.Entity);
-                aero._thrusterCacheDirty = false;
-            }
-        }
-
-        // ── Gyro cache rebuild ──
-        if (aero._gyroCacheDirty)
-        {
-            OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
-            aero._gyroCacheDirty = false;
-        }
-
-        // ── Clear stale ThrustOverride values on first frame (persisted from save) ──
-        if (aero._simFrameCount == 1 && aero._thrusterCache.Count > 0)
-        {
-            for (int i = 0; i < aero._thrusterCache.Count; i++)
-                OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
         }
 
         // ── Offset thrust (RCS) correction ──
@@ -172,17 +149,21 @@ public partial class AeroGridComponent
             }
 
             // Pass aero torque for feedforward cancellation in attitude controller
-            Vector3 aeroTorqueFF = (aero.HasResult && !aero.DiagActive)
+            Vector3 aeroTorqueFF = aero.HasResult
                 ? aero.LastResult.Torque + aero.SasTorque
                 : Vector3.Zero;
 
             Vector3 gravLocal = WorldTransform.TransformDirectionInv(gravity, wt);
+            // Read actual dampener state from grid entity (DampeningData tag = dampeners on)
+            // Test harness forces dampeners on so per-thruster attitude control is active
+            bool dampenersOn = aero.SuppressPhantomTorque || aero.Data.Has<DampeningData>();
+
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
                 aero.Data,
                 wt,
                 angVel,
-                enableDampening: true,
+                enableDampening: dampenersOn,
                 mach: thrustMach,
                 velocityLocalHat: velLocalHat,
                 velocityLocal: velLocal,
@@ -221,7 +202,7 @@ public partial class AeroGridComponent
                 Math.Clamp(attTorque.Y, -MaxAttTorque, MaxAttTorque),
                 Math.Clamp(attTorque.Z, -MaxAttTorque, MaxAttTorque));
             Vector3 totalPhantom = couplingCancel + attTorque;
-            if (totalPhantom.LengthSquared() > 1f)
+            if (!aero.SuppressPhantomTorque && totalPhantom.LengthSquared() > 1f)
                 PhysicsHack.ApplyDeltaVAndTorque(aero.Data, Vector3.Zero, totalPhantom, dt, wt.Orientation);
         }
 
@@ -236,15 +217,18 @@ public partial class AeroGridComponent
         }
 
         // ── Update focus position for draw culling ──
-        if (aero.DiagActive || aero.LastSpeed > 50f)
+        if (aero.LastSpeed > 50f)
             AeroGridComponent.DebugFocusPosition = wt.Position;
 
         // ── Commit stats ──
-        AeroStats.CommitGrid(0f, aero.DiagActive || aero.LastSpeed > 50f,
+        AeroStats.CommitGrid(0f, aero.LastSpeed > 50f,
             aero._surface?.FaceCount ?? 0,
             aero._model?.Wings?.Count ?? 0,
             aero._components?.Count ?? 0,
             aero.LastSpeed,
             aero.HasResult ? (float)aero.LastResult.Mach : 0f);
+
+        // ── Test harness (runs after all production physics) ──
+        AeroTestHarness.Tick(aero, wt);
     }
 }

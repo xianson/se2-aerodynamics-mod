@@ -46,6 +46,7 @@ public static class PhysicsHack
     // Gyro max torque
     private static MethodInfo _tryGetMaxTorqueMethod;
     private static FieldInfo _maxTorqueField;
+    private static MethodInfo _setMaxTorqueMethod;
 
     // Thruster data access
     private static Type _thrustDataType;
@@ -288,6 +289,8 @@ public static class PhysicsHack
                         _tryGetMaxTorqueMethod = tryGetGeneric.MakeGenericMethod(maxTorqueType);
                     if (_maxTorqueField != null)
                         Log.Default?.Info("[AERO] PhysicsHack: MaxTorqueData field found");
+                    if (_setGeneric != null)
+                        _setMaxTorqueMethod = _setGeneric.MakeGenericMethod(maxTorqueType);
                 }
             }
             catch { }
@@ -735,20 +738,13 @@ public static class PhysicsHack
 
             _maxTorqueField.SetValue(mtData, 0f);
 
-            // Write back via Set<MaxTorqueData>
-            // We need a Set method for this type
-            var contextType = typeof(DEntityContext);
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            // Write back via cached Set<MaxTorqueData>
+            if (_setMaxTorqueMethod != null)
             {
-                if (m.Name == "Set" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
-                {
-                    var setMethod = m.MakeGenericMethod(_maxTorqueField.DeclaringType);
-                    _invokeArgs.SetValue(mtData, 0);
-                    setMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-                    Log.Default?.Info($"[AERO] PhysicsHack: zeroed MaxTorque (was {current:F0})");
-                    return true;
-                }
+                _invokeArgs.SetValue(mtData, 0);
+                _setMaxTorqueMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+                Log.Default?.Info($"[AERO] PhysicsHack: zeroed MaxTorque (was {current:F0})");
+                return true;
             }
         }
         catch (Exception ex)
@@ -771,18 +767,12 @@ public static class PhysicsHack
             object mtData = _invokeArgs.GetValue(0);
             _maxTorqueField.SetValue(mtData, value);
 
-            var contextType = typeof(DEntityContext);
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            if (_setMaxTorqueMethod != null)
             {
-                if (m.Name == "Set" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
-                {
-                    var setMethod = m.MakeGenericMethod(_maxTorqueField.DeclaringType);
-                    _invokeArgs.SetValue(mtData, 0);
-                    setMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-                    Log.Default?.Info($"[AERO] PhysicsHack: {label} MaxTorque to {value:F0}");
-                    return true;
-                }
+                _invokeArgs.SetValue(mtData, 0);
+                _setMaxTorqueMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+                Log.Default?.Info($"[AERO] PhysicsHack: {label} MaxTorque to {value:F0}");
+                return true;
             }
         }
         catch (Exception ex)
@@ -838,14 +828,14 @@ public static class PhysicsHack
             // Apply angular deltaV from torque
             if (torqueLocal.LengthSquared() > 1e-6f && _invInertiaTensorField != null)
             {
-                // Get inertia data
-                _invokeArgs.SetValue(null, 0);
+                // Get inertia data (use _invokeArgs2 to avoid clobbering rbData in _invokeArgs)
+                _invokeArgs2.SetValue(null, 0);
                 bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
 
-                if (foundMass && _invokeArgs.GetValue(0) != null)
+                if (foundMass && _invokeArgs2.GetValue(0) != null)
                 {
-                    object massData = _invokeArgs.GetValue(0);
+                    object massData = _invokeArgs2.GetValue(0);
                     Vector3 invInertia = (Vector3)_invInertiaTensorField.GetValue(massData);
 
                     // deltaOmega = I⁻¹ · torque · dt
@@ -854,7 +844,6 @@ public static class PhysicsHack
                     if (_inertiaMajorAxisRotField != null)
                     {
                         Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-                        // Inverse rotation: body → principal axes
                         Quaternion invRot = Quaternion.Conjugate(majorAxisRot);
                         torquePrincipal = Vector3.Transform(torqueLocal, invRot);
                     }
@@ -864,7 +853,6 @@ public static class PhysicsHack
                         torquePrincipal.Y * invInertia.Y,
                         torquePrincipal.Z * invInertia.Z) * dt;
 
-                    // Rotate back to body frame if needed
                     if (_inertiaMajorAxisRotField != null)
                     {
                         Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
@@ -872,27 +860,12 @@ public static class PhysicsHack
                     }
 
                     // Transform deltaOmega from local to world space
-                    // (RigidBodyData.AngularVelocity is stored in world space)
                     if (gridOrientation.HasValue)
-                    {
                         deltaOmega = Vector3.Transform(deltaOmega, gridOrientation.Value);
-                    }
 
-                    // Re-get RigidBodyData (we clobbered _invokeArgs with mass query)
-                    _invokeArgs.SetValue(null, 0);
-                    found = (bool)_tryGetMethod.Invoke(boxedContext,
-                        Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-                    if (found && _invokeArgs.GetValue(0) != null)
-                    {
-                        rbData = _invokeArgs.GetValue(0);
-                        // Re-apply linear (we read fresh data)
-                        _linearVelField.SetValue(rbData, linVel);
-
-                        Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
-                        angVel += deltaOmega;
-                        _angularVelField.SetValue(rbData, angVel);
-                    }
+                    Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
+                    angVel += deltaOmega;
+                    _angularVelField.SetValue(rbData, angVel);
                 }
             }
 
@@ -1091,12 +1064,10 @@ public static class PhysicsHack
             var newWt = new WorldTransform(wt.Position, targetOrientation);
             _setWorldTransformMethod.Invoke(null, new object[] { data, newWt });
 
-            Log.Default?.Info("[AERO] TrySetOrientation: orientation set");
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Log.Default?.Info($"[AERO] TrySetOrientation failed: {ex.Message}");
             return false;
         }
     }
@@ -1141,8 +1112,6 @@ public static class PhysicsHack
 
             object rbData = _invokeArgs.GetValue(0);
 
-            // Read current angvel for logging, then zero it
-            Vector3 curAngVel = (Vector3)_angularVelField.GetValue(rbData);
             _angularVelField.SetValue(rbData, Vector3.Zero);
 
             // Write back via Set<RigidBodyData> (same pattern as ApplyDeltaVAndTorque line 847)
@@ -1153,12 +1122,10 @@ public static class PhysicsHack
                     Unsafe.As<System.Array, object[]>(ref _invokeArgs));
             }
 
-            Log.Default?.Info($"[AERO] TryZeroAngularVelocity: zeroed (was {curAngVel.X:F3},{curAngVel.Y:F3},{curAngVel.Z:F3})");
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Log.Default?.Info($"[AERO] TryZeroAngularVelocity failed: {ex.Message}");
             return false;
         }
     }
@@ -1190,45 +1157,56 @@ public static class PhysicsHack
     }
 
     /// <summary>
-    /// Set linear velocity (world space) and zero angular velocity in one write.
+    /// Set linear velocity (world space) without touching angular velocity.
     /// </summary>
-    public static bool TrySetVelocity(DEntityContext data, Vector3 linearVel)
+    public static bool TrySetLinearVelocity(DEntityContext data, Vector3 linearVel)
     {
-        if (!Available)
-            return false;
-
+        if (!Available) return false;
         try
         {
             _invokeArgs.SetValue(null, 0);
             object boxedContext = data;
             bool found = (bool)_tryGetMethod.Invoke(boxedContext,
                 Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
+            if (!found || _invokeArgs.GetValue(0) == null) return false;
 
             object rbData = _invokeArgs.GetValue(0);
-
-            Vector3 oldLin = (Vector3)_linearVelField.GetValue(rbData);
-            Vector3 oldAng = (Vector3)_angularVelField.GetValue(rbData);
             _linearVelField.SetValue(rbData, linearVel);
-            _angularVelField.SetValue(rbData, Vector3.Zero);
 
             _invokeArgs.SetValue(rbData, 0);
             if (_setRbDataMethod != null)
-            {
                 _setRbDataMethod.Invoke(boxedContext,
                     Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            }
-
-            Log.Default?.Info($"[AERO] TrySetVelocity: lin=({linearVel.X:F1},{linearVel.Y:F1},{linearVel.Z:F1}) was ({oldLin.X:F1},{oldLin.Y:F1},{oldLin.Z:F1}) angZeroed (was {oldAng.X:F3},{oldAng.Y:F3},{oldAng.Z:F3})");
             return true;
         }
-        catch (Exception ex)
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Set both linear and angular velocity (world space) in a single write.
+    /// </summary>
+    public static bool TrySetVelocity(DEntityContext data, Vector3 linearVel, Vector3 angularVel)
+    {
+        if (!Available) return false;
+        try
         {
-            Log.Default?.Info($"[AERO] TrySetVelocity failed: {ex.Message}");
-            return false;
+            _invokeArgs.SetValue(null, 0);
+            object boxedContext = data;
+            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            if (!found || _invokeArgs.GetValue(0) == null) return false;
+
+            object rbData = _invokeArgs.GetValue(0);
+            _linearVelField.SetValue(rbData, linearVel);
+            _angularVelField.SetValue(rbData, angularVel);
+
+            _invokeArgs.SetValue(rbData, 0);
+            if (_setRbDataMethod != null)
+                _setRbDataMethod.Invoke(boxedContext,
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            return true;
         }
+        catch { return false; }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1470,6 +1448,12 @@ public static class PhysicsHack
     private static object _pendingRayTask;   // Task<Buffer<SweepQueryHit>> in flight
     private static float _lastGroundDist = -1f;
     private static int _raycastCooldown;
+    // Cached PropertyInfo for task/buffer result reading (resolved on first completed task)
+    private static PropertyInfo _taskIsCompletedProp;
+    private static PropertyInfo _taskResultProp;
+    private static PropertyInfo _bufferCountProp;
+    private static PropertyInfo _bufferIndexerProp;
+    private static bool _taskPropsResolved;
 
     /// <summary>
     /// Get ground distance via async physics raycast.
@@ -1485,38 +1469,44 @@ public static class PhysicsHack
         {
             try
             {
-                var taskType = _pendingRayTask.GetType();
-                var isCompletedProp = taskType.GetProperty("IsCompleted",
-                    BindingFlags.Public | BindingFlags.Instance);
-                if (isCompletedProp != null && (bool)isCompletedProp.GetValue(_pendingRayTask))
+                // Resolve task PropertyInfos once on first result
+                if (!_taskPropsResolved)
                 {
-                    // Read result: Task<Buffer<SweepQueryHit>>.Result
-                    var resultProp = taskType.GetProperty("Result",
+                    _taskPropsResolved = true;
+                    var taskType = _pendingRayTask.GetType();
+                    _taskIsCompletedProp = taskType.GetProperty("IsCompleted",
                         BindingFlags.Public | BindingFlags.Instance);
-                    if (resultProp != null)
-                    {
-                        object buffer = resultProp.GetValue(_pendingRayTask);
-                        // Buffer<T>.Count
-                        var countProp = buffer.GetType().GetProperty("Count",
-                            BindingFlags.Public | BindingFlags.Instance);
-                        int count = countProp != null ? (int)countProp.GetValue(buffer) : 0;
+                    _taskResultProp = taskType.GetProperty("Result",
+                        BindingFlags.Public | BindingFlags.Instance);
+                }
 
-                        if (count > 0)
+                if (_taskIsCompletedProp != null && (bool)_taskIsCompletedProp.GetValue(_pendingRayTask))
+                {
+                    if (_taskResultProp != null)
+                    {
+                        object buffer = _taskResultProp.GetValue(_pendingRayTask);
+
+                        // Resolve buffer PropertyInfos once
+                        if (_bufferCountProp == null && buffer != null)
                         {
-                            // buffer[0].Fraction
-                            var indexer = buffer.GetType().GetProperty("Item",
+                            var bufType = buffer.GetType();
+                            _bufferCountProp = bufType.GetProperty("Count",
                                 BindingFlags.Public | BindingFlags.Instance);
-                            if (indexer != null)
+                            _bufferIndexerProp = bufType.GetProperty("Item",
+                                BindingFlags.Public | BindingFlags.Instance);
+                        }
+
+                        int count = _bufferCountProp != null ? (int)_bufferCountProp.GetValue(buffer) : 0;
+
+                        if (count > 0 && _bufferIndexerProp != null)
+                        {
+                            _indexerArgs.SetValue(0, 0);
+                            object hit = _bufferIndexerProp.GetValue(buffer,
+                                Unsafe.As<System.Array, object[]>(ref _indexerArgs));
+                            if (hit != null && _hitFractionField != null)
                             {
-                                var idxArgs = Array.CreateInstance(typeof(object), 1);
-                                idxArgs.SetValue(0, 0);
-                                object hit = indexer.GetValue(buffer,
-                                    Unsafe.As<System.Array, object[]>(ref idxArgs));
-                                if (hit != null && _hitFractionField != null)
-                                {
-                                    float fraction = (float)_hitFractionField.GetValue(hit);
-                                    _lastGroundDist = fraction * 200f; // maxDistance = 200m
-                                }
+                                float fraction = (float)_hitFractionField.GetValue(hit);
+                                _lastGroundDist = fraction * 200f; // maxDistance = 200m
                             }
                         }
                         else
@@ -1524,7 +1514,6 @@ public static class PhysicsHack
                             _lastGroundDist = -1f; // no hit
                         }
 
-                        // Dispose the buffer
                         if (buffer is IDisposable disp)
                             disp.Dispose();
                     }
@@ -1533,7 +1522,7 @@ public static class PhysicsHack
             }
             catch
             {
-                _lastGroundDist = -1f; // fault → unknown, not stale
+                _lastGroundDist = -1f;
                 _pendingRayTask = null;
             }
         }

@@ -20,7 +20,7 @@ public partial class AeroGridComponent
     private const int MaxFacesToDraw = 20000; // limit for perf
     private const float DebugDrawMaxDistance = 200f;
 
-    /// <summary>Master toggle for all debug drawing. DiagActive grids always draw.</summary>
+    /// <summary>Master toggle for all debug drawing.</summary>
     internal static bool EnableDebugDraw = false;
 
     /// <summary>Set by the active player grid each frame so other grids can cull debug draw.</summary>
@@ -51,7 +51,7 @@ public partial class AeroGridComponent
         double distSq = (wt.Position - DebugFocusPosition).LengthSquared();
         bool drawDebug = distSq < DebugDrawMaxDistance * DebugDrawMaxDistance;
 
-        if (drawDebug && (EnableDebugDraw || aero.DiagActive))
+        if (drawDebug && EnableDebugDraw)
         {
             var dd = ddp.GlobalBuilder;
 
