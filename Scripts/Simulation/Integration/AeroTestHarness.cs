@@ -12,10 +12,11 @@ namespace AeroMod;
 public readonly struct TestCase
 {
     public readonly string Name;
-    public readonly Vector3 KickAxis;   // unit axis of perturbation (local frame)
-    public readonly float TargetDeg;    // degrees to perturb
-    public TestCase(string name, Vector3 kickAxis, float targetDeg)
-    { Name = name; KickAxis = kickAxis; TargetDeg = targetDeg; }
+    public readonly Vector3 KickAxis;      // unit axis of rotation perturbation (local frame)
+    public readonly float TargetDeg;       // degrees to perturb
+    public readonly Vector3 VelocityLocal;  // initial velocity kick in local frame (m/s), zero = attitude only
+    public TestCase(string name, Vector3 kickAxis, float targetDeg, Vector3 velocityLocal = default)
+    { Name = name; KickAxis = kickAxis; TargetDeg = targetDeg; VelocityLocal = velocityLocal; }
 }
 
 public readonly struct TestResult
@@ -98,6 +99,54 @@ internal class SpaceOffsetScenario : ITestScenario
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Built-in: Space combo (attitude + translation recovery)
+// ═══════════════════════════════════════════════════════════════
+
+internal class SpaceComboScenario : ITestScenario
+{
+    public string Name => "SpaceCombo";
+    public float PassErrorDeg => 2f;
+    public float PassAngSpeed => 0.05f;
+    public int HoldFrames => 60;
+    public int TimeoutFrames => 1200;    // 20s — translation takes longer
+    public int StabilizeFrames => 180;
+
+    public List<TestCase> TestCases { get; } = new()
+    {
+        // Pure velocity kick (dampeners must arrest motion)
+        new("Fwd 10m/s",      new Vector3(0, 0, 0), 0f, new Vector3(0, 0, -10)),
+        new("Up 10m/s",       new Vector3(0, 0, 0), 0f, new Vector3(0, 10, 0)),
+        new("Right 10m/s",    new Vector3(0, 0, 0), 0f, new Vector3(10, 0, 0)),
+        // Combo: rotation + velocity kick
+        new("Pitch10+Fwd10",  new Vector3(1, 0, 0), 10f, new Vector3(0, 0, -10)),
+        new("Yaw10+Right10",  new Vector3(0, 1, 0), 10f, new Vector3(10, 0, 0)),
+        new("Roll10+Up10",    new Vector3(0, 0, 1), 10f, new Vector3(0, 10, 0)),
+        // Harder: larger rotation + faster velocity
+        new("Pitch15+Fwd20",  new Vector3(1, 0, 0), 15f, new Vector3(0, 0, -20)),
+        new("Yaw15+Up20",     new Vector3(0, 1, 0), 15f, new Vector3(0, 20, 0)),
+    };
+
+    public void Setup(AeroGridComponent aero, WorldTransform wt)
+    {
+        PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
+        for (int i = 0; i < aero._thrusterCache.Count; i++)
+            OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+
+        Log.Default?.Info($"[TEST] {Name}: Setup complete. {aero._thrusterCache.Count} thrusters, {aero._gyroCache.Count} gyros.");
+    }
+
+    public void OnSettleFrame(AeroGridComponent aero, WorldTransform wt)
+    {
+        // Don't kill linear velocity — let dampeners handle translation recovery
+    }
+
+    public void Teardown(AeroGridComponent aero)
+    {
+        Log.Default?.Info($"[TEST] {Name}: Teardown complete.");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Built-in: Thrust-only attitude (gyros off, phantom torque ON)
 // ═══════════════════════════════════════════════════════════════
 
@@ -167,6 +216,7 @@ public static class AeroTestHarness
     private static int _holdFrames;
     private static int _scenarioIndex;
     private static Quaternion _baseOrientation;
+    private static Vector3D _basePosition;
 
     // ── Scenarios ──
     private static readonly List<ITestScenario> _scenarios = new();
@@ -181,8 +231,11 @@ public static class AeroTestHarness
     static AeroTestHarness()
     {
         _scenarios.Add(new SpaceOffsetScenario());
+        // SpaceCombo disabled — linear dampening not working standalone in SE2
+        // (offset thrust loop applies impulses that accelerate grid when no vanilla dampeners)
+        // TODO: fix offset loop interaction before enabling
+        // _scenarios.Add(new SpaceComboScenario());
         // ThrustOnlyAttitude disabled — functionally identical to SpaceOffset with phantom torque ON.
-        // Re-enable when testing thruster-only (SuppressPhantomTorque) control.
         // _scenarios.Add(new ThrustOnlyAttitudeScenario());
     }
 
@@ -361,7 +414,8 @@ public static class AeroTestHarness
 
         if (_frame >= _activeScenario.StabilizeFrames)
         {
-            // Capture baseline orientation
+            // Capture baseline position and orientation
+            _basePosition = wt.Position;
             _baseOrientation = wt.Orientation;
             aero._holdOrientation = _baseOrientation;
             aero._holdOrientationValid = true;
@@ -387,12 +441,22 @@ public static class AeroTestHarness
         // ── Sub-phase 0: PERTURB ──
         if (_subPhase == 0)
         {
-            Log.Default?.Info($"[TEST] {_activeScenario.Name} | {_testIndex + 1}/{_activeScenario.TestCases.Count}: {tc.Name} ({tc.TargetDeg:F0}deg)");
+            bool hasVel = tc.VelocityLocal.LengthSquared() > 0.01f;
+            string desc = tc.TargetDeg > 0.1f
+                ? (hasVel ? $"{tc.TargetDeg:F0}deg + {tc.VelocityLocal.Length():F0}m/s" : $"{tc.TargetDeg:F0}deg")
+                : $"{tc.VelocityLocal.Length():F0}m/s";
+            Log.Default?.Info($"[TEST] {_activeScenario.Name} | {_testIndex + 1}/{_activeScenario.TestCases.Count}: {tc.Name} ({desc})");
 
+            // Apply rotation perturbation
             float rad = tc.TargetDeg * MathF.PI / 180f;
-            Quaternion perturbation = Quaternion.CreateFromAxisAngle(tc.KickAxis, rad);
+            Quaternion perturbation = tc.TargetDeg > 0.1f
+                ? Quaternion.CreateFromAxisAngle(tc.KickAxis, rad)
+                : Quaternion.Identity;
             PhysicsHack.TrySetOrientation(aero.Data, _baseOrientation * perturbation);
-            PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
+
+            // Apply velocity kick (local → world) — dampeners must arrest this
+            Vector3 worldVel = hasVel ? Vector3.Transform(tc.VelocityLocal, _baseOrientation) : Vector3.Zero;
+            PhysicsHack.TrySetVelocity(aero.Data, worldVel, Vector3.Zero);
 
             // Harness controls attitude during settle
             aero._holdOrientation = _baseOrientation;
@@ -447,21 +511,31 @@ public static class AeroTestHarness
 
         float angSpeed = localAngVel.Length();
 
+        // Linear velocity check (for combo tests with velocity kick)
+        PhysicsHack.TryGetVelocity(aero.Data, out var linVel, out _);
+        float linSpeed = linVel.Length();
+        bool hasVelPerturbation = tc.VelocityLocal.LengthSquared() > 0.01f;
+
         // 1Hz logging
         if (_frame % 60 == 0)
         {
-            Log.Default?.Info($"[TEST] {_activeScenario.Name} | {tc.Name} | t={_frame / 60f:F1}s err={errorDeg:F2}deg w={angSpeed:F4}" +
+            string velInfo = hasVelPerturbation ? $" v={linSpeed:F2}m/s" : "";
+            Log.Default?.Info($"[TEST] {_activeScenario.Name} | {tc.Name} | t={_frame / 60f:F1}s err={errorDeg:F2}deg w={angSpeed:F4}{velInfo}" +
                 $" cmd=({aero._lastGridAngVel.X:F3},{aero._lastGridAngVel.Y:F3},{aero._lastGridAngVel.Z:F3})");
         }
 
-        // Check pass
-        if (errorDeg < _activeScenario.PassErrorDeg && angSpeed < _activeScenario.PassAngSpeed)
+        // Check pass — attitude settled + velocity arrested (if applicable)
+        const float LinSpeedPass = 0.5f; // linear speed < 0.5 m/s
+        bool attitudeOk = errorDeg < _activeScenario.PassErrorDeg && angSpeed < _activeScenario.PassAngSpeed;
+        bool velocityOk = !hasVelPerturbation || linSpeed < LinSpeedPass;
+        if (attitudeOk && velocityOk)
         {
             _holdFrames++;
             if (_holdFrames >= _activeScenario.HoldFrames)
             {
                 float sec = _frame / 60f;
-                Log.Default?.Info($"[TEST] >> PASS: {tc.Name} in {sec:F2}s (err={errorDeg:F2}deg)");
+                string velPass = hasVelPerturbation ? $" v={linSpeed:F2}m/s" : "";
+                Log.Default?.Info($"[TEST] >> PASS: {tc.Name} in {sec:F2}s (err={errorDeg:F2}deg{velPass})");
                 _results.Add(new TestResult(_activeScenario.Name, tc.Name, true, errorDeg, sec));
                 AdvanceTest();
                 return;
@@ -476,7 +550,8 @@ public static class AeroTestHarness
         if (_frame >= _activeScenario.TimeoutFrames)
         {
             float sec = _frame / 60f;
-            Log.Default?.Info($"[TEST] >> FAIL: {tc.Name} timeout (err={errorDeg:F2}deg w={angSpeed:F4})");
+            string velFail = hasVelPerturbation ? $" v={linSpeed:F2}m/s" : "";
+            Log.Default?.Info($"[TEST] >> FAIL: {tc.Name} timeout (err={errorDeg:F2}deg w={angSpeed:F4}{velFail})");
             _results.Add(new TestResult(_activeScenario.Name, tc.Name, false, errorDeg, sec));
             AdvanceTest();
         }

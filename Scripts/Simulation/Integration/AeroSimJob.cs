@@ -167,7 +167,7 @@ public partial class AeroGridComponent
             Vector3 gravLocal = WorldTransform.TransformDirectionInv(gravity, wt);
             // Read actual dampener state from grid entity (DampeningData tag = dampeners on)
             // Test harness forces dampeners on so per-thruster attitude control is active
-            bool dampenersOn = aero.SuppressPhantomTorque || aero.Data.Has<DampeningData>();
+            bool dampenersOn = aero.HarnessControlsAttitude || aero.SuppressPhantomTorque || aero.Data.Has<DampeningData>();
 
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
