@@ -81,7 +81,7 @@ internal class SpaceOffsetScenario : ITestScenario
 
         // Clear thrust overrides
         for (int i = 0; i < aero._thrusterCache.Count; i++)
-            OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+            OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
 
         Log.Default?.Info($"[TEST] {Name}: Setup complete. Gyros ON, phantom torque ON, {aero._thrusterCache.Count} thrusters, {aero._gyroCache.Count} gyros.");
     }
@@ -130,7 +130,7 @@ internal class SpaceComboScenario : ITestScenario
     {
         PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
         for (int i = 0; i < aero._thrusterCache.Count; i++)
-            OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+            OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
 
         Log.Default?.Info($"[TEST] {Name}: Setup complete. {aero._thrusterCache.Count} thrusters, {aero._gyroCache.Count} gyros.");
     }
@@ -194,12 +194,62 @@ internal class ThrustOnlyAttitudeScenario : ITestScenario
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Built-in: Space translation (zero-g, angular vel killed, pure linear damping)
+// ═══════════════════════════════════════════════════════════════
+
+internal class SpaceTranslationScenario : ITestScenario
+{
+    public string Name => "SpaceTranslation";
+    public float PassErrorDeg => 5f;       // relaxed — we don't care about attitude
+    public float PassAngSpeed => 1f;        // relaxed
+    public int HoldFrames => 60;            // 1s hold
+    public int TimeoutFrames => 1200;       // 20s timeout
+    public int StabilizeFrames => 180;      // 3s
+
+    public List<TestCase> TestCases { get; } = new()
+    {
+        // All 6 cardinal directions at 10 m/s
+        new("Fwd 10",    default, 0f, new Vector3(0, 0, -10)),
+        new("Back 10",   default, 0f, new Vector3(0, 0, 10)),
+        new("Up 10",     default, 0f, new Vector3(0, 10, 0)),
+        new("Down 10",   default, 0f, new Vector3(0, -10, 0)),
+        new("Right 10",  default, 0f, new Vector3(10, 0, 0)),
+        new("Left 10",   default, 0f, new Vector3(-10, 0, 0)),
+        // Higher speed
+        new("Fwd 20",    default, 0f, new Vector3(0, 0, -20)),
+        new("Up 20",     default, 0f, new Vector3(0, 20, 0)),
+    };
+
+    public void Setup(AeroGridComponent aero, WorldTransform wt)
+    {
+        PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
+        for (int i = 0; i < aero._thrusterCache.Count; i++)
+            OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
+
+        Log.Default?.Info($"[TEST] {Name}: Setup complete. {aero._thrusterCache.Count} thrusters, angular vel zeroed each frame.");
+    }
+
+    public void OnSettleFrame(AeroGridComponent aero, WorldTransform wt)
+    {
+        // Kill angular velocity every frame to isolate translation
+        PhysicsHack.TrySetAngularVelocity(aero.Data, Vector3.Zero);
+        // Zero the attitude command so thrusters only do linear damping
+        aero._lastGridAngVel = Vector3.Zero;
+    }
+
+    public void Teardown(AeroGridComponent aero)
+    {
+        Log.Default?.Info($"[TEST] {Name}: Teardown complete.");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Test harness — static class, called from AeroSimJob
 // ═══════════════════════════════════════════════════════════════
 
 public static class AeroTestHarness
 {
-    public static bool Enabled = true;
+    public static bool Enabled = false;
 
     private enum Phase { Idle, SelectGrid, FreezeOthers, Stabilize, RunTests, Summary, Done }
 
@@ -231,10 +281,8 @@ public static class AeroTestHarness
     static AeroTestHarness()
     {
         _scenarios.Add(new SpaceOffsetScenario());
-        // SpaceCombo disabled — linear dampening not working standalone in SE2
-        // (offset thrust loop applies impulses that accelerate grid when no vanilla dampeners)
-        // TODO: fix offset loop interaction before enabling
-        // _scenarios.Add(new SpaceComboScenario());
+        _scenarios.Add(new SpaceTranslationScenario());
+        _scenarios.Add(new SpaceComboScenario());
         // ThrustOnlyAttitude disabled — functionally identical to SpaceOffset with phantom torque ON.
         // _scenarios.Add(new ThrustOnlyAttitudeScenario());
     }
@@ -465,7 +513,7 @@ public static class AeroTestHarness
 
             // Clear thrust overrides
             for (int i = 0; i < aero._thrusterCache.Count; i++)
-                OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+                OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
 
             _subPhase = 1;
             _frame = 0;
@@ -520,8 +568,15 @@ public static class AeroTestHarness
         if (_frame % 60 == 0)
         {
             string velInfo = hasVelPerturbation ? $" v={linSpeed:F2}m/s" : "";
+            // Diagnostic: log player input and dampener state
+            Vector3 playerMove = Vector3.Zero;
+            bool hasDampData = aero.Data.Has<DampeningData>();
+            if (aero.Data.TryGet<ControlData>(out var cd))
+                playerMove = cd.Movement;
             Log.Default?.Info($"[TEST] {_activeScenario.Name} | {tc.Name} | t={_frame / 60f:F1}s err={errorDeg:F2}deg w={angSpeed:F4}{velInfo}" +
-                $" cmd=({aero._lastGridAngVel.X:F3},{aero._lastGridAngVel.Y:F3},{aero._lastGridAngVel.Z:F3})");
+                $" cmd=({aero._lastGridAngVel.X:F3},{aero._lastGridAngVel.Y:F3},{aero._lastGridAngVel.Z:F3})" +
+                $" pMove=({playerMove.X:F2},{playerMove.Y:F2},{playerMove.Z:F2}) damp={hasDampData}" +
+                $" linVel=({linVel.X:F1},{linVel.Y:F1},{linVel.Z:F1})");
         }
 
         // Check pass — attitude settled + velocity arrested (if applicable)

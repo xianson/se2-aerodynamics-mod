@@ -50,12 +50,10 @@ public struct ThrusterDebugState
 }
 
 /// <summary>
-/// Offset thrust control: cancel vanilla's CoM-only linear impulse and
-/// re-apply at thruster block position so offset thrusters create torque.
-///
-/// Pattern from SE1 BobSurvival/RealRCSThrusterLogic.cs lines 460-471:
-///   grid.Physics.AddForce(-force, CoM);   // cancel linear
-///   grid.Physics.AddForce(+force, blockPos); // re-apply at offset → torque
+/// Offset thrust torque: vanilla applies all thrust at CoM (no torque).
+/// We add the coupling torque (r × F) that would exist if thrust acted
+/// at the thruster's block position. Pure angular impulse — vanilla's
+/// linear thrust is left untouched. Mach scaling delta applied separately.
 /// </summary>
 public static class OffsetThrustJob
 {
@@ -63,13 +61,13 @@ public static class OffsetThrustJob
     private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
     private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 
-
     private static int _executeLogCooldown;
 
     // ── Per-thruster trace logging ──
     private static int _traceGridHash;
     private static int _traceIndex = -1;
     private static int _traceFrame;
+    private static int _dampDiagCooldown;
     private static int _traceLockedCount = int.MaxValue;
     private static int _traceSkipCount = 0; // skip first N grids before locking
     private static bool _traceActive;
@@ -81,6 +79,7 @@ public static class OffsetThrustJob
     /// Apply phantom -HoverCouplingTorque to cancel it while preserving attitude differential.</summary>
     public static Vector3 HoverCouplingTorque { get; private set; }
     private static Vector3 _traceNetAttitudeTorque;
+    private static Vector3 _netOverrideThrust; // accumulated thrust from damping/attitude overrides (local frame, Newtons)
 
     // (Per-thruster blending manages its own overrides — no tracking needed)
 
@@ -101,6 +100,7 @@ public static class OffsetThrustJob
     public static void Execute(
         List<ThrusterInfo> thrusters,
         DEntityContext gridData,
+        Entity gridEntity,
         WorldTransform gridWt,
         Vector3 angularVelocity,
         bool enableDampening,
@@ -135,7 +135,7 @@ public static class OffsetThrustJob
             bool hasActive = false;
             for (int j = 0; j < thrusters.Count; j++)
             {
-                if (GetComponentThrustOverride(thrusters[j].ThrusterComponent) > 0f ||
+                if (PhysicsHack.GetThrustOverride(thrusters[j].ThrusterEntity.Data) > 0f ||
                     IsComponentThrusting(thrusters[j].ThrusterComponent))
                 { hasActive = true; break; }
             }
@@ -199,11 +199,11 @@ public static class OffsetThrustJob
             var thruster = thrusters[i];
 
             // ── Read actual thrust state via ThrusterComponent ──
-            float overridePower = GetComponentThrustOverride(thruster.ThrusterComponent);
+            float overridePower = Math.Max(0f, PhysicsHack.GetThrustOverride(thruster.ThrusterEntity.Data));
 
             // Determine actual thrust force this frame (vanilla value)
             // ThrustOverride > 0 means override active (0-1 normalized).
-            // Otherwise, check IsThrusting data tag via DEntityContext (may fail due to boxing).
+            // Otherwise, check IsThrusting data tag.
             float vanillaThrust = 0f;
             if (overridePower > 0f)
             {
@@ -223,9 +223,9 @@ public static class OffsetThrustJob
                 float cosIntake = Vector3.Dot(velocityLocalHat, thruster.IntakeDirection);
                 float logScale = thruster.Profile != null
                     ? (float)thruster.Profile.Evaluate(mach, velocityLocalHat, thruster.IntakeDirection) : 1f;
-                Log.Default?.Info($"[AERO] OffsetThrust active: [{i}] thrust={vanillaThrust:F0}N " +
+                float logOverride = Math.Max(0f, PhysicsHack.GetThrustOverride(thruster.ThrusterEntity.Data));
+                Log.Default?.Info($"[AERO] OffsetThrust active: [{i}] actual={vanillaThrust:F0}N override={logOverride:F3} max={thruster.MaxPower:F0}N " +
                     $"dir=({thruster.ThrustDirection.X:F1},{thruster.ThrustDirection.Y:F1},{thruster.ThrustDirection.Z:F1}) " +
-                    $"intake=({thruster.IntakeDirection.X:F1},{thruster.IntakeDirection.Y:F1},{thruster.IntakeDirection.Z:F1}) " +
                     $"mach={mach:F2} cosIntake={cosIntake:F3} scale={logScale:F3}" +
                     (thruster.Profile != null ? $" [{thruster.Profile.Name}]" : ""));
                 _executeLogCooldown = 600;
@@ -250,33 +250,31 @@ public static class OffsetThrustJob
             dbg.IsActive = true;
             debugStates[i] = dbg;
 
-            // ── Dual-force pattern ──
-            // ThrustDirection is the exhaust direction; force pushes the ship opposite
+            // ── Offset torque + Mach scaling ──
+            // Vanilla applies thrust at CoM (linear only, no torque).
+            // We add the coupling torque that would exist if thrust acted at block position.
+            // For Mach-scaled profiles, also apply the linear delta (scaled - vanilla).
             Vector3 forceDir = -thruster.ThrustDirection;
             Vector3 localForce = forceDir * scaledThrust;
 
-            // Convert to world-space impulse
-            Vector3 worldImpulse = WorldTransform.TransformDirection(localForce * DT, gridWt);
-
-            // Vanilla impulse to cancel (applied at CoM by game in force direction)
-            Vector3 vanillaLocalForce = forceDir * vanillaThrust;
-            Vector3 vanillaImpulse = WorldTransform.TransformDirection(vanillaLocalForce * DT, gridWt);
-
-            // NaN guard — don't write bad values to physics
-            if (float.IsNaN(worldImpulse.X) || float.IsNaN(vanillaImpulse.X)) continue;
-
-            // Block center in world space
-            Vector3D blockWorldPos = WorldTransform.Transform((Vector3D)thruster.GridLocalPosition, gridWt);
-
-            // Step 1: Cancel the vanilla linear impulse at CoM
-            PhysicsHack.CancelLinearImpulse(gridData, vanillaImpulse);
-
-            // Step 2: Re-apply scaled thrust at the thruster's offset position
-            PhysicsHack.ApplyImpulseAt(gridData, worldImpulse, blockWorldPos, gridWt);
-
-            // Accumulate net offset coupling torque
+            // Coupling torque from offset position
             Vector3 rOffset = thruster.GridLocalPosition - comLocal;
             Vector3 couplingTorqueI = Vector3.Cross(rOffset, localForce);
+
+            // NaN guard
+            if (float.IsNaN(couplingTorqueI.X)) continue;
+
+            // Apply pure torque (no linear change — vanilla's thrust stays intact)
+            PhysicsHack.ApplyTorqueImpulse(gridData, couplingTorqueI * DT, gridWt);
+
+            // Mach scaling: apply linear delta if profile != 1.0
+            if (Math.Abs(profileScale - 1f) > 0.001f)
+            {
+                Vector3 deltaImpulse = WorldTransform.TransformDirection(
+                    forceDir * (scaledThrust - vanillaThrust) * DT, gridWt);
+                if (!float.IsNaN(deltaImpulse.X))
+                    PhysicsHack.ApplyLinearImpulse(gridData, deltaImpulse);
+            }
             _traceNetOffsetTorque += couplingTorqueI;
 
             // Compute hover-only coupling: what torque would this thruster create
@@ -296,13 +294,14 @@ public static class OffsetThrustJob
             if (_traceActive && i == _traceIndex)
             {
                 bool isThrustingFlag = IsComponentThrusting(thruster.ThrusterComponent);
+                float traceOverride = Math.Max(0f, PhysicsHack.GetThrustOverride(thruster.ThrusterEntity.Data));
                 Log.Default?.Info($"[AERO-TRACE] OFFSET f={_traceFrame}" +
                     $" pos=({thruster.GridLocalPosition.X:F2},{thruster.GridLocalPosition.Y:F2},{thruster.GridLocalPosition.Z:F2})" +
                     $" dir=({thruster.ThrustDirection.X:F2},{thruster.ThrustDirection.Y:F2},{thruster.ThrustDirection.Z:F2})" +
                     $" com=({comLocal.X:F2},{comLocal.Y:F2},{comLocal.Z:F2})" +
                     $" r=({rOffset.X:F2},{rOffset.Y:F2},{rOffset.Z:F2})" +
-                    $" override={overridePower:F3} isThrusting={isThrustingFlag}" +
-                    $" van={vanillaThrust:F0} profScale={profileScale:F3} scaled={scaledThrust:F0}" +
+                    $" override={traceOverride:F3} isThrusting={isThrustingFlag}" +
+                    $" actual={vanillaThrust:F0} profScale={profileScale:F3} scaled={scaledThrust:F0}" +
                     $" localF=({localForce.X:F0},{localForce.Y:F0},{localForce.Z:F0})" +
                     $" coupling=({couplingTorqueI.X:F0},{couplingTorqueI.Y:F0},{couplingTorqueI.Z:F0})");
             }
@@ -314,12 +313,35 @@ public static class OffsetThrustJob
 
         AttitudeOnly:
         // ── Attitude control (real differential thrust) ──
-        // Differentially throttle thrusters via SetComponentThrustOverride to produce
+        // Differentially throttle thrusters via ThrusterOverrideData ECS tag to produce
         // counter-torque. No phantom forces — all torque comes from real thruster output.
         // With dampeners off, coupling passes through naturally — asymmetric thrust spins the ship.
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, gridWt);
         ApplyAttitudeViaOverrides(thrusters, comLocal, enableDampening, localAngVel,
             velocityLocal, playerMovement, playerRotation, targetAngVel);
+
+        // Write accumulated override thrust to grid-level OverriddenThrustData
+        // This is what ThrustComponent.ComputeThrust reads to produce actual force.
+        // Write directly — forceDir opposes velocity, which is what we want.
+        // No per-thruster tags = collector won't overwrite us.
+        bool ovrOk;
+        if (_netOverrideThrust.LengthSquared() > 0.01f)
+            ovrOk = PhysicsHack.TrySetOverriddenThrust(gridEntity, gridData, _netOverrideThrust);
+        else
+            ovrOk = PhysicsHack.TrySetOverriddenThrust(gridEntity, gridData, Vector3.Zero);
+
+        // Readback verification (once per second)
+        _dampDiagCooldown = Math.Max(0, _dampDiagCooldown - 1);
+        if (_dampDiagCooldown == 0 && _netOverrideThrust.LengthSquared() > 0.01f)
+        {
+            Vector3 readback = PhysicsHack.GetOverriddenThrust(gridData);
+            // Also check ActiveThrustData on the GRID entity (not thruster)
+            float gridActiveThrust = PhysicsHack.GetGridActiveThrust(gridData);
+            Log.Default?.Info($"[OVR-DIAG] wrote=({_netOverrideThrust.X:F0},{_netOverrideThrust.Y:F0},{_netOverrideThrust.Z:F0})" +
+                $" readback=({readback.X:F0},{readback.Y:F0},{readback.Z:F0}) ok={ovrOk}" +
+                $" gridActiveThrust={gridActiveThrust:F0}");
+            _dampDiagCooldown = 60;
+        }
 
         // Phase 3 trace: net torque summary
         if (_traceActive)
@@ -375,6 +397,7 @@ public static class OffsetThrustJob
     {
         int n = thrusters.Count;
         _traceNetAttitudeTorque = Vector3.Zero;
+        _netOverrideThrust = Vector3.Zero;
 
         bool hasPlayerMove = playerMovement.LengthSquared() > 0.0001f;
         bool hasPlayerRot = playerRotation.LengthSquared() > 0.0001f;
@@ -459,7 +482,15 @@ public static class OffsetThrustJob
             }
 
             // ── Step 5: Bob blend ──
-            float throttle = Math.Clamp(rotation * limiter + movement * (1f - limiter), 0f, 1f);
+            // When only one axis has demand, give it full authority.
+            // Only blend when both translation and rotation want the thruster.
+            float throttle;
+            if (rotation <= 0f)
+                throttle = Math.Clamp(movement, 0f, 1f);
+            else if (movement <= 0f)
+                throttle = Math.Clamp(rotation, 0f, 1f);
+            else
+                throttle = Math.Clamp(rotation * limiter + movement * (1f - limiter), 0f, 1f);
 
             // Both non-positive → release to vanilla (override=0)
             float overrideValue;
@@ -478,10 +509,16 @@ public static class OffsetThrustJob
                     $" damp={enableDampening}");
             }
 
-            SetComponentThrustOverride(t.ThrusterComponent, overrideValue);
+            // NOTE: Per-thruster ThrusterOverrideData tags intentionally NOT set here.
+            // The collector recomputes OverriddenThrustData from per-thruster tags with wrong
+            // direction mapping. Instead, we write OverriddenThrustData directly on the grid.
             overrideCount++;
             if (throttle > 0.001f)
+            {
                 producedTorque += torqueArm * (throttle * t.MaxPower);
+                // Accumulate for grid-level OverriddenThrustData (actual force)
+                _netOverrideThrust += forceDir * (throttle * t.MaxPower);
+            }
 
             // Record debug state
             Vector3 torqueAxis = arm > 0.001f ? torqueArm / arm : Vector3.Zero;
@@ -497,6 +534,30 @@ public static class OffsetThrustJob
             }
         }
         _traceNetAttitudeTorque = producedTorque;
+
+        // Dampening diagnostic: log once per second when dampeners are active and velocity is significant
+        _dampDiagCooldown = Math.Max(0, _dampDiagCooldown - 1);
+        if (enableDampening && hasLinVel && _dampDiagCooldown == 0)
+        {
+            int posOverrides = 0;
+            int actualFiring = 0;
+            float maxOvr = 0f;
+            float totalActual = 0f;
+            for (int j = 0; j < n; j++)
+            {
+                float ovr = Math.Max(0f, PhysicsHack.GetThrustOverride(thrusters[j].ThrusterEntity.Data));
+                if (ovr > 0.001f) posOverrides++;
+                if (ovr > maxOvr) maxOvr = ovr;
+                float actual = GetActualThrust(thrusters[j].ThrusterComponent);
+                if (actual > 0.01f) { actualFiring++; totalActual += actual; }
+            }
+            Log.Default?.Info($"[DAMP-DIAG] |v|={velocityLocal.Length():F1} vel=({velocityLocal.X:F1},{velocityLocal.Y:F1},{velocityLocal.Z:F1})" +
+                $" damp={enableDampening} n={n} posOvr={posOverrides} maxOvr={maxOvr:F3}" +
+                $" actualFiring={actualFiring} totalActualN={totalActual:F0}" +
+                $" ovrThrust=({_netOverrideThrust.X:F0},{_netOverrideThrust.Y:F0},{_netOverrideThrust.Z:F0})" +
+                $" |w|={localAngVel.Length():F4}");
+            _dampDiagCooldown = 60;
+        }
 
         // Trace logging
         if (_traceActive && _traceIndex >= 0 && _traceIndex < n)
@@ -726,8 +787,11 @@ public static class OffsetThrustJob
     private static System.Reflection.PropertyInfo _thrusterMaxPowerProp;
     private static System.Reflection.PropertyInfo _thrusterDirProp;
     private static System.Reflection.PropertyInfo _thrusterClassProp;
-    private static System.Reflection.PropertyInfo _thrustOverrideProp; // ThrusterComponent.ThrustOverride (float, get/set)
     private static System.Reflection.MethodInfo _hasIsThrustingMethod; // Component.HasData<IsThrusting>()
+    private static Type _activeThrustDataType;
+    private static System.Reflection.FieldInfo _computedThrustField; // ActiveThrustData.ComputedThrustPerFrame
+    private static System.Reflection.MethodInfo _tryGetActiveThrustMethod; // Component.TryGetData<ActiveThrustData>
+    private static readonly object[] _activeThrustArgs = new object[1]; // pre-allocated to avoid GC
     private static bool _thrusterReflectionResolved;
 
     private static void EnsureThrusterReflectionResolved()
@@ -758,10 +822,6 @@ public static class OffsetThrustJob
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 }
 
-                // ThrusterComponent.ThrustOverride (public float property)
-                _thrustOverrideProp = _thrusterCompType.GetProperty("ThrustOverride",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
                 // Component.HasData<IsThrusting>() — protected, call via reflection on the
                 // Component class instance (no DEntityContext boxing needed).
                 var isThrustingType = Type.GetType(
@@ -782,7 +842,28 @@ public static class OffsetThrustJob
                     }
                 }
 
-                Log.Default?.Info($"[AERO] ThrusterComponent resolved: type={_thrusterCompType != null} def={_thrusterDefField != null} maxPower={_thrusterMaxPowerProp != null} dir={_thrusterDirProp != null} override={_thrustOverrideProp != null} isThrusting={_hasIsThrustingMethod != null}");
+                // Component.TryGetData<ActiveThrustData>() — actual game-computed thrust per frame
+                // SE2 equivalent of SE1's Thrust.CurrentStrength * ForceMagnitude
+                _activeThrustDataType = Type.GetType(
+                    "Keen.Game2.Simulation.WorldObjects.Movement.ActiveThrustData, Game2.Simulation",
+                    throwOnError: false);
+                if (_activeThrustDataType != null)
+                {
+                    _computedThrustField = _activeThrustDataType.GetField("ComputedThrustPerFrame");
+                    foreach (var m in typeof(Component).GetMethods(
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public |
+                        System.Reflection.BindingFlags.Instance))
+                    {
+                        if (m.Name == "TryGetData" && m.IsGenericMethodDefinition
+                            && m.GetParameters().Length == 1 && m.GetParameters()[0].IsOut)
+                        {
+                            _tryGetActiveThrustMethod = m.MakeGenericMethod(_activeThrustDataType);
+                            break;
+                        }
+                    }
+                }
+
+                Log.Default?.Info($"[AERO] ThrusterComponent resolved: type={_thrusterCompType != null} def={_thrusterDefField != null} maxPower={_thrusterMaxPowerProp != null} dir={_thrusterDirProp != null} isThrusting={_hasIsThrustingMethod != null} activeThrust={_tryGetActiveThrustMethod != null}");
             }
             else
             {
@@ -803,26 +884,35 @@ public static class OffsetThrustJob
         catch { return false; }
     }
 
-    /// <summary>Read ThrustOverride from ThrusterComponent (0 = no override).</summary>
-    private static float GetComponentThrustOverride(Component thrusterComp)
+    /// <summary>
+    /// Read actual game-computed thrust for this thruster via ActiveThrustData.ComputedThrustPerFrame.
+    /// Returns the thrust magnitude in Newtons, or -1 if reflection unavailable.
+    /// Returns 0 if the game didn't produce thrust this frame.
+    /// This is the SE2 equivalent of SE1's Thrust.CurrentStrength * ForceMagnitude.
+    /// </summary>
+    private static float GetActualThrust(Component thrusterComp)
     {
-        if (_thrustOverrideProp == null || thrusterComp == null) return 0f;
-        try { return (float)_thrustOverrideProp.GetValue(thrusterComp); }
-        catch { return 0f; }
-    }
-
-    /// <summary>Set ThrustOverride on ThrusterComponent.</summary>
-    private static void SetComponentThrustOverride(Component thrusterComp, float value)
-    {
-        if (_thrustOverrideProp == null || thrusterComp == null) return;
-        if (float.IsNaN(value) || float.IsInfinity(value)) value = 0f;
-        try { _thrustOverrideProp.SetValue(thrusterComp, value); }
-        catch { }
+        if (_tryGetActiveThrustMethod == null || _computedThrustField == null || thrusterComp == null)
+            return -1f;
+        try
+        {
+            _activeThrustArgs[0] = null;
+            bool found = (bool)_tryGetActiveThrustMethod.Invoke(thrusterComp, _activeThrustArgs);
+            if (!found || _activeThrustArgs[0] == null) return 0f;
+            Vector3 thrust = (Vector3)_computedThrustField.GetValue(_activeThrustArgs[0]);
+            return thrust.Length();
+        }
+        catch { return -1f; }
     }
 
     /// <summary>Public wrapper to force a thrust override from outside.</summary>
-    public static void ForceOverride(Component thrusterComp, float value)
-        => SetComponentThrustOverride(thrusterComp, value);
+    public static void ForceOverride(ThrusterInfo thruster, float value)
+    {
+        if (value > 0f)
+            PhysicsHack.TrySetThrustOverride(thruster.ThrusterEntity.Data, value);
+        else
+            PhysicsHack.TryRemoveThrustOverride(thruster.ThrusterEntity.Data);
+    }
 
     /// <summary>Read ThrustClass (StringId) from ThrusterDefinition on a ThrusterComponent.</summary>
     private static string GetThrustClass(Component thrusterComp)

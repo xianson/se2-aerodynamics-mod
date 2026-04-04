@@ -93,7 +93,7 @@ public partial class AeroGridComponent
         if (aero._simFrameCount == 1 && aero._thrusterCache.Count > 0)
         {
             for (int i = 0; i < aero._thrusterCache.Count; i++)
-                OffsetThrustJob.ForceOverride(aero._thrusterCache[i].ThrusterComponent, 0f);
+                OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
         }
 
         // ── Aero computation ──
@@ -172,6 +172,7 @@ public partial class AeroGridComponent
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
                 aero.Data,
+                aero.Entity,
                 wt,
                 angVel,
                 enableDampening: dampenersOn,

@@ -63,6 +63,13 @@ public static class PhysicsHack
     private static Type _isThrustingType;
     private static MethodInfo _hasIsThrustingMethod;
 
+    // OverriddenThrustData — grid-level override thrust (what ComputeThrust actually reads)
+    private static Type _overriddenThrustType;
+    private static FieldInfo _directionalThrustField;
+    private static MethodInfo _tryGetOverriddenThrustMethod;
+    private static MethodInfo _setOverriddenThrustMethod;
+    private static MethodInfo _getWritePtrOverriddenThrustMethod;
+
     // WorldTransform reading on child entities
     private static MethodInfo _getWorldTransformMethod;
 
@@ -346,6 +353,39 @@ public static class PhysicsHack
                 {
                     _hasIsThrustingMethod = _hasGeneric.MakeGenericMethod(_isThrustingType);
                     Log.Default?.Info("[AERO] PhysicsHack: IsThrusting type found");
+                }
+            }
+            catch { }
+
+            // Resolve OverriddenThrustData — grid-level override thrust read by ComputeThrust
+            try
+            {
+                _overriddenThrustType = Type.GetType(
+                    "Keen.Game2.Simulation.WorldObjects.Shared.Movement.OverriddenThrustData, Game2.Simulation",
+                    throwOnError: false);
+                Log.Default?.Info($"[AERO] PhysicsHack: OverriddenThrustData type={_overriddenThrustType != null}");
+                if (_overriddenThrustType != null)
+                {
+                    _directionalThrustField = _overriddenThrustType.GetField("DirectionalThrust",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (tryGetGeneric != null)
+                        _tryGetOverriddenThrustMethod = tryGetGeneric.MakeGenericMethod(_overriddenThrustType);
+                    if (_setGeneric != null)
+                        _setOverriddenThrustMethod = _setGeneric.MakeGenericMethod(_overriddenThrustType);
+                    // GetWritePtr<T>() for in-place mutation
+                    foreach (var m in typeof(DEntityContext).GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                    {
+                        if (m.Name == "GetWritePtr" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
+                        {
+                            _getWritePtrOverriddenThrustMethod = m.MakeGenericMethod(_overriddenThrustType);
+                            break;
+                        }
+                    }
+                    if (_directionalThrustField != null)
+                    {
+                        Log.Default?.Info("[AERO] PhysicsHack: OverriddenThrustData resolved");
+                        ResolveSetDataOnComponent();
+                    }
                 }
             }
             catch { }
@@ -999,6 +1039,127 @@ public static class PhysicsHack
         catch { return false; }
     }
 
+    // Resolved SetData<OverriddenThrustData> on Component base class
+    private static MethodInfo _setDataOnComponent;
+    private static Type _thrustCompType;
+
+    /// <summary>
+    /// Set OverriddenThrustData.DirectionalThrust on a grid entity.
+    /// Uses Component.SetData path to write through to scene data pools (job system visible).
+    /// </summary>
+    public static bool TrySetOverriddenThrust(Entity gridEntity, DEntityContext gridData, Vector3 directionalThrust)
+    {
+        if (_overriddenThrustType == null || _directionalThrustField == null)
+            return false;
+
+        try
+        {
+            object overriddenData = Activator.CreateInstance(_overriddenThrustType);
+            _directionalThrustField.SetValue(overriddenData, directionalThrust);
+
+            // Use Component.SetData<T> via ThrustComponent on the grid (writes to scene pools)
+            if (_setDataOnComponent != null && gridEntity != null)
+            {
+                var comp = FindComponentByType(gridEntity, _thrustCompType);
+                if (comp != null)
+                {
+                    _invokeArgs2.SetValue(overriddenData, 0);
+                    _setDataOnComponent.Invoke(comp,
+                        Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+                    return true;
+                }
+            }
+
+            // Fallback: DEntityContext.Set<T>
+            if (_setOverriddenThrustMethod != null)
+            {
+                _invokeArgs2.SetValue(overriddenData, 0);
+                object boxedContext = gridData;
+                _setOverriddenThrustMethod.Invoke(boxedContext,
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+                return true;
+            }
+            return false;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Read ActiveThrustData.ComputedThrustPerFrame from the GRID entity (not thruster).</summary>
+    public static float GetGridActiveThrust(DEntityContext gridData)
+    {
+        try
+        {
+            var atdType = Type.GetType(
+                "Keen.Game2.Simulation.WorldObjects.Movement.ActiveThrustData, Game2.Simulation",
+                throwOnError: false);
+            if (atdType == null) return -1f;
+            var ctpf = atdType.GetField("ComputedThrustPerFrame");
+            if (ctpf == null) return -1f;
+
+            MethodInfo tryGetGeneric = null;
+            foreach (var m in typeof(DEntityContext).GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (m.Name == "TryGet" && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 1 && m.GetParameters()[0].IsOut)
+                { tryGetGeneric = m; break; }
+            }
+            if (tryGetGeneric == null) return -2f;
+
+            var specific = tryGetGeneric.MakeGenericMethod(atdType);
+            _invokeArgs2.SetValue(null, 0);
+            object boxedContext = gridData;
+            bool found = (bool)specific.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+            if (!found || _invokeArgs2.GetValue(0) == null) return 0f; // not present = no thrust
+            Vector3 thrust = (Vector3)ctpf.GetValue(_invokeArgs2.GetValue(0));
+            return thrust.Length();
+        }
+        catch { return -4f; }
+    }
+
+    /// <summary>Resolve SetData method on Component for OverriddenThrustData. Called during init.</summary>
+    private static void ResolveSetDataOnComponent()
+    {
+        if (_overriddenThrustType == null) return;
+        _thrustCompType = Type.GetType(
+            "Keen.Game2.Simulation.WorldObjects.Shared.Movement.ThrustComponent, Game2.Simulation",
+            throwOnError: false);
+        if (_thrustCompType == null) return;
+
+        foreach (var m in typeof(Component).GetMethods(
+            BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (m.Name == "SetData" && m.IsGenericMethodDefinition
+                && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
+            {
+                _setDataOnComponent = m.MakeGenericMethod(_overriddenThrustType);
+                Log.Default?.Info("[AERO] PhysicsHack: Component.SetData<OverriddenThrustData> resolved");
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Read OverriddenThrustData.DirectionalThrust from a grid entity.
+    /// Returns Vector3.Zero if not present.
+    /// </summary>
+    public static Vector3 GetOverriddenThrust(DEntityContext gridData)
+    {
+        if (_tryGetOverriddenThrustMethod == null || _directionalThrustField == null)
+            return Vector3.Zero;
+
+        try
+        {
+            _invokeArgs2.SetValue(null, 0);
+            object boxedContext = gridData;
+            bool found = (bool)_tryGetOverriddenThrustMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+            if (!found || _invokeArgs2.GetValue(0) == null) return Vector3.Zero;
+            return (Vector3)_directionalThrustField.GetValue(_invokeArgs2.GetValue(0));
+        }
+        catch { return Vector3.Zero; }
+    }
+
     /// <summary>
     /// Read WorldTransform from an entity's DEntityContext.
     /// </summary>
@@ -1305,14 +1466,15 @@ public static class PhysicsHack
     }
 
     /// <summary>
-    /// Cancel a linear impulse at CoM (no angular component).
-    /// Used as the first half of the dual-force offset pattern.
+    /// Apply a pure angular impulse (torque × dt) in local space.
+    /// No linear velocity change — only spins the body through the inertia tensor.
+    /// Used to add offset-thrust coupling torque without touching vanilla's linear thrust.
     /// </summary>
-    public static bool CancelLinearImpulse(DEntityContext data, Vector3 impulse)
+    public static bool ApplyTorqueImpulse(DEntityContext data, Vector3 localTorqueImpulse, WorldTransform wt = default)
     {
-        if (!Available || _invMassField == null)
+        if (!Available || _invInertiaTensorField == null)
             return false;
-        if (float.IsNaN(impulse.X) || float.IsNaN(impulse.Y) || float.IsNaN(impulse.Z))
+        if (float.IsNaN(localTorqueImpulse.X) || float.IsNaN(localTorqueImpulse.Y) || float.IsNaN(localTorqueImpulse.Z))
             return false;
 
         try
@@ -1326,7 +1488,75 @@ public static class PhysicsHack
                 return false;
             object rbData = _invokeArgs.GetValue(0);
 
-            // Read invMass
+            // Read mass properties (for inertia tensor)
+            _invokeArgs2.SetValue(null, 0);
+            bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+            if (!foundMass || _invokeArgs2.GetValue(0) == null)
+                return false;
+            object massData = _invokeArgs2.GetValue(0);
+
+            Vector3 invInertia = (Vector3)_invInertiaTensorField.GetValue(massData);
+
+            // Apply through inertia tensor (same math as angular half of ApplyImpulseAt)
+            Vector3D angDelta = (Vector3D)localTorqueImpulse;
+            if (_inertiaMajorAxisRotField != null)
+            {
+                Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
+                Quaternion invRot = Quaternion.Conjugate(majorAxisRot);
+                angDelta = Vector3D.Transform(angDelta, invRot);
+                angDelta = new Vector3D(
+                    angDelta.X * invInertia.X,
+                    angDelta.Y * invInertia.Y,
+                    angDelta.Z * invInertia.Z);
+                angDelta = Vector3D.Transform(angDelta, majorAxisRot);
+            }
+            else
+            {
+                angDelta = new Vector3D(
+                    angDelta.X * invInertia.X,
+                    angDelta.Y * invInertia.Y,
+                    angDelta.Z * invInertia.Z);
+            }
+
+            // Transform to world space and apply
+            Vector3 worldAngDelta = (Vector3)WorldTransform.TransformDirection((Vector3)angDelta, wt);
+            Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
+            angVel += worldAngDelta;
+            _angularVelField.SetValue(rbData, angVel);
+
+            // Write back
+            _invokeArgs.SetValue(rbData, 0);
+            if (_setRbDataMethod != null)
+                _setRbDataMethod.Invoke(boxedContext,
+                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Apply a pure linear impulse (no angular component).
+    /// Used for Mach scaling delta when offset torque is handled separately.
+    /// </summary>
+    public static bool ApplyLinearImpulse(DEntityContext data, Vector3 impulse)
+    {
+        if (!Available || _invMassField == null)
+            return false;
+        if (float.IsNaN(impulse.X) || float.IsNaN(impulse.Y) || float.IsNaN(impulse.Z))
+            return false;
+
+        try
+        {
+            _invokeArgs.SetValue(null, 0);
+            object boxedContext = data;
+            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
+            if (!found || _invokeArgs.GetValue(0) == null)
+                return false;
+            object rbData = _invokeArgs.GetValue(0);
+
             _invokeArgs2.SetValue(null, 0);
             bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
                 Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
@@ -1334,12 +1564,10 @@ public static class PhysicsHack
                 return false;
             float invMass = (float)_invMassField.GetValue(_invokeArgs2.GetValue(0));
 
-            // linVel -= impulse * invMass (cancel the linear component)
             Vector3 linVel = (Vector3)_linearVelField.GetValue(rbData);
-            linVel -= impulse * invMass;
+            linVel += impulse * invMass;
             _linearVelField.SetValue(rbData, linVel);
 
-            // Write back
             _invokeArgs.SetValue(rbData, 0);
             if (_setRbDataMethod != null)
                 _setRbDataMethod.Invoke(boxedContext,
