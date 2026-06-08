@@ -432,10 +432,14 @@ public static class OffsetThrustJob
 
             float movement = 0f;
             float rotation = 0f;
+            bool movementFromPlayer = false;
 
             // ── Step 1: movement from player WASD ──
             if (hasPlayerMove)
+            {
                 movement = Math.Clamp(Vector3.Dot(-playerMovement, forceDir), -1f, 1f);
+                if (movement != 0f) movementFromPlayer = true;
+            }
 
             // ── Step 2: rotation from player mouse/roll ──
             if (hasPlayerRot && arm > 0.001f)
@@ -516,8 +520,10 @@ public static class OffsetThrustJob
             if (throttle > 0.001f)
             {
                 producedTorque += torqueArm * (throttle * t.MaxPower);
-                // Accumulate for grid-level OverriddenThrustData (actual force)
-                _netOverrideThrust += forceDir * (throttle * t.MaxPower);
+                // Only accumulate damping/attitude thrust into OverriddenThrustData.
+                // Player input thrust is already handled by ComputeThrust via ControlData.
+                if (!movementFromPlayer)
+                    _netOverrideThrust += forceDir * (throttle * t.MaxPower);
             }
 
             // Record debug state

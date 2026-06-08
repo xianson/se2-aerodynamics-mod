@@ -2,6 +2,7 @@
 using System;
 using System.Reflection;
 using Keen.VRage.Core;
+using Keen.Game2.Simulation.WorldObjects.Movement;
 
 namespace AeroMod;
 
@@ -1117,6 +1118,29 @@ public static class PhysicsHack
         catch { return -4f; }
     }
 
+    /// <summary>
+    /// Write synthetic ControlData (Movement/Rotation) on a grid entity via Component.SetData.
+    /// Used by test harness to simulate player input.
+    /// </summary>
+    public static bool TrySetControlData(Entity gridEntity, Vector3 movement, Vector3 rotation)
+    {
+        if (_setDataControlMethod == null || _thrustCompType == null || gridEntity == null)
+            return false;
+        try
+        {
+            var comp = FindComponentByType(gridEntity, _thrustCompType);
+            if (comp == null) return false;
+            var cd = new ControlData { Movement = movement, Rotation = rotation };
+            _invokeArgs2.SetValue(cd, 0);
+            _setDataControlMethod.Invoke(comp,
+                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static MethodInfo _setDataControlMethod;
+
     /// <summary>Resolve SetData method on Component for OverriddenThrustData. Called during init.</summary>
     private static void ResolveSetDataOnComponent()
     {
@@ -1126,14 +1150,17 @@ public static class PhysicsHack
             throwOnError: false);
         if (_thrustCompType == null) return;
 
+        MethodInfo setDataGeneric = null;
         foreach (var m in typeof(Component).GetMethods(
             BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
         {
             if (m.Name == "SetData" && m.IsGenericMethodDefinition
                 && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
             {
+                setDataGeneric = m;
                 _setDataOnComponent = m.MakeGenericMethod(_overriddenThrustType);
-                Log.Default?.Info("[AERO] PhysicsHack: Component.SetData<OverriddenThrustData> resolved");
+                _setDataControlMethod = m.MakeGenericMethod(typeof(ControlData));
+                Log.Default?.Info("[AERO] PhysicsHack: Component.SetData<OverriddenThrustData> + <ControlData> resolved");
                 break;
             }
         }

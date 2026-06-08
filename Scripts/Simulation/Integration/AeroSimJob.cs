@@ -89,11 +89,14 @@ public partial class AeroGridComponent
             aero._gyroCacheDirty = false;
         }
 
-        // ── Clear stale ThrustOverride values on first frame (persisted from save) ──
-        if (aero._simFrameCount == 1 && aero._thrusterCache.Count > 0)
+        // ── Clear stale override values on first frame (persisted from save) ──
+        if (aero._simFrameCount == 1)
         {
+            // Clear per-thruster ThrusterOverrideData
             for (int i = 0; i < aero._thrusterCache.Count; i++)
                 OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
+            // Clear grid-level OverriddenThrustData
+            PhysicsHack.TrySetOverriddenThrust(aero.Entity, aero.Data, Vector3.Zero);
         }
 
         // ── Aero computation ──
