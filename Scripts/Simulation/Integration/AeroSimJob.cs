@@ -254,5 +254,8 @@ public partial class AeroGridComponent
 
         // ── THROWAWAY: teleport-stepping feasibility spike ──
         AeroSpeedSpike.Tick(aero, wt);
+
+        // ── Scripted flight test (synthetic stick, no teleporting after setup) ──
+        AeroFlightTest.Tick(aero, wt);
     }
 }
