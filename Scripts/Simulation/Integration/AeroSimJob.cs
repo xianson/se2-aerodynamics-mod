@@ -110,7 +110,8 @@ public partial class AeroGridComponent
         }
 
         // ── Apply aero forces + torques ──
-        float dt = 1f / 60f;
+        // Fixed sim step: UpdateTime.UPDATE_STEPS_PER_SECOND is a compile-time constant in SE2.
+        float dt = AeroPhysics.Dt;
 
         // Gyro handoff: when a pilot is present (TargetControlData) and error is large,
         // let game gyros handle coarse correction (smooth, no coupling artifacts).
@@ -126,7 +127,7 @@ public partial class AeroGridComponent
         if (aero.HasResult && mass > 0f)
         {
             Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
-            Vector3 deltaV = worldForce * (dt / mass);
+            Vector3 deltaV = worldForce * (dt / mass); // diagnostics only; the impulse path uses worldForce
 
             // Log first 120 frames of force application to diagnose launch acceleration
             if (aero._simFrameCount < 120 && aero._simFrameCount % 10 == 0)
@@ -141,7 +142,10 @@ public partial class AeroGridComponent
             Vector3 sasTorque = (aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;
             Vector3 totalTorque = aero.LastResult.Torque + sasTorque;
 
-            PhysicsHack.ApplyDeltaVAndTorque(aero.Data, deltaV, totalTorque, dt, wt.Orientation);
+            // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
+            // ref into component storage and uses the engine's own inertia math, instead of
+            // PhysicsHack's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
+            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, totalTorque, dt);
         }
 
         // ── Offset thrust (RCS) correction ──
@@ -220,7 +224,7 @@ public partial class AeroGridComponent
             // Gyros handle coarse correction smoothly; phantom takes over for fine hold.
             Vector3 totalPhantom = gyroCoarseMode ? couplingCancel : couplingCancel + attTorque;
             if (!aero.SuppressPhantomTorque && totalPhantom.LengthSquared() > 1f)
-                PhysicsHack.ApplyDeltaVAndTorque(aero.Data, Vector3.Zero, totalPhantom, dt, wt.Orientation);
+                AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, totalPhantom, dt);
         }
 
         // ── Throttled drag-vs-Mach log ──
@@ -247,5 +251,8 @@ public partial class AeroGridComponent
 
         // ── Test harness (runs after all production physics) ──
         AeroTestHarness.Tick(aero, wt);
+
+        // ── THROWAWAY: teleport-stepping feasibility spike ──
+        AeroSpeedSpike.Tick(aero, wt);
     }
 }

@@ -123,7 +123,12 @@ public partial class AeroThrustSettingsComponent
 
             // Type property — expects SubclassOf<BlockDetailModel>, not raw Type
             var subclassOfType = typeof(SubclassOf<>).MakeGenericType(typeof(BlockDetailModel));
-            var subclassValue = Activator.CreateInstance(subclassOfType, ourType);
+            var subclassValue = MakeSubclassOf(subclassOfType, ourType);
+            if (subclassValue == null)
+            {
+                Log.Default?.Info("[AERO] DetailReg: could not construct SubclassOf<BlockDetailModel>");
+                return;
+            }
             viewInfoType.GetProperty("Type")?.SetValue(viewInfo, subclassValue);
 
             // Dependencies: ImmutableArray<(FieldInfo, DependencyKind)>
@@ -184,7 +189,19 @@ public partial class AeroThrustSettingsComponent
             viewInfoType.GetProperty("Ctor")?.SetValue(viewInfo, ctorDelegate);
 
             // 4. Add to the dictionary
-            backingDict.GetType().GetMethod("Add")?.Invoke(backingDict, new object[] { ourType, viewInfo });
+            // SE2 2.4.0.77 auto-registers BlockDetailModel subclasses found in mod assemblies,
+            // so our key is often already present. Add() would throw "An item with the same key
+            // has already been added"; use the indexer so registration is idempotent either way.
+            var containsKey = backingDict.GetType().GetMethod("ContainsKey");
+            if (containsKey != null && containsKey.Invoke(backingDict, new object[] { ourType }) is bool present && present)
+            {
+                Log.Default?.Info("[AERO] DetailReg: already registered by the game, leaving it alone");
+                _registrationDone = true;
+                return;
+            }
+            var setItem = backingDict.GetType().GetMethod("set_Item");
+            if (setItem != null) setItem.Invoke(backingDict, new object[] { ourType, viewInfo });
+            else backingDict.GetType().GetMethod("Add")?.Invoke(backingDict, new object[] { ourType, viewInfo });
 
             var countProp = backingDict.GetType().GetProperty("Count");
             int count = countProp != null ? (int)countProp.GetValue(backingDict) : -1;
@@ -202,4 +219,52 @@ public partial class AeroThrustSettingsComponent
     {
         vm.GetType().GetConstructor(Type.EmptyTypes)?.Invoke(vm, null);
     }
+
+    /// <summary>
+    /// Build a SubclassOf&lt;T&gt; by reflection.
+    ///
+    /// SE2 2.4.0.77 made SubclassOf&lt;T&gt;'s (Type, bool) constructor PRIVATE, so the old
+    /// Activator.CreateInstance(subclassOfType, ourType) throws MissingMethodException and
+    /// registration dies with "[AERO] DetailReg FAILED". The supported entry points are now
+    /// the static TryCreate(Type, out SubclassOf&lt;T&gt;) and the implicit Type conversion.
+    /// Try those first, keeping the old constructor as a fallback for pre-2.4.0 builds.
+    /// </summary>
+    private static object MakeSubclassOf(Type subclassOfType, Type value)
+    {
+        // 2.4.0+: public static bool TryCreate(Type, out SubclassOf<T>)
+        var tryCreate = subclassOfType.GetMethod("TryCreate", BindingFlags.Public | BindingFlags.Static);
+        if (tryCreate != null)
+        {
+            var args = new object[] { value, null };
+            try
+            {
+                if (tryCreate.Invoke(null, args) is bool ok && ok && args[1] != null)
+                    return args[1];
+            }
+            catch { }
+        }
+
+        // public static implicit operator SubclassOf<T>(Type) -- non-nullable overload
+        foreach (var m in subclassOfType.GetMethods(BindingFlags.Public | BindingFlags.Static))
+        {
+            if (m.Name != "op_Implicit" || m.ReturnType != subclassOfType) continue;
+            var ps = m.GetParameters();
+            if (ps.Length != 1 || ps[0].ParameterType != typeof(Type)) continue;
+            try { return m.Invoke(null, new object[] { value }); } catch { }
+        }
+
+        // Pre-2.4.0: the (Type, bool) / (Type) constructor, public or not.
+        foreach (var ctorArgs in new[] { new object[] { value, false }, new object[] { value } })
+        {
+            try
+            {
+                return Activator.CreateInstance(subclassOfType,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null, ctorArgs, null);
+            }
+            catch { }
+        }
+        return null;
+    }
+
 }

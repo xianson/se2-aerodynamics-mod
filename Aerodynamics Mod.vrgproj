@@ -22,9 +22,9 @@
       }
     ],
     "ProjectDirectories": [
-      "D:\\SteamLibrary\\steamapps\\common\\Space Engineers 2 - Mod SDK\\GameData",
       "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SpaceEngineers2\\GameData",
-      "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SpaceEngineers2\\VRage\\GameData"
+      "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SpaceEngineers2\\VRage\\GameData",
+      "D:\\SteamLibrary\\steamapps\\common\\Space Engineers 2 - Mod SDK\\GameData"
     ],
     "UsedBuildStream": "",
     "DefinitionSetNames": [
@@ -38,8 +38,8 @@
       "Game2.Simulation.dll"
     ],
     "ReferencedAssembliesSearchPaths": [
-      "D:\\SteamLibrary\\steamapps\\common\\Space Engineers 2 - Mod SDK\\Game2",
-      "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SpaceEngineers2\\Game2"
+      "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SpaceEngineers2\\Game2",
+      "D:\\SteamLibrary\\steamapps\\common\\Space Engineers 2 - Mod SDK\\Game2"
     ],
     "EditorExtensionAssemblies": [],
     "EditorExtensionAssembliesSearchPaths": [],
