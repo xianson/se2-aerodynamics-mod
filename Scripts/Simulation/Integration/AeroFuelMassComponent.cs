@@ -3,6 +3,7 @@ using System;
 using System.Reflection;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.Physicss;
 using Keen.VRage.Core;
+using Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources;
 
 namespace AeroMod;
 
@@ -18,8 +19,7 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
 {
     private const float KgPerLiter = 1.0f;
 
-    private Component _tankComponent;
-    private static PropertyInfo _currentChargeProp;
+    private ResourceContainerComponent _tankComponent;
     private static Type _resourceContainerType;
     private static bool _reflectionResolved;
 
@@ -27,12 +27,8 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
     {
         get
         {
-            if (_tankComponent == null || _currentChargeProp == null) return 0f;
-            try
-            {
-                object val = _currentChargeProp.GetValue(_tankComponent);
-                return (float)System.Convert.ToDouble(val) * KgPerLiter;
-            }
+            if (_tankComponent == null) return 0f;
+            try { return (float)(double)_tankComponent.CurrentChargeValue * KgPerLiter; }
             catch { return 0f; }
         }
     }
@@ -44,10 +40,10 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
 
         // Find ResourceContainerComponent on this entity
         var tag = DefaultTag.Get(_resourceContainerType);
-        _tankComponent = Entity.TryGet(tag);
-        _tankComponent ??= PhysicsHack.FindComponentByType(Entity, _resourceContainerType);
+        _tankComponent = Entity.TryGet(tag) as ResourceContainerComponent;
+        _tankComponent ??= PhysicsHack.FindComponentByType(Entity, _resourceContainerType) as ResourceContainerComponent;
 
-        if (_tankComponent != null && _currentChargeProp != null)
+        if (_tankComponent != null)
         {
             float initial = DynamicMass;
             Log.Default?.Info($"[AERO] FuelMass: tank found, initial mass={initial:F0} kg");
@@ -61,16 +57,7 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
         if (_reflectionResolved) return;
         _reflectionResolved = true;
 
-        _resourceContainerType = Type.GetType(
-            "Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources.ResourceContainerComponent, Game2.Simulation",
-            throwOnError: false);
-
-        if (_resourceContainerType != null)
-        {
-            _currentChargeProp = _resourceContainerType.GetProperty("CurrentChargeValue",
-                BindingFlags.Public | BindingFlags.Instance);
-        }
-
-        Log.Default?.Info($"[AERO] FuelMass reflection: container={_resourceContainerType != null} charge={_currentChargeProp != null}");
+        // ResourceContainerComponent and its CurrentChargeValue are both public.
+        _resourceContainerType = typeof(ResourceContainerComponent);
     }
 }

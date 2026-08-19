@@ -22,7 +22,8 @@ public partial class AeroThrustSettingsComponent : Component, IInSceneListener
 
     void IInSceneListener.OnAddedToScene()
     {
-        RegisterDetailModel();
+        // Nothing to do: BlockDetailProviderIndexer discovers [BlockDetailProvider] types in mod
+        // assemblies on its own since 2.4.0.77, so AeroThrustBlockDetailModel self-registers.
     }
 
     void IInSceneListener.OnBeforeRemovedFromScene() { }

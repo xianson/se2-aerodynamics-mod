@@ -4,6 +4,7 @@ using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
+using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
 
 namespace AeroMod;
 
@@ -617,8 +618,6 @@ public static class OffsetThrustJob
     }
 
     // Cached reflection for reading block definition GUID
-    private static System.Reflection.PropertyInfo _blockDefProp;
-    private static System.Reflection.PropertyInfo _blockGuidProp;
 
     /// <summary>
     /// Scan all blocks on the grid and build a cache of thruster info.
@@ -683,11 +682,11 @@ public static class OffsetThrustJob
                         var def = _thrusterDefField.GetValue(thrusterComp);
                         if (def != null)
                         {
-                            if (_thrusterMaxPowerProp != null)
-                                maxPower = (float)_thrusterMaxPowerProp.GetValue(def);
-                            if (_thrusterDirProp != null)
+                            if (def is ThrusterDefinition td)
+                                maxPower = td.ThrustPower;
+                            if (def is ThrusterDefinition td2)
                             {
-                                var rawDir = _thrusterDirProp.GetValue(def);
+                                var rawDir = (object)td2.ThrustDirection;
                                 // Unbox enum to its underlying type first, then convert
                                 directionInt = Convert.ToInt32(rawDir);
                                 var orientedDir = block.BlockOrientation.TransformDirection(
@@ -749,24 +748,29 @@ public static class OffsetThrustJob
     }
 
     /// <summary>
-    /// Read block definition GUID via reflection (same pattern as BlockComponentFactory).
+    /// Block definition GUID. HOLDOUT: CubeBlockComponent.Definition is public, but
+    /// CubeBlockDefinition derives from MaxHealthComponentDefinition in VRage.Game, which is
+    /// NOT a referenced assembly for mod scripts:
+    ///   CS0012: The type 'MaxHealthComponentDefinition' is defined in an assembly that is not
+    ///   referenced
+    /// so the compiler cannot walk the base chain to Definition.Guid. Reading it late-bound is
+    /// the only way in until VRage.Game joins GameCompilationDescriptor.MetaDatas.
     /// </summary>
     private static Guid? GetBlockDefinitionGuid(CubeBlockComponent block)
     {
+        if (block == null) return null;
         _blockDefProp ??= typeof(CubeBlockComponent).GetProperty("Definition",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
         var def = _blockDefProp?.GetValue(block);
         if (def == null) return null;
 
         _blockGuidProp ??= def.GetType().GetProperty("Guid",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-        if (_blockGuidProp != null)
-            return (Guid)_blockGuidProp.GetValue(def);
-
-        return null;
+        return _blockGuidProp != null ? (Guid)_blockGuidProp.GetValue(def) : (Guid?)null;
     }
+
+    private static System.Reflection.PropertyInfo _blockDefProp;
+    private static System.Reflection.PropertyInfo _blockGuidProp;
 
     /// <summary>
     /// Convert Base6Directions.Direction (int) to a unit vector.
@@ -790,91 +794,24 @@ public static class OffsetThrustJob
 
     private static Type _thrusterCompType;
     private static System.Reflection.FieldInfo _thrusterDefField;
-    private static System.Reflection.PropertyInfo _thrusterMaxPowerProp;
-    private static System.Reflection.PropertyInfo _thrusterDirProp;
-    private static System.Reflection.PropertyInfo _thrusterClassProp;
-    private static System.Reflection.MethodInfo _hasIsThrustingMethod; // Component.HasData<IsThrusting>()
-    private static Type _activeThrustDataType;
-    private static System.Reflection.FieldInfo _computedThrustField; // ActiveThrustData.ComputedThrustPerFrame
-    private static System.Reflection.MethodInfo _tryGetActiveThrustMethod; // Component.TryGetData<ActiveThrustData>
-    private static readonly object[] _activeThrustArgs = new object[1]; // pre-allocated to avoid GC
     private static bool _thrusterReflectionResolved;
 
+    /// <summary>
+    /// HOLDOUT: ThrusterComponent._definition is a private field with no public accessor.
+    /// The type itself is public and every value we want off ThrusterDefinition
+    /// (ThrustPower / ThrustDirection / ThrustClass) is a public property, so this resolves the
+    /// one field and everything after it is typed.
+    /// </summary>
     private static void EnsureThrusterReflectionResolved()
     {
         if (_thrusterReflectionResolved) return;
         _thrusterReflectionResolved = true;
-
         try
         {
-            _thrusterCompType = Type.GetType(
-                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent, Game2.Simulation",
-                throwOnError: false);
-
-            if (_thrusterCompType != null)
-            {
-                // ThrusterComponent has private field _definition (ThrusterDefinition)
-                _thrusterDefField = _thrusterCompType.GetField("_definition",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-                if (_thrusterDefField != null)
-                {
-                    var defType = _thrusterDefField.FieldType;
-                    _thrusterMaxPowerProp = defType.GetProperty("ThrustPower",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    _thrusterDirProp = defType.GetProperty("ThrustDirection",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    _thrusterClassProp = defType.GetProperty("ThrustClass",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                }
-
-                // Component.HasData<IsThrusting>() — protected, call via reflection on the
-                // Component class instance (no DEntityContext boxing needed).
-                var isThrustingType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Movement.IsThrusting, Game2.Simulation",
-                    throwOnError: false);
-                if (isThrustingType != null)
-                {
-                    // Find the protected HasData<T>() on Component base class
-                    foreach (var m in typeof(Component).GetMethods(
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (m.Name == "HasData" && m.IsGenericMethodDefinition
-                            && m.GetParameters().Length == 0)
-                        {
-                            _hasIsThrustingMethod = m.MakeGenericMethod(isThrustingType);
-                            break;
-                        }
-                    }
-                }
-
-                // Component.TryGetData<ActiveThrustData>() — actual game-computed thrust per frame
-                // SE2 equivalent of SE1's Thrust.CurrentStrength * ForceMagnitude
-                _activeThrustDataType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Movement.ActiveThrustData, Game2.Simulation",
-                    throwOnError: false);
-                if (_activeThrustDataType != null)
-                {
-                    _computedThrustField = _activeThrustDataType.GetField("ComputedThrustPerFrame");
-                    foreach (var m in typeof(Component).GetMethods(
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public |
-                        System.Reflection.BindingFlags.Instance))
-                    {
-                        if (m.Name == "TryGetData" && m.IsGenericMethodDefinition
-                            && m.GetParameters().Length == 1 && m.GetParameters()[0].IsOut)
-                        {
-                            _tryGetActiveThrustMethod = m.MakeGenericMethod(_activeThrustDataType);
-                            break;
-                        }
-                    }
-                }
-
-                Log.Default?.Info($"[AERO] ThrusterComponent resolved: type={_thrusterCompType != null} def={_thrusterDefField != null} maxPower={_thrusterMaxPowerProp != null} dir={_thrusterDirProp != null} isThrusting={_hasIsThrustingMethod != null} activeThrust={_tryGetActiveThrustMethod != null}");
-            }
-            else
-            {
-                Log.Default?.Info("[AERO] ThrusterComponent type not found in Game2.Simulation");
-            }
+            _thrusterCompType = typeof(ThrusterComponent);
+            _thrusterDefField = _thrusterCompType.GetField("_definition",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Log.Default?.Info($"[AERO] ThrusterComponent def field={_thrusterDefField != null}");
         }
         catch (Exception ex)
         {
@@ -882,31 +819,30 @@ public static class OffsetThrustJob
         }
     }
 
-    /// <summary>Check if thruster is actively firing via Component.HasData&lt;IsThrusting&gt;().</summary>
+    /// <summary>
+    /// Whether the thruster is firing. Component.HasData is protected, but Component.Data is a
+    /// public DEntityContext, so the public Has&lt;T&gt; gets there without reflection.
+    /// </summary>
     private static bool IsComponentThrusting(Component thrusterComp)
     {
-        if (_hasIsThrustingMethod == null || thrusterComp == null) return false;
-        try { return (bool)_hasIsThrustingMethod.Invoke(thrusterComp, null); }
+        if (thrusterComp == null) return false;
+        try { return thrusterComp.Data.Has<IsThrusting>(); }
         catch { return false; }
     }
 
     /// <summary>
-    /// Read actual game-computed thrust for this thruster via ActiveThrustData.ComputedThrustPerFrame.
-    /// Returns the thrust magnitude in Newtons, or -1 if reflection unavailable.
-    /// Returns 0 if the game didn't produce thrust this frame.
-    /// This is the SE2 equivalent of SE1's Thrust.CurrentStrength * ForceMagnitude.
+    /// Game-computed thrust for this thruster this frame, in newtons; 0 when the game produced
+    /// none. SE2's equivalent of SE1 Thrust.CurrentStrength * ForceMagnitude.
+    /// Component.TryGetData is protected, but Component.Data is public, so TryGet works.
     /// </summary>
     private static float GetActualThrust(Component thrusterComp)
     {
-        if (_tryGetActiveThrustMethod == null || _computedThrustField == null || thrusterComp == null)
-            return -1f;
+        if (thrusterComp == null) return -1f;
         try
         {
-            _activeThrustArgs[0] = null;
-            bool found = (bool)_tryGetActiveThrustMethod.Invoke(thrusterComp, _activeThrustArgs);
-            if (!found || _activeThrustArgs[0] == null) return 0f;
-            Vector3 thrust = (Vector3)_computedThrustField.GetValue(_activeThrustArgs[0]);
-            return thrust.Length();
+            return thrusterComp.Data.TryGet<ActiveThrustData>(out var atd)
+                ? atd.ComputedThrustPerFrame.Length()
+                : 0f;
         }
         catch { return -1f; }
     }
@@ -923,12 +859,12 @@ public static class OffsetThrustJob
     /// <summary>Read ThrustClass (StringId) from ThrusterDefinition on a ThrusterComponent.</summary>
     private static string GetThrustClass(Component thrusterComp)
     {
-        if (_thrusterDefField == null || _thrusterClassProp == null) return null;
+        if (_thrusterDefField == null) return null;
         try
         {
             var def = _thrusterDefField.GetValue(thrusterComp);
             if (def == null) return null;
-            var tc = _thrusterClassProp.GetValue(def);
+            var tc = (object)((ThrusterDefinition)def).ThrustClass;
             return tc?.ToString();
         }
         catch { return null; }
@@ -940,9 +876,7 @@ public static class OffsetThrustJob
 
     private static Type _gyroCompType;
     private static System.Reflection.FieldInfo _gyroDefField;
-    private static System.Reflection.PropertyInfo _gyroMaxTorqueProp;
     private static Type _powerableBlockType;
-    private static System.Reflection.PropertyInfo _enabledProp; // PowerableBlockComponent.Enabled
     private static bool _gyroReflectionResolved;
 
     private static void EnsureGyroReflectionResolved()
@@ -952,35 +886,14 @@ public static class OffsetThrustJob
 
         try
         {
-            _gyroCompType = Type.GetType(
-                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.GyroscopeComponent, Game2.Simulation",
-                throwOnError: false);
+            // Same shape as the thruster: public type, private _definition field, public
+            // GyroscopeDefinition.MaxTorque. PowerableBlockComponent.Enabled is public outright.
+            _gyroCompType = typeof(GyroscopeComponent);
+            _gyroDefField = _gyroCompType.GetField("_definition",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            _powerableBlockType = typeof(PowerableBlockComponent);
 
-            if (_gyroCompType != null)
-            {
-                _gyroDefField = _gyroCompType.GetField("_definition",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (_gyroDefField != null)
-                {
-                    var defType = _gyroDefField.FieldType;
-                    _gyroMaxTorqueProp = defType.GetProperty("MaxTorque",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                }
-            }
-
-            // PowerableBlockComponent.Enabled — used to toggle gyros (and any powerable block)
-            _powerableBlockType = Type.GetType(
-                "Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockComponent, Game2.Simulation",
-                throwOnError: false);
-            if (_powerableBlockType != null)
-            {
-                _enabledProp = _powerableBlockType.GetProperty("Enabled",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            }
-
-            Log.Default?.Info($"[AERO] GyroscopeComponent resolved: type={_gyroCompType != null} " +
-                $"def={_gyroDefField != null} maxTorque={_gyroMaxTorqueProp != null} " +
-                $"powerable={_powerableBlockType != null} enabled={_enabledProp != null}");
+            Log.Default?.Info($"[AERO] GyroscopeComponent def field={_gyroDefField != null}");
         }
         catch (Exception ex)
         {
@@ -1012,13 +925,13 @@ public static class OffsetThrustJob
 
             // Read MaxTorque from definition
             float maxTorque = 0f;
-            if (_gyroDefField != null && _gyroMaxTorqueProp != null)
+            if (_gyroDefField != null)
             {
                 try
                 {
                     var def = _gyroDefField.GetValue(gyroComp);
                     if (def != null)
-                        maxTorque = (float)_gyroMaxTorqueProp.GetValue(def);
+                        maxTorque = ((GyroscopeDefinition)def).MaxTorque;
                 }
                 catch { }
             }
@@ -1049,17 +962,16 @@ public static class OffsetThrustJob
     /// </summary>
     public static void SetGyrosEnabled(List<GyroInfo> gyros, bool enabled)
     {
-        if (_enabledProp == null) return;
         int toggled = 0;
         for (int i = 0; i < gyros.Count; i++)
         {
             if (gyros[i].BlockComponent == null) continue;
             try
             {
-                bool current = (bool)_enabledProp.GetValue(gyros[i].BlockComponent);
+                bool current = ((PowerableBlockComponent)gyros[i].BlockComponent).Enabled;
                 if (current != enabled)
                 {
-                    _enabledProp.SetValue(gyros[i].BlockComponent, enabled);
+                    ((PowerableBlockComponent)gyros[i].BlockComponent).Enabled = enabled;
                     toggled++;
                 }
             }
@@ -1072,8 +984,8 @@ public static class OffsetThrustJob
     /// <summary>Check if gyros are currently enabled.</summary>
     public static bool AreGyrosEnabled(List<GyroInfo> gyros)
     {
-        if (_enabledProp == null || gyros.Count == 0) return true;
-        try { return (bool)_enabledProp.GetValue(gyros[0].BlockComponent); }
+        if (gyros.Count == 0) return true;
+        try { return ((PowerableBlockComponent)gyros[0].BlockComponent).Enabled; }
         catch { return true; }
     }
 }

@@ -130,31 +130,23 @@ public class BlockComponentFactory
     }
 
     /// <summary>
-    /// Get the definition GUID via reflection. CubeBlockDefinition inherits from
-    /// MaxHealthComponentDefinition (VRage.Game) which isn't referenced by mod scripts,
-    /// so we can't access block.Definition or its .Guid property directly at compile time.
+    /// Definition GUID. HOLDOUT -- CubeBlockComponent.Definition is public, but
+    /// CubeBlockDefinition derives from MaxHealthComponentDefinition in VRage.Game, which mod
+    /// scripts do not reference (CS0012), so the compiler cannot reach Definition.Guid.
     /// </summary>
     private static Guid? GetDefinitionGuid(CubeBlockComponent block)
     {
+        if (block == null) return null;
         _definitionProperty ??= typeof(CubeBlockComponent).GetProperty("Definition",
             BindingFlags.Public | BindingFlags.Instance);
-
         var def = _definitionProperty?.GetValue(block);
-        if (def == null)
-        {
-            return null;
-        }
+        if (def == null) return null;
 
         _guidProperty ??= def.GetType().GetProperty("Guid",
             BindingFlags.Public | BindingFlags.Instance);
-
-        if (_guidProperty != null)
-        {
-            return (Guid)_guidProperty.GetValue(def);
-        }
-
-        return null;
+        return _guidProperty != null ? (Guid)_guidProperty.GetValue(def) : (Guid?)null;
     }
+
 
     /// <summary>
     /// Extract placement info from an SE2 CubeBlockComponent.
