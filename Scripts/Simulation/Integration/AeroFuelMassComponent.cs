@@ -39,9 +39,7 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
         if (_resourceContainerType == null) return;
 
         // Find ResourceContainerComponent on this entity
-        var tag = DefaultTag.Get(_resourceContainerType);
-        _tankComponent = Entity.TryGet(tag) as ResourceContainerComponent;
-        _tankComponent ??= PhysicsHack.FindComponentByType(Entity, _resourceContainerType) as ResourceContainerComponent;
+        _tankComponent = Entity.TryGet<ResourceContainerComponent>();
 
         if (_tankComponent != null)
         {

@@ -120,10 +120,11 @@ public static class EngineOverrides
     /// Call the protected Component.SetData&lt;T&gt; on the component of the given type.
     /// HOLDOUT: protected member on an engine class we do not derive from.
     /// </summary>
-    public static bool TrySetComponentData<T>(Entity entity, Type componentType, T value)
+    public static bool TrySetComponentData<TComponent, T>(Entity entity, T value)
+        where TComponent : Component
         where T : unmanaged
     {
-        if (entity == null || componentType == null) return false;
+        if (entity == null) return false;
 
         if (!_setDataResolved)
         {
@@ -145,7 +146,7 @@ public static class EngineOverrides
 
         try
         {
-            var comp = PhysicsHack.FindComponentByType(entity, componentType);
+            var comp = entity.TryGet<TComponent>();
             if (comp == null) return false;
             _setDataGeneric.MakeGenericMethod(typeof(T)).Invoke(comp, MakeArgs(value));
             return true;

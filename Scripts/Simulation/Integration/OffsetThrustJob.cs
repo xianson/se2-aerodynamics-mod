@@ -661,12 +661,9 @@ public static class OffsetThrustJob
                     if (childEntity == null) continue;
                     totalChildren++;
 
-                    // Find ThrusterComponent — try both approaches:
-                    // 1. Entity.TryGet(tag) — uses CompositionData lookup
-                    // 2. FindComponentByType — iterates Entity.Components via reflection
-                    var tag = DefaultTag.Get(_thrusterCompType);
-                    Component thrusterComp = childEntity.TryGet(tag);
-                    thrusterComp ??= PhysicsHack.FindComponentByType(childEntity, _thrusterCompType);
+                    // Typed lookup -- verified in game to agree with both the tag lookup and
+                    // the old reflective scan (LOOKUPPROBE tag=True generic=True scan=True).
+                    var thrusterComp = childEntity.TryGet<ThrusterComponent>();
                     if (thrusterComp == null) continue;
                     thrustBlocks++;
 
@@ -920,7 +917,7 @@ public static class OffsetThrustJob
             if (child == null) continue;
 
             var gyroComp = child.TryGet(tag);
-            gyroComp ??= PhysicsHack.FindComponentByType(child, _gyroCompType);
+            gyroComp ??= child.TryGet<GyroscopeComponent>();
             if (gyroComp == null) continue;
 
             // Read MaxTorque from definition
@@ -942,7 +939,7 @@ public static class OffsetThrustJob
             {
                 var blockTag = DefaultTag.Get(_powerableBlockType);
                 blockComp = child.TryGet(blockTag);
-                blockComp ??= PhysicsHack.FindComponentByType(child, _powerableBlockType);
+                blockComp ??= child.TryGet<PowerableBlockComponent>();
             }
 
             outGyros.Add(new GyroInfo

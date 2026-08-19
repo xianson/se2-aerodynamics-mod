@@ -18,8 +18,14 @@ public class BlockComponentFactory
     private static PropertyInfo _definitionProperty;
     private static PropertyInfo _guidProperty;
 
+    /// <summary>
+    /// The lookup is captured generically at registration time, so finding the sibling
+    /// component is a typed Entity.TryGet&lt;T&gt;() rather than a reflective scan over
+    /// Entity.Components (which is ImmutableArray and therefore VRS1001-banned).
+    /// </summary>
     private readonly record struct ComponentRegistration(
-        Type ComponentType,
+        string ComponentName,
+        Func<Entity, Component> Lookup,
         Func<BlockInfo, object, IAeroBlockComponent> Factory);
 
     /// <summary>
@@ -35,19 +41,12 @@ public class BlockComponentFactory
     /// Register a factory that fires when a block carries a sibling component of type T.
     /// Used for vanilla blocks (e.g. atmospheric thruster -> AirIntake).
     /// </summary>
-    public void RegisterByComponent<T>(Func<BlockInfo, T, IAeroBlockComponent> factory) where T : class
+    public void RegisterByComponent<T>(Func<BlockInfo, T, IAeroBlockComponent> factory) where T : Component
     {
-        _componentFactories.Add(new(typeof(T),
+        _componentFactories.Add(new(
+            typeof(T).Name,
+            e => e.TryGet<T>(),
             (info, comp) => factory(info, (T)comp)));
-    }
-
-    /// <summary>
-    /// Non-generic overload for runtime-resolved component types.
-    /// The component is passed as object to the factory.
-    /// </summary>
-    public void RegisterByComponent(Type componentType, Func<BlockInfo, object, IAeroBlockComponent> factory)
-    {
-        _componentFactories.Add(new(componentType, factory));
     }
 
     /// <summary>
@@ -77,21 +76,18 @@ public class BlockComponentFactory
             return comp;
         }
 
-        // 2. Component match (vanilla blocks with specific SE2 components)
-        // Iterate Entity.Components to find matching types. This bypasses
-        // the tag-based Entity.TryGet which fails due to DEntityContext boxing
-        // when invoked via reflection.
+        // 2. Component match (vanilla blocks with specific SE2 components).
         for (int i = 0; i < _componentFactories.Count; i++)
         {
             var reg = _componentFactories[i];
-            var siblingComp = PhysicsHack.FindComponentByType(block.Entity, reg.ComponentType);
+            var siblingComp = reg.Lookup(block.Entity);
             if (siblingComp != null)
             {
                 var info = BuildBlockInfo(block, blockSize);
                 var comp = reg.Factory(info, siblingComp);
                 if (comp != null)
                 {
-                    Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} (by component {reg.ComponentType.Name}) at {info.BlockPosition}");
+                    Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} (by component {reg.ComponentName}) at {info.BlockPosition}");
                     return comp;
                 }
             }

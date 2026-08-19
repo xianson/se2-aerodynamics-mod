@@ -1,5 +1,7 @@
 #pragma warning disable
 using System;
+using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
+
 namespace AeroMod;
 
 /// <summary>
@@ -72,20 +74,11 @@ public static class DefaultMappings
                 spinSign: -1f));                // CW from above
 
         // ── Vanilla: atmospheric thrusters → AirIntake ──
-        // ThrusterComponent type resolved at runtime (not a compile-time reference).
-        // RegisterByComponent uses PhysicsHack.FindComponentByType to iterate
-        // Entity.Components, bypassing the broken tag-based Entity.TryGet.
-        var thrusterType = Type.GetType(
-            "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent, Game2.Simulation",
-            throwOnError: false);
-        if (thrusterType != null)
-        {
-            factory.RegisterByComponent(thrusterType, (info, thrusterComp) =>
-                new AirIntake(
-                    info.Position,
-                    info.BlockPosition,
-                    facingDirection: -info.Forward, // intake faces opposite to thrust direction
-                    captureArea: info.FaceArea));
-        }
+        factory.RegisterByComponent<ThrusterComponent>((info, thrusterComp) =>
+            new AirIntake(
+                info.Position,
+                info.BlockPosition,
+                facingDirection: -info.Forward, // intake faces opposite to thrust direction
+                captureArea: info.FaceArea));
     }
 }

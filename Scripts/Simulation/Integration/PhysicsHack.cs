@@ -146,6 +146,21 @@ public static class PhysicsHack
                 return;
             }
 
+            // WHY THIS REFLECTION STILL EXISTS.
+            // The mod ships Content/System/Configurations/PhysicsSessionConfiguration.def, which
+            // is the correct data-driven way to set these -- WorldSessionComponent builds the
+            // VelocityLimitProvider straight from _definition.Physics.MaximumSpeedLinear, so a
+            // working .def would make both this and EngineOverrides.UncapSpeed unnecessary.
+            //
+            // It does not currently apply. The mod has no contentcache.vrb ("Warning: Mounted
+            // path ... did not contain contentcache.vrb, assets might not be properly
+            // recognized"), so its .def content is never mounted, and this probe reads the
+            // world's values rather than the mod's 1000/1/1000:
+            //     CONFIGPROBE before override: MaximumSpeedLinear=300 GravityMultiplier=2
+            // Building that cache needs the content builder, which is blocked on the stale Mod
+            // SDK (see tools/SE2-UPDATE-RUNBOOK.md). Delete this once the cache builds.
+            Log.Default?.Info($"[AERO] CONFIGPROBE before override: MaximumSpeedLinear={config.MaximumSpeedLinear} GravityMultiplier={config.GravityMultiplier} MaximumCharacterSpeedLinear={config.MaximumCharacterSpeedLinear}");
+
             bool speedOk = EngineOverrides.TrySetConfigProperty(config, "MaximumSpeedLinear", targetSpeed);
             bool gravOk = EngineOverrides.TrySetConfigProperty(config, "GravityMultiplier", targetGravity);
             Log.Default?.Info($"[AERO] Physics config: MaximumSpeedLinear={targetSpeed} ({speedOk}), GravityMultiplier={targetGravity} ({gravOk})");
@@ -320,7 +335,7 @@ public static class PhysicsHack
     {
         var overridden = new OverriddenThrustData { DirectionalThrust = directionalThrust };
 
-        if (EngineOverrides.TrySetComponentData(gridEntity, typeof(ThrustComponent), overridden))
+        if (EngineOverrides.TrySetComponentData<ThrustComponent, OverriddenThrustData>(gridEntity, overridden))
             return true;
 
         return SafeSet(gridData, overridden);
@@ -341,7 +356,7 @@ public static class PhysicsHack
     public static bool TrySetControlData(Entity gridEntity, Vector3 movement, Vector3 rotation)
     {
         var cd = new ControlData { Movement = movement, Rotation = rotation };
-        return EngineOverrides.TrySetComponentData(gridEntity, typeof(ThrustComponent), cd);
+        return EngineOverrides.TrySetComponentData<ThrustComponent, ControlData>(gridEntity, cd);
     }
 
     private static MethodInfo _setDataControlMethod;
@@ -595,120 +610,15 @@ public static class PhysicsHack
 
     private static float MapFwd() => float.IsNaN(_lastFwdDist) ? -1f : _lastFwdDist;
 
-    // ═══════════════════════════════════════════════════════════════
-    // Component iteration -- REFLECTION HOLDOUT.
+    // Component iteration used to live here as a REFLECTION HOLDOUT: Entity.Components is
+    // ImmutableArray<Component> and VRS1001 bans that type in scripts, so finding a sibling
+    // component by runtime Type meant reflecting over the array.
     //
-    // Entity.Components is ImmutableArray<Component>, and the script analyzer rejects it:
-    //   VRS1001: The symbol System.Collections.Immutable.ImmutableArray<T> is banned for use
-    //   in scripts   (likewise .Length and .this[int])
-    // Verified empirically -- direct access does not compile in game. Entity.TryGet<T>() is
-    // public and typed, but the callers here drive lookup from a registry of runtime Types, so
-    // the generic form does not fit without restructuring them. Reflection stays until either
-    // the ban lifts or those callers move to generics.
-    // ═══════════════════════════════════════════════════════════════
-
-    private static FieldInfo _entityComponentsField;
-    private static MethodInfo _immArrayLengthGetter;
-    private static MethodInfo _immArrayIndexer;
-    private static bool _componentAccessResolved;
-    private static System.Array _indexerArgs;
-
-    private static void EnsureComponentAccessResolved()
-    {
-        if (_componentAccessResolved) return;
-        _componentAccessResolved = true;
-        try
-        {
-            _entityComponentsField = typeof(Entity).GetField("Components",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (_entityComponentsField == null) return;
-
-            var immArrayType = _entityComponentsField.FieldType;
-            _immArrayLengthGetter = immArrayType.GetProperty("Length",
-                BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod();
-            _immArrayIndexer = immArrayType.GetProperty("Item",
-                BindingFlags.Public | BindingFlags.Instance,
-                null, null, new Type[] { typeof(int) }, null)?.GetGetMethod();
-            _indexerArgs = Array.CreateInstance(typeof(object), 1);
-        }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] ComponentAccess resolution failed: {ex.Message}");
-        }
-    }
-
-    private static object ComponentAt(object componentsBox, int i)
-    {
-        _indexerArgs.SetValue(i, 0);
-        return _immArrayIndexer.Invoke(componentsBox, Unsafe.As<System.Array, object[]>(ref _indexerArgs));
-    }
-
-    private static bool TryGetComponents(Entity entity, out object box, out int length)
-    {
-        box = null;
-        length = 0;
-        if (entity == null) return false;
-        EnsureComponentAccessResolved();
-        if (_entityComponentsField == null || _immArrayLengthGetter == null || _immArrayIndexer == null)
-            return false;
-        box = _entityComponentsField.GetValue(entity);
-        length = (int)_immArrayLengthGetter.Invoke(box, null);
-        return true;
-    }
-
-    /// <summary>Number of components on an entity.</summary>
-    public static int GetEntityComponentCount(Entity entity)
-    {
-        try { return TryGetComponents(entity, out _, out int len) ? len : 0; }
-        catch { return 0; }
-    }
-
-    /// <summary>First component assignable to componentType.</summary>
-    public static Component FindComponentByType(Entity entity, Type componentType)
-    {
-        if (componentType == null) return null;
-        try
-        {
-            if (!TryGetComponents(entity, out var box, out int len)) return null;
-            for (int i = 0; i < len; i++)
-            {
-                var comp = ComponentAt(box, i);
-                if (comp != null && componentType.IsInstanceOfType(comp))
-                    return (Component)comp;
-            }
-        }
-        catch { }
-        return null;
-    }
-
-    /// <summary>All components on an entity assignable to componentType.</summary>
-    public static void FindComponentsByType(Entity entity, Type componentType, List<Component> results)
-    {
-        if (componentType == null || results == null) return;
-        try
-        {
-            if (!TryGetComponents(entity, out var box, out int len)) return;
-            for (int i = 0; i < len; i++)
-            {
-                var comp = ComponentAt(box, i);
-                if (comp != null && componentType.IsInstanceOfType(comp))
-                    results.Add((Component)comp);
-            }
-        }
-        catch { }
-    }
-
-    /// <summary>Dump an entity's component type names (diagnostics).</summary>
-    public static void LogEntityComponents(Entity entity, string label)
-    {
-        try
-        {
-            if (!TryGetComponents(entity, out var box, out int len)) return;
-            Log.Default?.Info($"[AERO] {label}: {len} components");
-            for (int i = 0; i < len; i++)
-                Log.Default?.Info($"[AERO]   {i}: {ComponentAt(box, i)?.GetType().Name}");
-        }
-        catch { }
-    }
+    // It is gone. Every caller either already knew its component type at compile time, or could
+    // capture the lookup generically at registration (BlockComponentFactory now stores
+    // Func<Entity, Component> = e => e.TryGet<T>()). Entity.TryGet<T>() is public and typed, and
+    // was verified in game to agree with both the tag lookup and the old scan:
+    //     [AERO] LOOKUPPROBE tag=True generic=True scan=True
+    // Do not reintroduce a Type-keyed scan -- add a generic overload instead.
 
 }
