@@ -52,7 +52,7 @@ public partial class AeroGridComponent
 
         // ── Ground height (async raycast) ──
         if (!PhysicsHack.GroundSystemReady)
-            PhysicsHack.InitGroundSystem(aero.Entity.Scene);
+            PhysicsHack.InitGroundSystem(aero.Entity);
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
         aero.GroundHeight = PhysicsHack.GetGroundDistance(wt.Position, gravity);

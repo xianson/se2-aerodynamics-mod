@@ -24,7 +24,7 @@ namespace AeroMod;
 ///     silent physics bug.
 ///   * It boxed on every access. FieldInfo.GetValue/SetValue box each Vector3, and this runs
 ///     per grid per tick. TryGetWritePtr gives a ref straight into component storage.
-///   * It round-tripped through Data.Set<RigidBodyData>(copy) instead of writing in place.
+///   * It round-tripped through Data.Set&lt;RigidBodyData&gt;(copy) instead of writing in place.
 ///   * It never checked motion type, so it wrote velocity onto static/keyframed bodies that
 ///     are not supposed to respond to impulses. The engine's own TryApplyImpulse checks both
 ///     RigidBodyComponent.CurrentMotionType and IPhysicsMotionProvider.Motion first.
@@ -46,15 +46,19 @@ public static class AeroPhysics
     /// </summary>
     public static bool IsDynamic(Entity entity)
     {
-        var rbc = entity.TryGet<RigidBodyComponent>();
-        if (rbc != null && rbc.CurrentMotionType != BodyArgs.Motion.Dynamic)
-            return false;
+        try
+        {
+            var rbc = entity.TryGet<RigidBodyComponent>();
+            if (rbc != null && rbc.CurrentMotionType != BodyArgs.Motion.Dynamic)
+                return false;
 
-        var motion = entity.AsInterface<IPhysicsMotionProvider>();
-        if (motion != null && motion.Motion != BodyArgs.Motion.Dynamic)
-            return false;
+            var motion = entity.AsInterface<IPhysicsMotionProvider>();
+            if (motion != null && motion.Motion != BodyArgs.Motion.Dynamic)
+                return false;
 
-        return true;
+            return true;
+        }
+        catch { return false; }
     }
 
     /// <summary>
@@ -70,20 +74,28 @@ public static class AeroPhysics
         if (!IsDynamic(entity))
             return false;
 
-        var data = entity.Data;
-        ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
-        if (Unsafe.IsNullRef(in rb))
+        try
+        {
+            var data = entity.Data;
+            ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
+            if (Unsafe.IsNullRef(in rb))
+                return false;
+            if (!data.TryGet<RigidBodyMassProperties>(out var mass))
+                return false;
+
+            if (worldForce.LengthSquared() > 0f)
+                rb.ApplyLinearImpulse(in mass, worldForce * dt);
+
+            if (localTorque.LengthSquared() > 0f)
+                rb.ApplyAngularImpulseLocal(in mass, in wt, localTorque * dt);
+
+            return true;
+        }
+        catch
+        {
+            // Entity detached mid-tick: Scene.TryGetDataPointer throws rather than returning null.
             return false;
-        if (!data.TryGet<RigidBodyMassProperties>(out var mass))
-            return false;
-
-        if (worldForce.LengthSquared() > 0f)
-            rb.ApplyLinearImpulse(in mass, worldForce * dt);
-
-        if (localTorque.LengthSquared() > 0f)
-            rb.ApplyAngularImpulseLocal(in mass, in wt, localTorque * dt);
-
-        return true;
+        }
     }
 
     /// <summary>
@@ -98,15 +110,19 @@ public static class AeroPhysics
         if (!IsFinite(worldForce) || !IsDynamic(entity))
             return false;
 
-        var data = entity.Data;
-        ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
-        if (Unsafe.IsNullRef(in rb))
-            return false;
-        if (!data.TryGet<RigidBodyMassProperties>(out var mass))
-            return false;
+        try
+        {
+            var data = entity.Data;
+            ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
+            if (Unsafe.IsNullRef(in rb))
+                return false;
+            if (!data.TryGet<RigidBodyMassProperties>(out var mass))
+                return false;
 
-        rb.ApplyImpulseAt(in mass, in wt, worldPosition, worldForce * dt);
-        return true;
+            rb.ApplyImpulseAt(in mass, in wt, worldPosition, worldForce * dt);
+            return true;
+        }
+        catch { return false; }
     }
 
     /// <summary>Read mass properties without reflection.</summary>
@@ -114,8 +130,9 @@ public static class AeroPhysics
     {
         mass = 0f;
         centerOfMass = Vector3.Zero;
-        if (!entity.Data.TryGet<RigidBodyMassProperties>(out var mp))
-            return false;
+        RigidBodyMassProperties mp;
+        try { if (!entity.Data.TryGet<RigidBodyMassProperties>(out mp)) return false; }
+        catch { return false; }
         mass = mp.InvMass > 0f ? 1f / mp.InvMass : 0f;
         centerOfMass = mp.CenterOfMass;
         return true;
@@ -126,8 +143,9 @@ public static class AeroPhysics
     {
         linear = Vector3.Zero;
         angular = Vector3.Zero;
-        if (!entity.Data.TryGet<RigidBodyData>(out var rb))
-            return false;
+        RigidBodyData rb;
+        try { if (!entity.Data.TryGet<RigidBodyData>(out rb)) return false; }
+        catch { return false; }
         linear = rb.LinearVelocity;
         angular = rb.AngularVelocity;
         return true;

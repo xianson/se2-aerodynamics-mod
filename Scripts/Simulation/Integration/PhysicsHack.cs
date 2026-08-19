@@ -1,98 +1,39 @@
 #pragma warning disable
 using System;
 using System.Reflection;
-using Keen.VRage.Core;
+using Keen.Game2.Simulation.GameSystems.Physicss;
+using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
 using Keen.Game2.Simulation.WorldObjects.Movement;
+using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
+using Keen.VRage.Core;
+using Keen.VRage.Core.Game.GameSystems.Gravity;
+using Keen.VRage.Core.Game.GameSystems.Queries;
+using Keen.VRage.Physics;
+using Keen.VRage.Physics.Data;
+using Keen.VRage.Physics.Queries;
 
 namespace AeroMod;
 
 /// <summary>
-/// Reflection-based access to RigidBodyData from VRage.Physics.
-/// That assembly is not whitelisted for mod scripts, so we resolve
-/// the type and its fields at runtime via reflection.
+/// Direct physics/simulation access for the aero mod.
+///
+/// This used to be 2000 lines of reflection, opening with "That assembly is not whitelisted for
+/// mod scripts". Since SE2 2.4.0.77 added typeof(IPhysics) to GameApp.SetupScripting's
+/// AllowedAssemblies, Keen.VRage.Physics.* IS whitelisted, and the Game2.Simulation types this
+/// also reached for were whitelisted all along via the UpdateTime seed. Everything here is now
+/// a direct typed call through the public generic DEntityContext API and the engine's own
+/// RigidBodyDataFunctions helpers.
+///
+/// The three members the engine genuinely does not expose live in <see cref="EngineOverrides"/>.
+/// Prefer <see cref="AeroPhysics"/> for applying aerodynamic forces.
 /// </summary>
 public static class PhysicsHack
 {
     private static bool _initialized;
     private static bool _available;
-
-    private static Type _rbDataType;
-    private static FieldInfo _linearVelField;
-    private static FieldInfo _angularVelField;
-    private static MethodInfo _tryGetMethod;
-
-    // Mass properties
-    private static Type _massType;
-    private static FieldInfo _invMassField;
-    private static FieldInfo _comField;
-    private static FieldInfo _invInertiaTensorField;
-    private static FieldInfo _inertiaMajorAxisRotField;
-    private static MethodInfo _tryGetMassMethod;
-
-    // For applying impulse
-    private static MethodInfo _getWritePtrMethod;
-
-    // Cached Set<RigidBodyData> method (avoid per-frame reflection)
-    private static MethodInfo _setRbDataMethod;
-
-    // Speed limit override
-    private static Type _speedLimitType;
-    private static FieldInfo _speedLimitField;
-    private static bool _speedUncapped;
-
-    // Gravity multiplier override
-    private static FieldInfo _gravityMultField;
-    private static bool _gravityFixed;
-
-    // Gyro max torque
-    private static MethodInfo _tryGetMaxTorqueMethod;
-    private static FieldInfo _maxTorqueField;
-    private static MethodInfo _setMaxTorqueMethod;
-
-    // Thruster data access
-    private static Type _thrustDataType;
-    private static FieldInfo _thrustMaxPowerField;
-    private static FieldInfo _thrustDirectionField;
-    private static MethodInfo _tryGetThrustDataMethod;
-
-    private static Type _thrusterOverrideType;
-    private static FieldInfo _overridePowerField;
-    private static MethodInfo _tryGetOverrideMethod;
-    private static MethodInfo _setOverrideMethod;
-    private static MethodInfo _tryRemoveOverrideMethod;
-
-    private static Type _isThrustingType;
-    private static MethodInfo _hasIsThrustingMethod;
-
-    // OverriddenThrustData — grid-level override thrust (what ComputeThrust actually reads)
-    private static Type _overriddenThrustType;
-    private static FieldInfo _directionalThrustField;
-    private static MethodInfo _tryGetOverriddenThrustMethod;
-    private static MethodInfo _setOverriddenThrustMethod;
-    private static MethodInfo _getWritePtrOverriddenThrustMethod;
-
-    // WorldTransform reading on child entities
-    private static MethodInfo _getWorldTransformMethod;
-
-    // Generic Set<T> base method (cached for reuse)
-    private static MethodInfo _setGeneric;
-    private static MethodInfo _tryRemoveGeneric;
-    private static MethodInfo _hasGeneric;
-
-    // Gravity data (for "down" direction) — in VRage.Core.Game (whitelisted)
-    private static Type _gravityEffectDataType;
-    private static FieldInfo _gravitySumField;
-    private static MethodInfo _tryGetGravityMethod;
-
-    // IPhysics for raycast ground distance
-    private static object _physicsInstance;
-    private static MethodInfo _castRayAsyncMethod;
-    private static FieldInfo _hitFractionField;
     private static bool _groundSystemInitialized;
-
-    // Pre-allocated args list to avoid creating object[] (banned by VRS1001)
-    private static System.Array _invokeArgs;
-    private static System.Array _invokeArgs2; // second args buffer to avoid clobbering
+    private static IPhysics _physics;
+    private static bool _gravityFixed;
 
     public static bool Available
     {
@@ -104,642 +45,142 @@ public static class PhysicsHack
         }
     }
 
+    /// <summary>
+    /// DEntityContext.TryGet throws NullReferenceException from deep inside
+    /// Scene.TryGetDataPointer when the entity has been detached or its scene torn down --
+    /// it is only "try" with respect to the component being absent, not to the entity being
+    /// dead. The old reflection path hid this behind a blanket catch; these wrappers keep that
+    /// tolerance now that the calls are direct.
+    /// </summary>
+    private static bool SafeTryGet<T>(DEntityContext data, out T value) where T : unmanaged
+    {
+        try { return data.TryGet(out value); }
+        catch { value = default; return false; }
+    }
+
+    private static bool SafeHas<T>(DEntityContext data) where T : unmanaged
+    {
+        try { return data.Has<T>(); }
+        catch { return false; }
+    }
+
+    private static bool SafeSet<T>(DEntityContext data, T value) where T : unmanaged
+    {
+        try { data.Set(value); return true; }
+        catch { return false; }
+    }
+
+    private static bool SafeTryRemove<T>(DEntityContext data) where T : unmanaged
+    {
+        try { return data.TryRemove<T>(); }
+        catch { return false; }
+    }
+
+    /// <summary>Write pointer access, tolerant of a dead entity. Returns false if unavailable.</summary>
+    private static bool SafeGetWorldTransform(DEntityContext data, out WorldTransform wt)
+    {
+        try { wt = data.GetWorldTransform(); return true; }
+        catch { wt = default; return false; }
+    }
+
+    /// <summary>
+    /// TryGetWritePtr wrapped so a detached entity yields a null ref rather than throwing.
+    /// </summary>
+    private static ref T TryWrite<T>(DEntityContext data) where T : unmanaged
+    {
+        try { return ref data.TryGetWritePtr<T>(); }
+        catch { return ref Unsafe.NullRef<T>(); }
+    }
+
     private static void Initialize()
     {
+        // Nothing to resolve any more: every type this class touches is directly referenced.
+        // Availability is simply whether the entity actually carries RigidBodyData, which each
+        // method checks for itself.
         _initialized = true;
-
-        try
-        {
-            // Resolve the banned type at runtime
-            _rbDataType = Type.GetType(
-                "Keen.VRage.Physics.Data.RigidBodyData, VRage.Physics",
-                throwOnError: false);
-
-            if (_rbDataType == null)
-            {
-                Log.Default?.Info("[AERO] PhysicsHack: RigidBodyData type not found");
-                return;
-            }
-
-            // Cache field accessors (private backing fields)
-            _linearVelField = _rbDataType.GetField("_linearVelocity",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-            _angularVelField = _rbDataType.GetField("_angularVelocity",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-
-            if (_linearVelField == null || _angularVelField == null)
-            {
-                Log.Default?.Info("[AERO] PhysicsHack: velocity fields not found");
-                return;
-            }
-
-            // Cache TryGet<RigidBodyData>(out T) on DEntityContext
-            var contextType = typeof(DEntityContext);
-            MethodInfo tryGetGeneric = null;
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "TryGet" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1
-                    && m.GetParameters()[0].IsOut)
-                {
-                    tryGetGeneric = m;
-                    break;
-                }
-            }
-
-            if (tryGetGeneric == null)
-            {
-                Log.Default?.Info("[AERO] PhysicsHack: TryGet method not found");
-                return;
-            }
-
-            _tryGetMethod = tryGetGeneric.MakeGenericMethod(_rbDataType);
-
-            // Resolve RigidBodyMassProperties for mass + center of mass
-            _massType = Type.GetType(
-                "Keen.VRage.Physics.Data.RigidBodyMassProperties, VRage.Physics",
-                throwOnError: false);
-            if (_massType != null)
-            {
-                _invMassField = _massType.GetField("InvMass",
-                    BindingFlags.Public | BindingFlags.Instance);
-                _comField = _massType.GetField("CenterOfMass",
-                    BindingFlags.Public | BindingFlags.Instance);
-                _invInertiaTensorField = _massType.GetField("InvInertiaTensor",
-                    BindingFlags.Public | BindingFlags.Instance);
-                _inertiaMajorAxisRotField = _massType.GetField("InertiaMajorAxisRotation",
-                    BindingFlags.Public | BindingFlags.Instance);
-
-                if (_invInertiaTensorField != null)
-                    Log.Default?.Info("[AERO] PhysicsHack: InvInertiaTensor field found");
-
-                if (tryGetGeneric != null)
-                    _tryGetMassMethod = tryGetGeneric.MakeGenericMethod(_massType);
-            }
-
-            // GetWritePtr<RigidBodyData>() for applying forces
-            MethodInfo getWritePtrGeneric = null;
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "GetWritePtr" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 0)
-                {
-                    getWritePtrGeneric = m;
-                    break;
-                }
-            }
-            if (getWritePtrGeneric != null)
-                _getWritePtrMethod = getWritePtrGeneric.MakeGenericMethod(_rbDataType);
-
-            // Cache Set<RigidBodyData>(T) method
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "Set" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1
-                    && !m.GetParameters()[0].IsOut)
-                {
-                    _setRbDataMethod = m.MakeGenericMethod(_rbDataType);
-                    break;
-                }
-            }
-
-            // Create args arrays via Array.CreateInstance to dodge VRS1001 ban on T[]
-            _invokeArgs = Array.CreateInstance(typeof(object), 1);
-            _invokeArgs2 = Array.CreateInstance(typeof(object), 1);
-
-            // Cache generic method bases for reuse
-            foreach (var m in contextType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "Set" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
-                    _setGeneric = m;
-                else if (m.Name == "TryRemove" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 0)
-                    _tryRemoveGeneric = m;
-                else if (m.Name == "Has" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 0)
-                    _hasGeneric = m;
-            }
-
-            _available = true;
-            Log.Default?.Info("[AERO] PhysicsHack: initialized successfully");
-
-            // Uncap speed limit to 1000 m/s
-            try
-            {
-                var limiterType = Type.GetType(
-                    "Keen.Game2.Simulation.GameSystems.Movement.VelocityLimitProvider, Game2.Simulation",
-                    throwOnError: false);
-                if (limiterType != null)
-                {
-                    var linField = limiterType.GetField("_linearVelocityLimit",
-                        BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (linField != null)
-                    {
-                        _speedLimitField = linField;
-                        _speedLimitType = limiterType;
-                        Log.Default?.Info("[AERO] PhysicsHack: speed limit field found");
-                    }
-                }
-            }
-            catch { }
-
-            // Resolve gravity multiplier field
-            try
-            {
-                var physConfigType = Type.GetType(
-                    "Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfiguration, Game2.Simulation",
-                    throwOnError: false);
-                if (physConfigType != null)
-                {
-                    var gmField = physConfigType.GetField("_gravityMultiplier",
-                        BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (gmField == null)
-                    {
-                        // Try property backing field or public field
-                        gmField = physConfigType.GetField("GravityMultiplier",
-                            BindingFlags.Public | BindingFlags.Instance);
-                    }
-                    if (gmField != null)
-                    {
-                        _gravityMultField = gmField;
-                        Log.Default?.Info("[AERO] PhysicsHack: gravity multiplier field found");
-                    }
-                    else
-                    {
-                        // Try all fields and look for gravity
-                        foreach (var f in physConfigType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                        {
-                            if (f.Name.Contains("ravity", StringComparison.OrdinalIgnoreCase) &&
-                                f.Name.Contains("ultipl", StringComparison.OrdinalIgnoreCase))
-                            {
-                                _gravityMultField = f;
-                                Log.Default?.Info($"[AERO] PhysicsHack: found gravity field: {f.Name}");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            catch { }
-
-            // Resolve MaxTorqueData for gyro torque logging
-            try
-            {
-                var maxTorqueType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxTorqueData, Game2.Simulation",
-                    throwOnError: false);
-                if (maxTorqueType != null)
-                {
-                    _maxTorqueField = maxTorqueType.GetField("MaxTorque",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (tryGetGeneric != null)
-                        _tryGetMaxTorqueMethod = tryGetGeneric.MakeGenericMethod(maxTorqueType);
-                    if (_maxTorqueField != null)
-                        Log.Default?.Info("[AERO] PhysicsHack: MaxTorqueData field found");
-                    if (_setGeneric != null)
-                        _setMaxTorqueMethod = _setGeneric.MakeGenericMethod(maxTorqueType);
-                }
-            }
-            catch { }
-
-            // Resolve ThrustData for reading per-thruster info
-            try
-            {
-                _thrustDataType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Movement.ThrustData, Game2.Simulation",
-                    throwOnError: false);
-                if (_thrustDataType != null && tryGetGeneric != null)
-                {
-                    _thrustMaxPowerField = _thrustDataType.GetField("MaxThrustPower",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    _thrustDirectionField = _thrustDataType.GetField("Direction",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    _tryGetThrustDataMethod = tryGetGeneric.MakeGenericMethod(_thrustDataType);
-                    if (_thrustMaxPowerField != null)
-                        Log.Default?.Info("[AERO] PhysicsHack: ThrustData fields found");
-                }
-            }
-            catch { }
-
-            // Resolve ThrusterOverrideData for setting thrust override
-            try
-            {
-                _thrusterOverrideType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterOverrideData, Game2.Simulation",
-                    throwOnError: false);
-                if (_thrusterOverrideType != null)
-                {
-                    _overridePowerField = _thrusterOverrideType.GetField("OverridePower",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (tryGetGeneric != null)
-                        _tryGetOverrideMethod = tryGetGeneric.MakeGenericMethod(_thrusterOverrideType);
-                    if (_setGeneric != null)
-                        _setOverrideMethod = _setGeneric.MakeGenericMethod(_thrusterOverrideType);
-                    if (_tryRemoveGeneric != null)
-                        _tryRemoveOverrideMethod = _tryRemoveGeneric.MakeGenericMethod(_thrusterOverrideType);
-                    if (_overridePowerField != null)
-                        Log.Default?.Info("[AERO] PhysicsHack: ThrusterOverrideData fields found");
-                }
-            }
-            catch { }
-
-            // Resolve IsThrusting tag for checking if thruster is active
-            try
-            {
-                _isThrustingType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Movement.IsThrusting, Game2.Simulation",
-                    throwOnError: false);
-                if (_isThrustingType != null && _hasGeneric != null)
-                {
-                    _hasIsThrustingMethod = _hasGeneric.MakeGenericMethod(_isThrustingType);
-                    Log.Default?.Info("[AERO] PhysicsHack: IsThrusting type found");
-                }
-            }
-            catch { }
-
-            // Resolve OverriddenThrustData — grid-level override thrust read by ComputeThrust
-            try
-            {
-                _overriddenThrustType = Type.GetType(
-                    "Keen.Game2.Simulation.WorldObjects.Shared.Movement.OverriddenThrustData, Game2.Simulation",
-                    throwOnError: false);
-                Log.Default?.Info($"[AERO] PhysicsHack: OverriddenThrustData type={_overriddenThrustType != null}");
-                if (_overriddenThrustType != null)
-                {
-                    _directionalThrustField = _overriddenThrustType.GetField("DirectionalThrust",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (tryGetGeneric != null)
-                        _tryGetOverriddenThrustMethod = tryGetGeneric.MakeGenericMethod(_overriddenThrustType);
-                    if (_setGeneric != null)
-                        _setOverriddenThrustMethod = _setGeneric.MakeGenericMethod(_overriddenThrustType);
-                    // GetWritePtr<T>() for in-place mutation
-                    foreach (var m in typeof(DEntityContext).GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        if (m.Name == "GetWritePtr" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
-                        {
-                            _getWritePtrOverriddenThrustMethod = m.MakeGenericMethod(_overriddenThrustType);
-                            break;
-                        }
-                    }
-                    if (_directionalThrustField != null)
-                    {
-                        Log.Default?.Info("[AERO] PhysicsHack: OverriddenThrustData resolved");
-                        ResolveSetDataOnComponent();
-                    }
-                }
-            }
-            catch { }
-
-            // Resolve GetWorldTransform on DEntityContext
-            try
-            {
-                _getWorldTransformMethod = contextType.GetMethod("GetWorldTransform",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null, Type.EmptyTypes, null);
-                if (_getWorldTransformMethod != null)
-                    Log.Default?.Info("[AERO] PhysicsHack: GetWorldTransform found");
-            }
-            catch { }
-
-            // Resolve GravityEffectData for "down" direction
-            try
-            {
-                _gravityEffectDataType = Type.GetType(
-                    "Keen.VRage.Core.Game.GameSystems.Gravity.GravityEffectData, VRage.Core.Game",
-                    throwOnError: false);
-                if (_gravityEffectDataType != null)
-                {
-                    _gravitySumField = _gravityEffectDataType.GetField("GravitySum",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (tryGetGeneric != null)
-                        _tryGetGravityMethod = tryGetGeneric.MakeGenericMethod(_gravityEffectDataType);
-                    if (_gravitySumField != null)
-                        Log.Default?.Info("[AERO] PhysicsHack: GravityEffectData found");
-                }
-            }
-            catch { }
-
-            // Resolve SweepQueryHit.Fraction for reading raycast results
-            try
-            {
-                var sweepHitType = Type.GetType(
-                    "Keen.VRage.Physics.Queries.SweepQueryHit, VRage.Physics",
-                    throwOnError: false);
-                if (sweepHitType != null)
-                {
-                    _hitFractionField = sweepHitType.GetField("Fraction",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (_hitFractionField != null)
-                        Log.Default?.Info("[AERO] PhysicsHack: SweepQueryHit.Fraction found");
-                }
-            }
-            catch { }
-        }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] PhysicsHack: init failed: {ex.Message}");
-            _available = false;
-        }
+        _available = true;
     }
 
-    /// <summary>
-    /// Read gyro MaxTorque from an entity's MaxTorqueData.
-    /// </summary>
+    /// <summary>Read gyro MaxTorque from an entity's MaxTorqueData.</summary>
     public static float TryGetGyroMaxTorque(DEntityContext data)
     {
-        if (!Available || _tryGetMaxTorqueMethod == null || _maxTorqueField == null)
-            return -1f;
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMaxTorqueMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (found && _invokeArgs.GetValue(0) != null)
-                return (float)_maxTorqueField.GetValue(_invokeArgs.GetValue(0));
-        }
-        catch { }
-        return -1f;
+        return SafeTryGet<MaxTorqueData>(data, out var mt) ? mt.MaxTorque : -1f;
     }
 
-    /// <summary>
-    /// Read linear and angular velocity from an entity's RigidBodyData via reflection.
-    /// </summary>
+    /// <summary>Read linear and angular velocity from an entity's RigidBodyData.</summary>
     public static bool TryGetVelocity(DEntityContext data, out Vector3 linear, out Vector3 angular)
     {
-        linear = Vector3.Zero;
-        angular = Vector3.Zero;
-
-        if (!Available)
-            return false;
-
-        try
+        if (!SafeTryGet<RigidBodyData>(data, out var rb))
         {
-            // MethodInfo.Invoke needs object[] but VRS1001 bans T[] syntax.
-            // _invokeArgs was created via Array.CreateInstance — it IS an object[]
-            // at runtime, we just cast through System.Array to avoid the analyzer.
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-            linear = (Vector3)_linearVelField.GetValue(rbData);
-            angular = (Vector3)_angularVelField.GetValue(rbData);
-            return true;
-        }
-        catch
-        {
+            linear = Vector3.Zero;
+            angular = Vector3.Zero;
             return false;
         }
+        linear = rb.LinearVelocity;
+        angular = rb.AngularVelocity;
+        return true;
     }
 
-    /// <summary>
-    /// Uncap speed limit to 1000 m/s by modifying VelocityLimitProvider instance.
-    /// Call with the IVelocityLimitProvider from session.
-    /// </summary>
+    /// <summary>Raise the session speed cap. See EngineOverrides (reflection holdout).</summary>
     public static void UncapSpeed(object velocityLimitProvider, float newLimit = 1000f)
     {
-        if (_speedLimitField == null || velocityLimitProvider == null) return;
-
-        try
-        {
-            float current = (float)_speedLimitField.GetValue(velocityLimitProvider);
-            if (current < newLimit)
-            {
-                _speedLimitField.SetValue(velocityLimitProvider, newLimit);
-                if (!_speedUncapped)
-                {
-                    Log.Default?.Info($"[AERO] Speed uncapped: {current} -> {newLimit} m/s");
-                    _speedUncapped = true;
-                }
-            }
-        }
-        catch { }
+        EngineOverrides.UncapSpeed(velocityLimitProvider, newLimit);
     }
 
     /// <summary>
-    /// Set GravityMultiplier and MaximumSpeedLinear on PhysicsSessionConfiguration
-    /// via DefinitionManager.Instance.GetConfiguration&lt;T&gt;().SetPropValue().
+    /// Set GravityMultiplier and MaximumSpeedLinear on the physics session configuration.
+    /// The lookup is now a direct DefinitionManager.GetConfiguration&lt;T&gt;() call; only the
+    /// private property setters still need reflection (see EngineOverrides).
     /// </summary>
     public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f)
     {
         if (_gravityFixed) return;
+        _gravityFixed = true;
 
         try
         {
-            // Resolve DefinitionManager type and its static Instance property
-            var defManagerType = Type.GetType(
-                "Keen.VRage.Library.Definitions.DefinitionManager, VRage.Library",
-                throwOnError: false);
-            if (defManagerType == null)
-            {
-                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager type not found");
-                return;
-            }
-
-            var instanceProp = defManagerType.GetProperty("Instance",
-                BindingFlags.Public | BindingFlags.Static);
-            if (instanceProp == null)
-            {
-                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager.Instance not found");
-                return;
-            }
-
-            object defManager = instanceProp.GetValue(null);
-            if (defManager == null)
-            {
-                Log.Default?.Info("[AERO] TryFixGravity: DefinitionManager.Instance is null");
-                return;
-            }
-
-            // Resolve PhysicsSessionConfiguration type
-            var configType = Type.GetType(
-                "Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfiguration, Game2.Simulation",
-                throwOnError: false);
-            if (configType == null)
-            {
-                Log.Default?.Info("[AERO] TryFixGravity: PhysicsSessionConfiguration type not found");
-                return;
-            }
-
-            // Call DefinitionManager.Instance.GetConfiguration<PhysicsSessionConfiguration>()
-            MethodInfo getConfigGeneric = null;
-            foreach (var m in defManagerType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "GetConfiguration" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 0)
-                {
-                    getConfigGeneric = m;
-                    break;
-                }
-            }
-
-            if (getConfigGeneric == null)
-            {
-                Log.Default?.Info("[AERO] TryFixGravity: GetConfiguration method not found");
-                return;
-            }
-
-            var getConfig = getConfigGeneric.MakeGenericMethod(configType);
-            object config = getConfig.Invoke(defManager, null);
-
+            var config = DefinitionManager.Instance?.GetConfiguration<PhysicsSessionConfiguration>();
             if (config == null)
             {
-                Log.Default?.Info("[AERO] TryFixGravity: GetConfiguration returned null");
+                Log.Default?.Info("[AERO] TryFixGravity: PhysicsSessionConfiguration unavailable");
                 return;
             }
 
-            // Use SetPropValue to set properties (extension method or instance method on Configuration)
-            MethodInfo setPropValue = config.GetType().GetMethod("SetPropValue",
-                BindingFlags.Public | BindingFlags.Instance);
-
-            if (setPropValue == null)
-            {
-                // Try as extension method — search all loaded types
-                Log.Default?.Info("[AERO] TryFixGravity: SetPropValue not found on config, trying direct property set");
-
-                // Fallback: set backing fields directly
-                SetConfigField(config, "MaximumSpeedLinear", targetSpeed);
-                SetConfigField(config, "GravityMultiplier", targetGravity);
-            }
-            else
-            {
-                // SetPropValue(string name, object value)
-                var setPropArgs = Array.CreateInstance(typeof(object), 2);
-                setPropArgs.SetValue("MaximumSpeedLinear", 0);
-                setPropArgs.SetValue(targetSpeed, 1);
-                setPropValue.Invoke(config, Unsafe.As<System.Array, object[]>(ref setPropArgs));
-
-                setPropArgs.SetValue("GravityMultiplier", 0);
-                setPropArgs.SetValue(targetGravity, 1);
-                setPropValue.Invoke(config, Unsafe.As<System.Array, object[]>(ref setPropArgs));
-
-                Log.Default?.Info($"[AERO] Physics config set: MaximumSpeedLinear={targetSpeed}, GravityMultiplier={targetGravity}");
-            }
-
-            _gravityFixed = true;
+            bool speedOk = EngineOverrides.TrySetConfigProperty(config, "MaximumSpeedLinear", targetSpeed);
+            bool gravOk = EngineOverrides.TrySetConfigProperty(config, "GravityMultiplier", targetGravity);
+            Log.Default?.Info($"[AERO] Physics config: MaximumSpeedLinear={targetSpeed} ({speedOk}), GravityMultiplier={targetGravity} ({gravOk})");
         }
         catch (Exception ex)
         {
             Log.Default?.Info($"[AERO] TryFixGravity failed: {ex.Message}");
-            _gravityFixed = true;
         }
     }
 
-    /// <summary>
-    /// Fallback: set a config property via its auto-property backing field.
-    /// </summary>
-    private static void SetConfigField(object config, string propName, float value)
-    {
-        var type = config.GetType();
 
-        // Try auto-property backing field first
-        var field = type.GetField($"<{propName}>k__BackingField",
-            BindingFlags.NonPublic | BindingFlags.Instance);
 
-        if (field == null)
-        {
-            // Try direct field
-            field = type.GetField(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        }
-
-        if (field == null)
-        {
-            // Search for partial name match
-            foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-            {
-                if (f.Name.Contains(propName, StringComparison.OrdinalIgnoreCase) && f.FieldType == typeof(float))
-                {
-                    field = f;
-                    break;
-                }
-            }
-        }
-
-        if (field != null)
-        {
-            field.SetValue(config, value);
-            Log.Default?.Info($"[AERO] Set {propName} = {value} via field {field.Name}");
-        }
-        else
-        {
-            Log.Default?.Info($"[AERO] Could not find field for {propName}");
-        }
-    }
-
-    /// <summary>
-    /// Read mass and center of mass from RigidBodyMassProperties.
-    /// </summary>
+    /// <summary>Read mass and centre of mass from RigidBodyMassProperties.</summary>
     public static bool TryGetMassProperties(DEntityContext data, out float mass, out Vector3 centerOfMass)
     {
         mass = 0f;
         centerOfMass = Vector3.Zero;
-
-        if (!Available || _tryGetMassMethod == null || _invMassField == null)
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mp))
             return false;
-
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object massData = _invokeArgs.GetValue(0);
-            float invMass = (float)_invMassField.GetValue(massData);
-            mass = invMass > 1e-10f ? 1f / invMass : 0f;
-
-            if (_comField != null)
-                centerOfMass = (Vector3)_comField.GetValue(massData);
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        mass = mp.InvMass > 1e-10f ? 1f / mp.InvMass : 0f;
+        centerOfMass = mp.CenterOfMass;
+        return true;
     }
 
-    /// <summary>
-    /// Read inertia data for diagnostic logging.
-    /// Returns inverse inertia tensor and major axis rotation quaternion.
-    /// </summary>
+    /// <summary>Read inverse inertia tensor and principal-axis rotation (diagnostics).</summary>
     public static bool TryGetInertiaData(DEntityContext data,
         out Vector3 invInertiaTensor, out Quaternion majorAxisRot)
     {
         invInertiaTensor = Vector3.Zero;
         majorAxisRot = Quaternion.Identity;
-
-        if (!Available || _tryGetMassMethod == null || _invInertiaTensorField == null)
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mp))
             return false;
-
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object massData = _invokeArgs.GetValue(0);
-            invInertiaTensor = (Vector3)_invInertiaTensorField.GetValue(massData);
-
-            if (_inertiaMajorAxisRotField != null)
-                majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-
-            return true;
-        }
-        catch { return false; }
+        invInertiaTensor = mp.InvInertiaTensor;
+        majorAxisRot = mp.InertiaMajorAxisRotation;
+        return true;
     }
 
     /// <summary>
@@ -750,77 +191,32 @@ public static class PhysicsHack
 
     public static bool TryRestoreGyroTorque(DEntityContext data)
     {
-        if (!Available || _tryGetMaxTorqueMethod == null || _maxTorqueField == null || _savedMaxTorque < 0f)
-            return false;
+        if (_savedMaxTorque < 0f) return false;
         return TrySetGyroTorque(data, _savedMaxTorque, "restored");
     }
 
     public static bool TryZeroGyroTorque(DEntityContext data)
     {
-        if (!Available || _tryGetMaxTorqueMethod == null || _maxTorqueField == null)
+        if (!SafeTryGet<MaxTorqueData>(data, out var mt))
             return false;
-
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMaxTorqueMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object mtData = _invokeArgs.GetValue(0);
-            float current = (float)_maxTorqueField.GetValue(mtData);
-            if (current == 0f) return true; // already zero
-
-            // Save original value for restore
-            if (_savedMaxTorque < 0f) _savedMaxTorque = current;
-
-            _maxTorqueField.SetValue(mtData, 0f);
-
-            // Write back via cached Set<MaxTorqueData>
-            if (_setMaxTorqueMethod != null)
-            {
-                _invokeArgs.SetValue(mtData, 0);
-                _setMaxTorqueMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-                Log.Default?.Info($"[AERO] PhysicsHack: zeroed MaxTorque (was {current:F0})");
-                return true;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] PhysicsHack: TryZeroGyroTorque failed: {ex.Message}");
-        }
-        return false;
+        if (mt.MaxTorque == 0f)
+            return true;
+        if (_savedMaxTorque < 0f)
+            _savedMaxTorque = mt.MaxTorque;
+        float was = mt.MaxTorque;
+        if (!TrySetGyroTorque(data, 0f, "zeroed"))
+            return false;
+        Log.Default?.Info($"[AERO] Physics: zeroed MaxTorque (was {was:F0})");
+        return true;
     }
 
     private static bool TrySetGyroTorque(DEntityContext data, float value, string label)
     {
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMaxTorqueMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null) return false;
-
-            object mtData = _invokeArgs.GetValue(0);
-            _maxTorqueField.SetValue(mtData, value);
-
-            if (_setMaxTorqueMethod != null)
-            {
-                _invokeArgs.SetValue(mtData, 0);
-                _setMaxTorqueMethod.Invoke(boxedContext, Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-                Log.Default?.Info($"[AERO] PhysicsHack: {label} MaxTorque to {value:F0}");
-                return true;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] PhysicsHack: TrySetGyroTorque failed: {ex.Message}");
-        }
-        return false;
+        ref MaxTorqueData mt = ref TryWrite<MaxTorqueData>(data);
+        if (Unsafe.IsNullRef(in mt))
+            return false;
+        mt.MaxTorque = value;
+        return true;
     }
 
     /// <summary>
@@ -832,212 +228,81 @@ public static class PhysicsHack
     }
 
     /// <summary>
-    /// Apply both linear and angular velocity deltas in one read-modify-write.
-    /// torqueLocal is in grid-local space; converted to angular deltaV via inertia tensor,
-    /// then transformed to world space before applying (AngularVelocity is world-space).
+    /// Apply linear and angular velocity deltas.
+    ///
+    /// Prefer <see cref="AeroPhysics.ApplyForceAndTorque"/>: it takes a force and moment and
+    /// converts them with the engine's own impulse helpers. This overload survives for callers
+    /// that already hold a velocity delta, and now routes through RigidBodyDataFunctions rather
+    /// than re-deriving I^-1 by hand.
     /// </summary>
     public static bool ApplyDeltaVAndTorque(DEntityContext data, Vector3 deltaV, Vector3 torqueLocal, float dt = 1f / 60f, Quaternion? gridOrientation = null)
     {
-        if (!Available)
+        if (!IsFinite(deltaV) || !IsFinite(torqueLocal))
             return false;
 
-        // NaN guard — never write bad values to physics
-        if (float.IsNaN(deltaV.X) || float.IsNaN(deltaV.Y) || float.IsNaN(deltaV.Z) ||
-            float.IsNaN(torqueLocal.X) || float.IsNaN(torqueLocal.Y) || float.IsNaN(torqueLocal.Z) ||
-            float.IsInfinity(deltaV.X) || float.IsInfinity(deltaV.Y) || float.IsInfinity(deltaV.Z) ||
-            float.IsInfinity(torqueLocal.X) || float.IsInfinity(torqueLocal.Y) || float.IsInfinity(torqueLocal.Z))
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb))
             return false;
 
-        try
+        if (deltaV.LengthSquared() > 0f)
+            rb.LinearVelocity += deltaV;
+
+        if (torqueLocal.LengthSquared() > 1e-6f
+            && SafeTryGet<RigidBodyMassProperties>(data, out var mass))
         {
-            // Get RigidBodyData
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-
-            // Apply linear deltaV
-            Vector3 linVel = (Vector3)_linearVelField.GetValue(rbData);
-            linVel += deltaV;
-            _linearVelField.SetValue(rbData, linVel);
-
-            // Apply angular deltaV from torque
-            if (torqueLocal.LengthSquared() > 1e-6f && _invInertiaTensorField != null)
-            {
-                // Get inertia data (use _invokeArgs2 to avoid clobbering rbData in _invokeArgs)
-                _invokeArgs2.SetValue(null, 0);
-                bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-
-                if (foundMass && _invokeArgs2.GetValue(0) != null)
-                {
-                    object massData = _invokeArgs2.GetValue(0);
-                    Vector3 invInertia = (Vector3)_invInertiaTensorField.GetValue(massData);
-
-                    // deltaOmega = I⁻¹ · torque · dt
-                    // If we have the major axis rotation, rotate torque to principal axes first
-                    Vector3 torquePrincipal = torqueLocal;
-                    if (_inertiaMajorAxisRotField != null)
-                    {
-                        Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-                        Quaternion invRot = Quaternion.Conjugate(majorAxisRot);
-                        torquePrincipal = Vector3.Transform(torqueLocal, invRot);
-                    }
-
-                    Vector3 deltaOmega = new Vector3(
-                        torquePrincipal.X * invInertia.X,
-                        torquePrincipal.Y * invInertia.Y,
-                        torquePrincipal.Z * invInertia.Z) * dt;
-
-                    if (_inertiaMajorAxisRotField != null)
-                    {
-                        Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-                        deltaOmega = Vector3.Transform(deltaOmega, majorAxisRot);
-                    }
-
-                    // Transform deltaOmega from local to world space
-                    if (gridOrientation.HasValue)
-                        deltaOmega = Vector3.Transform(deltaOmega, gridOrientation.Value);
-
-                    Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
-                    angVel += deltaOmega;
-                    _angularVelField.SetValue(rbData, angVel);
-                }
-            }
-
-            // Write back using Data.Set<RigidBodyData>(modified)
-            _invokeArgs.SetValue(rbData, 0);
-
-            if (_setRbDataMethod != null)
-            {
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            }
-
-            return true;
+            if (SafeGetWorldTransform(data, out var wtLocal))
+                rb.ApplyAngularImpulseLocal(in mass, in wtLocal, torqueLocal * dt);
         }
-        catch
-        {
-            return false;
-        }
+        return true;
     }
+
+    internal static bool IsFinite(Vector3 v) =>
+        !float.IsNaN(v.X) && !float.IsNaN(v.Y) && !float.IsNaN(v.Z) &&
+        !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 
     // ═══════════════════════════════════════════════════════════════
     // Thruster data access
     // ═══════════════════════════════════════════════════════════════
 
-    public static bool ThrusterAccessAvailable =>
-        Available && _thrustDataType != null && _thrustMaxPowerField != null;
+    /// <summary>ThrustData is a directly referenced type now, so access is always available.</summary>
+    public static bool ThrusterAccessAvailable => true;
 
     public static bool GroundSystemReady => _groundSystemInitialized;
 
-    /// <summary>
-    /// Read ThrustData from a thruster entity: max power and direction.
-    /// Direction is returned as int (Base6Directions.Direction enum value).
-    /// </summary>
+    /// <summary>Read a thruster's max power and Base6Directions.Direction (as int).</summary>
     public static bool TryGetThrustData(DEntityContext data, out float maxPower, out int direction)
     {
         maxPower = 0f;
         direction = 0;
-
-        if (!ThrusterAccessAvailable || _tryGetThrustDataMethod == null)
+        if (!SafeTryGet<ThrustData>(data, out var td))
             return false;
-
-        try
-        {
-            _invokeArgs2.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetThrustDataMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-
-            if (!found || _invokeArgs2.GetValue(0) == null)
-                return false;
-
-            object td = _invokeArgs2.GetValue(0);
-            maxPower = (float)_thrustMaxPowerField.GetValue(td);
-            if (_thrustDirectionField != null)
-                direction = (int)_thrustDirectionField.GetValue(td);
-            return true;
-        }
-        catch { return false; }
+        maxPower = td.MaxThrustPower;
+        direction = (int)td.Direction;
+        return true;
     }
 
-    /// <summary>
-    /// Check if a thruster entity has the IsThrusting tag (is currently firing).
-    /// </summary>
+    /// <summary>True if the thruster currently carries the IsThrusting tag.</summary>
     public static bool IsEntityThrusting(DEntityContext data)
     {
-        if (_hasIsThrustingMethod == null) return false;
-        try
-        {
-            object boxedContext = data;
-            return (bool)_hasIsThrustingMethod.Invoke(boxedContext, null);
-        }
-        catch { return false; }
+        return SafeHas<IsThrusting>(data);
     }
 
-    /// <summary>
-    /// Read ThrusterOverrideData.OverridePower from a thruster entity.
-    /// Returns -1 if no override is set.
-    /// </summary>
+    /// <summary>ThrusterOverrideData.OverridePower, or -1 when no override is set.</summary>
     public static float GetThrustOverride(DEntityContext data)
     {
-        if (_tryGetOverrideMethod == null || _overridePowerField == null) return -1f;
-        try
-        {
-            _invokeArgs2.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetOverrideMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-
-            if (!found || _invokeArgs2.GetValue(0) == null)
-                return -1f;
-
-            return (float)_overridePowerField.GetValue(_invokeArgs2.GetValue(0));
-        }
-        catch { return -1f; }
+        return SafeTryGet<ThrusterOverrideData>(data, out var o) ? o.OverridePower : -1f;
     }
 
-    /// <summary>
-    /// Set ThrusterOverrideData on a thruster entity.
-    /// This triggers the game's thrust visuals (flame effects).
-    /// </summary>
+    /// <summary>Set ThrusterOverrideData; this drives the game's thrust visuals.</summary>
     public static bool TrySetThrustOverride(DEntityContext data, float overridePower)
     {
-        if (_setOverrideMethod == null || _thrusterOverrideType == null || _overridePowerField == null)
-            return false;
-
-        try
-        {
-            object overrideData = Activator.CreateInstance(_thrusterOverrideType);
-            _overridePowerField.SetValue(overrideData, overridePower);
-            _invokeArgs2.SetValue(overrideData, 0);
-            object boxedContext = data;
-            _setOverrideMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            return true;
-        }
-        catch { return false; }
+        return SafeSet(data, new ThrusterOverrideData { OverridePower = overridePower });
     }
 
-    /// <summary>
-    /// Remove ThrusterOverrideData from a thruster entity (return to normal control).
-    /// </summary>
+    /// <summary>Drop ThrusterOverrideData, returning the thruster to normal control.</summary>
     public static bool TryRemoveThrustOverride(DEntityContext data)
     {
-        if (_tryRemoveOverrideMethod == null) return false;
-        try
-        {
-            object boxedContext = data;
-            _tryRemoveOverrideMethod.Invoke(boxedContext, null);
-            return true;
-        }
-        catch { return false; }
+        return SafeTryRemove<ThrusterOverrideData>(data);
     }
 
     // Resolved SetData<OverriddenThrustData> on Component base class
@@ -1045,356 +310,107 @@ public static class PhysicsHack
     private static Type _thrustCompType;
 
     /// <summary>
-    /// Set OverriddenThrustData.DirectionalThrust on a grid entity.
-    /// Uses Component.SetData path to write through to scene data pools (job system visible).
+    /// Write grid-level OverriddenThrustData, which ComputeThrust reads.
+    ///
+    /// Prefers ThrustComponent.SetData so the value lands in the component's scene pool where
+    /// ComputeThrust looks; DEntityContext.Set is the fallback. SetData is PROTECTED on
+    /// Component, so this is one of the three reflection holdouts -- see EngineOverrides.
     /// </summary>
     public static bool TrySetOverriddenThrust(Entity gridEntity, DEntityContext gridData, Vector3 directionalThrust)
     {
-        if (_overriddenThrustType == null || _directionalThrustField == null)
-            return false;
+        var overridden = new OverriddenThrustData { DirectionalThrust = directionalThrust };
 
-        try
-        {
-            object overriddenData = Activator.CreateInstance(_overriddenThrustType);
-            _directionalThrustField.SetValue(overriddenData, directionalThrust);
+        if (EngineOverrides.TrySetComponentData(gridEntity, typeof(ThrustComponent), overridden))
+            return true;
 
-            // Use Component.SetData<T> via ThrustComponent on the grid (writes to scene pools)
-            if (_setDataOnComponent != null && gridEntity != null)
-            {
-                var comp = FindComponentByType(gridEntity, _thrustCompType);
-                if (comp != null)
-                {
-                    _invokeArgs2.SetValue(overriddenData, 0);
-                    _setDataOnComponent.Invoke(comp,
-                        Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-                    return true;
-                }
-            }
-
-            // Fallback: DEntityContext.Set<T>
-            if (_setOverriddenThrustMethod != null)
-            {
-                _invokeArgs2.SetValue(overriddenData, 0);
-                object boxedContext = gridData;
-                _setOverriddenThrustMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-                return true;
-            }
-            return false;
-        }
-        catch { return false; }
+        return SafeSet(gridData, overridden);
     }
 
-    /// <summary>Read ActiveThrustData.ComputedThrustPerFrame from the GRID entity (not thruster).</summary>
+    /// <summary>Magnitude of ActiveThrustData.ComputedThrustPerFrame on the GRID entity.</summary>
     public static float GetGridActiveThrust(DEntityContext gridData)
     {
-        try
-        {
-            var atdType = Type.GetType(
-                "Keen.Game2.Simulation.WorldObjects.Movement.ActiveThrustData, Game2.Simulation",
-                throwOnError: false);
-            if (atdType == null) return -1f;
-            var ctpf = atdType.GetField("ComputedThrustPerFrame");
-            if (ctpf == null) return -1f;
-
-            MethodInfo tryGetGeneric = null;
-            foreach (var m in typeof(DEntityContext).GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "TryGet" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1 && m.GetParameters()[0].IsOut)
-                { tryGetGeneric = m; break; }
-            }
-            if (tryGetGeneric == null) return -2f;
-
-            var specific = tryGetGeneric.MakeGenericMethod(atdType);
-            _invokeArgs2.SetValue(null, 0);
-            object boxedContext = gridData;
-            bool found = (bool)specific.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!found || _invokeArgs2.GetValue(0) == null) return 0f; // not present = no thrust
-            Vector3 thrust = (Vector3)ctpf.GetValue(_invokeArgs2.GetValue(0));
-            return thrust.Length();
-        }
-        catch { return -4f; }
+        return SafeTryGet<ActiveThrustData>(gridData, out var atd)
+            ? atd.ComputedThrustPerFrame.Length()
+            : 0f;
     }
 
     /// <summary>
-    /// Write synthetic ControlData (Movement/Rotation) on a grid entity via Component.SetData.
-    /// Used by test harness to simulate player input.
+    /// Write synthetic ControlData (test harness player-input simulation) onto a grid.
+    /// Uses the protected Component.SetData -- see EngineOverrides.
     /// </summary>
     public static bool TrySetControlData(Entity gridEntity, Vector3 movement, Vector3 rotation)
     {
-        if (_setDataControlMethod == null || _thrustCompType == null || gridEntity == null)
-            return false;
-        try
-        {
-            var comp = FindComponentByType(gridEntity, _thrustCompType);
-            if (comp == null) return false;
-            var cd = new ControlData { Movement = movement, Rotation = rotation };
-            _invokeArgs2.SetValue(cd, 0);
-            _setDataControlMethod.Invoke(comp,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            return true;
-        }
-        catch { return false; }
+        var cd = new ControlData { Movement = movement, Rotation = rotation };
+        return EngineOverrides.TrySetComponentData(gridEntity, typeof(ThrustComponent), cd);
     }
 
     private static MethodInfo _setDataControlMethod;
 
-    /// <summary>Resolve SetData method on Component for OverriddenThrustData. Called during init.</summary>
-    private static void ResolveSetDataOnComponent()
-    {
-        if (_overriddenThrustType == null) return;
-        _thrustCompType = Type.GetType(
-            "Keen.Game2.Simulation.WorldObjects.Shared.Movement.ThrustComponent, Game2.Simulation",
-            throwOnError: false);
-        if (_thrustCompType == null) return;
 
-        MethodInfo setDataGeneric = null;
-        foreach (var m in typeof(Component).GetMethods(
-            BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (m.Name == "SetData" && m.IsGenericMethodDefinition
-                && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
-            {
-                setDataGeneric = m;
-                _setDataOnComponent = m.MakeGenericMethod(_overriddenThrustType);
-                _setDataControlMethod = m.MakeGenericMethod(typeof(ControlData));
-                Log.Default?.Info("[AERO] PhysicsHack: Component.SetData<OverriddenThrustData> + <ControlData> resolved");
-                break;
-            }
-        }
-    }
 
-    /// <summary>
-    /// Read OverriddenThrustData.DirectionalThrust from a grid entity.
-    /// Returns Vector3.Zero if not present.
-    /// </summary>
+    /// <summary>OverriddenThrustData.DirectionalThrust on a grid, or zero when absent.</summary>
     public static Vector3 GetOverriddenThrust(DEntityContext gridData)
     {
-        if (_tryGetOverriddenThrustMethod == null || _directionalThrustField == null)
-            return Vector3.Zero;
-
-        try
-        {
-            _invokeArgs2.SetValue(null, 0);
-            object boxedContext = gridData;
-            bool found = (bool)_tryGetOverriddenThrustMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!found || _invokeArgs2.GetValue(0) == null) return Vector3.Zero;
-            return (Vector3)_directionalThrustField.GetValue(_invokeArgs2.GetValue(0));
-        }
-        catch { return Vector3.Zero; }
+        return SafeTryGet<OverriddenThrustData>(gridData, out var o) ? o.DirectionalThrust : Vector3.Zero;
     }
 
-    /// <summary>
-    /// Read WorldTransform from an entity's DEntityContext.
-    /// </summary>
     public static bool TryGetWorldTransform(DEntityContext data, out WorldTransform wt)
     {
-        wt = default;
-        if (_getWorldTransformMethod == null) return false;
-        try
-        {
-            object boxedContext = data;
-            wt = (WorldTransform)_getWorldTransformMethod.Invoke(boxedContext, null);
-            return true;
-        }
-        catch { return false; }
+        return SafeGetWorldTransform(data, out wt);
     }
 
     private static MethodInfo _setWorldTransformMethod;
 
     /// <summary>
-    /// Set orientation while keeping position. Does NOT zero angular velocity —
-    /// call TryZeroAngularVelocity on a subsequent frame after physics processes the teleport.
+    /// Set orientation while keeping position. Does NOT zero angular velocity -- call
+    /// TryZeroAngularVelocity on a later frame, after physics has processed the teleport.
     /// </summary>
     public static bool TrySetOrientation(DEntityContext data, Quaternion targetOrientation)
     {
-        try
-        {
-            // Resolve Get/SetWorldTransform extension methods once
-            if (_setWorldTransformMethod == null || _getWorldTransformMethod == null)
-            {
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    foreach (var type in asm.GetTypes())
-                    {
-                        if (type.Name == "EntityTransformFunctions")
-                        {
-                            _setWorldTransformMethod = type.GetMethod("SetWorldTransform",
-                                BindingFlags.Public | BindingFlags.Static, null,
-                                new[] { typeof(DEntityContext), typeof(WorldTransform).MakeByRefType() }, null);
-                            if (_setWorldTransformMethod != null)
-                                Log.Default?.Info("[AERO] PhysicsHack: SetWorldTransform found");
-
-                            _getWorldTransformMethod = type.GetMethod("GetWorldTransform",
-                                BindingFlags.Public | BindingFlags.Static, null,
-                                new[] { typeof(DEntityContext) }, null);
-                            if (_getWorldTransformMethod != null)
-                                Log.Default?.Info("[AERO] PhysicsHack: GetWorldTransform found (extension)");
-                        }
-                    }
-                    if (_setWorldTransformMethod != null) break;
-                }
-
-                if (_setWorldTransformMethod == null)
-                    Log.Default?.Info("[AERO] PhysicsHack: SetWorldTransform NOT found");
-                if (_getWorldTransformMethod == null)
-                    Log.Default?.Info("[AERO] PhysicsHack: GetWorldTransform NOT found");
-            }
-
-            if (_getWorldTransformMethod == null || _setWorldTransformMethod == null)
-                return false;
-
-            // Get current transform, replace orientation, set back
-            WorldTransform wt = (WorldTransform)_getWorldTransformMethod.Invoke(null, new object[] { data });
-            var newWt = new WorldTransform(wt.Position, targetOrientation);
-            _setWorldTransformMethod.Invoke(null, new object[] { data, newWt });
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        if (!SafeGetWorldTransform(data, out var wt)) return false;
+        var newWt = new WorldTransform(wt.Position, targetOrientation);
+        try { data.SetWorldTransform(in newWt); return true; } catch { return false; }
     }
 
-    /// <summary>
-    /// Teleport grid to a new position while preserving orientation.
-    /// Call TrySetOrientation first at least once to resolve the transform methods.
-    /// </summary>
+    /// <summary>Teleport to a new position, preserving orientation.</summary>
     public static bool TrySetPosition(DEntityContext data, Vector3D newPosition)
     {
-        try
-        {
-            if (_getWorldTransformMethod == null || _setWorldTransformMethod == null)
-                return false;
-            WorldTransform wt = (WorldTransform)_getWorldTransformMethod.Invoke(null, new object[] { data });
-            var newWt = new WorldTransform(newPosition, wt.Orientation);
-            _setWorldTransformMethod.Invoke(null, new object[] { data, newWt });
-            return true;
-        }
-        catch { return false; }
+        if (!SafeGetWorldTransform(data, out var wt)) return false;
+        var newWt = new WorldTransform(newPosition, wt.Orientation);
+        try { data.SetWorldTransform(in newWt); return true; } catch { return false; }
     }
 
-    /// <summary>
-    /// Zero angular velocity using the exact same read-modify-write pattern as ApplyDeltaVAndTorque.
-    /// Call on a frame AFTER TrySetOrientation so the physics engine has processed the teleport.
-    /// </summary>
     public static bool TryZeroAngularVelocity(DEntityContext data)
     {
-        if (!Available)
-            return false;
-
-        try
-        {
-            // Read RigidBodyData (same pattern as ApplyDeltaVAndTorque line 770)
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-
-            _angularVelField.SetValue(rbData, Vector3.Zero);
-
-            // Write back via Set<RigidBodyData> (same pattern as ApplyDeltaVAndTorque line 847)
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-            {
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            }
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return TrySetAngularVelocity(data, Vector3.Zero);
     }
 
-    /// <summary>
-    /// Set angular velocity (world space) directly.
-    /// </summary>
     public static bool TrySetAngularVelocity(DEntityContext data, Vector3 angVel)
     {
-        if (!Available) return false;
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null) return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-            _angularVelField.SetValue(rbData, angVel);
-
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(angVel)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        rb.AngularVelocity = angVel;
+        return true;
     }
 
-    /// <summary>
-    /// Set linear velocity (world space) without touching angular velocity.
-    /// </summary>
     public static bool TrySetLinearVelocity(DEntityContext data, Vector3 linearVel)
     {
-        if (!Available) return false;
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null) return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-            _linearVelField.SetValue(rbData, linearVel);
-
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(linearVel)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        rb.LinearVelocity = linearVel;
+        return true;
     }
 
-    /// <summary>
-    /// Set both linear and angular velocity (world space) in a single write.
-    /// </summary>
     public static bool TrySetVelocity(DEntityContext data, Vector3 linearVel, Vector3 angularVel)
     {
-        if (!Available) return false;
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null) return false;
-
-            object rbData = _invokeArgs.GetValue(0);
-            _linearVelField.SetValue(rbData, linearVel);
-            _angularVelField.SetValue(rbData, angularVel);
-
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(linearVel) || !IsFinite(angularVel)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        rb.LinearVelocity = linearVel;
+        rb.AngularVelocity = angularVel;
+        return true;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1402,307 +418,109 @@ public static class PhysicsHack
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Apply an impulse at a world-space offset position on the grid entity.
-    /// Replicates RigidBodyDataFunctions.ApplyImpulseAt:
-    ///   linVel += impulse * invMass
-    ///   angular delta from cross(r, impulse) through inertia tensor
-    /// The grid's DEntityContext must have RigidBodyData and RigidBodyMassProperties.
+    /// Apply an impulse at a world point. Linear and angular response both fall out of the
+    /// geometry -- this is RigidBodyDataFunctions.ApplyImpulseAt, the engine's own routine.
     /// </summary>
     public static bool ApplyImpulseAt(DEntityContext data, Vector3 impulse, Vector3D worldPosition, WorldTransform wt = default)
     {
-        if (!Available || _invInertiaTensorField == null)
-            return false;
-        if (float.IsNaN(impulse.X) || float.IsNaN(impulse.Y) || float.IsNaN(impulse.Z))
-            return false;
-
-        try
-        {
-            // Read RigidBodyData
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-            object rbData = _invokeArgs.GetValue(0);
-
-            // Read mass properties
-            _invokeArgs2.SetValue(null, 0);
-            bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!foundMass || _invokeArgs2.GetValue(0) == null)
-                return false;
-            object massData = _invokeArgs2.GetValue(0);
-
-            float invMass = (float)_invMassField.GetValue(massData);
-            Vector3 com = (Vector3)_comField.GetValue(massData);
-            Vector3 invInertia = (Vector3)_invInertiaTensorField.GetValue(massData);
-
-            // Linear: linVel += impulse * invMass
-            Vector3 linVel = (Vector3)_linearVelField.GetValue(rbData);
-            linVel += impulse * invMass;
-            _linearVelField.SetValue(rbData, linVel);
-
-            // Angular: replicate ApplyImpulseAt math from RigidBodyDataFunctions
-            // r = TransformInv(worldPos, wt) - centerOfMass  (local space offset)
-            Vector3D localPos = WorldTransform.TransformInv(worldPosition, wt);
-            Vector3D r = localPos - (Vector3D)com;
-
-            // localImpulse = TransformDirectionInv(impulse, wt)
-            Vector3 localImpulse = WorldTransform.TransformDirectionInv(impulse, wt);
-
-            // torqueLocal = cross(r, localImpulse)
-            Vector3D torqueLocal = Vector3D.Cross(r, (Vector3D)localImpulse);
-
-            // Apply through inertia tensor (principal axes)
-            Vector3D angDelta = torqueLocal;
-            if (_inertiaMajorAxisRotField != null)
-            {
-                Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-                Quaternion invRot = Quaternion.Conjugate(majorAxisRot);
-                angDelta = Vector3D.Transform(angDelta, invRot);
-                angDelta = new Vector3D(
-                    angDelta.X * invInertia.X,
-                    angDelta.Y * invInertia.Y,
-                    angDelta.Z * invInertia.Z);
-                angDelta = Vector3D.Transform(angDelta, majorAxisRot);
-            }
-            else
-            {
-                angDelta = new Vector3D(
-                    angDelta.X * invInertia.X,
-                    angDelta.Y * invInertia.Y,
-                    angDelta.Z * invInertia.Z);
-            }
-
-            // Transform angular delta to world space and apply
-            Vector3 worldAngDelta = (Vector3)WorldTransform.TransformDirection((Vector3)angDelta, wt);
-            Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
-            angVel += worldAngDelta;
-            _angularVelField.SetValue(rbData, angVel);
-
-            // Write back
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(impulse)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mass)) return false;
+        if (wt.Equals(default(WorldTransform)) && !SafeGetWorldTransform(data, out wt)) return false;
+        rb.ApplyImpulseAt(in mass, in wt, worldPosition, impulse);
+        return true;
     }
 
-    /// <summary>
-    /// Apply a pure angular impulse (torque × dt) in local space.
-    /// No linear velocity change — only spins the body through the inertia tensor.
-    /// Used to add offset-thrust coupling torque without touching vanilla's linear thrust.
-    /// </summary>
+    /// <summary>Apply an angular impulse expressed in grid-local space.</summary>
     public static bool ApplyTorqueImpulse(DEntityContext data, Vector3 localTorqueImpulse, WorldTransform wt = default)
     {
-        if (!Available || _invInertiaTensorField == null)
-            return false;
-        if (float.IsNaN(localTorqueImpulse.X) || float.IsNaN(localTorqueImpulse.Y) || float.IsNaN(localTorqueImpulse.Z))
-            return false;
-
-        try
-        {
-            // Read RigidBodyData
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-            object rbData = _invokeArgs.GetValue(0);
-
-            // Read mass properties (for inertia tensor)
-            _invokeArgs2.SetValue(null, 0);
-            bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!foundMass || _invokeArgs2.GetValue(0) == null)
-                return false;
-            object massData = _invokeArgs2.GetValue(0);
-
-            Vector3 invInertia = (Vector3)_invInertiaTensorField.GetValue(massData);
-
-            // Apply through inertia tensor (same math as angular half of ApplyImpulseAt)
-            Vector3D angDelta = (Vector3D)localTorqueImpulse;
-            if (_inertiaMajorAxisRotField != null)
-            {
-                Quaternion majorAxisRot = (Quaternion)_inertiaMajorAxisRotField.GetValue(massData);
-                Quaternion invRot = Quaternion.Conjugate(majorAxisRot);
-                angDelta = Vector3D.Transform(angDelta, invRot);
-                angDelta = new Vector3D(
-                    angDelta.X * invInertia.X,
-                    angDelta.Y * invInertia.Y,
-                    angDelta.Z * invInertia.Z);
-                angDelta = Vector3D.Transform(angDelta, majorAxisRot);
-            }
-            else
-            {
-                angDelta = new Vector3D(
-                    angDelta.X * invInertia.X,
-                    angDelta.Y * invInertia.Y,
-                    angDelta.Z * invInertia.Z);
-            }
-
-            // Transform to world space and apply
-            Vector3 worldAngDelta = (Vector3)WorldTransform.TransformDirection((Vector3)angDelta, wt);
-            Vector3 angVel = (Vector3)_angularVelField.GetValue(rbData);
-            angVel += worldAngDelta;
-            _angularVelField.SetValue(rbData, angVel);
-
-            // Write back
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(localTorqueImpulse)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mass)) return false;
+        if (wt.Equals(default(WorldTransform)) && !SafeGetWorldTransform(data, out wt)) return false;
+        rb.ApplyAngularImpulseLocal(in mass, in wt, localTorqueImpulse);
+        return true;
     }
 
-    /// <summary>
-    /// Apply a pure linear impulse (no angular component).
-    /// Used for Mach scaling delta when offset torque is handled separately.
-    /// </summary>
+    /// <summary>Apply a world-space linear impulse at the centre of mass.</summary>
     public static bool ApplyLinearImpulse(DEntityContext data, Vector3 impulse)
     {
-        if (!Available || _invMassField == null)
-            return false;
-        if (float.IsNaN(impulse.X) || float.IsNaN(impulse.Y) || float.IsNaN(impulse.Z))
-            return false;
-
-        try
-        {
-            _invokeArgs.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-            if (!found || _invokeArgs.GetValue(0) == null)
-                return false;
-            object rbData = _invokeArgs.GetValue(0);
-
-            _invokeArgs2.SetValue(null, 0);
-            bool foundMass = (bool)_tryGetMassMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!foundMass || _invokeArgs2.GetValue(0) == null)
-                return false;
-            float invMass = (float)_invMassField.GetValue(_invokeArgs2.GetValue(0));
-
-            Vector3 linVel = (Vector3)_linearVelField.GetValue(rbData);
-            linVel += impulse * invMass;
-            _linearVelField.SetValue(rbData, linVel);
-
-            _invokeArgs.SetValue(rbData, 0);
-            if (_setRbDataMethod != null)
-                _setRbDataMethod.Invoke(boxedContext,
-                    Unsafe.As<System.Array, object[]>(ref _invokeArgs));
-
-            return true;
-        }
-        catch { return false; }
+        if (!IsFinite(impulse)) return false;
+        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
+        if (Unsafe.IsNullRef(in rb)) return false;
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mass)) return false;
+        rb.ApplyLinearImpulse(in mass, impulse);
+        return true;
     }
 
     // ═══════════════════════════════════════════════════════════════
     // Gravity & ground height (raycast)
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Read gravity direction from entity's GravityEffectData.
-    /// Returns zero vector if no gravity data.
-    /// </summary>
+    /// <summary>Local gravity vector (not normalised) from GravityEffectData.</summary>
     public static Vector3 GetGravityDirection(DEntityContext data)
     {
-        if (_tryGetGravityMethod == null || _gravitySumField == null)
-            return Vector3.Zero;
-        try
-        {
-            _invokeArgs2.SetValue(null, 0);
-            object boxedContext = data;
-            bool found = (bool)_tryGetGravityMethod.Invoke(boxedContext,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (!found || _invokeArgs2.GetValue(0) == null)
-                return Vector3.Zero;
-            return (Vector3)_gravitySumField.GetValue(_invokeArgs2.GetValue(0));
-        }
-        catch { return Vector3.Zero; }
+        return SafeTryGet<GravityEffectData>(data, out var g) ? g.GravitySum : Vector3.Zero;
     }
 
     /// <summary>
-    /// Initialize the ground raycast system.
-    /// Pass Scene (entity.Scene) — Session is extracted from Scene.UserObject.
-    /// Resolves IPhysics.CastRayAsync for terrain-based ground distance.
+    /// Resolve IPhysics for the ground/forward probes. Session services are reachable via the
+    /// public GameEntityExtensions helpers, so this no longer walks Scene.UserObject ->
+    /// Session.EntitySerializer.TryResolveSessionService by reflection.
     /// </summary>
-    public static void InitGroundSystem(object scene)
+    public static void InitGroundSystem(Entity entity)
     {
         if (_groundSystemInitialized) return;
         _groundSystemInitialized = true;
 
         try
         {
-            // Get Session from Scene.UserObject
-            var userObjProp = scene.GetType().GetProperty("UserObject",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (userObjProp == null) return;
-            object session = userObjProp.GetValue(scene);
-            if (session == null) return;
-
-            // Resolve IPhysics via Session.EntitySerializer.TryResolveSessionService
-            var iPhysicsType = Type.GetType(
-                "Keen.VRage.Physics.IPhysics, VRage.Physics",
-                throwOnError: false);
-            if (iPhysicsType == null)
-            {
-                Log.Default?.Info("[AERO] PhysicsHack: IPhysics type not found");
-                return;
-            }
-
-            var entitySerProp = session.GetType().GetProperty("EntitySerializer",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (entitySerProp == null) return;
-            object entitySer = entitySerProp.GetValue(session);
-            if (entitySer == null) return;
-
-            var resolveMethod = entitySer.GetType().GetMethod("TryResolveSessionService",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (resolveMethod == null) return;
-
-            _invokeArgs2.SetValue(iPhysicsType, 0);
-            _physicsInstance = resolveMethod.Invoke(entitySer,
-                Unsafe.As<System.Array, object[]>(ref _invokeArgs2));
-            if (_physicsInstance == null)
-            {
-                Log.Default?.Info("[AERO] PhysicsHack: IPhysics not available in session");
-                return;
-            }
-
-            // Find CastRayAsync(in RayCastArgs, CollisionPreset) -> Task<Buffer<SweepQueryHit>>
-            foreach (var m in iPhysicsType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "CastRayAsync" && m.GetParameters().Length == 2)
-                {
-                    _castRayAsyncMethod = m;
-                    break;
-                }
-            }
-
-            if (_castRayAsyncMethod != null)
-                Log.Default?.Info("[AERO] PhysicsHack: IPhysics.CastRayAsync resolved");
-            else
-                Log.Default?.Info("[AERO] PhysicsHack: CastRayAsync not found");
+            _physics = entity?.GetSession()?.TryGet<IPhysics>();
+            Log.Default?.Info(_physics != null
+                ? "[AERO] Physics: IPhysics resolved for ray probes"
+                : "[AERO] Physics: IPhysics not available in session");
         }
         catch (Exception ex)
         {
-            Log.Default?.Info($"[AERO] PhysicsHack: Ground system init failed: {ex.Message}");
+            Log.Default?.Info($"[AERO] Physics: ground system init failed: {ex.Message}");
         }
+    }
+
+    // ── Async ray probe state ──
+    private const float GroundRayLength = 200f;
+    private static Task<Buffer<SweepQueryHit>> _pendingRay;
+    private static bool _rayInFlight;
+    private static float _lastGroundDist = -1f;
+    private static int _raycastCooldown;
+
+    private static Task<Buffer<SweepQueryHit>> _pendingFwd;
+    private static bool _fwdInFlight;
+    private static float _lastFwdDist = float.NaN;
+    private static float _lastFwdMaxDist;
+    private static int _fwdCooldown;
+
+    /// <summary>
+    /// Fire a ray and return the hit distance, or -1 for "completed, nothing hit".
+    /// Returns false while the cast is still in flight.
+    /// </summary>
+    private static bool TryHarvest(ref Task<Buffer<SweepQueryHit>> task, ref bool inFlight,
+                                   float rayLength, out float distance)
+    {
+        distance = -1f;
+        if (!inFlight) return false;
+        if (!task.TryGetResult(out var hits)) return false;
+
+        inFlight = false;
+        if (hits.Count > 0)
+            distance = (float)(hits[0].Fraction * rayLength);
+        hits.Dispose();
+        return true;
     }
 
     // ── Async raycast state ──
     private static object _pendingRayTask;   // Task<Buffer<SweepQueryHit>> in flight
-    private static float _lastGroundDist = -1f;
-    private static int _raycastCooldown;
     // Cached PropertyInfo for task/buffer result reading (resolved on first completed task)
     private static PropertyInfo _taskIsCompletedProp;
     private static PropertyInfo _taskResultProp;
@@ -1711,171 +529,107 @@ public static class PhysicsHack
     private static bool _taskPropsResolved;
 
     /// <summary>
-    /// Get ground distance via async physics raycast.
-    /// Fires a ray downward each N frames, returns cached result between shots.
+    /// Distance to ground along gravity, via an async physics ray. Fires every few frames and
+    /// returns the cached value in between. -1 means "no ground found".
     /// </summary>
     public static float GetGroundDistance(Vector3D worldPosition, Vector3 gravityDir)
     {
-        if (_physicsInstance == null || _castRayAsyncMethod == null)
-            return -1f;
+        if (_physics == null) return -1f;
 
-        // Check if pending raycast completed
-        if (_pendingRayTask != null)
+        if (TryHarvest(ref _pendingRay, ref _rayInFlight, GroundRayLength, out float d))
+            _lastGroundDist = d;
+
+        if (!_rayInFlight && --_raycastCooldown <= 0)
         {
-            try
-            {
-                // Resolve task PropertyInfos once on first result
-                if (!_taskPropsResolved)
-                {
-                    _taskPropsResolved = true;
-                    var taskType = _pendingRayTask.GetType();
-                    _taskIsCompletedProp = taskType.GetProperty("IsCompleted",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    _taskResultProp = taskType.GetProperty("Result",
-                        BindingFlags.Public | BindingFlags.Instance);
-                }
+            // Sample faster when close to the ground.
+            _raycastCooldown = (_lastGroundDist >= 0f && _lastGroundDist < 50f) ? 3 : 10;
 
-                if (_taskIsCompletedProp != null && (bool)_taskIsCompletedProp.GetValue(_pendingRayTask))
-                {
-                    if (_taskResultProp != null)
-                    {
-                        object buffer = _taskResultProp.GetValue(_pendingRayTask);
-
-                        // Resolve buffer PropertyInfos once
-                        if (_bufferCountProp == null && buffer != null)
-                        {
-                            var bufType = buffer.GetType();
-                            _bufferCountProp = bufType.GetProperty("Count",
-                                BindingFlags.Public | BindingFlags.Instance);
-                            _bufferIndexerProp = bufType.GetProperty("Item",
-                                BindingFlags.Public | BindingFlags.Instance);
-                        }
-
-                        int count = _bufferCountProp != null ? (int)_bufferCountProp.GetValue(buffer) : 0;
-
-                        if (count > 0 && _bufferIndexerProp != null)
-                        {
-                            _indexerArgs.SetValue(0, 0);
-                            object hit = _bufferIndexerProp.GetValue(buffer,
-                                Unsafe.As<System.Array, object[]>(ref _indexerArgs));
-                            if (hit != null && _hitFractionField != null)
-                            {
-                                float fraction = (float)_hitFractionField.GetValue(hit);
-                                _lastGroundDist = fraction * 200f; // maxDistance = 200m
-                            }
-                        }
-                        else
-                        {
-                            _lastGroundDist = -1f; // no hit
-                        }
-
-                        if (buffer is IDisposable disp)
-                            disp.Dispose();
-                    }
-                    _pendingRayTask = null;
-                }
-            }
-            catch
-            {
-                _lastGroundDist = -1f;
-                _pendingRayTask = null;
-            }
-        }
-
-        // Fire new raycast every ~10 frames (6Hz)
-        if (_pendingRayTask == null && --_raycastCooldown <= 0)
-        {
-            _raycastCooldown = _lastGroundDist >= 0f && _lastGroundDist < 50f ? 3 : 10;
-
-            float dirLen = gravityDir.Length();
-            if (dirLen < 0.01f) return _lastGroundDist;
-            Vector3 dir = gravityDir / dirLen;
+            float len = gravityDir.Length();
+            if (len < 0.01f) return _lastGroundDist;
 
             try
             {
-                // Create RayCastArgs
-                var argsType = Type.GetType(
-                    "Keen.VRage.Core.Game.GameSystems.Queries.RayCastArgs, VRage.Core.Game",
-                    throwOnError: false);
-                if (argsType == null) return _lastGroundDist;
-
-                object rayArgs = Activator.CreateInstance(argsType);
-                argsType.GetField("Position", BindingFlags.Public | BindingFlags.Instance)
-                    ?.SetValue(rayArgs, worldPosition);
-                argsType.GetField("Direction", BindingFlags.Public | BindingFlags.Instance)
-                    ?.SetValue(rayArgs, dir * 200f);
-
-                // Create CollisionPreset with ClosestHit (enum value 3)
-                var presetType = Type.GetType(
-                    "Keen.VRage.Physics.CollisionPreset, VRage.Physics",
-                    throwOnError: false);
-                var presetEnumType = Type.GetType(
-                    "Keen.VRage.Physics.CollisionPresetType, VRage.Physics",
-                    throwOnError: false);
-
-                object preset = Activator.CreateInstance(presetType);
-                if (presetEnumType != null)
-                {
-                    var typeField = presetType.GetField("Type",
-                        BindingFlags.Public | BindingFlags.Instance);
-                    typeField?.SetValue(preset, Enum.ToObject(presetEnumType, 3)); // ClosestHit
-                }
-
-                // Call CastRayAsync(in RayCastArgs, CollisionPreset)
-                var callArgs = Array.CreateInstance(typeof(object), 2);
-                callArgs.SetValue(rayArgs, 0);
-                callArgs.SetValue(preset, 1);
-                _pendingRayTask = _castRayAsyncMethod.Invoke(_physicsInstance,
-                    Unsafe.As<System.Array, object[]>(ref callArgs));
+                var args = new RayCastArgs(in worldPosition, gravityDir / len * GroundRayLength);
+                _pendingRay = _physics.CastRayAsync(in args, CollisionPreset.Closest);
+                _rayInFlight = true;
             }
             catch (Exception ex)
             {
-                Log.Default?.Info($"[AERO] Raycast fire failed: {ex.Message}");
+                Log.Default?.Info($"[AERO] Ground ray failed: {ex.Message}");
             }
         }
-
         return _lastGroundDist;
     }
 
+    /// <summary>
+    /// Distance to the nearest obstacle along fwdDir, via an async physics ray.
+    /// Returns -1 until the first cast completes; maxDist when the ray reaches nothing.
+    /// </summary>
+    public static float GetForwardDistance(Vector3D worldPosition, Vector3 fwdDir, float maxDist)
+    {
+        if (_physics == null) return -1f;
+
+        if (TryHarvest(ref _pendingFwd, ref _fwdInFlight, _lastFwdMaxDist, out float d))
+            _lastFwdDist = d < 0f ? _lastFwdMaxDist : d;   // clear path == full range
+
+        if (!_fwdInFlight && --_fwdCooldown <= 0)
+        {
+            _fwdCooldown = 6;
+            float len = fwdDir.Length();
+            if (len < 0.01f) return MapFwd();
+
+            _lastFwdMaxDist = maxDist;
+            try
+            {
+                var args = new RayCastArgs(in worldPosition, fwdDir / len * maxDist);
+                _pendingFwd = _physics.CastRayAsync(in args, CollisionPreset.Closest);
+                _fwdInFlight = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Default?.Info($"[AERO] Forward ray failed: {ex.Message}");
+            }
+        }
+        return MapFwd();
+    }
+
+    private static float MapFwd() => float.IsNaN(_lastFwdDist) ? -1f : _lastFwdDist;
+
     // ═══════════════════════════════════════════════════════════════
-    // Component iteration (bypasses broken tag-based TryGet)
-    // ImmutableArray<T> is banned (VRS1001) so we access via reflection.
+    // Component iteration -- REFLECTION HOLDOUT.
+    //
+    // Entity.Components is ImmutableArray<Component>, and the script analyzer rejects it:
+    //   VRS1001: The symbol System.Collections.Immutable.ImmutableArray<T> is banned for use
+    //   in scripts   (likewise .Length and .this[int])
+    // Verified empirically -- direct access does not compile in game. Entity.TryGet<T>() is
+    // public and typed, but the callers here drive lookup from a registry of runtime Types, so
+    // the generic form does not fit without restructuring them. Reflection stays until either
+    // the ban lifts or those callers move to generics.
     // ═══════════════════════════════════════════════════════════════
 
     private static FieldInfo _entityComponentsField;
     private static MethodInfo _immArrayLengthGetter;
     private static MethodInfo _immArrayIndexer;
     private static bool _componentAccessResolved;
-    // Pre-allocated args for indexer invocation (object[] is banned by VRS1001)
     private static System.Array _indexerArgs;
 
     private static void EnsureComponentAccessResolved()
     {
         if (_componentAccessResolved) return;
         _componentAccessResolved = true;
-
         try
         {
-            // Entity.Components is a public field of type ImmutableArray<Component>
             _entityComponentsField = typeof(Entity).GetField("Components",
                 BindingFlags.Public | BindingFlags.Instance);
+            if (_entityComponentsField == null) return;
 
-            if (_entityComponentsField != null)
-            {
-                var immArrayType = _entityComponentsField.FieldType;
-                _immArrayLengthGetter = immArrayType.GetProperty("Length",
-                    BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod();
-                // Item property (indexer) — named "Item" with int parameter
-                _immArrayIndexer = immArrayType.GetProperty("Item",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null, null, new Type[] { typeof(int) }, null)?.GetGetMethod();
-
-                // Pre-allocate args array via Array.CreateInstance to dodge VRS1001
-                _indexerArgs = Array.CreateInstance(typeof(object), 1);
-
-                Log.Default?.Info($"[AERO] ComponentAccess: field={_entityComponentsField != null} " +
-                    $"length={_immArrayLengthGetter != null} indexer={_immArrayIndexer != null}");
-            }
+            var immArrayType = _entityComponentsField.FieldType;
+            _immArrayLengthGetter = immArrayType.GetProperty("Length",
+                BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod();
+            _immArrayIndexer = immArrayType.GetProperty("Item",
+                BindingFlags.Public | BindingFlags.Instance,
+                null, null, new Type[] { typeof(int) }, null)?.GetGetMethod();
+            _indexerArgs = Array.CreateInstance(typeof(object), 1);
         }
         catch (Exception ex)
         {
@@ -1883,42 +637,42 @@ public static class PhysicsHack
         }
     }
 
-    /// <summary>
-    /// Get the number of components on an entity (via reflection).
-    /// </summary>
+    private static object ComponentAt(object componentsBox, int i)
+    {
+        _indexerArgs.SetValue(i, 0);
+        return _immArrayIndexer.Invoke(componentsBox, Unsafe.As<System.Array, object[]>(ref _indexerArgs));
+    }
+
+    private static bool TryGetComponents(Entity entity, out object box, out int length)
+    {
+        box = null;
+        length = 0;
+        if (entity == null) return false;
+        EnsureComponentAccessResolved();
+        if (_entityComponentsField == null || _immArrayLengthGetter == null || _immArrayIndexer == null)
+            return false;
+        box = _entityComponentsField.GetValue(entity);
+        length = (int)_immArrayLengthGetter.Invoke(box, null);
+        return true;
+    }
+
+    /// <summary>Number of components on an entity.</summary>
     public static int GetEntityComponentCount(Entity entity)
     {
-        if (entity == null) return 0;
-        EnsureComponentAccessResolved();
-        if (_entityComponentsField == null || _immArrayLengthGetter == null) return 0;
-        try
-        {
-            object componentsBox = _entityComponentsField.GetValue(entity);
-            return (int)_immArrayLengthGetter.Invoke(componentsBox, null);
-        }
+        try { return TryGetComponents(entity, out _, out int len) ? len : 0; }
         catch { return 0; }
     }
 
-    /// <summary>
-    /// Find a component on an entity by iterating Entity.Components and matching type.
-    /// Uses reflection to bypass VRS1001 ban on ImmutableArray and object[].
-    /// </summary>
+    /// <summary>First component assignable to componentType.</summary>
     public static Component FindComponentByType(Entity entity, Type componentType)
     {
-        if (entity == null || componentType == null) return null;
-        EnsureComponentAccessResolved();
-        if (_entityComponentsField == null || _immArrayLengthGetter == null || _immArrayIndexer == null)
-            return null;
-
+        if (componentType == null) return null;
         try
         {
-            object componentsBox = _entityComponentsField.GetValue(entity);
-            int length = (int)_immArrayLengthGetter.Invoke(componentsBox, null);
-            for (int i = 0; i < length; i++)
+            if (!TryGetComponents(entity, out var box, out int len)) return null;
+            for (int i = 0; i < len; i++)
             {
-                _indexerArgs.SetValue(i, 0);
-                var comp = _immArrayIndexer.Invoke(componentsBox,
-                    Unsafe.As<System.Array, object[]>(ref _indexerArgs));
+                var comp = ComponentAt(box, i);
                 if (comp != null && componentType.IsInstanceOfType(comp))
                     return (Component)comp;
             }
@@ -1927,26 +681,16 @@ public static class PhysicsHack
         return null;
     }
 
-    /// <summary>
-    /// Find ALL components on an entity matching a type.
-    /// </summary>
+    /// <summary>All components on an entity assignable to componentType.</summary>
     public static void FindComponentsByType(Entity entity, Type componentType, List<Component> results)
     {
-        results.Clear();
-        if (entity == null || componentType == null) return;
-        EnsureComponentAccessResolved();
-        if (_entityComponentsField == null || _immArrayLengthGetter == null || _immArrayIndexer == null)
-            return;
-
+        if (componentType == null || results == null) return;
         try
         {
-            object componentsBox = _entityComponentsField.GetValue(entity);
-            int length = (int)_immArrayLengthGetter.Invoke(componentsBox, null);
-            for (int i = 0; i < length; i++)
+            if (!TryGetComponents(entity, out var box, out int len)) return;
+            for (int i = 0; i < len; i++)
             {
-                _indexerArgs.SetValue(i, 0);
-                var comp = _immArrayIndexer.Invoke(componentsBox,
-                    Unsafe.As<System.Array, object[]>(ref _indexerArgs));
+                var comp = ComponentAt(box, i);
                 if (comp != null && componentType.IsInstanceOfType(comp))
                     results.Add((Component)comp);
             }
@@ -1954,39 +698,17 @@ public static class PhysicsHack
         catch { }
     }
 
-    /// <summary>
-    /// Log all component types on an entity (diagnostic).
-    /// </summary>
+    /// <summary>Dump an entity's component type names (diagnostics).</summary>
     public static void LogEntityComponents(Entity entity, string label)
     {
-        if (entity == null)
-        {
-            Log.Default?.Info($"[AERO] {label}: entity is null");
-            return;
-        }
-        EnsureComponentAccessResolved();
-        if (_entityComponentsField == null || _immArrayLengthGetter == null || _immArrayIndexer == null)
-        {
-            Log.Default?.Info($"[AERO] {label}: component access not resolved");
-            return;
-        }
-
         try
         {
-            object componentsBox = _entityComponentsField.GetValue(entity);
-            int length = (int)_immArrayLengthGetter.Invoke(componentsBox, null);
-            Log.Default?.Info($"[AERO] {label}: {length} components, DEntity={entity.DEntity}");
-            for (int i = 0; i < length; i++)
-            {
-                _indexerArgs.SetValue(i, 0);
-                var comp = _immArrayIndexer.Invoke(componentsBox,
-                    Unsafe.As<System.Array, object[]>(ref _indexerArgs));
-                Log.Default?.Info($"[AERO]   [{i}] {comp?.GetType().FullName ?? "(null)"}");
-            }
+            if (!TryGetComponents(entity, out var box, out int len)) return;
+            Log.Default?.Info($"[AERO] {label}: {len} components");
+            for (int i = 0; i < len; i++)
+                Log.Default?.Info($"[AERO]   {i}: {ComponentAt(box, i)?.GetType().Name}");
         }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] {label}: failed to enumerate: {ex.Message}");
-        }
+        catch { }
     }
+
 }
