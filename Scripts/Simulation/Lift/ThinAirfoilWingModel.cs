@@ -191,6 +191,10 @@ public class ThinAirfoilWingModel : IWingLiftModel
 
             // CL via Kirchhoff stall model
             float cl;
+            // Pressure drag of separated flow: none attached; past stall it grows to a flat plate's (normal force
+            // 2 sin a: drag 2 sin^2 a), with the same blend as the lift. (The wing owns its skins - the face model
+            // leaves them out - so without it a stalled wing kept an L/D of 17 at 36 degrees.)
+            float cdSep = 0f;
             if (absAlpha <= w.AlphaStall)
             {
                 cl = w.CLAlpha * alpha;
@@ -206,6 +210,8 @@ public class ThinAirfoilWingModel : IWingLiftModel
                 float clFlatPlate = MathF.Sin(2f * alpha);
 
                 float blendToFlat = MathF.Min(1f, stallExcess * 0.5f);
+                float sinA = MathF.Sin(absAlpha);
+                cdSep = 2f * sinA * sinA * MathF.Max(blendToFlat, 1f - kirchhoffFactor);
                 cl = clAttached * kirchhoffFactor * (1f - blendToFlat) + clFlatPlate * blendToFlat;
             }
 
@@ -261,9 +267,11 @@ public class ThinAirfoilWingModel : IWingLiftModel
             }
             cdi *= groundFactor;
 
-            float totalCd = cdi + cd0;
+            float totalCd = cdi + cd0 + cdSep;
             float dragMag = q * w.PlanformArea * totalCd;
-            var inducedDrag = vHat * dragMag;
+            // (against the motion: vHat is the direction the wing moves - it pushed the wing forward before, ~95 kN
+            // of free thrust on the Jetliner, hidden by a drag floor)
+            var inducedDrag = -vHat * dragMag;
 
             // ── Center of pressure shift with AoA ──
             float absAlphaFrac = absAlpha / (MathF.PI * 0.5f);

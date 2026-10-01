@@ -158,10 +158,23 @@ public class DampedShadowedDragModel : IAeroDragModel
         _lastShadowVersion = -1;
     }
 
+    private List<bool> _excluded;
+    private int _excludedVersion = -1;
+
+    /// <summary>Faces another model owns (a wing's skins): left out of this one. For the surface version given only.</summary>
+    public void SetExcludedFaces(List<bool> excluded, int surfaceVersion)
+    {
+        _excluded = excluded;
+        _excludedVersion = surfaceVersion;
+        _lastShadowVersion = -1;   // re-bake with it
+    }
+
     private void BakeVisibility()
     {
         var visFactor = _shadowMap.VisibilityFactor;
         int visLen = visFactor.Count;
+        var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
+        int exLen = excl?.Count ?? 0;
 
         // SoA only contains hull faces — no manifold check needed
         for (int d = 0; d < 6; d++)
@@ -173,6 +186,7 @@ public class DampedShadowedDragModel : IAeroDragModel
                 int gi = start + j;
                 int oi = _origIndex[gi];
                 float v = oi >= 0 && oi < visLen ? visFactor[oi] : 1f;
+                if (oi >= 0 && oi < exLen && excl[oi]) v = 0f;
                 _visArea[gi] = _area[gi] * v;
             }
             for (int j = count; j < _dirPadded[d]; j++)

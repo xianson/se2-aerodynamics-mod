@@ -115,42 +115,61 @@ public class PrecomputedShadowMap : IShadowMap
         }
         _rebuildCursor = (_rebuildCursor + computed) % DirCount;
 
-        // Find nearest precomputed direction
+        // The 3 nearest precomputed directions, blended: each weighs by how much nearer than the 4th it is, so a
+        // direction joins and leaves the blend at zero weight and visibility moves continuously with the flow.
+        // (Snapping to the single nearest one made the faces' drag jump at every boundary between directions:
+        // the Jetliner's 25 -> 200 kN at 22.5 degrees angle of attack.)
         Vector3 flowDir = flowDirection / speed;
-        int best = FindNearest(flowDir);
-
-        if (best != _lastDirIndex || computed > 0)
+        int i0 = -1, i1 = -1, i2 = -1, i3 = -1; float d0 = -2, d1 = -2, d2 = -2, d3 = -2;
+        for (int i = 0; i < DirCount; i++)
         {
-            if (_hasData[best])
-            {
-                var src = _cache[best];
-                int visible = 0, shadowed = 0;
-                for (int i = 0; i < n; i++)
-                {
-                    float v = src[i];
-                    _visibilityFactor[i] = v;
-                    bool vis = v >= 0.5f;
-                    _visibility[i] = vis;
-                    if (vis) visible++; else shadowed++;
-                }
-                VisibleCount = visible;
-                ShadowedCount = shadowed;
-            }
-            else
-            {
-                for (int i = 0; i < n; i++)
-                {
-                    _visibility[i] = true;
-                    _visibilityFactor[i] = 1f;
-                }
-                VisibleCount = n;
-                ShadowedCount = 0;
-            }
-
-            _lastDirIndex = best;
-            Version++;
+            if (!_hasData[i]) continue;
+            float d = Vector3.Dot(flowDir, Directions[i]);
+            if (d > d0) { i3 = i2; d3 = d2; i2 = i1; d2 = d1; i1 = i0; d1 = d0; i0 = i; d0 = d; }
+            else if (d > d1) { i3 = i2; d3 = d2; i2 = i1; d2 = d1; i1 = i; d1 = d; }
+            else if (d > d2) { i3 = i2; d3 = d2; i2 = i; d2 = d; }
+            else if (d > d3) { i3 = i; d3 = d; }
         }
+        if (i0 < 0)
+        {
+            if (_lastDirIndex != -2)
+            {
+                for (int i = 0; i < n; i++) { _visibility[i] = true; _visibilityFactor[i] = 1f; }
+                VisibleCount = n; ShadowedCount = 0;
+                _lastDirIndex = -2; Version++;
+            }
+            return;
+        }
+        float floor = i3 >= 0 ? d3 : (i2 >= 0 ? d2 - 1e-3f : (i1 >= 0 ? d1 - 1e-3f : d0 - 1f));
+        float w0 = d0 - floor, w1 = i1 >= 0 ? MathF.Max(0f, d1 - floor) : 0f, w2 = i2 >= 0 ? MathF.Max(0f, d2 - floor) : 0f;
+        float sum = w0 + w1 + w2;
+        if (sum <= 1e-6f) { w0 = 1f; w1 = w2 = 0f; sum = 1f; }
+        w0 /= sum; w1 /= sum; w2 /= sum;
+        bool changed = computed > 0 || i0 != _b0 || i1 != _b1 || i2 != _b2
+            || MathF.Abs(w0 - _w0) > 0.03f || MathF.Abs(w1 - _w1) > 0.03f || MathF.Abs(w2 - _w2) > 0.03f;
+        if (!changed) return;
+        _b0 = i0; _b1 = i1; _b2 = i2; _w0 = w0; _w1 = w1; _w2 = w2;
+        var c0 = _cache[i0];
+        var c1 = w1 > 0f ? _cache[i1] : null;
+        var c2 = w2 > 0f ? _cache[i2] : null;
+        int vis = 0;
+        for (int i = 0; i < n; i++)
+        {
+            float v = w0 * c0[i];
+            if (c1 != null) v += w1 * c1[i];
+            if (c2 != null) v += w2 * c2[i];
+            _visibilityFactor[i] = v;
+            bool b = v >= 0.5f;
+            _visibility[i] = b;
+            if (b) vis++;
+        }
+        VisibleCount = vis; ShadowedCount = n - vis;
+        _lastDirIndex = i0;
+        Version++;
     }
+
+    private int _b0 = -1, _b1 = -1, _b2 = -1;
+    private float _w0, _w1, _w2;
 
     /// <summary>
     /// All 26 directions at once, for a surface not in use yet (a background rebuild: the map is swapped in with
@@ -169,7 +188,7 @@ public class PrecomputedShadowMap : IShadowMap
             _hasData[d] = true;
         }
         _rebuildCursor = 0;
-        _lastDirIndex = -1;
+        _lastDirIndex = -1; _b0 = _b1 = _b2 = -1;
         EnsureLists(_faceCount);
     }
 

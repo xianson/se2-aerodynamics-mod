@@ -86,6 +86,9 @@ public class LiftingSurfaceModel : IAeroDragModel
         Detector.Invalidate();
     }
 
+    /// <summary>The last drag split (N, along the velocity): faces, wings (incl. pressure removed), floor added.</summary>
+    public float LastInnerDrag, LastWingsDrag, LastFloorAdd;
+
     public AeroResult Compute(in AeroContext ctx)
     {
         var inner = InnerModel.Compute(ctx);
@@ -129,53 +132,25 @@ public class LiftingSurfaceModel : IAeroDragModel
             var wf = wingForces[i];
             var wing = _wings[i];
 
-            float cosAlpha = Vector3.Dot(vHat, wing.Normal);
-            if (cosAlpha > 0.01f)
-            {
-                float cp = innerCdBluff * cosAlpha;
-
-                if (innerStreamlining > 0f)
-                {
-                    float recovery = cosAlpha * cosAlpha;
-                    float minFraction = 0.08f;
-                    float factor = minFraction + (1f - minFraction) * recovery;
-                    cp *= 1f - innerStreamlining * (1f - factor);
-                }
-
-                var pressureForce = wing.Normal * (-cp * qf * wing.PlanformArea);
-
-                totalForce -= pressureForce;
-                totalTorque -= Vector3.Cross(wing.Centroid - ctx.CenterOfMass, pressureForce);
-            }
+            // The wing owns its skins (both: the face model leaves them out, ExcludeWingFaces): their drag is
+            // skin friction on both sides, here, besides the induced drag.
+            var profileDrag = -vHat * (2f * innerCfSkin * qf * wing.PlanformArea);
+            totalForce += profileDrag;
+            totalTorque += Vector3.Cross(wing.Centroid - ctx.CenterOfMass, profileDrag);
 
             var wingTotalForce = wf.LiftForce + wf.InducedDrag;
             totalForce += wingTotalForce;
             totalTorque += Vector3.Cross(wf.ApplicationPoint - ctx.CenterOfMass, wingTotalForce);
         }
 
-        // ── Drag floor ──
-        float wingDragFloor = 0;
-        for (int i = 0; i < wingForces.Count; i++)
-        {
-            var wf = wingForces[i];
-            wingDragFloor += wf.InducedDrag.Length();
-        }
-        float faceCount = ctx.SurfaceCache.FaceCount;
-        float avgFaceArea = inner.FrontalArea > 0 && faceCount > 0
-            ? inner.FrontalArea * 4f
-            : faceCount * ctx.BlockSize * ctx.BlockSize * 0.5f;
-        wingDragFloor += qf * avgFaceArea * innerCfSkin;
+        // (No drag floor: it made up for the estimated skin pressure removed above - up to 850 kN on the
+        // Jetliner, switching on and off. The wing's skins are now left out of the face model exactly.)
+        float forceDotV0 = Vector3.Dot(totalForce, vHat);
+        LastInnerDrag = -Vector3.Dot(inner.Force, vHat);
+        LastWingsDrag = -forceDotV0 - LastInnerDrag;
+        LastFloorAdd = 0f;
 
-        float forceDotV = Vector3.Dot(totalForce, vHat);
-        float dragAlongV = -forceDotV;
-        if (dragAlongV < wingDragFloor)
-        {
-            float addDrag = wingDragFloor - dragAlongV;
-            totalForce -= vHat * addDrag;
-        }
-
-        // Recompute after floor
-        forceDotV = Vector3.Dot(totalForce, vHat);
+        float forceDotV = forceDotV0;
         Vector3 liftVec = totalForce - forceDotV * vHat;
 
         AeroStats.SetLift(AeroStats.ElapsedUs(liftStart));
@@ -220,10 +195,19 @@ public class LiftingSurfaceModel : IAeroDragModel
             {
                 var wing = _wings[wi];
                 int dir = NormalToDir(wing.Normal);
+                int opp = dir ^ 1;
+                var step = DirStep(dir);
                 foreach (var cell in wing.Cells)
                 {
                     int fi = surface.GetFaceIndex(cell, dir);
                     if (fi >= 0) _faceOwnerIdx[fi] = wi;
+                    // the other skin: through the wing's thickness, the first face the other way
+                    var c = cell;
+                    for (int k = 0; k < MaxSkinDepthCells; k++, c -= step)
+                    {
+                        int fo = surface.GetFaceIndex(c, opp);
+                        if (fo >= 0) { _faceOwnerIdx[fo] = wi; break; }
+                    }
                 }
             }
         }
@@ -359,6 +343,28 @@ public class LiftingSurfaceModel : IAeroDragModel
             }
         }
     }
+
+    /// <summary>How deep (cells) the other skin is looked for under a wing's skin: 4 m.</summary>
+    private const int MaxSkinDepthCells = 16;
+
+    private static Vector3I DirStep(int dir) => dir switch
+    {
+        0 => new Vector3I(1, 0, 0), 1 => new Vector3I(-1, 0, 0),
+        2 => new Vector3I(0, 1, 0), 3 => new Vector3I(0, -1, 0),
+        4 => new Vector3I(0, 0, 1), _ => new Vector3I(0, 0, -1),
+    };
+
+    /// <summary>The faces the wings own (both skins), for the face model to leave out, and the surface version
+    /// they index.</summary>
+    public void ExcludeWingFaces(DampedShadowedDragModel dsm, int surfaceVersion)
+    {
+        if (_faceOwnerIdx == null) { dsm.SetExcludedFaces(null, surfaceVersion); return; }
+        var mask = _wingFaceMask ??= new List<bool>();
+        mask.Clear();
+        for (int i = 0; i < _faceOwnerIdx.Count; i++) { int o = _faceOwnerIdx[i]; mask.Add(o >= 0 && o < _wingCount); }
+        dsm.SetExcludedFaces(mask, surfaceVersion);
+    }
+    private List<bool> _wingFaceMask;
 
     private static int NormalToDir(Vector3 n)
     {

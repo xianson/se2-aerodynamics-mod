@@ -150,17 +150,19 @@ public partial class AeroGridComponent : Component, IInSceneListener
         {
             target = tc.TargetOrientation; _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
         }
-        if (Data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f)
+        if ((Data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f)
+            || (Data.TryGet<ControlData>(out var cd) && cd.Rotation.LengthSquared() > 1e-4f))
         {
             _rcsHoldValid = false; mode = "rate input"; return false;
         }
         if (Data.Has<DampeningData>())
         {
             if (!_rcsHoldValid) { _rcsHold = wt.Orientation; _rcsHoldValid = true; _holdStall = 0; }
-            // A hold the ship cannot reach (resting on terrain, wedged): off by over 2 degrees yet barely turning for 3 s,
-            // it takes the orientation it rests in, instead of pushing the ground forever.
+            // A hold the ship cannot reach (resting on terrain, wedged): off by over 2 degrees yet barely turning or
+            // moving for 3 s, it takes the orientation it rests in, instead of pushing the ground forever. (Not in flight:
+            // a flying ship slowly losing to the air re-anchored every 3 s, and the hold ratcheted away with it.)
             float errAngle = 2f * MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(wt.Orientation, _rcsHold)), 0f, 1f));
-            if (errAngle > 0.035f && LastAngVel.Length() < 0.01f) { if (++_holdStall > 180) { _rcsHold = wt.Orientation; _holdStall = 0; } }
+            if (errAngle > 0.035f && LastAngVel.Length() < 0.01f && LastSpeed < 1f) { if (++_holdStall > 180) { _rcsHold = wt.Orientation; _holdStall = 0; } }
             else _holdStall = 0;
             target = _rcsHold; mode = "hold"; return true;
         }
@@ -522,6 +524,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_faceOverridesDirty && _surface != null)
         {
             _model.BuildFaceOverrideIndex(_surface, _components.Components);
+            if (_model.InnerModel is DampedShadowedDragModel dsmEx) _model.ExcludeWingFaces(dsmEx, _surface.Version);
             _faceOverridesDirty = false;
         }
         if (_model.InnerModel is DampedShadowedDragModel dsmCp)

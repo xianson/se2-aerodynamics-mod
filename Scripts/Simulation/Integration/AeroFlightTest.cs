@@ -43,28 +43,52 @@ public partial class AeroGridComponent
         public static bool Enabled = false;
 
         public const float TargetAltitude = 1500f;  // metres of ground clearance to start from
-        public const float EntrySpeed = 120f;       // m/s at entry -- comfortably flying, not stalled
+        public const float EntrySpeed = 200f;       // m/s at entry (the Jetliner, 261 t on 200 m2 of wing, needs ~200-260 in Verdure's thin air)
+        private const float EntryPitchDeg = 3f;     // nose above the horizon at entry: some angle of attack to cruise on
 
         private const int CruiseEnd = 600;          // 10 s
         private const int ClimbEnd = 1200;          // 20 s
         private const int GlideEnd = 2400;          // 40 s
+        private const float PitchRate = 0.1f;
+        // The aircraft's own axes, grid-local (a grid's -Z is not its nose: the Jetliner's is +X, and the rig flew it
+        // sideways): the nose along the largest wing's chord, away from its aero centre (behind the CoM on a stable
+        // aircraft); up along its normal, as it sits; pitch-up rotation about nose x up. Without wings: -Z, +Y.
+        private static Vector3 _noseL = new Vector3(0f, 0f, -1f), _upL = new Vector3(0f, 1f, 0f);
+        private static Vector3 PitchAxisL => Vector3.Cross(_noseL, _upL);       // rad/s per unit of stick (0.5 stick: ~3 deg/s)
 
-        private static AeroGridComponent _subject;
+        private static AeroGridComponent _subject, _best;
+        private static int _bestScore;
+        private static long _choosingSince;
+        private static bool _warnedNone, _wasEnabled;
         private static int _frame = -1;
 
         public static void Tick(AeroGridComponent aero, WorldTransform wt)
         {
-            if (!Enabled) return;
+            if (!Enabled) { _wasEnabled = false; return; }
+            if (!_wasEnabled)
+            {
+                // switched on (again): start over, a fresh subject and profile
+                _wasEnabled = true;
+                _subject = null; _best = null; _bestScore = 0; _choosingSince = 0; _warnedNone = false; _frame = -1;
+            }
 
-            // Bind to the first grid that actually has aerodynamic surfaces to test.
+            // Bind to the grid with the most wings seen in the first 2 s (the first one found was arbitrary: in a
+            // world with an airliner and wrecks it could pick a wreck).
             if (_subject == null)
             {
                 int wings = aero._model?.Wings?.Count ?? 0;
                 int comps = aero._components?.Count ?? 0;
-                if (wings == 0 && comps == 0) return;
-                _subject = aero;
-                Log.Default?.Info($"[FLIGHT] subject bound: wings={wings} aeroComponents={comps} " +
-                                  $"faces={aero._surface?.FaceCount ?? 0}");
+                if (_choosingSince == 0) _choosingSince = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (wings + comps > _bestScore) { _bestScore = wings + comps; _best = aero; }
+                if (System.Diagnostics.Stopwatch.GetTimestamp() - _choosingSince < System.Diagnostics.Stopwatch.Frequency * 2) return;
+                if (_best == null)
+                {
+                    if (!_warnedNone) { _warnedNone = true; Log.Default?.Info($"[FLIGHT] no subject: no grid has wings or aero components (this grid: wings={wings} comps={comps} faces={aero._surface?.FaceCount ?? 0})"); }
+                    return;
+                }
+                _subject = _best;
+                Log.Default?.Info($"[FLIGHT] subject bound: '{_subject.Entity?.DebugName}' wings={_subject._model?.Wings?.Count ?? 0} " +
+                                  $"aeroComponents={_subject._components?.Count ?? 0} faces={_subject._surface?.FaceCount ?? 0} mass={_subject.LastMass:F0}");
             }
             if (!ReferenceEquals(aero, _subject)) return;
 
@@ -78,7 +102,10 @@ public partial class AeroGridComponent
             if (_frame > GlideEnd)
             {
                 if (_frame == GlideEnd + 1)
+                {
+                    aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = Vector3.Zero });
                     Log.Default?.Info("[FLIGHT] profile complete -- hands off");
+                }
                 return;
             }
 
@@ -90,12 +117,12 @@ public partial class AeroGridComponent
             if (_frame <= CruiseEnd)
             {
                 phase = "CRUISE";
-                movement = new Vector3(0f, 0f, -1f);
+                movement = _noseL;
             }
             else if (_frame <= ClimbEnd)
             {
                 phase = "CLIMB";
-                movement = new Vector3(0f, 0f, -1f);
+                movement = _noseL;
                 rotation = new Vector3(-0.5f, 0f, 0f);   // nose up
             }
             else
@@ -104,6 +131,9 @@ public partial class AeroGridComponent
             }
 
             PhysicsHack.TrySetControlData(aero.Entity, movement, rotation);
+            // The stick: the game's gyros steer an unpiloted grid to AngularControlData (grid-local rad/s, +X nose up),
+            // and a rate command releases the aero mod's attitude hold. (ControlData's Rotation alone steered nothing.)
+            aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * (-rotation.X * PitchRate) });
 
             if (_frame % 60 == 0)
                 Report(aero, wt, phase);
@@ -122,9 +152,10 @@ public partial class AeroGridComponent
             }
             Vector3 down = g / glen;
             Vector3 up = -down;
+            FindAxes(aero, wt, up);
 
             // Point along the horizontal part of wherever the nose already faces.
-            Vector3 nose = WorldTransform.TransformDirection(new Vector3(0f, 0f, -1f), wt);
+            Vector3 nose = WorldTransform.TransformDirection(_noseL, wt);
             Vector3 fwd = nose - up * Vector3.Dot(nose, up);
             if (fwd.LengthSquared() < 1e-4f)
             {
@@ -136,17 +167,45 @@ public partial class AeroGridComponent
 
             // Climb to test altitude. This is the ONLY teleport in the rig.
             float ground = aero.GroundHeight;
-            double raise = (ground >= 0f && ground < TargetAltitude) ? (TargetAltitude - ground) : 0.0;
+            // (unknown ground height - the probe has not reported yet - counts as on the ground)
+            double raise = ground < 0f ? TargetAltitude : ground < TargetAltitude ? TargetAltitude - ground : 0.0;
             Vector3D startPos = wt.Position + (Vector3D)(up * (float)raise);
 
-            PhysicsHack.TrySetOrientation(aero.Data, Quaternion.CreateFromForwardUp(fwd, up));
+            Vector3 velDir = fwd;
+            float ep = EntryPitchDeg * MathF.PI / 180f;
+            fwd = Vector3.Normalize(fwd * MathF.Cos(ep) + up * MathF.Sin(ep));
+            up = Vector3.Normalize(up - fwd * Vector3.Dot(up, fwd));
+            // The grid's own -Z and +Y, where its nose goes to fwd and its up to up.
+            Vector3 sideL = Vector3.Cross(_noseL, _upL), sideW = Vector3.Cross(fwd, up);
+            Vector3 ToWorld(Vector3 l) => fwd * Vector3.Dot(l, _noseL) + up * Vector3.Dot(l, _upL) + sideW * Vector3.Dot(l, sideL);
+            PhysicsHack.TrySetOrientation(aero.Data, Quaternion.CreateFromForwardUp(ToWorld(new Vector3(0f, 0f, -1f)), ToWorld(new Vector3(0f, 1f, 0f))));
             PhysicsHack.TrySetPosition(aero.Data, startPos);
-            PhysicsHack.TrySetVelocity(aero.Data, fwd * EntrySpeed, Vector3.Zero);
+            PhysicsHack.TrySetVelocity(aero.Data, velDir * EntrySpeed, Vector3.Zero);
 
 
-            PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out _);
+            PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
+            var wl = aero._model?.Wings;
+            if (wl != null)
+                foreach (var w in wl)
+                    Log.Default?.Info($"[FLIGHT] {w} normal={w.Normal} span axis={w.SpanAxis} aero centre - CoM={w.AeroCenter - com} (CoM {com})");
             Log.Default?.Info($"[FLIGHT] SETUP raise={raise:F0}m entry={EntrySpeed:F0}m/s mass={mass:F0}kg " +
                               $"groundBefore={ground:F0}");
+        }
+
+        private static void FindAxes(AeroGridComponent aero, in WorldTransform wt, Vector3 worldUp)
+        {
+            _noseL = new Vector3(0f, 0f, -1f); _upL = new Vector3(0f, 1f, 0f);
+            var wl = aero._model?.Wings;
+            if (wl == null || wl.Count == 0) return;
+            var w = wl[0];
+            foreach (var x in wl) if (x.PlanformArea > w.PlanformArea) w = x;
+            PhysicsHack.TryGetMassProperties(aero.Data, out _, out Vector3 com);
+            Vector3 up = Vector3.Normalize(w.Normal);
+            if (Vector3.Dot(up, WorldTransform.TransformDirectionInv(worldUp, wt)) < 0f) up = -up;
+            Vector3 chord = Vector3.Normalize(Vector3.Cross(w.SpanAxis, up));
+            if (Vector3.Dot(w.AeroCenter - com, chord) > 0f) chord = -chord;
+            _noseL = chord; _upL = up;
+            Log.Default?.Info($"[FLIGHT] axes: nose {_noseL} up {_upL} (from the largest wing)");
         }
 
         private static void Report(AeroGridComponent aero, WorldTransform wt, string phase)
@@ -162,7 +221,7 @@ public partial class AeroGridComponent
             float vs = Vector3.Dot(vel, up);
 
             // Angle of attack: angle between the flight path and the wing chord line (nose).
-            Vector3 nose = WorldTransform.TransformDirection(new Vector3(0f, 0f, -1f), wt);
+            Vector3 nose = WorldTransform.TransformDirection(_noseL, wt);
             float aoa = 0f;
             if (speed > 1f)
             {
@@ -177,15 +236,18 @@ public partial class AeroGridComponent
             float pitch = (float)(Math.Asin(Math.Clamp(Vector3.Dot(nose, up), -1f, 1f)) * 180.0 / Math.PI);
 
             float lift = aero.HasResult ? aero.LastResult.LiftMagnitude : 0f;
-            float drag = aero.HasResult ? aero.LastResult.DragMagnitude : 0f;
-            float ld = drag > 1f ? lift / drag : 0f;
+            // signed (the result's DragMagnitude is an absolute value: it hid the wings pushing forward)
+            float drag = aero.HasResult ? (aero._model is LiftingSurfaceModel lms ? lms.LastInnerDrag + lms.LastWingsDrag : aero.LastResult.DragMagnitude) : 0f;
+            float ld = MathF.Abs(drag) > 1f ? lift / drag : 0f;
             double mach = aero.HasResult ? aero.LastResult.Mach : 0.0;
             double q = aero.HasResult ? aero.LastResult.DynamicPressure : 0.0;
 
             Log.Default?.Info(
                 $"[FLIGHT] t={_frame / 60,3}s {phase,-6} spd={speed,6:F1} vs={vs,7:F1} alt={aero.GroundHeight,7:F0} " +
                 $"aoa={aoa,6:F1} pitch={pitch,6:F1} lift={lift,9:F0} drag={drag,9:F0} L/D={ld,5:F2} " +
-                $"M={mach,4:F2} q={q,8:F0} angV={angVel.Length(),5:F2}");
+                $"M={mach,4:F2} q={q,8:F0} angV={angVel.Length(),5:F2}" +
+                (aero._model is LiftingSurfaceModel lm ? $" | faceD={lm.LastInnerDrag:F0} wingD={lm.LastWingsDrag:F0} floor={lm.LastFloorAdd:F0}" : "") +
+                $" wings={aero._model?.Wings?.Count ?? 0} faces={aero._surface?.FaceCount ?? 0} rebuild={aero.Rebuilding}");
         }
     }
 }
