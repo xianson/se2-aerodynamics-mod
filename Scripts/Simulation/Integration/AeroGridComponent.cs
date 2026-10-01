@@ -187,9 +187,33 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal int _clearedOverride;
     private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>
-    internal int FacesNow => _surface?.FaceCount ?? -1;
+    internal int FacesNow => _surface?.FaceCount > 0 ? _surface.FaceCount : _lastFaces;
+    private int _lastFaces;
     internal bool Rebuilding => _staggeredBuildActive;
     internal bool UsesTable => _model?.UsedTable ?? false;
+
+    /// <summary>In a planet's gravity (set by the job): a grid there may meet air soon, so it is built beforehand.</summary>
+    internal bool InGravity;
+
+    /// <summary>Static grids (stations) never move: no aero.</summary>
+    internal bool IsStatic => !Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) || mp.InvMass <= 0f;
+
+    /// <summary>Rebuild order (AeroScheduler): grids without forces yet first, then piloted, then by speed in air.</summary>
+    internal float BuildPriority =>
+        (_model?.Table == null ? 1000f : 0f) + (Data.Has<TargetControlData>() ? 500f : 0f) + (LastDensity > 0f ? MathF.Min(LastSpeed, 300f) : 0f);
+
+    /// <summary>Recompute the forces every how many frames (the last ones are applied between): piloted or fast
+    /// grids every frame, slower ones every 2nd or 4th - many grids cost proportionally less.</summary>
+    internal int ComputeInterval => Data.Has<TargetControlData>() || LastSpeed >= 80f ? 1 : LastSpeed >= 20f ? 2 : 4;
+    internal int LodPhase = System.Threading.Interlocked.Increment(ref _lodSeed) & 3;
+    private static int _lodSeed;
+
+    /// <summary>Between recomputes: the scheduler still ticks and the attitude hold still runs.</summary>
+    internal void SkipCompute(WorldTransform wt, Vector3 angularVelocity)
+    {
+        UpdateAttitudeHold(wt, angularVelocity);
+        AeroScheduler.EnsureTicked();
+    }
     internal string ShadowNote => _model?.InnerModel is DampedShadowedDragModel d ? $"shadow visible={d.ShadowMap.VisibleCount} shadowed={d.ShadowMap.ShadowedCount}" : "";
     internal bool HasResult;
 
@@ -386,6 +410,19 @@ public partial class AeroGridComponent : Component, IInSceneListener
         AeroScheduler.EnsureTicked();
         AeroCost.Sched.Stop(tsc);
 
+        // A grid's first build is queued even parked or out of the air (behind those that fly - BuildPriority):
+        // it used to wait until the grid moved in air, which then flew without aero for the length of a build.
+        if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && (density > 0f || InGravity) && !IsStatic)
+        {
+            if (_blockSize <= 0) _blockSize = DetectBlockSize();
+            _gridAccessor.SetOctree(_octree);
+            AeroScheduler.EnqueueRebuild(this);
+            _fullRebuildNeeded = false;
+            _pendingAddedCells.Clear();
+            _pendingRemovedCells.Clear();
+            _dirty = false;
+        }
+
         if (density < AeroConfig.MinDensity) return;
 
         float speed = linearVelocity.Length();
@@ -503,8 +540,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
         AeroStats.SetWing(AeroStats.ElapsedUs(wingStart));
 
-        // ── Force computation (always uses _surface, even during staggered build) ──
-        if (_surface.FaceCount == 0) return;
+        // ── Force computation (the force table; else the surface, even during staggered build) ──
+        // (a big grid's surface is let go once its table is in: the table alone carries it)
+        if (_surface.FaceCount == 0 && _model?.Table == null) return;
 
         Vector3 localLinVel = WorldTransform.TransformDirectionInv(linearVelocity, wt);
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, wt);
@@ -1236,6 +1274,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
                     if (_model.InnerModel is DampedShadowedDragModel pdsm)
                         foreach (var (n, p, area) in _patchLog) pdsm.AddPatch(_builtTable, n, p, area);
                     _model.InstallForceTable(_builtTable);
+                    // a big grid flies on its table: its surfaces and per-face arrays go (~30 MB for Red Ship; damage
+                    // rebuilds it whole anyway)
+                    if (_cellScale > 1 || _surface.FaceCount > BigSurfaceFaces)
+                    {
+                        _lastFaces = _surface.FaceCount;
+                        _surface.ReleaseAll(); _buildSurface.ReleaseAll();
+                        if (_model.InnerModel is DampedShadowedDragModel rdsm) rdsm.ReleaseFaces();
+                        _spareShadow = null;
+                    }
                 }
                 _patchLog.Clear();
                 _builtTable = null;

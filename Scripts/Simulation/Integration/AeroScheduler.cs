@@ -56,8 +56,10 @@ public static class AeroScheduler
         // Promote queued grids into active slots
         while (_activeRebuilds.Count < AeroConfig.MaxConcurrentRebuilds && _rebuildQueue.Count > 0)
         {
-            var grid = _rebuildQueue[0];
-            _rebuildQueue.RemoveAt(0);
+            int best = 0; float bp = float.MinValue;
+            for (int q = 0; q < _rebuildQueue.Count; q++) { float p = _rebuildQueue[q].BuildPriority; if (p > bp) { bp = p; best = q; } }
+            var grid = _rebuildQueue[best];
+            _rebuildQueue.RemoveAt(best);
             grid.BeginStaggeredBuild();
             _activeRebuilds.Add(grid);
         }

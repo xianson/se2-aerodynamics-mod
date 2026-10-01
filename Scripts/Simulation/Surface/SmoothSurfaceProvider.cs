@@ -218,6 +218,18 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         if (_rawFaceKeys.Count > ReleaseAboveFaces) ReleaseScratch();
     }
 
+    /// <summary>Everything let go (a big grid flies on its force table between rebuilds; the next build starts
+    /// from the pooled build tables).</summary>
+    public void ReleaseAll()
+    {
+        Clear();
+        if (!_released) ReleaseScratch();
+        _faces.Clear(); _faces.TrimExcess(); _groups.Clear(); _groups.TrimExcess();
+        _rawFaceKeys.TrimExcess(); _rawFaceDirs.TrimExcess(); _faceIndex.TrimExcess();
+        _stagingStore = null;
+        Version++;
+    }
+
     private void RecycleForBuild()
     {
         _vertexDirWeights.Clear();

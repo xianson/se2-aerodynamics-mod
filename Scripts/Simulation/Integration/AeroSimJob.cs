@@ -72,6 +72,7 @@ public partial class AeroGridComponent
             PhysicsHack.InitGroundSystem(aero.Entity);
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
+        aero.InGravity = gravity.LengthSquared() > 1e-4f;
         aero.GroundHeight = PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity);
 
         // ── Cache physics state for draw job ──
@@ -124,7 +125,11 @@ public partial class AeroGridComponent
 
         // ── Aero computation ──
         long tco = AeroCost.Start();
-        aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+        int every = aero.ComputeInterval;
+        if (every <= 1 || !aero.HasResult || ((aero._simFrameCount + aero.LodPhase) % every) == 0)
+            aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+        else
+            aero.SkipCompute(wt, angVel);   // (the last forces, in the grid's frame, are applied again below)
         AeroCost.Compute.Stop(tco);
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)

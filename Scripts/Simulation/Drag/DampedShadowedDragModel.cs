@@ -260,6 +260,16 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// as Compute sums them. The rotation response comes from Compute itself (finite differences), on a coarser map.
     /// Not thread-safe with Compute on the same model: build it on a model of its own (the background build does).
     /// </summary>
+    /// <summary>The per-face arrays let go (a big grid flies on its force table; the face loop - only without a
+    /// table - rebuilds them if ever needed).</summary>
+    public void ReleaseFaces()
+    {
+        foreach (var l in new List<List<float>> { _px, _py, _pz, _nx, _ny, _nz, _area, _visArea, _cpGrouped, _cpOut }) { l.Clear(); l.TrimExcess(); }
+        _origIndex.Clear(); _origIndex.TrimExcess();
+        _faceCount = 0; _lastSurfaceVersion = -1; _lastShadowVersion = -1;
+        _work0.Vis = System.Array.Empty<float>(); _work0.Z = System.Array.Empty<float>();
+    }
+
     /// <summary>Workers for one force table (the directions are independent).</summary>
     public static int TableThreads = 3;
 
