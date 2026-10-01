@@ -132,7 +132,7 @@ public static class PhysicsHack
     /// The lookup is now a direct DefinitionManager.GetConfiguration&lt;T&gt;() call; only the
     /// private property setters still need reflection (see EngineOverrides).
     /// </summary>
-    public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f)
+    public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f, bool apply = true)
     {
         if (_gravityFixed) return;
         _gravityFixed = true;
@@ -160,6 +160,9 @@ public static class PhysicsHack
             // Building that cache needs the content builder, which is blocked on the stale Mod
             // SDK (see tools/SE2-UPDATE-RUNBOOK.md). Delete this once the cache builds.
             Log.Default?.Info($"[AERO] CONFIGPROBE before override: MaximumSpeedLinear={config.MaximumSpeedLinear} GravityMultiplier={config.GravityMultiplier} MaximumCharacterSpeedLinear={config.MaximumCharacterSpeedLinear}");
+            // (2026-10-01: the cache builds now - D:ero	oolsuild_mod_content.py - and the probe reads the
+            // mod's 1000 / 1. Called with apply: false; the setters below are kept for a world without it.)
+            if (!apply) return;
 
             bool speedOk = EngineOverrides.TrySetConfigProperty(config, "MaximumSpeedLinear", targetSpeed);
             bool gravOk = EngineOverrides.TrySetConfigProperty(config, "GravityMultiplier", targetGravity);

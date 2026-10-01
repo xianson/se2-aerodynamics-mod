@@ -23,11 +23,10 @@ public partial class AeroGridComponent
     {
         if (_physicsFixed) return;
 
-        // Uncap speed via VelocityLimitProvider
-        PhysicsHack.UncapSpeed(vlp, 99999f);
-
-        // Override PhysicsSessionConfiguration: uncap MaximumSpeedLinear, set GravityMultiplier
-        PhysicsHack.TryFixGravity(targetGravity: 1f, targetSpeed: 99999f);
+        // The mod's PhysicsSessionConfiguration loads now (its contentcache is built, 2026-10-01): 1000 m/s and
+        // gravity 1 come from the definition, and 1000 is the cap the Orbital Mod's reentry is built on. So no
+        // override any more (it set 99999 by reflection); only the probe, to see what the world runs with.
+        PhysicsHack.TryFixGravity(apply: false);
 
         _physicsFixed = true;
     }
