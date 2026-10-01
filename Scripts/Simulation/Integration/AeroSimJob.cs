@@ -55,7 +55,7 @@ public partial class AeroGridComponent
             PhysicsHack.InitGroundSystem(aero.Entity);
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
-        aero.GroundHeight = PhysicsHack.GetGroundDistance(wt.Position, gravity);
+        aero.GroundHeight = PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity);
 
         // ── Cache physics state for draw job ──
         aero.LastLinVel = linVel;

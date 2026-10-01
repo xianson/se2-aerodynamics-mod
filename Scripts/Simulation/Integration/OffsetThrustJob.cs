@@ -66,6 +66,11 @@ public static class OffsetThrustJob
 
     // ── Per-thruster trace logging ──
     private static int _traceGridHash;
+    /// <summary>
+    /// The thrust diagnostics: the per-frame [AERO-TRACE] of a big grid's thrusters, the [AERO-THR] dump and
+    /// [AERO-HOLD]. Off: on, they wrote ~100 lines a second into the game's log in ordinary play.
+    /// </summary>
+    public static bool Verbose = false;
     private static int _traceIndex = -1;
     private static int _traceFrame;
     private static int _dampDiagCooldown;
@@ -129,8 +134,8 @@ public static class OffsetThrustJob
 
         // Auto-lock trace: skip first grid, lock onto second active grid
         int gridHash = thrusters.GetHashCode();
-        _traceActive = (_traceGridHash == gridHash);
-        if (!_traceActive && thrusters.Count >= 40 && _traceIndex < 0)
+        _traceActive = Verbose && (_traceGridHash == gridHash);
+        if (Verbose && !_traceActive && thrusters.Count >= 40 && _traceIndex < 0)
         {
             // Only lock if at least one thruster is actually firing
             bool hasActive = false;
@@ -357,7 +362,7 @@ public static class OffsetThrustJob
 
         // ── Throttled debug log ──
         _debugLogCooldown = Math.Max(0, _debugLogCooldown - 1);
-        if (_debugLogCooldown == 0)
+        if (Verbose && _debugLogCooldown == 0)
         {
             _debugLogCooldown = 120; // every 2 seconds
             for (int i = 0; i < debugStates.Count && i < thrusters.Count; i++)

@@ -507,11 +507,20 @@ public static class PhysicsHack
     }
 
     // ── Async ray probe state ──
-    private const float GroundRayLength = 200f;
-    private static Task<Buffer<SweepQueryHit>> _pendingRay;
-    private static bool _rayInFlight;
-    private static float _lastGroundDist = -1f;
-    private static int _raycastCooldown;
+    // 2 km (was 200 m: above it the probe said "no ground", so the flight rig never saw its altitude).
+    private const float GroundRayLength = 2000f;
+
+    /// <summary>
+    /// One grid's ground probe. Per grid: the probe was static, shared by every aero grid, so each grid's
+    /// result overwrote the others' (a parked grid's 0 m became a flying one's altitude).
+    /// </summary>
+    public sealed class GroundProbe
+    {
+        internal Task<Buffer<SweepQueryHit>> Pending;
+        internal bool InFlight;
+        internal float Last = -1f;
+        internal int Cooldown;
+    }
 
     private static Task<Buffer<SweepQueryHit>> _pendingFwd;
     private static bool _fwdInFlight;
@@ -550,33 +559,33 @@ public static class PhysicsHack
     /// Distance to ground along gravity, via an async physics ray. Fires every few frames and
     /// returns the cached value in between. -1 means "no ground found".
     /// </summary>
-    public static float GetGroundDistance(Vector3D worldPosition, Vector3 gravityDir)
+    public static float GetGroundDistance(GroundProbe probe, Vector3D worldPosition, Vector3 gravityDir)
     {
-        if (_physics == null) return -1f;
+        if (_physics == null || probe == null) return -1f;
 
-        if (TryHarvest(ref _pendingRay, ref _rayInFlight, GroundRayLength, out float d))
-            _lastGroundDist = d;
+        if (TryHarvest(ref probe.Pending, ref probe.InFlight, GroundRayLength, out float d))
+            probe.Last = d;
 
-        if (!_rayInFlight && --_raycastCooldown <= 0)
+        if (!probe.InFlight && --probe.Cooldown <= 0)
         {
             // Sample faster when close to the ground.
-            _raycastCooldown = (_lastGroundDist >= 0f && _lastGroundDist < 50f) ? 3 : 10;
+            probe.Cooldown = (probe.Last >= 0f && probe.Last < 50f) ? 3 : 10;
 
             float len = gravityDir.Length();
-            if (len < 0.01f) return _lastGroundDist;
+            if (len < 0.01f) return probe.Last;
 
             try
             {
                 var args = new RayCastArgs(in worldPosition, gravityDir / len * GroundRayLength);
-                _pendingRay = _physics.CastRayAsync(in args, CollisionPreset.Closest);
-                _rayInFlight = true;
+                probe.Pending = _physics.CastRayAsync(in args, CollisionPreset.Closest);
+                probe.InFlight = true;
             }
             catch (Exception ex)
             {
                 Log.Default?.Info($"[AERO] Ground ray failed: {ex.Message}");
             }
         }
-        return _lastGroundDist;
+        return probe.Last;
     }
 
     /// <summary>

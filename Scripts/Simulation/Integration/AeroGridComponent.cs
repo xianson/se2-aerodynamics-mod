@@ -84,6 +84,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // ── Ground effect ──
     /// <summary>Height above ground in meters. -1 = unknown.</summary>
     internal float GroundHeight = -1f;
+    internal readonly PhysicsHack.GroundProbe Ground = new PhysicsHack.GroundProbe();
 
     // ── Cached physics state (written by sim job @ 60Hz, read by draw job) ──
     internal Vector3 LastLinVel;
@@ -492,7 +493,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             Math.Clamp(attitudeCmd.Y, -HoldMax, HoldMax),
             Math.Clamp(attitudeCmd.Z, -HoldMax, HoldMax));
 
-        if (_simFrameCount % 120 == 0)
+        if (OffsetThrustJob.Verbose && _simFrameCount % 120 == 0)
             Log.Default?.Info($"[AERO-HOLD] euler=({eulerError.X:F4},{eulerError.Y:F4},{eulerError.Z:F4})" +
                 $" angVel=({localAngVel.X:F4},{localAngVel.Y:F4},{localAngVel.Z:F4})" +
                 $" cmd=({_lastGridAngVel.X:F4},{_lastGridAngVel.Y:F4},{_lastGridAngVel.Z:F4})");
