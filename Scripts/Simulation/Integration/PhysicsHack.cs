@@ -33,6 +33,33 @@ public static class PhysicsHack
     private static bool _available;
     private static bool _groundSystemInitialized;
     private static IPhysics _physics;
+    public static IPhysics Physics => _physics;
+
+    /// <summary>
+    /// A grid is a SUB-PART when something it is jointed to is heavier, or static (a thruster pod on a hinge, a
+    /// ship docked to a station): its orientation is the joint's, not its own to hold.
+    /// </summary>
+    public static bool IsSubPart(Entity grid, float myMass)
+    {
+        var phys = _physics;
+        if (phys == null || grid == null || !phys.HasBody(grid.DEntity)) return false;
+        var scene = grid.Data.Scene;
+        using (var buf = new Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity>(Keen.VRage.Library.Memory.Allocator.Pool, "AeroSubPart"))
+        {
+            if (!phys.GetDirectlyConnectedBodies(grid.DEntity, buf)) return false;
+            var en = ((Keen.VRage.Library.Memory.BufferReference<Keen.VRage.DCS.Accessors.DEntity>)buf).GetEnumerator();
+            bool sub = false;
+            while (en.MoveNext())
+            {
+                var ctx = new DEntityContext(scene, en.Current);
+                if (!Alive(ctx)) continue;
+                if (!ctx.TryGet<RigidBodyMassProperties>(out var mp)) continue;
+                if (mp.InvMass <= 0f || 1f / mp.InvMass > myMass) { sub = true; break; }
+            }
+            en.Dispose();
+            return sub;
+        }
+    }
     private static bool _gravityFixed;
 
     public static bool Available

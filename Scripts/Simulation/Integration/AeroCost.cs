@@ -1,6 +1,7 @@
 #pragma warning disable
 using System;
 using System.Threading;
+using Keen.VRage.Core;
 
 namespace AeroMod;
 
@@ -35,6 +36,27 @@ public sealed class AeroCost
     }
     static int ThreadCount() { lock (_threads) return _threads.Count; }
     public static void ExitSim() => Interlocked.Decrement(ref _inSim);
+
+    // The grid whose thrust torque is largest this second (ThrustTorque's report).
+    static AeroGridComponent _thr; static float _thrMag;
+    internal static void WatchThrust(AeroGridComponent g)
+    {
+        var r = g.LastThrust;
+        float m = r.OffsetTorque.Length() + r.RcsTorque.Length() + (r.Mode == "off" || r.Mode == "free" ? 0f : 1f) + r.Error.Length();
+        if (m >= _thrMag || ReferenceEquals(g, _thr)) { _thr = g; _thrMag = m; }
+    }
+    static string Thr()
+    {
+        var g = _thr; _thr = null; _thrMag = 0f;
+        if (g == null) return "thrust -";
+        var r = g.LastThrust;
+        return $"thrust '{g.Entity?.DebugName}' v={g.LastSpeed:F1} w={g.LastAngVel.Length():F3} {r.Mode} err={r.Error.Length() * 57.2958f:F2}deg offsetT={r.OffsetTorque.Length():F0} rcsT={r.RcsTorque.Length():F0} rcsF={r.RcsForce.Length():F0} use={r.RcsUse:P0} e=({r.Error.X:F3},{r.Error.Y:F3},{r.Error.Z:F3}) oT=({r.OffsetTorque.X:F0},{r.OffsetTorque.Y:F0},{r.OffsetTorque.Z:F0}) rT=({r.RcsTorque.X:F0},{r.RcsTorque.Y:F0},{r.RcsTorque.Z:F0}) wl=({LocalW(g).X:F4},{LocalW(g).Y:F4},{LocalW(g).Z:F4}) at {g.Entity?.Data.GetWorldTransform().Position}";
+    }
+    static Vector3 LocalW(AeroGridComponent g)
+    {
+        var wt = g.Entity.Data.GetWorldTransform();
+        return WorldTransform.TransformDirectionInv(g.LastAngVel, wt);
+    }
 
     // The busiest grid this second (most faces): is aero actually working on it?
     static AeroGridComponent _top; static int _topFaces;
@@ -71,7 +93,7 @@ public sealed class AeroCost
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), n = Interlocked.Read(ref _next);
         if (now < n || Interlocked.CompareExchange(ref _next, now + System.Diagnostics.Stopwatch.Frequency, n) != n) return;
-        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()}");
+        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()}");
         lock (_threads) _threads.Clear();
     }
 }

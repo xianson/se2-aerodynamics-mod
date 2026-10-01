@@ -117,6 +117,45 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>Last computed result.</summary>
     internal AeroResult LastResult;
+    internal float[] _thrustUse = Array.Empty<float>();
+    internal Vector3[] _rcsArm = Array.Empty<Vector3>(), _rcsDir = Array.Empty<Vector3>();
+    internal float[] _rcsCap = Array.Empty<float>(), _rcsF = Array.Empty<float>(), _rcsPrev = Array.Empty<float>(), _rcsY = Array.Empty<float>();
+    internal bool _rcsWarm;
+    private Quaternion _rcsHold; private bool _rcsHoldValid;
+
+    /// <summary>
+    /// The orientation the thrusters steer to (ThrustTorque): the pilot's target (TargetControlData, the one the
+    /// game's gyros steer to); unpiloted with dampeners on, the orientation it was left at; else none. A rate
+    /// command without a target (AngularControlData input) is followed by the game's gyros: no target here.
+    /// </summary>
+    internal bool AttitudeTarget(in WorldTransform wt, out Quaternion target, out string mode)
+    {
+        target = wt.Orientation;
+        if (HarnessControlsAttitude) { mode = "harness"; return false; }
+        if (--_subPartCheck <= 0)
+        {
+            _subPartCheck = 120;
+            try { _isSubPart = PhysicsHack.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
+        }
+        if (_isSubPart) { _rcsHoldValid = false; mode = "sub-part"; return false; }
+        if (Data.TryGet<TargetControlData>(out var tc) && tc.TargetOrientation.IsValidAndRotationIsNormalized())
+        {
+            target = tc.TargetOrientation; _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
+        }
+        if (Data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f)
+        {
+            _rcsHoldValid = false; mode = "rate input"; return false;
+        }
+        if (Data.Has<DampeningData>())
+        {
+            if (!_rcsHoldValid) { _rcsHold = wt.Orientation; _rcsHoldValid = true; }
+            target = _rcsHold; mode = "hold"; return true;
+        }
+        _rcsHoldValid = false; mode = "free"; return false;
+    }
+    internal ThrustTorque.Report LastThrust;
+    internal int _clearedOverride;
+    private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>
     internal int FacesNow => _surface?.FaceCount ?? -1;
     internal bool Rebuilding => _staggeredBuildActive;

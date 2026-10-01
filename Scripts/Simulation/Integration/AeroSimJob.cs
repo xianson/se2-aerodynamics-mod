@@ -31,6 +31,7 @@ public partial class AeroGridComponent
         try { AeroSimJobCore(aero, wt); } finally { AeroCost.ExitSim(); }
         AeroCost.Sim.Stop(t0);
         AeroCost.Watch(aero);
+        AeroCost.WatchThrust(aero);
         AeroCost.MaybeLog();
     }
 
@@ -160,7 +161,7 @@ public partial class AeroGridComponent
                     $"localF=({aero.LastResult.Force.X:F0},{aero.LastResult.Force.Y:F0},{aero.LastResult.Force.Z:F0})");
             }
 
-            Vector3 sasTorque = (aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;
+            Vector3 sasTorque = (ThrustTorque.Enabled || aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;   // (no phantom: ThrustTorque)
             Vector3 totalTorque = aero.LastResult.Torque + sasTorque;
 
             // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
@@ -171,9 +172,24 @@ public partial class AeroGridComponent
             AeroCost.Apply.Stop(tap);
         }
 
-        // ── Offset thrust (RCS) correction ──
-        if (aero._thrusterCache.Count > 0)
+        // ── Thrust torque: realistic (offset torque from the game's thrust, thrusters steering to the target) ──
+        if (ThrustTorque.Enabled && aero._thrusterCache.Count > 0)
         {
+            long tth2 = AeroCost.Start();
+            if (aero._clearedOverride != 1)
+            {
+                // (the old system wrote a grid-level thrust override: cleared once, so the game's own thrust,
+                // dampeners and gravity compensation run untouched)
+                PhysicsHack.TrySetOverriddenThrust(aero.Entity, aero.Data, Vector3.Zero);
+                aero._clearedOverride = 1;
+            }
+            aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, dt);
+            AeroCost.Thrust.Stop(tth2);
+        }
+        // ── Offset thrust (RCS) correction (the old system: phantom attitude torque; ThrustTorque.Enabled = false) ──
+        else if (aero._thrusterCache.Count > 0)
+        {
+            aero._clearedOverride = 0;
             float thrustMach = 0f;
             Vector3 velLocalHat = Vector3.Zero;
             Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
