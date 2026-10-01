@@ -2,6 +2,18 @@
 namespace AeroMod;
 
 /// <summary>
+/// The whole aero simulation on or off (for A/B performance tests: the Orbital Mod's harness 'aero on|off').
+/// Off: no aero forces, no thrust offsets, block changes ignored; on again, every grid rebuilds from scratch.
+/// </summary>
+public static class AeroSwitch
+{
+    public static bool Enabled = true;
+    /// <summary>Bumped on every switch-on: a grid that sees a new generation rebuilds.</summary>
+    public static int Generation;
+    internal static volatile bool WasOff;
+}
+
+/// <summary>
 /// Tuning constants for the aerodynamics integration.
 /// </summary>
 public static class AeroConfig

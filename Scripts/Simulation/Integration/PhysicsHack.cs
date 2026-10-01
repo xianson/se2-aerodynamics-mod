@@ -52,28 +52,47 @@ public static class PhysicsHack
     /// dead. The old reflection path hid this behind a blanket catch; these wrappers keep that
     /// tolerance now that the calls are direct.
     /// </summary>
+    /// <summary>
+    /// Whether an entity is still alive, without throwing. Reading a destroyed entity's data throws, and the game
+    /// makes every exception cost ~200 ms even when caught (measured: a cached thruster destroyed in combat froze
+    /// the server 360-440 ms a time on the Red Ship). The Safe* accessors check this first; their try/catch stays
+    /// for an entity that dies in between.
+    /// </summary>
+    public static bool Alive(DEntityContext data)
+    {
+        var scene = data.Scene;
+        return scene != null && scene.IsEntityAlive(data.Entity);
+    }
+
     private static bool SafeTryGet<T>(DEntityContext data, out T value) where T : unmanaged
     {
+        if (!Alive(data)) { value = default; return false; }
         try { return data.TryGet(out value); }
-        catch { value = default; return false; }
+        catch { System.Threading.Interlocked.Increment(ref Caught); value = default; return false; }
     }
+
+    /// <summary>Exceptions swallowed by the Safe* accessors (a dead entity's data throws), for AeroCost.</summary>
+    public static int Caught;
 
     private static bool SafeHas<T>(DEntityContext data) where T : unmanaged
     {
+        if (!Alive(data)) return false;
         try { return data.Has<T>(); }
-        catch { return false; }
+        catch { System.Threading.Interlocked.Increment(ref Caught); return false; }
     }
 
     private static bool SafeSet<T>(DEntityContext data, T value) where T : unmanaged
     {
+        if (!Alive(data)) return false;
         try { data.Set(value); return true; }
-        catch { return false; }
+        catch { System.Threading.Interlocked.Increment(ref Caught); return false; }
     }
 
     private static bool SafeTryRemove<T>(DEntityContext data) where T : unmanaged
     {
+        if (!Alive(data)) return false;
         try { return data.TryRemove<T>(); }
-        catch { return false; }
+        catch { System.Threading.Interlocked.Increment(ref Caught); return false; }
     }
 
     /// <summary>Write pointer access, tolerant of a dead entity. Returns false if unavailable.</summary>

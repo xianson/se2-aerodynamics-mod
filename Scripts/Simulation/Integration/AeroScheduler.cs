@@ -20,18 +20,25 @@ public static class AeroScheduler
     /// </summary>
     public static void EnqueueRebuild(AeroGridComponent grid)
     {
-        if (_activeRebuilds.Contains(grid)) return;
-        if (_rebuildQueue.Contains(grid)) return;
-        _rebuildQueue.Add(grid);
+        lock (_lock)
+        {
+            if (_activeRebuilds.Contains(grid)) return;
+            if (_rebuildQueue.Contains(grid)) return;
+            _rebuildQueue.Add(grid);
+        }
     }
+
+    // Grids' jobs run in parallel: every touch of the queues goes through this lock.
+    private static readonly object _lock = new();
+    /// <summary>The most a frame's rebuild work may take (ms); the rest waits for the next frame.</summary>
+    public const double FrameBudgetMs = 2.0;
 
     /// <summary>
     /// Remove a grid from the scheduler (e.g. on scene removal).
     /// </summary>
     public static void Remove(AeroGridComponent grid)
     {
-        _rebuildQueue.Remove(grid);
-        _activeRebuilds.Remove(grid);
+        lock (_lock) { _rebuildQueue.Remove(grid); _activeRebuilds.Remove(grid); }
     }
 
     /// <summary>
@@ -40,6 +47,12 @@ public static class AeroScheduler
     /// </summary>
     public static void Tick()
     {
+        lock (_lock) TickLocked();
+    }
+
+    private static void TickLocked()
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         // Promote queued grids into active slots
         while (_activeRebuilds.Count < AeroConfig.MaxConcurrentRebuilds && _rebuildQueue.Count > 0)
         {
@@ -56,6 +69,7 @@ public static class AeroScheduler
 
         for (int i = _activeRebuilds.Count - 1; i >= 0; i--)
         {
+            if ((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > FrameBudgetMs) break;
             var grid = _activeRebuilds[i];
             bool done = grid.TickStaggeredBuild(perGrid);
             if (done)
@@ -68,28 +82,29 @@ public static class AeroScheduler
 
     /// <summary>True if the given grid is currently mid-staggered-build.</summary>
     public static bool IsActiveRebuild(AeroGridComponent grid)
-        => _activeRebuilds.Contains(grid);
+    {
+        lock (_lock) return _activeRebuilds.Contains(grid);
+    }
 
     /// <summary>True if the given grid is queued or actively rebuilding.</summary>
     public static bool IsEnqueued(AeroGridComponent grid)
-        => _rebuildQueue.Contains(grid) || _activeRebuilds.Contains(grid);
+    {
+        lock (_lock) return _rebuildQueue.Contains(grid) || _activeRebuilds.Contains(grid);
+    }
 
     // ── Tick-once guard ──
-    // Uses Environment.TickCount to detect new frames without needing
-    // an explicit reset call. At 60fps (~16ms) this naturally flips each frame.
-    // Worst case: two frames share the same ms → one frame's rebuilds skip,
-    // which is harmless since the next frame picks them up.
-    private static int _lastTickMs = -1;
+    // At most once per 15 ms (one 60 Hz frame). It used Environment.TickCount (1 ms resolution): with ~90 grids'
+    // jobs spread over a frame, it ticked about once a MILLISECOND, each tick granting the whole cell budget, so a
+    // frame's rebuild work multiplied (17.6 ms frames on the Red Ship).
+    private static long _lastTick;
+    private static readonly long _minGap = System.Diagnostics.Stopwatch.Frequency * 15 / 1000;
 
-    /// <summary>
-    /// Ensures Tick() runs exactly once per simulation frame.
-    /// Call from every grid's TryCompute — only the first call per frame does work.
-    /// </summary>
+    /// <summary>Call from every grid's TryCompute: only the first call in a frame does work.</summary>
     public static void EnsureTicked()
     {
-        int now = Environment.TickCount;
-        if (now == _lastTickMs) return;
-        _lastTickMs = now;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), last = System.Threading.Interlocked.Read(ref _lastTick);
+        if (now - last < _minGap) return;
+        if (System.Threading.Interlocked.CompareExchange(ref _lastTick, now, last) != last) return;
         Tick();
     }
 }

@@ -136,6 +136,8 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     /// <summary>True while a staggered build is in progress (between BeginBuild and FinalizeBuild).</summary>
     public bool IsBuilding => _stagingCells != null;
+    /// <summary>The cells a staggered build is working through (null when not building): its snapshot of the grid.</summary>
+    public IReadOnlyList<Vector3I> StagedCells => _stagingCells;
 
     // ─── Staggered build state ──────────────────────────────────
     private List<Vector3I> _stagingCells;

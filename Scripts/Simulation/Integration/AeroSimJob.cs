@@ -26,7 +26,20 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void AeroSimJob(AeroGridComponent aero, WorldTransform wt)
     {
+        long t0 = AeroCost.Start();
+        AeroCost.EnterSim();
+        try { AeroSimJobCore(aero, wt); } finally { AeroCost.ExitSim(); }
+        AeroCost.Sim.Stop(t0);
+        AeroCost.Watch(aero);
+        AeroCost.MaybeLog();
+    }
+
+    private static void AeroSimJobCore(AeroGridComponent aero, WorldTransform wt)
+    {
         if (!aero._initialized) return;
+        if (!AeroSwitch.Enabled) { AeroSwitch.WasOff = true; return; }
+        if (AeroSwitch.WasOff) { AeroSwitch.WasOff = false; System.Threading.Interlocked.Increment(ref AeroSwitch.Generation); }
+        if (aero._switchGen != AeroSwitch.Generation) { aero._switchGen = AeroSwitch.Generation; aero.ForceFullRebuild(); }
 
         // Test harness: skip frozen grids
         if (AeroTestHarness.ShouldSkipGrid(aero))
@@ -37,6 +50,7 @@ public partial class AeroGridComponent
 
         aero._simFrameCount++;
         AeroStats.BeginGrid();
+        long tpre = AeroCost.Start();
 
         // Zero angular velocity on first frame to clear saved-world spin
         if (aero._simFrameCount == 1)
@@ -70,6 +84,7 @@ public partial class AeroGridComponent
             aero.LastInertiaMajorAxisRot = majorAxisRot;
         }
 
+        AeroCost.Pre.Stop(tpre);
         // ── Thruster cache rebuild (before TryCompute so Phase 8 sees thrusters) ──
         if (aero._thrusterCacheDirty)
         {
@@ -77,7 +92,9 @@ public partial class AeroGridComponent
                 aero._blockSize = aero.DetectBlockSize();
             if (aero._blockSize > 0)
             {
+                long tc = AeroCost.Start();
                 OffsetThrustJob.RebuildThrusterCache(aero._octree, aero._blockSize, aero._thrusterCache, aero.Entity);
+                AeroCost.Thrusters.Stop(tc);
                 aero._thrusterCacheDirty = false;
             }
         }
@@ -85,7 +102,9 @@ public partial class AeroGridComponent
         // ── Gyro cache rebuild ──
         if (aero._gyroCacheDirty)
         {
+            long tg = AeroCost.Start();
             OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
+            AeroCost.Gyros.Stop(tg);
             aero._gyroCacheDirty = false;
         }
 
@@ -100,7 +119,9 @@ public partial class AeroGridComponent
         }
 
         // ── Aero computation ──
+        long tco = AeroCost.Start();
         aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+        AeroCost.Compute.Stop(tco);
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
         {
@@ -145,7 +166,9 @@ public partial class AeroGridComponent
             // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
             // ref into component storage and uses the engine's own inertia math, instead of
             // PhysicsHack's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
+            long tap = AeroCost.Start();
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, totalTorque, dt);
+            AeroCost.Apply.Stop(tap);
         }
 
         // ── Offset thrust (RCS) correction ──
@@ -176,6 +199,7 @@ public partial class AeroGridComponent
             // Test harness forces dampeners on so per-thruster attitude control is active
             bool dampenersOn = aero.HarnessControlsAttitude || aero.SuppressPhantomTorque || aero.Data.Has<DampeningData>();
 
+            long tth = AeroCost.Start();
             OffsetThrustJob.Execute(
                 aero._thrusterCache,
                 aero.Data,
@@ -191,6 +215,7 @@ public partial class AeroGridComponent
                 targetAngVel: aero._lastGridAngVel,
                 aeroTorqueLocal: aeroTorqueFF,
                 skipOffsetLoop: false);
+            AeroCost.Thrust.Stop(tth);
 
             // ── Phantom attitude + coupling cancellation ──
             // 1. Cancel ALL offset coupling (prevents asymmetric thrust from spinning grid)

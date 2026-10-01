@@ -37,6 +37,16 @@ public partial class AeroGridComponent
         ObservedWorldTransform owt,
         IDebugDrawProvider ddp)
     {
+        long t0 = AeroCost.Start();
+        AeroDrawJobCore(aero, owt, ddp);
+        AeroCost.Draw.Stop(t0);
+    }
+
+    private static void AeroDrawJobCore(
+        AeroGridComponent aero,
+        ObservedWorldTransform owt,
+        IDebugDrawProvider ddp)
+    {
         var wt = owt.Transform;
         if (!aero._initialized) return;
 

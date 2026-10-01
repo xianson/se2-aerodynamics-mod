@@ -121,6 +121,7 @@ public static class OffsetThrustJob
     {
         if (thrusters.Count == 0) return;
         if (!PhysicsHack.ThrusterAccessAvailable) return;
+        long tcs = AeroCost.Start();
 
         // Read raw player input from grid entity (WASD → Movement, mouse → Rotation)
         Vector3 playerMovement = Vector3.Zero;
@@ -198,6 +199,7 @@ public static class OffsetThrustJob
         }
 
         // Skip offset loop during Phase 7 test — isolate attitude controller from coupling
+        AeroCost.TSetup.Stop(tcs); tcs = AeroCost.Start();
         if (skipOffsetLoop) goto AttitudeOnly;
 
         for (int i = 0; i < thrusters.Count; i++)
@@ -318,6 +320,7 @@ public static class OffsetThrustJob
         NetOffsetCouplingTorque = _traceNetOffsetTorque;
 
         AttitudeOnly:
+        AeroCost.TLoop.Stop(tcs); tcs = AeroCost.Start();
         // ── Attitude control (real differential thrust) ──
         // Differentially throttle thrusters via ThrusterOverrideData ECS tag to produce
         // counter-torque. No phantom forces — all torque comes from real thruster output.
@@ -325,6 +328,7 @@ public static class OffsetThrustJob
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, gridWt);
         ApplyAttitudeViaOverrides(thrusters, comLocal, enableDampening, localAngVel,
             velocityLocal, playerMovement, playerRotation, targetAngVel);
+        AeroCost.TAtt.Stop(tcs); tcs = AeroCost.Start();
 
         // Write accumulated override thrust to grid-level OverriddenThrustData
         // This is what ThrustComponent.ComputeThrust reads to produce actual force.
@@ -379,6 +383,7 @@ public static class OffsetThrustJob
                     $"frac={t.AttitudeFraction:F2}");
             }
         }
+        AeroCost.TWrite.Stop(tcs);
     }
 
     /// <summary>
@@ -827,9 +832,9 @@ public static class OffsetThrustJob
     /// </summary>
     private static bool IsComponentThrusting(Component thrusterComp)
     {
-        if (thrusterComp == null) return false;
+        if (thrusterComp == null || !PhysicsHack.Alive(thrusterComp.Data)) return false;
         try { return thrusterComp.Data.Has<IsThrusting>(); }
-        catch { return false; }
+        catch { System.Threading.Interlocked.Increment(ref PhysicsHack.Caught); return false; }
     }
 
     /// <summary>
@@ -839,7 +844,7 @@ public static class OffsetThrustJob
     /// </summary>
     private static float GetActualThrust(Component thrusterComp)
     {
-        if (thrusterComp == null) return -1f;
+        if (thrusterComp == null || !PhysicsHack.Alive(thrusterComp.Data)) return -1f;
         try
         {
             return thrusterComp.Data.TryGet<ActiveThrustData>(out var atd)

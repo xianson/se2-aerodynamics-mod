@@ -29,11 +29,27 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private SmoothSurfaceProvider _buildSurface;  // back buffer (used during staggered rebuild)
     private LiftingSurfaceModel _model;
     private ManifoldClassifier _manifold;
+    // The background half of a staggered rebuild (BeginFinalize): the spare classifier it classifies into, the
+    // wings it detects, and the task. The active surface, classifier and wings serve the simulation until the swap.
+    private ManifoldClassifier _buildManifold;
+    private System.Threading.Tasks.Task _finalizeTask;
+    private double _cellsPerMs;   // this grid's measured surface-build rate
+    private List<LiftingSurface> _builtWings;
+    /// <summary>Off: the old single-frame finalize (for comparison).</summary>
+    public static bool BackgroundFinalize = true;
     private AeroComponentRegistry _components;
     private BlockComponentFactory _factory;
     private float _blockSize;
     private float _cachedBlockSize = -1;
     private bool _dirty;
+    internal int _switchGen;
+
+    /// <summary>Everything rebuilt from scratch (after aero was switched off and on).</summary>
+    internal void ForceFullRebuild()
+    {
+        _dirty = true; _fullRebuildNeeded = true; _thrusterCacheDirty = true; _gyroCacheDirty = true; _cachedBlockSize = -1;
+        _pendingAddedCells.Clear(); _pendingRemovedCells.Clear(); _components.Clear();
+    }
     private bool _fullRebuildNeeded;
     private bool _initialized;
 
@@ -101,6 +117,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>Last computed result.</summary>
     internal AeroResult LastResult;
+    /// <summary>For AeroCost's 'top grid' line.</summary>
+    internal int FacesNow => _surface?.FaceCount ?? -1;
+    internal bool Rebuilding => _staggeredBuildActive;
     internal bool HasResult;
 
     /// <summary>Component (CS/wing) torque from last frame, separate from body torque.</summary>
@@ -127,6 +146,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         var innerDrag = new DampedShadowedDragModel();
         _model = new LiftingSurfaceModel(innerDrag, liftModel: new CompressibleWingModel());
         _manifold = new ManifoldClassifier();
+        _buildManifold = new ManifoldClassifier();
         _components = new AeroComponentRegistry();
 
         // Wire manifold into wing detector for cavity face filtering
@@ -166,7 +186,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
     [CubeGridComponent.BlocksChangedSignal]
     private void OnBlocksChanged(CubeGridComponent.BlocksChangedArgs blockData)
     {
+        long t0 = AeroCost.Start();
+        OnBlocksChangedCore(blockData);
+        AeroCost.Blocks.Stop(t0);
+    }
+
+    private void OnBlocksChangedCore(CubeGridComponent.BlocksChangedArgs blockData)
+    {
         if (blockData.IsParallelInit) return;
+        if (!AeroSwitch.Enabled) return;   // (on again: a full rebuild, see AeroSimJob)
 
         if (blockData.AllBlocksRemoved)
         {
@@ -182,9 +210,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
 
         // Accumulate changed cells for batched incremental update
+        // The thruster cache is rebuilt only when a thruster came or went: rebuilding it scans every child of the
+        // grid (5000 on the Red Ship), and it ran on EVERY block change (up to 37 ms a time).
+        bool thrustersChanged = false;
         foreach (var block in blockData.RemovedBlocks)
         {
             if (block == null) continue;
+            if (!thrustersChanged)
+                for (int ti = 0; ti < _thrusterCache.Count; ti++)
+                    if (ReferenceEquals(_thrusterCache[ti].ThrusterEntity, block.Entity)) { thrustersChanged = true; break; }
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var min = cellGroup.Min;
@@ -204,6 +238,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         foreach (var block in blockData.AddedBlocks)
         {
             if (block == null) continue;
+            if (!thrustersChanged && block.Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null) thrustersChanged = true;
 
             // Try creating an aero component for this block (custom aero blocks)
             if (_blockSize > 0)
@@ -228,7 +263,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
 
         _dirty = true;
-        _thrusterCacheDirty = true;
+        if (thrustersChanged) _thrusterCacheDirty = true;
         _surfaceCooldownTicks = SurfaceCooldown;
     }
 
@@ -244,7 +279,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (!_initialized) return;
 
         // ── Global scheduler tick (first grid each frame drives all rebuilds) ──
+        long tsc = AeroCost.Start();
         AeroScheduler.EnsureTicked();
+        AeroCost.Sched.Stop(tsc);
 
         if (density < AeroConfig.MinDensity) return;
 
@@ -260,6 +297,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // changing (e.g., ground impact). Cells keep accumulating in _pending lists;
         // a single batched update runs once the cooldown expires.
         long surfaceStart = AeroStats.Timestamp();
+        long tfl = AeroCost.Start();
         if (_dirty && !_staggeredBuildActive)
         {
             // Full rebuilds bypass cooldown — staggered builder handles its own pacing
@@ -327,6 +365,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
 
         AeroStats.SetSurf(AeroStats.ElapsedUs(surfaceStart));
+        AeroCost.Flush.Stop(tfl);
 
         // ── Deferred full wing detection (correctness pass with ray-march) ──
         long wingStart = AeroStats.Timestamp();
@@ -334,6 +373,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
         {
             if (--_wingCooldownTicks <= 0)
             {
+                long twi = AeroCost.Start();
+                try {
                 _model.InvalidateWings();
                 _model.DetectWings(_gridAccessor, _surface, _blockSize);
                 _manifold.Classify(_surface);
@@ -341,6 +382,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 _wingsDirty = false;
                 _wingAddedCells.Clear();
                 _wingRemovedCells.Clear();
+                } finally { AeroCost.Wings.Stop(twi); }
             }
         }
         AeroStats.SetWing(AeroStats.ElapsedUs(wingStart));
@@ -929,7 +971,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         _gridAccessor.SetOctree(_octree);
         _blockSize = DetectBlockSize();
+        long tb = AeroCost.Start();
         _buildSurface.BeginBuild(_gridAccessor, _blockSize);
+        AeroCost.Begin.Stop(tb);
         _staggeredBuildActive = true;
         _rebuildRestartNeeded = false;
         _fullRebuildNeeded = false;
@@ -945,6 +989,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
     {
         if (!_staggeredBuildActive) return true;
 
+        // The background half: done when its task is (a change meanwhile: its result is thrown away, restart).
+        if (_finalizeTask != null)
+        {
+            if (!_finalizeTask.IsCompleted) return false;
+            if (!_rebuildRestartNeeded) return true;
+            _finalizeTask = null;
+            _builtWings = null;
+        }
+
         // If topology changed mid-build, restart
         if (_rebuildRestartNeeded)
         {
@@ -957,7 +1010,48 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _pendingRemovedCells.Clear();
         }
 
-        return _buildSurface.AddCellBatch(cellBudget);
+        // A batch sized by TIME (the frame's budget), from this grid's own measured rate: a fixed cell count
+        // took 21 ms a batch on the Jetliner (its cells are costly: smoothing, many neighbours).
+        int budget = _cellsPerMs > 0 ? Math.Clamp((int)(_cellsPerMs * AeroScheduler.FrameBudgetMs), 64, cellBudget) : Math.Min(cellBudget, 512);
+        long tbt = AeroCost.Start();
+        var staged = _buildSurface.StagedCells;
+        bool doneBatch = _buildSurface.AddCellBatch(budget);
+        double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - tbt) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        AeroCost.Batch.Stop(tbt);
+        if (!doneBatch && ms > 0.05) _cellsPerMs = _cellsPerMs > 0 ? 0.7 * _cellsPerMs + 0.3 * (budget / ms) : budget / ms;
+        if (!doneBatch || !BackgroundFinalize) return doneBatch;
+        BeginFinalize(staged);
+        return false;
+    }
+
+    /// <summary>
+    /// The heavy half of a rebuild, off the simulation thread: finishing the surface (adjacency, creases,
+    /// normals, groups), classifying it, detecting wings: 0.6 s for the 14784-block Jetliner, which froze the
+    /// server in one frame. It works on the spare surface and classifier and a snapshot of the cells; nothing
+    /// the simulation reads changes until FinalizeStaggeredBuild swaps them in. (Classified BEFORE wing
+    /// detection, which filters cavity faces by it: the old order detected against the previous classification.)
+    /// </summary>
+    private void BeginFinalize(IReadOnlyList<Vector3I> staged)
+    {
+        var surface = _buildSurface;
+        var manifold = _buildManifold;
+        var detector = _model.Detector;
+        float blockSize = _blockSize;
+        var cells = staged != null ? new List<Vector3I>(staged) : new List<Vector3I>();
+        _builtWings = null;
+        _finalizeTask = System.Threading.Tasks.Task.Run(() =>
+        {
+            long t = AeroCost.Start();
+            var snapshot = new SnapshotGridAccessor(cells);
+            surface.FinalizeBuild();
+            AeroCost.FinSurface.Stop(t); t = AeroCost.Start();
+            manifold.Classify(surface);
+            AeroCost.FinClassify.Stop(t); t = AeroCost.Start();
+            if (detector is ConnectedComponentWingDetector cc) { cc.Manifold = manifold; cc.ManifoldSurface = surface; }
+            detector.Invalidate();
+            _builtWings = detector.Detect(snapshot, surface, blockSize);
+            AeroCost.FinWings.Stop(t);
+        });
     }
 
     /// <summary>
@@ -966,7 +1060,35 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// </summary>
     internal void FinalizeStaggeredBuild()
     {
+        if (_finalizeTask != null)
+        {
+            var task = _finalizeTask;
+            _finalizeTask = null;
+            if (task.IsFaulted)
+                Log.Default?.Info($"[AERO] background rebuild failed ({task.Exception?.GetBaseException().Message}); rebuilding in one go");
+            else
+            {
+                // The swap (simulation thread): the finished surface, its classification and its wings go live.
+                long ts = AeroCost.Start();
+                (_surface, _buildSurface) = (_buildSurface, _surface);
+                (_manifold, _buildManifold) = (_buildManifold, _manifold);
+                _staggeredBuildActive = false;
+                if (_model.Detector is ConnectedComponentWingDetector cc) { cc.Manifold = _manifold; cc.ManifoldSurface = _surface; }
+                _model.InstallWings(_builtWings);
+                _builtWings = null;
+                _components.Clear();
+                _factory.CreateAll(_octree, _blockSize, _components);
+                _faceOverridesDirty = true;
+                AeroCost.FinComponents.Stop(ts);
+                return;
+            }
+            // (failed: the old single-frame path below, from a fresh staging)
+            _buildSurface.BeginBuild(_gridAccessor, _blockSize);
+            while (!_buildSurface.AddCellBatch(int.MaxValue)) { }
+        }
+        long tf = AeroCost.Start();
         _buildSurface.FinalizeBuild();
+        AeroCost.FinSurface.Stop(tf); tf = AeroCost.Start();
 
         // Swap: buildSurface becomes active, old active becomes next build buffer
         (_surface, _buildSurface) = (_buildSurface, _surface);
@@ -978,12 +1100,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         _model.InvalidateWings();
         _model.DetectWings(_gridAccessor, _surface, _blockSize);
+        AeroCost.FinWings.Stop(tf); tf = AeroCost.Start();
         _manifold.Classify(_surface);
+        AeroCost.FinClassify.Stop(tf); tf = AeroCost.Start();
 
         // Rebuild all block-level aero components from scratch
         _components.Clear();
         _factory.CreateAll(_octree, _blockSize, _components);
         _faceOverridesDirty = true;
+        AeroCost.FinComponents.Stop(tf);
     }
 
     private float DetectBlockSize()

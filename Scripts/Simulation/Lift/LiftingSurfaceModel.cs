@@ -58,6 +58,13 @@ public class LiftingSurfaceModel : IAeroDragModel
         InvalidateLiftModelInfluence();
     }
 
+    /// <summary>Wings detected elsewhere (a background rebuild): installed as they are.</summary>
+    public void InstallWings(List<LiftingSurface>? wings)
+    {
+        _wings = wings;
+        InvalidateLiftModelInfluence();
+    }
+
     /// <summary>Incremental wing update — only re-processes affected wings.</summary>
     public void UpdateWings(IGridAccessor grid, ISurfaceProvider surface, float blockSize,
         IReadOnlyList<Vector3I> addedCells, IReadOnlyList<Vector3I> removedCells)
