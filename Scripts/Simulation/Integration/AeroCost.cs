@@ -76,7 +76,7 @@ public sealed class AeroCost
     {
         var g = _top; _top = null; _topFaces = 0;
         if (g == null) return "top -";
-        return $"top grid {g.Entity?.DebugName} {g.LastMass / 1000f:F0} t faces={g.FacesNow} table={g.UsesTable} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult} {g.ShadowNote}";
+        return $"top grid {g.Entity?.DebugName} {g.LastMass / 1000f:F0} t faces={g.FacesNow} table={g.UsesTable} {g.LocalNote} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult} {g.ShadowNote}";
     }
 
     public void Stop(long t0)

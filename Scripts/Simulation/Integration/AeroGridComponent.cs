@@ -36,6 +36,20 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private List<LiftingSurface> _builtWings;
     private PrecomputedShadowMap _builtShadow, _spareShadow;
     private ForceTable _builtTable;
+    // -- Damage, locally: the chunked table (ChunkedTable) recomputes the chunks damage touched, in the background,
+    //    ~0.1 s instead of a whole rebuild; the whole rebuild follows once damage has been quiet a while. --
+    private ChunkedTable _chunks, _builtChunks;
+    private readonly HashSet<long> _localDirty = new(LongKey.Comparer);
+    private System.Threading.Tasks.Task _localTask;
+    private ForceTable _localResult;
+    private int _chunkGen, _localGen;
+    private long _lastDamage;
+    private bool _fullAfterQuiet;
+    /// <summary>Damage quiet this long (s): the whole rebuild (downstream shadowing, wings) runs.</summary>
+    public static double QuietBeforeFullRebuild = 5.0;
+    public static bool LocalUpdates = true;
+    internal double LastLocalMs;
+    internal int LocalUpdatesDone;
     /// <summary>Grid cells per surface cell (large-block grids: 2). Such a surface is never updated cell by cell.</summary>
     private int _cellScale = 1;
     // ThrustTorque's cached thruster geometry (see Apply)
@@ -191,6 +205,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _lastFaces;
     internal bool Rebuilding => _staggeredBuildActive;
     internal bool UsesTable => _model?.UsedTable ?? false;
+    internal string LocalNote => _chunks == null ? "" : $"chunks={_chunks.ChunkCount} local={LocalUpdatesDone} last {LastLocalMs:F0} ms";
 
     /// <summary>In a planet's gravity (set by the job): a grid there may meet air soon, so it is built beforehand.</summary>
     internal bool InGravity;
@@ -370,6 +385,16 @@ public partial class AeroGridComponent : Component, IInSceneListener
         long tp = AeroCost.Start();
         PatchTable(_patchRemoved, removed: true);
         PatchTable(_patchAdded, removed: false);
+        if (_chunks != null && LocalUpdates)
+        {
+            // the chunks the changed blocks reach (2 m around): recomputed in the background (TickLocal)
+            const float M = 2f;
+            foreach (var list in new List<List<(Vector3I, Vector3I)>> { _patchRemoved, _patchAdded })
+                foreach (var (a, b) in list)
+                    _chunks.KeysIn(new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(M), new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(M), _localDirty);
+            _lastDamage = System.Diagnostics.Stopwatch.GetTimestamp();
+            _fullAfterQuiet = true;
+        }
         AeroCost.Patch.Stop(tp);
 
         _dirty = true;
@@ -386,6 +411,65 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// better than leaving the table be until the rebuild - the patches are flat and unshadowed, the rebuilt surface
     /// smooth and shadowed - and worse where a chunk went; the wings, which carry the big changes, follow at once).</summary>
     public static bool TablePatching = false;
+
+    /// <summary>Simulation thread, every frame of a chunked grid: install a finished local update, start the next
+    /// one, and once damage has been quiet QuietBeforeFullRebuild seconds queue the whole rebuild.</summary>
+    private void TickLocal()
+    {
+        if (_localTask != null)
+        {
+            if (!_localTask.IsCompleted) return;
+            var t = _localTask; _localTask = null;
+            if (t.IsFaulted) Log.Default?.Info($"[AERO] local update failed: {t.Exception?.GetBaseException().Message}");
+            else if (_localGen == _chunkGen && _localResult != null) { _model.InstallForceTable(_localResult); LocalUpdatesDone++; }
+            _localResult = null;
+        }
+        if (_localDirty.Count > 0 && !_staggeredBuildActive && _model?.Table != null)
+        {
+            // the region: the dirty chunks and a margin; its blocks captured here (the octree is ours only now)
+            var dirty = new HashSet<long>(_localDirty, LongKey.Comparer); _localDirty.Clear();
+            // (each dirty chunk with a 3 m margin, in grid cells: scattered damage must not mean the whole grid)
+            var regions = new List<(Vector3I lo, Vector3I hi)>();
+            foreach (var k in dirty)
+            {
+                var (a, b) = _chunks.BoxOf(k);
+                a -= new Vector3(3f); b += new Vector3(3f);
+                regions.Add((new Vector3I((int)MathF.Floor(a.X / 0.25f), (int)MathF.Floor(a.Y / 0.25f), (int)MathF.Floor(a.Z / 0.25f)),
+                             new Vector3I((int)MathF.Ceiling(b.X / 0.25f), (int)MathF.Ceiling(b.Y / 0.25f), (int)MathF.Ceiling(b.Z / 0.25f))));
+            }
+            var boxes = new List<(Vector3I, Vector3I)>();
+            foreach (var block in _octree.GetAllCubeBlocks())
+            {
+                if (block == null) continue;
+                foreach (var g in block.GetTransformedOccupiedCellGroups())
+                    for (int r = 0; r < regions.Count; r++)
+                    {
+                        var (rl, rh) = regions[r];
+                        if (g.Max.X >= rl.X && g.Min.X <= rh.X && g.Max.Y >= rl.Y && g.Min.Y <= rh.Y && g.Max.Z >= rl.Z && g.Min.Z <= rh.Z) { boxes.Add((g.Min, g.Max)); break; }
+                    }
+            }
+            var chunks = _chunks; var current = _model.Table; int k2 = _cellScale; var geo = SnapshotGridAccessor.CellGeometry(k2); float bs = _blockSize;
+            _localGen = _chunkGen;
+            _localTask = System.Threading.Tasks.Task.Factory.StartNew(() =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var snap = k2 > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(k2) : new SnapshotGridAccessor(boxes);
+                var hide = new List<Vector3>();
+                var faces = chunks.FacesFor(snap, dirty, geo.size, geo.offset, bs, hide);
+                _localResult = chunks.UpdateLocal(current, dirty, faces, 3, hide);
+                LastLocalMs = sw.Elapsed.TotalMilliseconds;
+            });
+            return;
+        }
+        // quiet: the whole rebuild (what holes uncovered downstream, the wings as they are now)
+        if (_fullAfterQuiet && _localDirty.Count == 0 && !_staggeredBuildActive
+            && System.Diagnostics.Stopwatch.GetTimestamp() - _lastDamage > System.Diagnostics.Stopwatch.Frequency * QuietBeforeFullRebuild)
+        {
+            _fullAfterQuiet = false;
+            _gridAccessor.SetOctree(_octree);
+            AeroScheduler.EnqueueRebuild(this);
+        }
+    }
 
     private void PatchTable(List<(Vector3I min, Vector3I max)> boxes, bool removed)
     {
@@ -412,7 +496,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         // A grid's first build is queued even parked or out of the air (behind those that fly - BuildPriority):
         // it used to wait until the grid moved in air, which then flew without aero for the length of a build.
-        if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && (density > 0f || InGravity) && !IsStatic)
+        if (_chunks != null && LocalUpdates) TickLocal();
+
+        if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && _model?.Table == null && (density > 0f || InGravity) && !IsStatic)
         {
             if (_blockSize <= 0) _blockSize = DetectBlockSize();
             _gridAccessor.SetOctree(_octree);
@@ -438,6 +524,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // a single batched update runs once the cooldown expires.
         long surfaceStart = AeroStats.Timestamp();
         long tfl = AeroCost.Start();
+        if (_dirty && _chunks != null && LocalUpdates && !_fullRebuildNeeded)
+        {
+            // (chunked: damage is handled by local updates - TickLocal - and a whole rebuild once quiet)
+            _dirty = false;
+            _pendingAddedCells.Clear();
+            _pendingRemovedCells.Clear();
+        }
         if (_dirty && !_staggeredBuildActive)
         {
             // Full rebuilds bypass cooldown — staggered builder handles its own pacing
@@ -1172,7 +1265,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         int cellScale = SnapshotGridAccessor.CellScale(blockSize);
         var cellGeo = SnapshotGridAccessor.CellGeometry(cellScale);
         _cellScale = cellScale;
-        _builtTable = null;
+        _builtTable = null; _builtChunks = null;
         _patchLog.Clear();   // (the snapshot below has every change so far)
         _builtWings = null; _builtShadow = null;
         var spareShadow = _spareShadow; _spareShadow = null;
@@ -1229,7 +1322,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 tmp.InstallWings(_builtWings ?? new List<LiftingSurface>());
                 tmp.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
                 tmp.ExcludeWingFaces(builder, surface.Version);
-                _builtTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom);
+                var chunks = new ChunkedTable(8, 16f, new FacePhysics(builder));
+                _builtTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom, chunks: chunks);
+                _builtChunks = chunks;
             }
             finally { ReturnTableBuilder(builder); }
             ms[5] = sw.Elapsed.TotalMilliseconds;
@@ -1274,6 +1369,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                     if (_model.InnerModel is DampedShadowedDragModel pdsm)
                         foreach (var (n, p, area) in _patchLog) pdsm.AddPatch(_builtTable, n, p, area);
                     _model.InstallForceTable(_builtTable);
+                    _chunks = _builtChunks; _builtChunks = null; _chunkGen++;
                     // a big grid flies on its table: its surfaces and per-face arrays go (~30 MB for Red Ship; damage
                     // rebuilds it whole anyway)
                     if (_cellScale > 1 || _surface.FaceCount > BigSurfaceFaces)

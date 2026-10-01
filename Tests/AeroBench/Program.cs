@@ -186,6 +186,24 @@ static class Program
     }
 
     /// <summary>Damage: the patched table against a table rebuilt for the damaged shape (and the unpatched one).</summary>
+    /// <summary>The faces of the damaged shape inside the dirty chunks (a surface built over them plus a margin).</summary>
+    static readonly List<Vector3> _hideOnly = new();
+    static List<SurfaceFace> LocalFaces(SnapshotGridAccessor gridAfter, HashSet<long> dirty, ChunkedTable ct, SmoothSurfaceProvider like)
+    {
+        float cs = like.CellSize, co = like.CellOffset, margin = 2f;
+        var lo = new Vector3(float.MaxValue); var hi = new Vector3(float.MinValue);
+        foreach (var k in dirty) { var (a, b) = ct.BoxOf(k); lo = Vector3.Min(lo, a); hi = Vector3.Max(hi, b); }
+        lo -= new Vector3(margin); hi += new Vector3(margin);
+        var cells = new List<(Vector3I, Vector3I)>();
+        foreach (var c in gridAfter.EnumerateOccupiedCells())
+        {
+            var p = (new Vector3(c.X, c.Y, c.Z) + new Vector3(co)) * cs;
+            if (p.X >= lo.X && p.X <= hi.X && p.Y >= lo.Y && p.Y <= hi.Y && p.Z >= lo.Z && p.Z <= hi.Z) cells.Add((c, c));
+        }
+        _hideOnly.Clear();
+        return ct.FacesFor(new SnapshotGridAccessor(cells), dirty, cs, co, BlockSize, _hideOnly);
+    }
+
     static void DamageCheck(string name, List<(Vector3I, Vector3I)> boxes, AtmosphereState atmo)
     {
         var rng = new Random(3);
@@ -197,15 +215,27 @@ static class Program
         {
             var whole = Build(name, boxes);
             var dsm = (DampedShadowedDragModel)whole.Model.InnerModel;
-            var table = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com);
-            var before = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com);
+            var chunks = new ChunkedTable(8, 16f, new FacePhysics(dsm));
+            var table = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com, chunks: chunks);
+            var before = table.Clone();
             var idx = new HashSet<int>(pick());
             var removedBoxes = idx.Select(i => boxes[i]).ToList();
             var rest = boxes.Where((b, i) => !idx.Contains(i)).ToList();
             var after = Build(name, rest);
+            // the chunks the removed blocks reach (metres, 2 m margin), rebuilt locally
+            var dirty = new HashSet<long>();
+            float cs = whole.Surface.CellSize, co = whole.Surface.CellOffset; int ks = (int)MathF.Round(cs / 0.25f);
+            foreach (var (a, b) in removedBoxes)
+            {
+                var lo = new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(2f); var hi = new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(2f);
+                chunks.KeysIn(lo, hi, dirty);
+            }
             var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            int patches = TablePatcher.PatchBoxes(table, dsm, after.Grid, removedBoxes, removed: true);
+            var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
+            double surfMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            table = chunks.UpdateLocal(table, dirty, faces, 3, _hideOnly);
             double patchMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            int patches = dirty.Count;
             var adsm = (DampedShadowedDragModel)after.Model.InnerModel;
             var exact = adsm.BuildForceTable(after.Grid, after.Surface, after.Manifold, whole.Com);
             var r = new Random(9); var ePatched = new List<double>(); var eStale = new List<double>(); double change = 0;
@@ -220,7 +250,7 @@ static class Program
                 ePatched.Add((fp - fe).Length() / m); eStale.Add((fs - fe).Length() / m); change += (fs - fe).Length() / m;
             }
             ePatched.Sort(); eStale.Sort();
-            Console.WriteLine($"   damage {label} ({idx.Count} blocks, {patches} patches in {patchMs:F2} ms): the damage changed forces by median {eStale[150] * 100:F1}% (p95 {eStale[285] * 100:F1}%); patched table off by median {ePatched[150] * 100:F1}% (p95 {ePatched[285] * 100:F1}%)");
+            Console.WriteLine($"   damage {label} ({idx.Count} blocks; {patches} of {chunks.ChunkCount} chunks, {faces.Count} faces: local update {patchMs:F0} ms of which surface {surfMs:F0} ms; full table {table.BuildMs:F0} ms): the damage changed forces by median {eStale[150] * 100:F1}% (p95 {eStale[285] * 100:F1}%); local update off by median {ePatched[150] * 100:F1}% (p95 {ePatched[285] * 100:F1}%)");
         }
     }
 

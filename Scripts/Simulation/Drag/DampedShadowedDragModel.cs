@@ -199,6 +199,8 @@ public class DampedShadowedDragModel : IAeroDragModel
             if (u < umin) umin = u; if (u > umax) umax = u; if (w < wmin) wmin = w; if (w > wmax) wmax = w;
         }
         if (umin > umax) return;
+        // (pixels on a fixed 0.5 m lattice across the flow: local updates - ChunkedTable - use the same one)
+        umin = MathF.Floor(umin / Pix) * Pix; wmin = MathF.Floor(wmin / Pix) * Pix;
         int W = (int)((umax - umin) / Pix) + 1, H = (int)((wmax - wmin) / Pix) + 1;
         if (work.Z.Length < W * H) work.Z = new float[W * H];
         var zb = work.Z;
@@ -273,7 +275,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// <summary>Workers for one force table (the directions are independent).</summary>
     public static int TableThreads = 3;
 
-    public ForceTable BuildForceTable(IGridAccessor grid, ISurfaceProvider cache, ManifoldClassifier manifold, Vector3 com, int n = 8, int nj = 3)
+    public ForceTable BuildForceTable(IGridAccessor grid, ISurfaceProvider cache, ManifoldClassifier manifold, Vector3 com, int n = 8, int nj = 3, ChunkedTable chunks = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _shadowMap.Manifold = manifold;
@@ -287,14 +289,47 @@ public class DampedShadowedDragModel : IAeroDragModel
         var works = new List<TableWork>(TableThreads);   // (arrays of mod types are banned in scripts: VRS1001)
         int next = -1;
         for (int k = 0; k < TableThreads; k++) works.Add(k == 0 ? _work0 : new TableWork());
+        // chunks: each hull face's chunk, and its centre among that chunk's occluders
+        int[] faceChunk = null;
+        if (chunks != null)
+        {
+            int tot = _px.Count;
+            faceChunk = new int[tot];
+            for (int gi = 0; gi < tot; gi++)
+            {
+                if (_origIndex[gi] < 0) { faceChunk[gi] = -1; continue; }
+                var pos = new Vector3(_px[gi], _py[gi], _pz[gi]);
+                int ci = chunks.IndexOf(chunks.KeyOf(pos));
+                faceChunk[gi] = ci;
+                chunks.AddOccluder(ci, pos);
+                int oi = _origIndex[gi];
+                if (_excluded != null && _excludedVersion == _lastSurfaceVersion && oi < _excluded.Count && _excluded[oi] && cache is SmoothSurfaceProvider ssp)
+                {
+                    ssp.GetFaceCellDir(oi, out var fcell, out int fdir);
+                    chunks.ExcludedFaces.Add(ChunkedTable.FaceKey(fcell, fdir));
+                }
+            }
+        }
+        if (chunks != null && manifold != null && manifold.IsClassified && cache is SmoothSurfaceProvider csp)
+            for (int fi = 0; fi < csp.FaceCount; fi++)
+                if (!manifold.IsHull(fi)) { csp.GetFaceCellDir(fi, out var cc0, out int cd0); chunks.CavityFaces.Add(ChunkedTable.FaceKey(cc0, cd0)); }
+        int nChunks = chunks?.ChunkCount ?? 0;
         void Worker(TableWork wk)
         {
             try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
+            var acc = nChunks > 0 ? new double[nChunks * ForceTable.Stride] : null;
             int idx;
             while ((idx = System.Threading.Interlocked.Increment(ref next)) < count)
             {
                 int face = idx / per, r = idx % per, i = r / (n + 1), j = r % (n + 1);
-                SumFaces(grid, cache, ForceTable.Direction(face, i, j, n), table.At(face, i, j), bake: true, work: wk);   // (v: the grid's motion)
+                if (acc != null) System.Array.Clear(acc, 0, acc.Length);
+                SumFaces(grid, cache, ForceTable.Direction(face, i, j, n), table.At(face, i, j), bake: true, work: wk, faceChunk: faceChunk, chunkAcc: acc);   // (v: the grid's motion)
+                if (acc != null)
+                    for (int c = 0; c < nChunks; c++)
+                    {
+                        var ent = chunks.Entries[c];
+                        for (int k2 = 0; k2 < ForceTable.Stride; k2++) ent[idx * ForceTable.Stride + k2] = (float)acc[c * ForceTable.Stride + k2];
+                    }
             }
         }
         var helpers = new List<System.Threading.Tasks.Task>(works.Count - 1);
@@ -336,7 +371,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// suction on at full strength and friction off the instant a face turned leeward made the force jump wherever
     /// the many faces of a voxel ship lie parallel to the flow.)
     /// </summary>
-    public void SumFaces(IGridAccessor grid, ISurfaceProvider cache, Vector3 v, Span<float> e, Vector3 w = default, Vector3 com = default, bool bake = true, TableWork work = null)
+    public void SumFaces(IGridAccessor grid, ISurfaceProvider cache, Vector3 v, Span<float> e, Vector3 w = default, Vector3 com = default, bool bake = true, TableWork work = null, int[] faceChunk = null, double[] chunkAcc = null)
     {
         work ??= _work0;
         int total = _px.Count;
@@ -391,6 +426,18 @@ public class DampedShadowedDragModel : IAeroDragModel
             f0x += ax; f0y += ay; f0z += az; f1x += bx; f1y += by; f1z += bz;
             t0x += py * az - pz * ay; t0y += pz * ax - px * az; t0z += px * ay - py * ax;
             t1x += py * bz - pz * by; t1y += pz * bx - px * bz; t1z += px * by - py * bx;
+            if (chunkAcc != null)
+            {
+                int c = faceChunk[gi];
+                if (c >= 0)
+                {
+                    int o = c * ForceTable.Stride;
+                    chunkAcc[o] += ax; chunkAcc[o + 1] += ay; chunkAcc[o + 2] += az; chunkAcc[o + 3] += bx; chunkAcc[o + 4] += by; chunkAcc[o + 5] += bz;
+                    chunkAcc[o + 6] += py * az - pz * ay; chunkAcc[o + 7] += pz * ax - px * az; chunkAcc[o + 8] += px * ay - py * ax;
+                    chunkAcc[o + 9] += py * bz - pz * by; chunkAcc[o + 10] += pz * bx - px * bz; chunkAcc[o + 11] += px * by - py * bx;
+                    if (cosA > 0) chunkAcc[o + 12] += vai * cosA * qf;
+                }
+            }
         }
         e[0] = (float)f0x; e[1] = (float)f0y; e[2] = (float)f0z; e[3] = (float)f1x; e[4] = (float)f1y; e[5] = (float)f1z;
         e[6] = (float)t0x; e[7] = (float)t0y; e[8] = (float)t0z; e[9] = (float)t1x; e[10] = (float)t1y; e[11] = (float)t1z;

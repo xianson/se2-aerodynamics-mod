@@ -48,6 +48,15 @@ public sealed class ForceTable
         return Vector3.Normalize(v);
     }
 
+    /// <summary>A copy (both maps): an update builds the next table while this one is still read.</summary>
+    public ForceTable Clone()
+    {
+        var t = new ForceTable(N, NJ) { SurfaceVersion = SurfaceVersion, BuildCom = BuildCom, BuildMs = BuildMs };
+        System.Array.Copy(_f, t._f, _f.Length);
+        System.Array.Copy(_j, t._j, _j.Length);
+        return t;
+    }
+
     public int Index(int face, int i, int j) => ((face * (N + 1) + i) * (N + 1) + j);
     public int IndexJ(int face, int i, int j) => ((face * (NJ + 1) + i) * (NJ + 1) + j);
     public Span<float> At(int face, int i, int j) => _f.AsSpan(Index(face, i, j) * Stride, Stride);
