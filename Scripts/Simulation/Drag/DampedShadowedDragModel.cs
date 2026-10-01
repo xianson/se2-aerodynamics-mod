@@ -169,6 +169,62 @@ public class DampedShadowedDragModel : IAeroDragModel
         _lastShadowVersion = -1;   // re-bake with it
     }
 
+    /// <summary>One table worker's buffers: its faces' reached areas and its depth buffer.</summary>
+    public sealed class TableWork { public float[] Vis = System.Array.Empty<float>(); public float[] Z = System.Array.Empty<float>(); }
+    private readonly TableWork _work0 = new();
+
+    /// <summary>
+    /// Which hull faces the air reaches with the grid moving along v, exactly at v: a depth buffer across the flow
+    /// (0.5 m pixels) keeps the most upstream face of each pixel; a face is reached if it is within 0.4 m of it. One
+    /// pass over the faces per direction - the force table bakes every one of its directions this way (blending the
+    /// shadow map's 26 directions made the force swing 3x across 10 degrees at the blend's kinks).
+    /// </summary>
+    private void BakeOcclusion(Vector3 v, TableWork work)
+    {
+        var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
+        int exLen = excl?.Count ?? 0;
+        var seed = MathF.Abs(v.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
+        var e1 = Vector3.Normalize(Vector3.Cross(v, seed)); var e2 = Vector3.Cross(v, e1);
+        const float Pix = 0.5f, Tol = 0.4f;
+        int total = _px.Count;
+        var PX = CollectionsMarshal.AsSpan(_px); var PY = CollectionsMarshal.AsSpan(_py); var PZ = CollectionsMarshal.AsSpan(_pz);
+        if (work.Vis.Length < total) work.Vis = new float[total];
+        var OI = CollectionsMarshal.AsSpan(_origIndex); var VA = work.Vis.AsSpan(0, total); var AR = CollectionsMarshal.AsSpan(_area);
+        float umin = float.MaxValue, umax = float.MinValue, wmin = float.MaxValue, wmax = float.MinValue;
+        for (int gi = 0; gi < total; gi++)
+        {
+            if (OI[gi] < 0) continue;
+            float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            float u = px * e1.X + py * e1.Y + pz * e1.Z, w = px * e2.X + py * e2.Y + pz * e2.Z;
+            if (u < umin) umin = u; if (u > umax) umax = u; if (w < wmin) wmin = w; if (w > wmax) wmax = w;
+        }
+        if (umin > umax) return;
+        int W = (int)((umax - umin) / Pix) + 1, H = (int)((wmax - wmin) / Pix) + 1;
+        if (work.Z.Length < W * H) work.Z = new float[W * H];
+        var zb = work.Z;
+        System.Array.Fill(zb, float.MinValue, 0, W * H);
+        float inv = 1f / Pix;
+        for (int gi = 0; gi < total; gi++)
+        {
+            if (OI[gi] < 0) continue;
+            float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            int iu = (int)((px * e1.X + py * e1.Y + pz * e1.Z - umin) * inv), iw = (int)((px * e2.X + py * e2.Y + pz * e2.Z - wmin) * inv);
+            float d = px * v.X + py * v.Y + pz * v.Z;
+            ref float z = ref zb[iw * W + iu];
+            if (d > z) z = d;
+        }
+        for (int gi = 0; gi < total; gi++)
+        {
+            int oi = OI[gi];
+            if (oi < 0) { VA[gi] = 0f; continue; }
+            if (oi < exLen && excl[oi]) { VA[gi] = 0f; continue; }
+            float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            int iu = (int)((px * e1.X + py * e1.Y + pz * e1.Z - umin) * inv), iw = (int)((px * e2.X + py * e2.Y + pz * e2.Z - wmin) * inv);
+            float d = px * v.X + py * v.Y + pz * v.Z;
+            VA[gi] = d >= zb[iw * W + iu] - Tol ? AR[gi] : 0f;
+        }
+    }
+
     private void BakeVisibility()
     {
         var visFactor = _shadowMap.VisibilityFactor;
@@ -195,6 +251,159 @@ public class DampedShadowedDragModel : IAeroDragModel
         _lastShadowVersion = _shadowMap.Version;
     }
 
+    // ─── Force table ────────────────────────────────────────────────
+
+    /// <summary>
+    /// This model's face forces for every flow direction (ForceTable), from the surface and shadow map it holds:
+    /// for each table direction its shadow visibility is baked, then every windward face's pressure (bluff and
+    /// Newtonian - the two ends of the speed-of-sound blend) and skin friction are summed for unit dynamic pressure,
+    /// as Compute sums them. The rotation response comes from Compute itself (finite differences), on a coarser map.
+    /// Not thread-safe with Compute on the same model: build it on a model of its own (the background build does).
+    /// </summary>
+    /// <summary>Workers for one force table (the directions are independent).</summary>
+    public static int TableThreads = 3;
+
+    public ForceTable BuildForceTable(IGridAccessor grid, ISurfaceProvider cache, ManifoldClassifier manifold, Vector3 com, int n = 8, int nj = 3)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _shadowMap.Manifold = manifold;
+        EnsureSoA(cache.Faces, cache.Version, manifold);
+        var table = new ForceTable(n, nj) { SurfaceVersion = cache.Version, BuildCom = com };
+        int total = _px.Count;
+        float cdBluff = CdBluff, cpMax = CpMax, cf = CfSkin, st = Streamlining;
+
+        // the directions, on up to TableThreads workers (each its own buffers; the faces are only read)
+        int per = (n + 1) * (n + 1), count = 6 * per;
+        var works = new List<TableWork>(TableThreads);   // (arrays of mod types are banned in scripts: VRS1001)
+        int next = -1;
+        for (int k = 0; k < TableThreads; k++) works.Add(k == 0 ? _work0 : new TableWork());
+        void Worker(TableWork wk)
+        {
+            try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
+            int idx;
+            while ((idx = System.Threading.Interlocked.Increment(ref next)) < count)
+            {
+                int face = idx / per, r = idx % per, i = r / (n + 1), j = r % (n + 1);
+                SumFaces(grid, cache, ForceTable.Direction(face, i, j, n), table.At(face, i, j), bake: true, work: wk);   // (v: the grid's motion)
+            }
+        }
+        var helpers = new List<System.Threading.Tasks.Task>(works.Count - 1);
+        for (int k = 1; k < works.Count; k++) { var wk = works[k]; helpers.Add(System.Threading.Tasks.Task.Factory.StartNew(() => Worker(wk))); }
+        Worker(works[0]);   // (this thread is one of them)
+        foreach (var h in helpers) h.Wait();
+
+        // rotation: how the torque about com (bluff end) changes with turning, per unit speed - dT/d(w/V), per unit q
+        const float dW = 0.002f;   // (rad/s per m/s: 0.2 rad/s at 100 m/s)
+        Span<float> e0 = stackalloc float[ForceTable.Stride], e1 = stackalloc float[ForceTable.Stride];
+        for (int face = 0; face < 6; face++)
+            for (int i = 0; i <= nj; i++)
+                for (int j = 0; j <= nj; j++)
+                {
+                    var v = ForceTable.Direction(face, i, j, nj);
+                    SumFaces(grid, cache, v, e0);
+                    var f0 = new Vector3(e0[0], e0[1], e0[2]); var tc0 = new Vector3(e0[6], e0[7], e0[8]) - Vector3.Cross(com, f0);
+                    var e = table.AtJ(face, i, j);
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        var w = axis == 0 ? new Vector3(dW, 0, 0) : axis == 1 ? new Vector3(0, dW, 0) : new Vector3(0, 0, dW);
+                        SumFaces(grid, cache, v, e1, w, com, bake: false);   // (turning does not change what the air reaches)
+                        var f1 = new Vector3(e1[0], e1[1], e1[2]); var tc1 = new Vector3(e1[6], e1[7], e1[8]) - Vector3.Cross(com, f1);
+                        var dt = (tc1 - tc0) / dW;
+                        e[0 * 3 + axis] = dt.X; e[1 * 3 + axis] = dt.Y; e[2 * 3 + axis] = dt.Z;
+                    }
+                }
+        _lastShadowVersion = -1;
+        table.BuildMs = sw.Elapsed.TotalMilliseconds;
+        return table;
+    }
+
+    /// <summary>
+    /// The faces' forces for unit dynamic pressure, the grid moving along v (unit, grid-local), optionally turning
+    /// at w (per unit speed, about com): F0 F1 T0 T1 (bluff / Newtonian ends of the speed-of-sound blend; torque about
+    /// the grid origin) and frontal area, into 13 floats. One force-table entry. Continuous in v (the table
+    /// interpolates it): windward pressure goes to zero as a face turns parallel to the flow, the base suction behind
+    /// builds up over the first 30 degrees past parallel, and friction acts on every wetted face, either side. (Base
+    /// suction on at full strength and friction off the instant a face turned leeward made the force jump wherever
+    /// the many faces of a voxel ship lie parallel to the flow.)
+    /// </summary>
+    public void SumFaces(IGridAccessor grid, ISurfaceProvider cache, Vector3 v, Span<float> e, Vector3 w = default, Vector3 com = default, bool bake = true, TableWork work = null)
+    {
+        work ??= _work0;
+        int total = _px.Count;
+        var PX = CollectionsMarshal.AsSpan(_px); var PY = CollectionsMarshal.AsSpan(_py); var PZ = CollectionsMarshal.AsSpan(_pz);
+        var NX = CollectionsMarshal.AsSpan(_nx); var NY = CollectionsMarshal.AsSpan(_ny); var NZ = CollectionsMarshal.AsSpan(_nz);
+        float cdBluff = CdBluff, cpMax = CpMax, cf = CfSkin, st = Streamlining;
+        float baseCp = st > 0f ? CpBase * (1f - 0.7f * st) : CpBase;
+        bool turning = w.X != 0 || w.Y != 0 || w.Z != 0;
+        if (bake) BakeOcclusion(v, work);
+        var VA = work.Vis.AsSpan(0, Math.Min(total, work.Vis.Length));
+        if (VA.Length < total) return;
+        double f0x = 0, f0y = 0, f0z = 0, f1x = 0, f1y = 0, f1z = 0, t0x = 0, t0y = 0, t0z = 0, t1x = 0, t1y = 0, t1z = 0, frontal = 0;
+        for (int gi = 0; gi < total; gi++)
+        {
+            float vai = VA[gi];
+            if (vai < 1e-6f) continue;
+            float nx = NX[gi], ny = NY[gi], nz = NZ[gi];
+            float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            // the air past this face (per unit speed), and its dynamic pressure (per unit q)
+            float vx = v.X, vy = v.Y, vz = v.Z, qf = 1f;
+            if (turning)
+            {
+                float rx0 = px - com.X, ry0 = py - com.Y, rz0 = pz - com.Z;
+                vx += w.Y * rz0 - w.Z * ry0; vy += w.Z * rx0 - w.X * rz0; vz += w.X * ry0 - w.Y * rx0;
+                qf = vx * vx + vy * vy + vz * vz;
+                if (qf < 1e-8f) continue;
+                float inv = 1f / MathF.Sqrt(qf); vx *= inv; vy *= inv; vz *= inv;
+            }
+            float cosA = vx * nx + vy * ny + vz * nz;
+            float cpSub, cpSup;
+            if (cosA > 0)
+            {
+                cpSub = cdBluff * cosA; cpSup = cpMax * cosA * cosA;
+                if (st > 0f) { float factor = 0.08f + 0.92f * cosA * cosA; float m = 1f - st * (1f - factor); cpSub *= m; cpSup *= m; }
+                frontal += vai * cosA * qf;
+            }
+            else
+            {
+                float ramp = MathF.Min(1f, -cosA * 2f);      // (sin 30 = 0.5: full suction from 30 degrees past parallel)
+                ramp = ramp * ramp * (3f - 2f * ramp);
+                cpSub = cpSup = baseCp * ramp;
+            }
+            float sx = 0, sy = 0, sz = 0;
+            float sinSq = 1f - cosA * cosA;
+            if (cf > 0 && sinSq > 1e-12f)
+            {
+                float fric = cf * vai * qf / MathF.Sqrt(sinSq);
+                sx = (vx - cosA * nx) * fric; sy = (vy - cosA * ny) * fric; sz = (vz - cosA * nz) * fric;
+            }
+            float ax = -cpSub * vai * qf * nx + sx, ay = -cpSub * vai * qf * ny + sy, az = -cpSub * vai * qf * nz + sz;
+            float bx = -cpSup * vai * qf * nx + sx, by = -cpSup * vai * qf * ny + sy, bz = -cpSup * vai * qf * nz + sz;
+            f0x += ax; f0y += ay; f0z += az; f1x += bx; f1y += by; f1z += bz;
+            t0x += py * az - pz * ay; t0y += pz * ax - px * az; t0z += px * ay - py * ax;
+            t1x += py * bz - pz * by; t1y += pz * bx - px * bz; t1z += px * by - py * bx;
+        }
+        e[0] = (float)f0x; e[1] = (float)f0y; e[2] = (float)f0z; e[3] = (float)f1x; e[4] = (float)f1y; e[5] = (float)f1z;
+        e[6] = (float)t0x; e[7] = (float)t0y; e[8] = (float)t0z; e[9] = (float)t1x; e[10] = (float)t1y; e[11] = (float)t1z;
+        e[12] = (float)frontal;
+    }
+
+    /// <summary>A flat patch of faces into a force table, with this model's constants (ForceTable.AddPatch).</summary>
+    public void AddPatch(ForceTable t, Vector3 n, Vector3 p, float area) => t.AddPatch(n, p, area, CdBluff, CpMax, CfSkin, Streamlining, CpBase);
+
+    /// <summary>The exact face forces at this flight state by SumFaces, rotation included: what the table approximates.</summary>
+    public AeroResult ExactTableValue(in AeroContext ctx, ForceTable shape)
+    {
+        if (ctx.Speed < 0.01f) return default;
+        var one = new ForceTable(1, 1);
+        var vHat = ctx.Velocity / ctx.Speed;
+        Span<float> e = stackalloc float[ForceTable.Stride];
+        SumFaces(ctx.GridAccessor, ctx.SurfaceCache, vHat, e, ctx.AngularVelocity / ctx.Speed, ctx.CenterOfMass);
+        for (int f = 0; f < 6; f++) for (int i = 0; i <= 1; i++) for (int j = 0; j <= 1; j++) e.CopyTo(one.At(f, i, j));
+        _lastShadowVersion = -1;
+        var c = new AeroContext(ctx.GridAccessor, ctx.SurfaceCache, ctx.Velocity, ctx.Atmosphere, ctx.CenterOfMass, ctx.BlockSize, Vector3.Zero, ctx.GroundHeight, ctx.Manifold);
+        return one.Evaluate(c, SubsonicLimit, SupersonicLimit, Streamlining);
+    }
+
     // ─── Compute ────────────────────────────────────────────────────
 
     public AeroResult Compute(in AeroContext ctx)
@@ -208,7 +417,10 @@ public class DampedShadowedDragModel : IAeroDragModel
 
         long t0 = AeroStats.Timestamp();
         _shadowMap.Manifold = ctx.Manifold;
-        _shadowMap.Update(ctx.GridAccessor, cache, ctx.Velocity);
+        // The air's direction past the grid: against its motion. (It was given the motion itself: the map then saw
+        // the REAR faces as the ones the air reaches and shadowed every front face - the faces' pressure drag, the
+        // bulk of a bluff ship's drag, was all but gone: 8 kN on the cruising Jetliner.)
+        _shadowMap.Update(ctx.GridAccessor, cache, -ctx.Velocity);
 
         EnsureSoA(cache.Faces, cache.Version, ctx.Manifold);
 

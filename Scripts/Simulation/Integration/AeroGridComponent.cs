@@ -35,6 +35,21 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private System.Threading.Tasks.Task _finalizeTask;
     private List<LiftingSurface> _builtWings;
     private PrecomputedShadowMap _builtShadow, _spareShadow;
+    private ForceTable _builtTable;
+    /// <summary>Grid cells per surface cell (large-block grids: 2). Such a surface is never updated cell by cell.</summary>
+    private int _cellScale = 1;
+    // ThrustTorque's cached thruster geometry (see Apply)
+    internal float[] _rcsCapDir = new float[6];
+    internal int _rcsGeomCount = -1;
+    internal Vector3 _rcsGeomCom;
+    internal float _rcsArmSq;
+    private static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
+    private static readonly System.Threading.SemaphoreSlim _buildSlots = new(2);
+    // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
+    private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
+    private static DampedShadowedDragModel RentTableBuilder() { lock (_tableBuilders) return _tableBuilders.Count > 0 ? _tableBuilders.Pop() : new DampedShadowedDragModel(); }
+    private static void ReturnTableBuilder(DampedShadowedDragModel b) { lock (_tableBuilders) if (_tableBuilders.Count < 1) _tableBuilders.Push(b); }
+    private volatile string _rebuildNote = "";
     private AeroComponentRegistry _components;
     private BlockComponentFactory _factory;
     private float _blockSize;
@@ -174,6 +189,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>For AeroCost's 'top grid' line.</summary>
     internal int FacesNow => _surface?.FaceCount ?? -1;
     internal bool Rebuilding => _staggeredBuildActive;
+    internal bool UsesTable => _model?.UsedTable ?? false;
     internal string ShadowNote => _model?.InnerModel is DampedShadowedDragModel d ? $"shadow visible={d.ShadowMap.VisibleCount} shadowed={d.ShadowMap.ShadowedCount}" : "";
     internal bool HasResult;
 
@@ -274,6 +290,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // The thruster cache is rebuilt only when a thruster came or went: rebuilding it scans every child of the
         // grid (5000 on the Red Ship), and it ran on EVERY block change (up to 37 ms a time).
         bool thrustersChanged = false;
+        _patchRemoved.Clear(); _patchAdded.Clear();
         foreach (var block in blockData.RemovedBlocks)
         {
             if (block == null) continue;
@@ -284,12 +301,14 @@ public partial class AeroGridComponent : Component, IInSceneListener
             {
                 var min = cellGroup.Min;
                 var max = cellGroup.Max;
+                _patchRemoved.Add((min, max));
                 for (int x = min.X; x <= max.X; x++)
                     for (int y = min.Y; y <= max.Y; y++)
                         for (int z = min.Z; z <= max.Z; z++)
                         {
                             var pos = new Vector3I(x, y, z);
                             _pendingRemovedCells.Add(pos);
+                            _model?.RemoveWingCell(_cellScale > 1 ? new Vector3I(FloorDiv(pos.X, _cellScale), FloorDiv(pos.Y, _cellScale), FloorDiv(pos.Z, _cellScale)) : pos);
                             if (_components.RemoveBlock(pos) > 0)
                                 _faceOverridesDirty = true;
                         }
@@ -316,6 +335,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             {
                 var min = cellGroup.Min;
                 var max = cellGroup.Max;
+                _patchAdded.Add((min, max));
                 for (int x = min.X; x <= max.X; x++)
                     for (int y = min.Y; y <= max.Y; y++)
                         for (int z = min.Z; z <= max.Z; z++)
@@ -323,9 +343,31 @@ public partial class AeroGridComponent : Component, IInSceneListener
             }
         }
 
+        long tp = AeroCost.Start();
+        PatchTable(_patchRemoved, removed: true);
+        PatchTable(_patchAdded, removed: false);
+        AeroCost.Patch.Stop(tp);
+
         _dirty = true;
         if (thrustersChanged) _thrusterCacheDirty = true;
         _surfaceCooldownTicks = SurfaceCooldown;
+    }
+
+    // -- Damage, at once: the force table patched block by block --
+    private readonly List<(Vector3I, Vector3I)> _patchRemoved = new(), _patchAdded = new();
+    /// <summary>Patches applied since the running rebuild took its snapshot: replayed onto its table at the swap.</summary>
+    private readonly List<(Vector3 n, Vector3 p, float area)> _patchLog = new();
+
+    /// <summary>Patch the force table block by block on damage (off: measured against rebuilt tables it did no
+    /// better than leaving the table be until the rebuild - the patches are flat and unshadowed, the rebuilt surface
+    /// smooth and shadowed - and worse where a chunk went; the wings, which carry the big changes, follow at once).</summary>
+    public static bool TablePatching = false;
+
+    private void PatchTable(List<(Vector3I min, Vector3I max)> boxes, bool removed)
+    {
+        if (!TablePatching) return;
+        if (_model?.Table == null || _model.InnerModel is not DampedShadowedDragModel dsm || _gridAccessor == null) return;
+        TablePatcher.PatchBoxes(_model.Table, dsm, _gridAccessor, boxes, removed, _staggeredBuildActive ? _patchLog : null);
     }
 
     // ── Compute (called from debug draw for now) ──
@@ -390,7 +432,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 // A big surface always rebuilds in the background: its "incremental" update re-classifies the whole
                 // surface and re-reads every cell of the grid on the simulation thread (31-52 ms on the Jetliner),
                 // and its wing re-detection takes 70 ms more.
-                bool big = faceCount > BigSurfaceFaces;
+                bool big = faceCount > BigSurfaceFaces || _cellScale > 1;
                 if (big && System.Diagnostics.Stopwatch.GetTimestamp() - _lastRebuildStart < System.Diagnostics.Stopwatch.Frequency * BigRebuildGapSeconds)
                 {
                     // (a big grid rebuilds at most every BigRebuildGapSeconds: changes keep collecting meanwhile)
@@ -1083,45 +1125,81 @@ public partial class AeroGridComponent : Component, IInSceneListener
             foreach (var g in block.GetTransformedOccupiedCellGroups()) boxes.Add((g.Min, g.Max));
         }
         AeroCost.Begin.Stop(tb);
+        AeroExport.Write($"{Entity?.DebugName}_{LastMass / 1000f:F0}t", boxes, _blockSize, LastMass);
         var surface = _buildSurface;
         var manifold = _buildManifold;
         var detector = _model.Detector;
         float blockSize = _blockSize;
+        var tableCom = _lastComLocal;
+        int cellScale = SnapshotGridAccessor.CellScale(blockSize);
+        var cellGeo = SnapshotGridAccessor.CellGeometry(cellScale);
+        _cellScale = cellScale;
+        _builtTable = null;
+        _patchLog.Clear();   // (the snapshot below has every change so far)
         _builtWings = null; _builtShadow = null;
         var spareShadow = _spareShadow; _spareShadow = null;
         // (its own thread, not a thread-pool one: a rebuild runs ~1 s on a big grid, and the game's own async work
         // - physics queries, ray casts - waits on the pool: back-to-back rebuilds starved it, 0.3-0.6 s stalls)
         _lastRebuildStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        // A big grid's build allocates hundreds of MB: meanwhile the runtime should not stop the game for a blocking
+        // full collection (it did, 5 s, on Red Ship's first build) - concurrent ones only (AeroGc).
+        long cellEstimate = 0;
+        foreach (var (lo, hi) in boxes) cellEstimate += (long)(hi.X - lo.X + 1) * (hi.Y - lo.Y + 1) * (hi.Z - lo.Z + 1);
+        bool bigBuild = cellEstimate > AeroGc.BigBuildCells;
+        if (bigBuild) { AeroGc.Enter(); Log.Default?.Info($"[AERO] big build start: grid {Entity?.DebugName}, ~{cellEstimate} cells (capture {AeroCost.Ms(tb):F0} ms)"); }
         _finalizeTask = System.Threading.Tasks.Task.Factory.StartNew(() =>
         {
+          // (at most two rebuilds at a time: a hundred grids arriving at once must not start a hundred threads)
+          _buildSlots.Wait();
+          try
+          {
             // below the game's own threads: a rebuild must never compete with a frame
-            try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
-            long t = AeroCost.Start();
+            try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Lowest; } catch { }
+            long t = AeroCost.Start(), tStart = t;
+            var sw = System.Diagnostics.Stopwatch.StartNew(); var ms = new double[6];
             long m0 = GC.GetAllocatedBytesForCurrentThread(), m;
-            var snapshot = new SnapshotGridAccessor(boxes);
-            long aSnap = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m;
+            // large-block grids at 0.5 m (majority of their 0.25 m cells): 4.5x fewer faces, forces within ~8%
+            var snapshot = cellScale > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(cellScale) : new SnapshotGridAccessor(boxes);
+            surface.CellSize = cellGeo.size; surface.CellOffset = cellGeo.offset;
+            long aSnap = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[0] = sw.Elapsed.TotalMilliseconds;
             surface.BeginBuild(snapshot, blockSize);
             while (!surface.AddCellBatch(int.MaxValue)) { }
-            long aFaces = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m;
+            long aFaces = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[1] = sw.Elapsed.TotalMilliseconds;
             AeroCost.Batch.Stop(t); t = AeroCost.Start();
             surface.FinalizeBuild();
-            long aFin = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m;
+            long aFin = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[2] = sw.Elapsed.TotalMilliseconds;
             AeroCost.FinSurface.Stop(t); t = AeroCost.Start();
             manifold.Classify(surface);
-            long aCls = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m;
+            long aCls = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[3] = sw.Elapsed.TotalMilliseconds;
             AeroCost.FinClassify.Stop(t); t = AeroCost.Start();
-            if (detector is ConnectedComponentWingDetector cc) { cc.Manifold = manifold; cc.ManifoldSurface = surface; }
+            if (detector is ConnectedComponentWingDetector cc) { cc.Manifold = manifold; cc.ManifoldSurface = surface; cc.CellSize = cellGeo.size; cc.CellOffset = cellGeo.offset; }
             detector.Invalidate();
             _builtWings = detector.Detect(snapshot, surface, blockSize);
-            long aWing = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m;
+            long aWing = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[4] = sw.Elapsed.TotalMilliseconds;
             AeroCost.FinWings.Stop(t); t = AeroCost.Start();
             var shadow = spareShadow ?? new PrecomputedShadowMap();
             shadow.Manifold = manifold;
-            shadow.PrecomputeAll(snapshot, surface);
+            // (no 26-direction precompute: the force table bakes its own occlusion; the face loop - only before a
+            //  first table - fills the map as it goes)
             _builtShadow = shadow;
-            long aShd = (m = GC.GetAllocatedBytesForCurrentThread()) - m0;
+            long aShd = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; ms[5] = sw.Elapsed.TotalMilliseconds;
+            // the force table: the faces' forces for every direction (per frame a lookup, whatever the grid's size)
+            var builder = RentTableBuilder();
+            try
+            {
+                var tmp = new LiftingSurfaceModel(builder, liftModel: new CompressibleWingModel());
+                tmp.InstallWings(_builtWings ?? new List<LiftingSurface>());
+                tmp.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
+                tmp.ExcludeWingFaces(builder, surface.Version);
+                _builtTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom);
+            }
+            finally { ReturnTableBuilder(builder); }
+            ms[5] = sw.Elapsed.TotalMilliseconds;
+            _rebuildNote = $"{surface.FaceCount} faces from {snapshot.CellCount} cells ({boxes.Count} boxes): snapshot {ms[0]:F0} ms {aSnap / 1048576.0:F1} MB, faces {ms[1] - ms[0]:F0} ms {aFaces / 1048576.0:F1} MB, finalize {ms[2] - ms[1]:F0} ms {aFin / 1048576.0:F1} MB, classify {ms[3] - ms[2]:F0} ms {aCls / 1048576.0:F1} MB, wings {ms[4] - ms[3]:F0} ms {aWing / 1048576.0:F1} MB, shadow+table {ms[5] - ms[4]:F0} ms {aShd / 1048576.0:F1} MB (table {_builtTable?.BuildMs ?? 0:F0} ms)";
             AeroCost.FinShadow.Stop(t);
             AeroCost.RebuildAlloc = $"rebuild alloc MB: snapshot {aSnap / 1048576.0:F1} faces {aFaces / 1048576.0:F1} finalize {aFin / 1048576.0:F1} classify {aCls / 1048576.0:F1} wings {aWing / 1048576.0:F1} shadow {aShd / 1048576.0:F1} ({surface.FaceCount} faces)";
+          }
+          finally { _buildSlots.Release(); if (bigBuild) AeroGc.Exit(); }
         }, System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
     }
 
@@ -1136,11 +1214,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
             var task = _finalizeTask;
             _finalizeTask = null;
             if (task.IsFaulted)
+            {
                 Log.Default?.Info($"[AERO] background rebuild failed ({task.Exception?.GetBaseException().Message}); rebuilding in one go");
+                _buildSurface.CellSize = _surface.CellSize = 0.25f; _buildSurface.CellOffset = _surface.CellOffset = 0f; _cellScale = 1;
+            }
             else
             {
                 // The swap (simulation thread): the finished surface, its classification and its wings go live.
                 long ts = AeroCost.Start();
+                if (_buildSurface.FaceCount > BigSurfaceFaces) Log.Default?.Info($"[AERO] big rebuild of grid {Entity?.DebugName} ({LastMass / 1000f:F0} t): {_rebuildNote} | wings: {ConnectedComponentWingDetector.LastProfile} | finalize: {_buildSurface.LastFinalizeProfile}");
                 (_surface, _buildSurface) = (_buildSurface, _surface);
                 (_manifold, _buildManifold) = (_buildManifold, _manifold);
                 _staggeredBuildActive = false;
@@ -1148,6 +1230,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 _model.InstallWings(_builtWings);
                 _builtWings = null;
                 if (_model.InnerModel is DampedShadowedDragModel dsm && _builtShadow != null) _spareShadow = dsm.InstallShadowMap(_builtShadow);
+                if (_builtTable != null)
+                {
+                    // changes since the rebuild took its snapshot: onto its table too
+                    if (_model.InnerModel is DampedShadowedDragModel pdsm)
+                        foreach (var (n, p, area) in _patchLog) pdsm.AddPatch(_builtTable, n, p, area);
+                    _model.InstallForceTable(_builtTable);
+                }
+                _patchLog.Clear();
+                _builtTable = null;
                 _builtShadow = null;
                 _components.Clear();
                 _factory.CreateAll(_octree, _blockSize, _components);

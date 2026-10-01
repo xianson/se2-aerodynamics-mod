@@ -71,12 +71,14 @@ public class ManifoldClassifier
         }
 
         // Build connected components via face edge-adjacency
+        // (the buffer outside the loop: stackalloc memory is freed only when the method returns - one per face
+        // overflowed the stack on a grid of millions of faces, Red Ship, and killed the game)
+        Span<int> neighbors = stackalloc int[4];
         for (int i = 0; i < _faceCount; i++)
         {
             surface.GetFaceCellDir(i, out var cell, out int dir);
 
             // Get 4 edge-neighbor face indices
-            Span<int> neighbors = stackalloc int[4];
             GetEdgeNeighbors(surface, cell, dir, neighbors);
 
             for (int e = 0; e < 4; e++)
@@ -166,36 +168,35 @@ public class ManifoldClassifier
     /// </summary>
     private static int FindEdgeNeighbor(SmoothSurfaceProvider surface, Vector3I cell, int dir, Vector3I edgeStep, Vector3I normalOffset)
     {
-        // Candidate 1: continuation — same normal, adjacent cell along edge
-        Vector3I contCell = cell + edgeStep;
-        int contIdx = surface.GetFaceIndex(contCell, dir);
-        if (contIdx >= 0)
-            return contIdx;
-
-        // Candidate 2: convex corner — face turns outward
-        // The neighbor cell is above the current face (cell + normalOffset),
-        // and its face normal points back along -edgeStep
-        Vector3I cornerCell = cell + normalOffset;
-        int cornerDir = VectorToDir(-edgeStep);
-        if (cornerDir >= 0)
-        {
-            int cornerIdx = surface.GetFaceIndex(cornerCell, cornerDir);
-            if (cornerIdx >= 0)
-                return cornerIdx;
-        }
-
-        // Candidate 3: concave corner — face turns inward
-        // The neighbor wraps into the concavity: one step along edge, one step back from normal
-        Vector3I concaveCell = cell + edgeStep - normalOffset;
-        int concaveDir = VectorToDir(normalOffset);
+        // Across the edge of face (cell, n) toward e, the surface goes on in exactly one of three ways, checked in
+        // this order (concave first: where cells meet only along an edge, it keeps each solid's skin to itself):
+        //   concave      - cell+e+n is solid: the wall rising there, its face back toward us  (cell+e+n, -e)
+        //   continuation - cell+e is solid: the same plane                                    (cell+e,   n)
+        //   convex       - otherwise the surface folds down this cell's own side              (cell,     e)
+        // (The convex case looked at cell+n - empty, since this face exists - and the concave one a cell BELOW: at
+        // every outer edge a patch ended, a cube was six separate pieces and only the biggest flat panel of a ship
+        // counted as its hull - the rest was dropped as "interior" and had no drag.)
+        int concaveDir = VectorToDir(-edgeStep);
         if (concaveDir >= 0)
         {
-            int concaveIdx = surface.GetFaceIndex(concaveCell, concaveDir);
+            int concaveIdx = surface.GetFaceIndex(cell + edgeStep + normalOffset, concaveDir);
             if (concaveIdx >= 0)
                 return concaveIdx;
         }
 
-        return -1; // no neighbor (shouldn't happen on a closed manifold)
+        int contIdx = surface.GetFaceIndex(cell + edgeStep, dir);
+        if (contIdx >= 0)
+            return contIdx;
+
+        int convexDir = VectorToDir(edgeStep);
+        if (convexDir >= 0)
+        {
+            int convexIdx = surface.GetFaceIndex(cell, convexDir);
+            if (convexIdx >= 0)
+                return convexIdx;
+        }
+
+        return -1; // no neighbor (cannot happen on a closed voxel surface)
     }
 
     /// <summary>

@@ -7,3 +7,9 @@
 .startupblobscache.json
 Content/contentcache.vrb
 Content/definitionsets.vrb
+
+# Offline test build output
+Tests/**/bin/
+Tests/**/obj/
+# Ship shapes exported from local blueprints (others' workshop ships: not committed)
+Tests/data/

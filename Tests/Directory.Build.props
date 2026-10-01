@@ -1,0 +1,19 @@
+<Project>
+  <!-- Offline suites for the aero mod's game-free core (surface, snapshot, keys). They compile the LITERAL mod sources
+       under Scripts/Simulation against SE2's own math library (VRage.Library), with no game running. Run: dotnet run
+       in each folder; exit code 0 = all pass. tools/test_fast.sh runs them all after ModCheck. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS0162;CS0168;CS0219;CS0414;CS0649;CS8632;CS1998;CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn>
+    <Game2>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
+    <Sim>$(MSBuildThisFileDirectory)..\Scripts\Simulation</Sim>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(Game2)\VRage.Library.dll" />
+    <Compile Include="$(MSBuildThisFileDirectory)TestUsings.cs" />
+  </ItemGroup>
+</Project>

@@ -63,7 +63,37 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         _wings = wings;
         InvalidateLiftModelInfluence();
+        IndexWingCells();
     }
+
+    // -- Wings lost at once: a destroyed cell of a wing takes its share of that wing's forces the same frame (the
+    //    rebuild, seconds later on a big grid, re-detects the wings as they are). --
+    private readonly Dictionary<Vector3I, int> _wingOfCell = new();
+    private int[] _wingCells = System.Array.Empty<int>(), _wingLeft = System.Array.Empty<int>();
+
+    private void IndexWingCells()
+    {
+        _wingOfCell.Clear();
+        int n = _wings?.Count ?? 0;
+        _wingCells = new int[n]; _wingLeft = new int[n];
+        for (int i = 0; i < n; i++)
+        {
+            var cells = _wings[i].Cells;
+            if (cells == null) continue;
+            foreach (var c in cells) _wingOfCell[c] = i;
+            _wingCells[i] = _wingLeft[i] = cells.Count;
+        }
+    }
+
+    /// <summary>A cell is gone: if a wing owned it, that wing has that much less of itself.</summary>
+    public void RemoveWingCell(Vector3I cell)
+    {
+        if (_wingOfCell.Count == 0 || !_wingOfCell.Remove(cell, out int wi)) return;
+        if (wi < _wingLeft.Length && _wingLeft[wi] > 0) _wingLeft[wi]--;
+    }
+
+    /// <summary>The fraction of wing i still there.</summary>
+    public float WingRemaining(int i) => i < _wingCells.Length && _wingCells[i] > 0 ? _wingLeft[i] / (float)_wingCells[i] : 1f;
 
     /// <summary>Incremental wing update — only re-processes affected wings.</summary>
     public void UpdateWings(IGridAccessor grid, ISurfaceProvider surface, float blockSize,
@@ -89,9 +119,48 @@ public class LiftingSurfaceModel : IAeroDragModel
     /// <summary>The last drag split (N, along the velocity): faces, wings (incl. pressure removed), floor added.</summary>
     public float LastInnerDrag, LastWingsDrag, LastFloorAdd;
 
+    // ─── Force table ──────────────────────────────────────────────
+    private ForceTable _table, _prevTable;
+    private int _blendLeft;
+    private const int BlendFrames = 30;
+    /// <summary>Whether the last Compute used the force table (else the face loop).</summary>
+    public bool UsedTable { get; private set; }
+    public ForceTable Table => _table;
+
+    /// <summary>The force table for the surface just swapped in; the old one fades out over BlendFrames.</summary>
+    public void InstallForceTable(ForceTable table)
+    {
+        _prevTable = _table;
+        _table = table;
+        _blendLeft = _prevTable != null ? BlendFrames : 0;
+    }
+
+    /// <summary>The faces' forces: the force table if it is for this surface, else the face loop.</summary>
+    private AeroResult InnerForces(in AeroContext ctx)
+    {
+        // (kept current through damage by patches - AeroGridComponent.PatchTable - so no longer tied to a surface version)
+        if (_table != null && InnerModel is DampedShadowedDragModel d)
+        {
+            UsedTable = true;
+            var r = _table.Evaluate(ctx, d.SubsonicLimit, d.SupersonicLimit, d.Streamlining);
+            if (_blendLeft > 0 && _prevTable != null)
+            {
+                // (a rebuilt grid's new forces fade in: no jump when damage lands)
+                float a = _blendLeft / (float)(BlendFrames + 1);
+                var o = _prevTable.Evaluate(ctx, d.SubsonicLimit, d.SupersonicLimit, d.Streamlining);
+                r = new AeroResult(r.Force + (o.Force - r.Force) * a, r.Torque + (o.Torque - r.Torque) * a, r.DragMagnitude + (o.DragMagnitude - r.DragMagnitude) * a,
+                    r.LiftMagnitude + (o.LiftMagnitude - r.LiftMagnitude) * a, r.FrontalArea, r.Mach, r.DynamicPressure);
+                _blendLeft--;
+            }
+            return r;
+        }
+        UsedTable = false;
+        return InnerModel.Compute(ctx);
+    }
+
     public AeroResult Compute(in AeroContext ctx)
     {
-        var inner = InnerModel.Compute(ctx);
+        var inner = InnerForces(ctx);
 
         if (_wings == null || _wings.Count == 0)
         {
@@ -134,11 +203,12 @@ public class LiftingSurfaceModel : IAeroDragModel
 
             // The wing owns its skins (both: the face model leaves them out, ExcludeWingFaces): their drag is
             // skin friction on both sides, here, besides the induced drag.
-            var profileDrag = -vHat * (2f * innerCfSkin * qf * wing.PlanformArea);
+            float left = WingRemaining(i);
+            var profileDrag = -vHat * (2f * innerCfSkin * qf * wing.PlanformArea * left);
             totalForce += profileDrag;
             totalTorque += Vector3.Cross(wing.Centroid - ctx.CenterOfMass, profileDrag);
 
-            var wingTotalForce = wf.LiftForce + wf.InducedDrag;
+            var wingTotalForce = (wf.LiftForce + wf.InducedDrag) * left;
             totalForce += wingTotalForce;
             totalTorque += Vector3.Cross(wf.ApplicationPoint - ctx.CenterOfMass, wingTotalForce);
         }

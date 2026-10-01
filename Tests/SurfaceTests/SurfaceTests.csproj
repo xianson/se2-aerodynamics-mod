@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="$(Sim)\Core\IGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\SnapshotGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\LongKey.cs" />
+    <Compile Include="$(Sim)\Surface\ISurfaceProvider.cs" />
+    <Compile Include="$(Sim)\Surface\NormalGroup.cs" />
+    <Compile Include="$(Sim)\Surface\SurfaceFace.cs" />
+    <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider.cs" />
+  </ItemGroup>
+</Project>

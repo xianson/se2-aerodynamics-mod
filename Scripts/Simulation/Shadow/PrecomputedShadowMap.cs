@@ -42,7 +42,11 @@ public class PrecomputedShadowMap : IShadowMap
 
     // ─── Per-direction precomputed data ──────────────────────────
 
-    private readonly List<List<float>> _cache = new();
+    // Each direction's visibility per face, a byte (0..255 for 0..1): 26 directions x every face, twice a grid
+    // (double-buffered) - as floats that was 140 MB for Red Ship.
+    private readonly List<byte[]> _cache = new();
+    private const float Inv255 = 1f / 255f;
+    private static byte Q(float v) => (byte)(v <= 0f ? 0 : v >= 1f ? 255 : (int)(v * 255f + 0.5f));
     private readonly List<bool> _dirty = new();
     private readonly List<bool> _hasData = new();
     private int _faceCount;
@@ -64,7 +68,7 @@ public class PrecomputedShadowMap : IShadowMap
     {
         for (int i = 0; i < DirCount; i++)
         {
-            _cache.Add(new List<float>());
+            _cache.Add(System.Array.Empty<byte>());
             _dirty.Add(true);
             _hasData.Add(false);
         }
@@ -153,11 +157,12 @@ public class PrecomputedShadowMap : IShadowMap
         var c1 = w1 > 0f ? _cache[i1] : null;
         var c2 = w2 > 0f ? _cache[i2] : null;
         int vis = 0;
+        float s0 = w0 * Inv255, s1 = w1 * Inv255, s2 = w2 * Inv255;
         for (int i = 0; i < n; i++)
         {
-            float v = w0 * c0[i];
-            if (c1 != null) v += w1 * c1[i];
-            if (c2 != null) v += w2 * c2[i];
+            float v = s0 * c0[i];
+            if (c1 != null) v += s1 * c1[i];
+            if (c2 != null) v += s2 * c2[i];
             _visibilityFactor[i] = v;
             bool b = v >= 0.5f;
             _visibility[i] = b;
@@ -169,6 +174,9 @@ public class PrecomputedShadowMap : IShadowMap
     }
 
     private int _b0 = -1, _b1 = -1, _b2 = -1;
+
+    /// <summary>The next Update re-blends whatever the change (the force table needs each direction's own blend).</summary>
+    public void ResetBlend() { _b0 = _b1 = _b2 = -1; }
     private float _w0, _w1, _w2;
 
     /// <summary>
@@ -182,7 +190,7 @@ public class PrecomputedShadowMap : IShadowMap
         _faceCount = provider.FaceCount;
         for (int d = 0; d < DirCount; d++)
         {
-            if (_cache[d].Capacity < _faceCount) _cache[d] = new List<float>(_faceCount);   // (sized once: no growth garbage)
+            if (_cache[d].Length < _faceCount) _cache[d] = new byte[_faceCount];   // (sized once: no growth garbage)
             ComputeDirection(grid, provider, d);
             _dirty[d] = false;
             _hasData[d] = true;
@@ -201,13 +209,14 @@ public class PrecomputedShadowMap : IShadowMap
         Vector3 flowDir = Directions[dirIndex];
 
         var result = _cache[dirIndex];
-        while (result.Count < n) result.Add(0f);
+        if (result.Length < n) { result = new byte[n]; _cache[dirIndex] = result; }
 
         // Face positions are in metres and the grid's cells are 0.25 m (CubeGridCoords.CELL_SIZE). The march was
         // in BLOCK units (position / block size), so every ray probed cells ten times too near the grid's origin on
         // large grids: shadowing was noise. Now in cells, half a block a step (it cannot skip a whole block), as
         // far as MaxRayLength blocks.
-        const float CellSize = 0.25f;
+        float CellSize = provider is SmoothSurfaceProvider sp ? sp.CellSize : 0.25f;
+        float cellOff = provider is SmoothSurfaceProvider sp2 ? sp2.CellOffset : 0f;
         float blockSize = provider.BlockSize;
         float invCell = 1f / CellSize;
         int cellsPerBlock = Math.Max(1, (int)MathF.Round(blockSize / CellSize));
@@ -227,22 +236,25 @@ public class PrecomputedShadowMap : IShadowMap
             // Skip cavity faces — they'll never be read by hull-only SoA
             if (hasManifold && !Manifold.IsHull(i))
             {
-                result[i] = 0f;
+                result[i] = 0;
                 continue;
             }
 
             var face = faces[i];
             float cosAlpha = -Vector3.Dot(flowDir, face.Normal);
 
+            // A face turned away from this direction: nothing to say about what blocks it (the force model decides
+            // by facing). It read 0 - "hidden" - and blended between directions that dragged down every face that
+            // faces the air at the direction in between: ships lost most of their drag at many angles.
             if (cosAlpha <= 0)
             {
-                result[i] = 0f;
+                result[i] = 255;
                 continue;
             }
 
-            float ox = face.Position.X * invCell;
-            float oy = face.Position.Y * invCell;
-            float oz = face.Position.Z * invCell;
+            float ox = face.Position.X * invCell - cellOff;
+            float oy = face.Position.Y * invCell - cellOff;
+            float oz = face.Position.Z * invCell - cellOff;
 
             // start just outside the face (0.6 cell upstream), into the empty cell it borders
             float cx = ox - flowDir.X * 0.6f;
@@ -275,13 +287,13 @@ public class PrecomputedShadowMap : IShadowMap
             if (hit)
             {
                 if (hitWing && decayLen > 0f)
-                    result[i] = 1f - MathF.Exp(-hitDist / decayLen);
+                    result[i] = Q(1f - MathF.Exp(-hitDist / decayLen));
                 else
-                    result[i] = 0f;
+                    result[i] = 0;
             }
             else
             {
-                result[i] = 1f;
+                result[i] = 255;
             }
         }
     }

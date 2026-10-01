@@ -34,7 +34,9 @@ public class ConnectedComponentWingDetector : IWingDetector
         new( 0, 0, 1),
     };
 
-    private const float CellSize = 0.25f;
+    /// <summary>Cell size (m) and centre offset (cells): as the surface it reads (SmoothSurfaceProvider).</summary>
+    public float CellSize { get; set; } = 0.25f;
+    public float CellOffset { get; set; } = 0f;
 
     // ─── Cached state for incremental updates ────────────────────
 
@@ -91,12 +93,17 @@ public class ConnectedComponentWingDetector : IWingDetector
 
     // ─── Full detection ──────────────────────────────────────────
 
+    public static volatile string LastProfile = "";
+
     public List<LiftingSurface> Detect(IGridAccessor grid, ISurfaceProvider surface, float blockSize)
     {
         var results = new List<LiftingSurface>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        double tFlood = 0, tAnalyze = 0; int comps = 0, analyzed = 0;
 
         // Single-pass: collect all exposed faces and per-axis bounding box
         var allExposed = CollectAllExposedFaces(grid, out var gridBBox);
+        double tCollect = sw.Elapsed.TotalMilliseconds;
 
         for (int d = 0; d < 3; d++)
         {
@@ -105,19 +112,26 @@ public class ConnectedComponentWingDetector : IWingDetector
             if (!allExposed.TryGetValue(d, out var faces) || faces.Count < MinFaceCount)
                 continue;
 
+            double t0 = sw.Elapsed.TotalMilliseconds;
             var components = FloodFill(faces, posNormal);
+            double t1 = sw.Elapsed.TotalMilliseconds; tFlood += t1 - t0;
+            comps += components.Count;
 
             foreach (var component in components)
             {
                 if (component.Count < MinFaceCount) continue;
-
+                analyzed++;
                 var wing = AnalyzeComponent(grid, component, posNormal, blockSize, gridBBox);
                 if (wing.HasValue)
                     results.Add(wing.Value);
             }
+            tAnalyze += sw.Elapsed.TotalMilliseconds - t1;
         }
 
+        double t2 = sw.Elapsed.TotalMilliseconds;
+        int before = results.Count;
         results = MergeCoplanarWings(results, blockSize);
+        LastProfile = $"collect {tCollect:F0} ms, flood {tFlood:F0} ms ({comps} components), analyze {tAnalyze:F0} ms ({analyzed}), merge {sw.Elapsed.TotalMilliseconds - t2:F0} ms ({before} -> {results.Count} wings)";
 
         _cachedWings = results;
         BuildCellLookup();
@@ -278,21 +292,21 @@ public class ConnectedComponentWingDetector : IWingDetector
 
     // ─── Merge coplanar wings ────────────────────────────────────
 
-    private static void ComputeSpanExtents(LiftingSurface wing, out float minS, out float maxS)
+    private void ComputeSpanExtents(LiftingSurface wing, out float minS, out float maxS)
     {
         minS = float.MaxValue;
         maxS = float.MinValue;
         foreach (var c in wing.Cells)
         {
-            float s = (c.X + 0.5f) * CellSize * wing.SpanAxis.X
-                    + (c.Y + 0.5f) * CellSize * wing.SpanAxis.Y
-                    + (c.Z + 0.5f) * CellSize * wing.SpanAxis.Z;
+            float s = (c.X + CellOffset) * CellSize * wing.SpanAxis.X
+                    + (c.Y + CellOffset) * CellSize * wing.SpanAxis.Y
+                    + (c.Z + CellOffset) * CellSize * wing.SpanAxis.Z;
             minS = MathF.Min(minS, s);
             maxS = MathF.Max(maxS, s);
         }
     }
 
-    private static List<LiftingSurface> MergeCoplanarWings(List<LiftingSurface> wings, float blockSize)
+    private List<LiftingSurface> MergeCoplanarWings(List<LiftingSurface> wings, float blockSize)
     {
         float maxGapM = 12f * CellSize;
 
@@ -327,9 +341,9 @@ public class ConnectedComponentWingDetector : IWingDetector
                     float bMinS2 = float.MaxValue, bMaxS2 = float.MinValue;
                     foreach (var c in b.Cells)
                     {
-                        float s = (c.X + 0.5f) * CellSize * a.SpanAxis.X
-                                + (c.Y + 0.5f) * CellSize * a.SpanAxis.Y
-                                + (c.Z + 0.5f) * CellSize * a.SpanAxis.Z;
+                        float s = (c.X + CellOffset) * CellSize * a.SpanAxis.X
+                                + (c.Y + CellOffset) * CellSize * a.SpanAxis.Y
+                                + (c.Z + CellOffset) * CellSize * a.SpanAxis.Z;
                         bMinS2 = MathF.Min(bMinS2, s);
                         bMaxS2 = MathF.Max(bMaxS2, s);
                     }
@@ -434,12 +448,12 @@ public class ConnectedComponentWingDetector : IWingDetector
         // For X-axis: column key = (Y,Z), store min/max X
         // For Y-axis: column key = (X,Z), store min/max Y
         // For Z-axis: column key = (X,Y), store min/max Z
-        var colMinX = new Dictionary<long, int>();
-        var colMaxX = new Dictionary<long, int>();
-        var colMinY = new Dictionary<long, int>();
-        var colMaxY = new Dictionary<long, int>();
-        var colMinZ = new Dictionary<long, int>();
-        var colMaxZ = new Dictionary<long, int>();
+        var colMinX = new Dictionary<long, int>(LongKey.Comparer);
+        var colMaxX = new Dictionary<long, int>(LongKey.Comparer);
+        var colMinY = new Dictionary<long, int>(LongKey.Comparer);
+        var colMaxY = new Dictionary<long, int>(LongKey.Comparer);
+        var colMinZ = new Dictionary<long, int>(LongKey.Comparer);
+        var colMaxZ = new Dictionary<long, int>(LongKey.Comparer);
 
         foreach (var cell in grid.EnumerateOccupiedCells())
         {
@@ -706,9 +720,9 @@ public class ConnectedComponentWingDetector : IWingDetector
         foreach (var cell in wingCells)
         {
             centroid += new Vector3(
-                (cell.X + 0.5f) * CellSize,
-                (cell.Y + 0.5f) * CellSize,
-                (cell.Z + 0.5f) * CellSize);
+                (cell.X + CellOffset) * CellSize,
+                (cell.Y + CellOffset) * CellSize,
+                (cell.Z + CellOffset) * CellSize);
         }
         centroid /= wingCells.Count;
 

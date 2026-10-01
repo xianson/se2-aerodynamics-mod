@@ -57,17 +57,33 @@ public static class ThrustTorque
 
         // ── 1. The game's thrust this frame (grid-local, N), as the game shares it: by direction, by capacity ──
         Vector3 gameF = data.TryGet<ActiveThrustData>(out var atd) ? atd.ComputedThrustPerFrame * 60f : Vector3.Zero;
-        Span<float> cap = stackalloc float[6];   // capacity per direction: +X -X +Y -Y +Z -Z (force directions)
-        float armSq = 0f;
-        for (int i = 0; i < n; i++)
+        // At rest - nothing pushing, not moving, not turning, no pilot steering: nothing to do (a parked ship cost
+        // as much as a flying one, every frame)
+        if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>())
         {
-            var t = thrusters[i];
-            dirs[i] = -t.ThrustDirection;                                      // the way it pushes the ship
-            arms[i] = Vector3.Cross(t.GridLocalPosition - com, dirs[i]);       // torque per newton
-            caps[i] = Math.Max(0f, t.MaxPower);
-            cap[DirIndex(dirs[i])] += caps[i];
-            armSq += (t.GridLocalPosition - com).LengthSquared();
+            rep.Mode = "rest";
+            Publish(aero, wt, false);
+            return rep;
         }
+        // the thrusters' geometry: only when they or the centre of mass change (it was recomputed every frame)
+        var cap = aero._rcsCapDir;
+        if (aero._rcsGeomCount != n || (aero._rcsGeomCom - com).LengthSquared() > 1e-4f)
+        {
+            aero._rcsGeomCount = n; aero._rcsGeomCom = com;
+            System.Array.Clear(cap, 0, 6);
+            float sq = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                var t = thrusters[i];
+                dirs[i] = -t.ThrustDirection;                                      // the way it pushes the ship
+                arms[i] = Vector3.Cross(t.GridLocalPosition - com, dirs[i]);       // torque per newton
+                caps[i] = Math.Max(0f, t.MaxPower);
+                cap[DirIndex(dirs[i])] += caps[i];
+                sq += (t.GridLocalPosition - com).LengthSquared();
+            }
+            aero._rcsArmSq = sq;
+        }
+        float armSq = aero._rcsArmSq;
         Vector3 offsetTorque = Vector3.Zero;
         for (int i = 0; i < n; i++)
         {
@@ -209,9 +225,10 @@ public static class ThrustTorque
     {
         Span<float> G = stackalloc float[36];
         float sm = MathF.Sqrt(mu);
+        Span<float> v = stackalloc float[6];   // (once: stackalloc in the loop held stack per thruster until return)
         for (int i = 0; i < n; i++)
         {
-            Span<float> v = stackalloc float[6] { arms[i].X, arms[i].Y, arms[i].Z, sm * dirs[i].X, sm * dirs[i].Y, sm * dirs[i].Z };
+            v[0] = arms[i].X; v[1] = arms[i].Y; v[2] = arms[i].Z; v[3] = sm * dirs[i].X; v[4] = sm * dirs[i].Y; v[5] = sm * dirs[i].Z;
             for (int r = 0; r < 6; r++) for (int c = 0; c < 6; c++) G[r * 6 + c] += v[r] * v[c];
         }
         Span<float> x = stackalloc float[6] { 1f, 0.9f, 0.8f, 0.7f, 0.6f, 0.5f };

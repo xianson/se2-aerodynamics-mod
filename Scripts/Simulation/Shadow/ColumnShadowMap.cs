@@ -51,8 +51,8 @@ public class ColumnShadowMap : IShadowMap
 
     // ─── State ────────────────────────────────────────────────────
 
-    private readonly Dictionary<long, float> _depthBuffer = new();
-    private readonly HashSet<long> _wingBlockerColumns = new();
+    private readonly Dictionary<long, float> _depthBuffer = new(LongKey.Comparer);
+    private readonly HashSet<long> _wingBlockerColumns = new(LongKey.Comparer);
     private Dictionary<long, Vector3I>? _blockerCells;
     private List<bool> _visibility = new();
     private List<float> _visibilityFactor = new();
@@ -119,7 +119,7 @@ public class ColumnShadowMap : IShadowMap
 
         if (wingCells is { Count: > 0 })
         {
-            _blockerCells ??= new Dictionary<long, Vector3I>();
+            _blockerCells ??= new Dictionary<long, Vector3I>(LongKey.Comparer);
             _blockerCells.Clear();
         }
         Dictionary<long, Vector3I>? blockerCells = wingCells is { Count: > 0 }

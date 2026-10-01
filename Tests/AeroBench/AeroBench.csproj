@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(Sim)\Core\*.cs" Exclude="$(Sim)\Core\Se2GridAccessor.cs" />
+    <Compile Include="$(Sim)\Atmosphere\*.cs" />
+    <Compile Include="$(Sim)\Drag\*.cs" />
+    <Compile Include="$(Sim)\Lift\*.cs" />
+    <Compile Include="$(Sim)\Shadow\*.cs" />
+    <Compile Include="$(Sim)\Surface\*.cs" />
+    <Compile Include="$(Sim)\Components\IAeroBlockComponent.cs" />
+    <Compile Include="$(Sim)\Components\IFaceOverride.cs" />
+    <Compile Include="$(Sim)\Components\ComponentForceResult.cs" />
+    <Compile Include="$(Sim)\Components\LocalAeroConditions.cs" />
+  </ItemGroup>
+</Project>

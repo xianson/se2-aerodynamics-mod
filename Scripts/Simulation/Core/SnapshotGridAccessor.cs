@@ -65,4 +65,39 @@ public sealed class SnapshotGridAccessor : IGridAccessor
     }
 
     public int CellCount => _count;
+
+    /// <summary>Cells per surface cell, by block size: large-block grids (2.5 m) at 0.5 m (2 of the grid's 0.25 m
+    /// cells; block boundaries fall on it exactly); smaller ones at the grid's own cells.</summary>
+    public static int CellScale(float blockSize) => blockSize >= 2.4f ? LargeGridCellScale : 1;
+    public static int LargeGridCellScale = 2;   // (5 - 1.25 m - lost the shape: forces 55% off; 2: ~8%)
+
+    static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
+
+    /// <summary>The boxes in cells k times larger (a coarse cell is solid where any of its cells is).</summary>
+    public static List<(Vector3I min, Vector3I max)> Coarsen(IReadOnlyList<(Vector3I min, Vector3I max)> boxes, int k)
+    {
+        var r = new List<(Vector3I, Vector3I)>(boxes.Count);
+        foreach (var (a, b) in boxes)
+            r.Add((new Vector3I(FloorDiv(a.X, k), FloorDiv(a.Y, k), FloorDiv(a.Z, k)), new Vector3I(FloorDiv(b.X, k), FloorDiv(b.Y, k), FloorDiv(b.Z, k))));
+        return r;
+    }
+
+    /// <summary>The coarse cells (k x k x k of these) more than half solid: shapes keep their size and slopes stay
+    /// slopes (where any solid cell counted, a slope block filled out to a box: +34% frontal area on Red Ship).</summary>
+    public SnapshotGridAccessor CoarsenMajority(int k)
+    {
+        var counts = new Dictionary<Vector3I, int>();
+        foreach (var c in EnumerateOccupiedCells())
+        {
+            var q = new Vector3I(FloorDiv(c.X, k), FloorDiv(c.Y, k), FloorDiv(c.Z, k));
+            counts.TryGetValue(q, out int n); counts[q] = n + 1;
+        }
+        int need = k * k * k / 2 + 1;
+        var boxes = new List<(Vector3I, Vector3I)>();
+        foreach (var kv in counts) if (kv.Value >= need) boxes.Add((kv.Key, kv.Key));
+        return new SnapshotGridAccessor(boxes);
+    }
+
+    /// <summary>A surface cell's size (m) and centre offset (cells) at scale k.</summary>
+    public static (float size, float offset) CellGeometry(int k) => (0.25f * k, (k - 1) / (2f * k));
 }

@@ -11,6 +11,7 @@ namespace AeroMod;
 /// </summary>
 public sealed class AeroCost
 {
+    public static readonly AeroCost Patch = new AeroCost("patch");
     public static readonly AeroCost Blocks = new AeroCost("blocks"), Sim = new AeroCost("sim"), Draw = new AeroCost("draw"),
         Thrusters = new AeroCost("thrCache"), Gyros = new AeroCost("gyroCache"), Sched = new AeroCost("sched"),
         Flush = new AeroCost("flush"), Wings = new AeroCost("wings"), Compute = new AeroCost("compute"),
@@ -19,6 +20,8 @@ public sealed class AeroCost
         FinClassify = new AeroCost("fClass"), FinComponents = new AeroCost("fComp"), FinShadow = new AeroCost("fShadow"),
         TSetup = new AeroCost("tSetup"), TLoop = new AeroCost("tLoop"), TAtt = new AeroCost("tAtt"), TWrite = new AeroCost("tWrite");
     public static bool Log = false;
+    /// <summary>Milliseconds since a Start() timestamp.</summary>
+    public static double Ms(long t0) => (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     public static volatile string RebuildAlloc = "-";   // (the Orbital Mod harness: aerocost on|off)
     readonly string _name;
     long _ticks, _worst, _calls;
@@ -61,17 +64,19 @@ public sealed class AeroCost
     }
 
     // The busiest grid this second (most faces): is aero actually working on it?
-    static AeroGridComponent _top; static int _topFaces;
+    static AeroGridComponent _top; static float _topFaces;
+    /// <summary>The heaviest grid (by mass: a grid's first build has no faces yet, and it is the big one that matters).</summary>
     internal static void Watch(AeroGridComponent g)
     {
-        int f = g.FacesNow;
+        if (g.LastDensity <= 0f) return;   // (in air only: a station in space has no aero to watch)
+        float f = g.LastMass;
         if (f >= _topFaces || ReferenceEquals(g, _top)) { _top = g; _topFaces = f; }
     }
     static string Top()
     {
         var g = _top; _top = null; _topFaces = 0;
         if (g == null) return "top -";
-        return $"top faces={g.FacesNow} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult} {g.ShadowNote}";
+        return $"top grid {g.Entity?.DebugName} {g.LastMass / 1000f:F0} t faces={g.FacesNow} table={g.UsesTable} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult} {g.ShadowNote}";
     }
 
     public void Stop(long t0)
@@ -95,7 +100,7 @@ public sealed class AeroCost
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), n = Interlocked.Read(ref _next);
         if (now < n || Interlocked.CompareExchange(ref _next, now + System.Diagnostics.Stopwatch.Frequency, n) != n) return;
-        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {ThrustTorque.ClientNote} calls server {Interlocked.Exchange(ref ThrustTorque.ServerCalls, 0)} client {Interlocked.Exchange(ref ThrustTorque.ClientCalls, 0)} flames lit {Interlocked.Exchange(ref ThrustTorque.FlameLit, 0)} matched {Interlocked.Exchange(ref ThrustTorque.FlameHits, 0)}/{Interlocked.Exchange(ref ThrustTorque.FlameLookups, 0)} grids {Interlocked.Exchange(ref SimServer, 0)}/{Interlocked.Exchange(ref SimClient, 0)} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()} | {FinShadow.Take()} || {RebuildAlloc}");
+        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Patch.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {ThrustTorque.ClientNote} calls server {Interlocked.Exchange(ref ThrustTorque.ServerCalls, 0)} client {Interlocked.Exchange(ref ThrustTorque.ClientCalls, 0)} flames lit {Interlocked.Exchange(ref ThrustTorque.FlameLit, 0)} matched {Interlocked.Exchange(ref ThrustTorque.FlameHits, 0)}/{Interlocked.Exchange(ref ThrustTorque.FlameLookups, 0)} grids {Interlocked.Exchange(ref SimServer, 0)}/{Interlocked.Exchange(ref SimClient, 0)} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()} | {FinShadow.Take()} || {RebuildAlloc}");
         lock (_threads) _threads.Clear();
     }
 }
