@@ -16,7 +16,18 @@ public class DampedShadowedDragModel : IAeroDragModel
 {
     public string Name => "Newtonian + Shadow + Damping (AVX2)";
 
-    private readonly PrecomputedShadowMap _shadowMap = new();
+    private PrecomputedShadowMap _shadowMap = new();
+
+    /// <summary>A shadow map precomputed for the surface about to go live (a background rebuild).</summary>
+    /// <summary>Returns the map it replaces (to be reused for the next rebuild).</summary>
+    public PrecomputedShadowMap InstallShadowMap(PrecomputedShadowMap map)
+    {
+        if (map == null) return null;
+        var old = _shadowMap;
+        _shadowMap = map;
+        _lastShadowVersion = -1;   // bake visibility from it on the next compute
+        return old;
+    }
 
     // ─── Tuning ─────────────────────────────────────────────────────
 

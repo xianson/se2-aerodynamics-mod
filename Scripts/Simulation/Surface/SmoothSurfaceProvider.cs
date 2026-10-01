@@ -136,11 +136,39 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     /// <summary>True while a staggered build is in progress (between BeginBuild and FinalizeBuild).</summary>
     public bool IsBuilding => _stagingCells != null;
+
+    // ─── Reuse between builds ────────────────────────────────────
+    // A big grid's rebuild made tens of thousands of small objects (a weight list and an adjacency set per vertex,
+    // fresh dictionaries for adjacency, edges, creases and normals): ~80 MB a rebuild on the Jetliner, and the
+    // garbage collections it caused paused the game. They are kept and reused instead (each of the two surfaces
+    // that alternate keeps its own).
+    private readonly Stack<HashSet<long>> _setPool = new();
+    private readonly Stack<List<float>> _weightPool = new();
+    private Dictionary<long, HashSet<long>> _adjStore;
+    private Dictionary<long, int> _edgeStore;
+    private HashSet<long> _creaseStore, _checkedStore;
+    private Dictionary<long, Vector3> _normA, _normB;
+
+    private void RecycleForBuild()
+    {
+        foreach (var w in _vertexDirWeights.Values) { for (int d = 0; d < w.Count; d++) w[d] = 0f; _weightPool.Push(w); }
+        if (_vertexAdjacency != null)
+        {
+            foreach (var set in _vertexAdjacency.Values) { set.Clear(); _setPool.Push(set); }
+            _vertexAdjacency.Clear();
+            _adjStore = _vertexAdjacency;
+        }
+        if (_edgeRefCount != null) { _edgeRefCount.Clear(); _edgeStore = _edgeRefCount; }
+        if (_creaseEdges != null) { _creaseEdges.Clear(); _creaseStore = _creaseEdges; }
+    }
+
+    private List<float> RentWeights() => _weightPool.Count > 0 ? _weightPool.Pop() : new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
+    private HashSet<long> RentSet() => _setPool.Count > 0 ? _setPool.Pop() : new HashSet<long>();
     /// <summary>The cells a staggered build is working through (null when not building): its snapshot of the grid.</summary>
     public IReadOnlyList<Vector3I> StagedCells => _stagingCells;
 
     // ─── Staggered build state ──────────────────────────────────
-    private List<Vector3I> _stagingCells;
+    private List<Vector3I> _stagingCells, _stagingStore;
     private int _stagingOffset;
     private IGridAccessor _stagingGrid;
 
@@ -187,9 +215,11 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     public void BeginBuild(IGridAccessor grid, float blockSize)
     {
         _blockSize = blockSize;
+        RecycleForBuild();
 
         // Materialize all cells up front (one octree pass, relatively cheap)
-        _stagingCells = new List<Vector3I>();
+        _stagingCells = _stagingStore ?? new List<Vector3I>();
+        _stagingCells.Clear();
         foreach (var cell in grid.EnumerateOccupiedCells())
             _stagingCells.Add(cell);
         _stagingOffset = 0;
@@ -235,6 +265,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     /// </summary>
     public void FinalizeBuild()
     {
+        if (_stagingCells != null) { _stagingCells.Clear(); _stagingStore = _stagingCells; }
         _stagingCells = null;
         _stagingGrid = null;
 
@@ -376,7 +407,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             long vkey = PackVertex(cell, dir, v);
             if (!_vertexDirWeights.TryGetValue(vkey, out var weights))
             {
-                weights = new List<float> { 0f, 0f, 0f, 0f, 0f, 0f };
+                weights = RentWeights();
                 _vertexDirWeights[vkey] = weights;
             }
             weights[dir] += MathF.PI / 2f;
@@ -613,7 +644,9 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             source = _vertexDirWeights;
         }
 
-        var vertexNormals = new Dictionary<long, Vector3>(capacity);
+        bool full = dirtyVertices == null;   // (the full pass reuses two dictionaries; the local pass is small)
+        var vertexNormals = full ? (_normA ??= new Dictionary<long, Vector3>(capacity)) : new Dictionary<long, Vector3>(capacity);
+        if (full) vertexNormals.Clear();
         foreach (var kvp in source)
         {
             var vw = kvp.Value;
@@ -632,7 +665,10 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
         for (int ring = 1; ring < SmoothingRings; ring++)
         {
-            var newNormals = new Dictionary<long, Vector3>(vertexNormals.Count);
+            var newNormals = full
+                ? (ReferenceEquals(vertexNormals, _normA) ? (_normB ??= new Dictionary<long, Vector3>(vertexNormals.Count)) : _normA)
+                : new Dictionary<long, Vector3>(vertexNormals.Count);
+            if (full) newNormals.Clear();
             foreach (var kvp in vertexNormals)
             {
                 var key = kvp.Key;
@@ -673,8 +709,8 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     private void BuildAdjacency()
     {
-        _vertexAdjacency = new Dictionary<long, HashSet<long>>();
-        _edgeRefCount = new Dictionary<long, int>();
+        _vertexAdjacency = _adjStore ?? new Dictionary<long, HashSet<long>>(); _adjStore = null;
+        _edgeRefCount = _edgeStore ?? new Dictionary<long, int>(); _edgeStore = null;
 
         for (int i = 0; i < _rawFaceKeys.Count; i++)
         {
@@ -720,14 +756,14 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
         if (!_vertexAdjacency.TryGetValue(a, out var setA))
         {
-            setA = new HashSet<long>();
+            setA = RentSet();
             _vertexAdjacency[a] = setA;
         }
         setA.Add(b);
 
         if (!_vertexAdjacency.TryGetValue(b, out var setB))
         {
-            setB = new HashSet<long>();
+            setB = RentSet();
             _vertexAdjacency[b] = setB;
         }
         setB.Add(a);
@@ -745,12 +781,12 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             if (_vertexAdjacency.TryGetValue(a, out var setA))
             {
                 setA.Remove(b);
-                if (setA.Count == 0) _vertexAdjacency.Remove(a);
+                if (setA.Count == 0) { _vertexAdjacency.Remove(a); _setPool.Push(setA); }
             }
             if (_vertexAdjacency.TryGetValue(b, out var setB))
             {
                 setB.Remove(a);
-                if (setB.Count == 0) _vertexAdjacency.Remove(b);
+                if (setB.Count == 0) { _vertexAdjacency.Remove(b); _setPool.Push(setB); }
             }
             _creaseEdges?.Remove(canonical);
         }
@@ -764,7 +800,8 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     private void DetectAllCreases()
     {
-        _creaseEdges = new HashSet<long>();
+        _creaseEdges = _creaseStore ?? new HashSet<long>(); _creaseStore = null;
+        _creaseEdges.Clear();
         if (_edgeRefCount == null) return;
 
         float cosThreshold = MathF.Cos(CreaseAngleDegrees * MathF.PI / 180f);
@@ -778,7 +815,8 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         // Walk all face pairs sharing edges via vertex adjacency
         if (_vertexAdjacency == null) return;
 
-        var checkedEdges = new HashSet<long>();
+        var checkedEdges = _checkedStore ??= new HashSet<long>();
+        checkedEdges.Clear();
         foreach (var kvp in _vertexAdjacency)
         {
             long vA = kvp.Key;

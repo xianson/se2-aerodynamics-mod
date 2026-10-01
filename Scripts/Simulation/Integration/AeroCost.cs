@@ -16,9 +16,10 @@ public sealed class AeroCost
         Flush = new AeroCost("flush"), Wings = new AeroCost("wings"), Compute = new AeroCost("compute"),
         Pre = new AeroCost("pre"), Thrust = new AeroCost("thrust"), Apply = new AeroCost("apply"),
         Begin = new AeroCost("bBegin"), Batch = new AeroCost("bBatch"), FinSurface = new AeroCost("fSurf"), FinWings = new AeroCost("fWings"),
-        FinClassify = new AeroCost("fClass"), FinComponents = new AeroCost("fComp"),
+        FinClassify = new AeroCost("fClass"), FinComponents = new AeroCost("fComp"), FinShadow = new AeroCost("fShadow"),
         TSetup = new AeroCost("tSetup"), TLoop = new AeroCost("tLoop"), TAtt = new AeroCost("tAtt"), TWrite = new AeroCost("tWrite");
-    public static bool Log = false;   // (the Orbital Mod harness: aerocost on|off)
+    public static bool Log = false;
+    public static volatile string RebuildAlloc = "-";   // (the Orbital Mod harness: aerocost on|off)
     readonly string _name;
     long _ticks, _worst, _calls;
     AeroCost(string name) { _name = name; }
@@ -70,7 +71,7 @@ public sealed class AeroCost
     {
         var g = _top; _top = null; _topFaces = 0;
         if (g == null) return "top -";
-        return $"top faces={g.FacesNow} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult}";
+        return $"top faces={g.FacesNow} rebuilding={g.Rebuilding} v={g.LastSpeed:F0} d={g.LastDensity:F3} |F|={g.LastResult.Force.Length():F0}N hasResult={g.HasResult} {g.ShadowNote}";
     }
 
     public void Stop(long t0)
@@ -94,7 +95,7 @@ public sealed class AeroCost
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), n = Interlocked.Read(ref _next);
         if (now < n || Interlocked.CompareExchange(ref _next, now + System.Diagnostics.Stopwatch.Frequency, n) != n) return;
-        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {ThrustTorque.ClientNote} calls server {Interlocked.Exchange(ref ThrustTorque.ServerCalls, 0)} client {Interlocked.Exchange(ref ThrustTorque.ClientCalls, 0)} flames lit {Interlocked.Exchange(ref ThrustTorque.FlameLit, 0)} matched {Interlocked.Exchange(ref ThrustTorque.FlameHits, 0)}/{Interlocked.Exchange(ref ThrustTorque.FlameLookups, 0)} grids {Interlocked.Exchange(ref SimServer, 0)}/{Interlocked.Exchange(ref SimClient, 0)} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()}");
+        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {ThrustTorque.ClientNote} calls server {Interlocked.Exchange(ref ThrustTorque.ServerCalls, 0)} client {Interlocked.Exchange(ref ThrustTorque.ClientCalls, 0)} flames lit {Interlocked.Exchange(ref ThrustTorque.FlameLit, 0)} matched {Interlocked.Exchange(ref ThrustTorque.FlameHits, 0)}/{Interlocked.Exchange(ref ThrustTorque.FlameLookups, 0)} grids {Interlocked.Exchange(ref SimServer, 0)}/{Interlocked.Exchange(ref SimClient, 0)} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()} | {FinShadow.Take()} || {RebuildAlloc}");
         lock (_threads) _threads.Clear();
     }
 }

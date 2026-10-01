@@ -152,6 +152,27 @@ public class PrecomputedShadowMap : IShadowMap
         }
     }
 
+    /// <summary>
+    /// All 26 directions at once, for a surface not in use yet (a background rebuild: the map is swapped in with
+    /// its surface, so the first frames after a rebuild need not recompute it, 2 directions a frame, ~15 ms each
+    /// on the Jetliner).
+    /// </summary>
+    public void PrecomputeAll(IGridAccessor grid, ISurfaceProvider provider)
+    {
+        _surfaceVersion = provider.Version;
+        _faceCount = provider.FaceCount;
+        for (int d = 0; d < DirCount; d++)
+        {
+            if (_cache[d].Capacity < _faceCount) _cache[d] = new List<float>(_faceCount);   // (sized once: no growth garbage)
+            ComputeDirection(grid, provider, d);
+            _dirty[d] = false;
+            _hasData[d] = true;
+        }
+        _rebuildCursor = 0;
+        _lastDirIndex = -1;
+        EnsureLists(_faceCount);
+    }
+
     // ─── Compute one direction ───────────────────────────────────
 
     private void ComputeDirection(IGridAccessor grid, ISurfaceProvider provider, int dirIndex)
@@ -163,15 +184,22 @@ public class PrecomputedShadowMap : IShadowMap
         var result = _cache[dirIndex];
         while (result.Count < n) result.Add(0f);
 
+        // Face positions are in metres and the grid's cells are 0.25 m (CubeGridCoords.CELL_SIZE). The march was
+        // in BLOCK units (position / block size), so every ray probed cells ten times too near the grid's origin on
+        // large grids: shadowing was noise. Now in cells, half a block a step (it cannot skip a whole block), as
+        // far as MaxRayLength blocks.
+        const float CellSize = 0.25f;
         float blockSize = provider.BlockSize;
-        float invBlock = 1f / blockSize;
-        int maxSteps = MaxRayLength;
+        float invCell = 1f / CellSize;
+        int cellsPerBlock = Math.Max(1, (int)MathF.Round(blockSize / CellSize));
+        int stride = Math.Max(1, cellsPerBlock / 2);
+        int maxSteps = MaxRayLength * cellsPerBlock / stride;
         var wingCells = WingCells;
         float decayLen = WakeDecayLength;
 
-        float dx = -flowDir.X;
-        float dy = -flowDir.Y;
-        float dz = -flowDir.Z;
+        float dx = -flowDir.X * stride;
+        float dy = -flowDir.Y * stride;
+        float dz = -flowDir.Z * stride;
 
         bool hasManifold = Manifold != null && Manifold.IsClassified;
 
@@ -193,13 +221,14 @@ public class PrecomputedShadowMap : IShadowMap
                 continue;
             }
 
-            float ox = face.Position.X * invBlock;
-            float oy = face.Position.Y * invBlock;
-            float oz = face.Position.Z * invBlock;
+            float ox = face.Position.X * invCell;
+            float oy = face.Position.Y * invCell;
+            float oz = face.Position.Z * invCell;
 
-            float cx = ox + dx * 0.6f;
-            float cy = oy + dy * 0.6f;
-            float cz = oz + dz * 0.6f;
+            // start just outside the face (0.6 cell upstream), into the empty cell it borders
+            float cx = ox - flowDir.X * 0.6f;
+            float cy = oy - flowDir.Y * 0.6f;
+            float cz = oz - flowDir.Z * 0.6f;
 
             bool hit = false;
             float hitDist = 0f;
@@ -215,7 +244,7 @@ public class PrecomputedShadowMap : IShadowMap
                 if (grid.IsCellOccupied(cellPos))
                 {
                     hit = true;
-                    hitDist = step + 1;
+                    hitDist = (step + 1) * stride / (float)cellsPerBlock;   // (in blocks, as the wake decay is)
                     if (wingCells != null && wingCells.Contains(cellPos))
                         hitWing = true;
                     break;
