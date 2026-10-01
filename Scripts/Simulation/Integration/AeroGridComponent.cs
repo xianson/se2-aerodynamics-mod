@@ -20,7 +20,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private readonly CubeGridComponent _grid;
 
     [Keen.VRage.DCS.Annotations.Component]
-    private readonly BlockOctreeComponent _octree;
+    internal readonly BlockOctreeComponent _octree;
 
     // ── Aero pipeline state ──
 
@@ -121,7 +121,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Vector3[] _rcsArm = Array.Empty<Vector3>(), _rcsDir = Array.Empty<Vector3>();
     internal float[] _rcsCap = Array.Empty<float>(), _rcsF = Array.Empty<float>(), _rcsPrev = Array.Empty<float>(), _rcsY = Array.Empty<float>();
     internal bool _rcsWarm;
-    private Quaternion _rcsHold; private bool _rcsHoldValid;
+    internal bool IsServerScene = true;
+    static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
+    internal float[] _flameShown = Array.Empty<float>();   // the override each client thruster shows (-1: none)
+    private Quaternion _rcsHold; private bool _rcsHoldValid; private int _holdStall;
 
     /// <summary>
     /// The orientation the thrusters steer to (ThrustTorque): the pilot's target (TargetControlData, the one the
@@ -148,7 +151,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
         if (Data.Has<DampeningData>())
         {
-            if (!_rcsHoldValid) { _rcsHold = wt.Orientation; _rcsHoldValid = true; }
+            if (!_rcsHoldValid) { _rcsHold = wt.Orientation; _rcsHoldValid = true; _holdStall = 0; }
+            // A hold the ship cannot reach (resting on terrain, wedged): off by over 2 degrees yet barely turning for 3 s,
+            // it takes the orientation it rests in, instead of pushing the ground forever.
+            float errAngle = 2f * MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(wt.Orientation, _rcsHold)), 0f, 1f));
+            if (errAngle > 0.035f && LastAngVel.Length() < 0.01f) { if (++_holdStall > 180) { _rcsHold = wt.Orientation; _holdStall = 0; } }
+            else _holdStall = 0;
             target = _rcsHold; mode = "hold"; return true;
         }
         _rcsHoldValid = false; mode = "free"; return false;
@@ -204,6 +212,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         // Enable debug draw globally (off by default)
         Keen.VRage.Core.GlobalDebugSettings.Default.EnabledDebugDraw = true;
+
+        // The client copy shows thruster flames for the controller's sharing (ThrustTorque.ClientFlames). The game
+        // names its scenes "Server" and "Client" (WorldSessionComponent); in single player both sessions have the
+        // game server service, so that cannot tell them apart.
+        try { IsServerScene = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { IsServerScene = true; }
+        lock (_scenesSeen) if (_scenesSeen.Add(Data.Scene?.DebugName ?? "null")) Log.Default?.Info($"[AERO] grid scene '{Data.Scene?.DebugName}' (server={IsServerScene}, session {Entity.GetSession()?.GetHashCode()})");
 
         // Defer heavy work (surface build, wing detection) to first compute call
         _dirty = true;

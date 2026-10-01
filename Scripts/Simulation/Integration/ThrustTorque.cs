@@ -1,5 +1,6 @@
 #pragma warning disable
 using System;
+using System.Threading;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
 using Keen.VRage.Core;
@@ -42,6 +43,7 @@ public static class ThrustTorque
     {
         var rep = new Report { Mode = "off" };
         var thrusters = aero._thrusterCache;
+        if (aero.IsServerScene) System.Threading.Interlocked.Increment(ref ServerCalls); else System.Threading.Interlocked.Increment(ref ClientCalls);
         if (!Enabled || thrusters.Count == 0) return rep;
         var data = aero.Data;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || mass.InvMass <= 0f) return rep;
@@ -131,10 +133,74 @@ public static class ThrustTorque
         }
         else aero._rcsWarm = false;
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
-
-        if (torque.LengthSquared() > 0f || extraForce.LengthSquared() > 0f)
-            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, WorldTransform.TransformDirection(extraForce, wt), torque, dt);
+        // The flames: published for the client copy (which runs no simulation) to show.
+        Publish(aero, wt, rep.Mode == "pilot target" || rep.Mode == "hold");
         return rep;
+    }
+
+    // -- Flames --
+    // A thruster's flame is the game's override power when it has one (ThrusterEffectsComponent: OverridePower x
+    // efficiency), else its direction's share of the grid's voluntary thrust, alike for every thruster facing that
+    // way. The aero simulation runs on the server copy of a grid only, so while its controller shares the thrust it
+    // publishes each thruster's share (force / max), keyed by the thruster's place in its grid; each CLIENT thruster
+    // (AeroFlameComponent) looks its share up and sets its own override, visual only.
+    sealed class Published { public Vector3D Pos; public Dictionary<Vector3I, float> Share = new(); public long Stamp; }
+    static readonly Dictionary<AeroGridComponent, Published> _published = new();
+    static volatile int _publishedCount;
+    /// <summary>Thruster flames for the controller's sharing (harness: aeroflames on|off).</summary>
+    public static bool FlamesEnabled = true;
+    public static bool AnyPublished => _publishedCount > 0;
+    public static volatile string ClientNote = "-";
+    public static int ServerCalls, ClientCalls, FlameLookups, FlameHits, FlameLit;
+
+    /// <summary>A position's key in its grid: grid-local, quarter metres (both copies of a grid agree on it).</summary>
+    static Vector3I Key(in WorldTransform grid, Vector3D world)
+    {
+        Vector3 l = WorldTransform.TransformDirectionInv((Vector3)(world - grid.Position), grid);
+        return new Vector3I((int)MathF.Round(l.X * 4f), (int)MathF.Round(l.Y * 4f), (int)MathF.Round(l.Z * 4f));
+    }
+
+    static void Publish(AeroGridComponent aero, in WorldTransform wt, bool steering)
+    {
+        lock (_published)
+        {
+            if (!steering || !FlamesEnabled) { if (_published.Remove(aero)) _publishedCount = _published.Count; return; }
+            if (!_published.TryGetValue(aero, out var p)) { _published[aero] = p = new Published(); _publishedCount = _published.Count; }
+            var thrusters = aero._thrusterCache; var f = aero._rcsF; var caps = aero._rcsCap;
+            p.Pos = wt.Position; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            p.Share.Clear();
+            for (int i = 0; i < thrusters.Count && i < f.Length; i++)
+            {
+                var e = thrusters[i].ThrusterEntity;
+                if (e == null || !PhysicsHack.Alive(e.Data)) continue;
+                p.Share[Key(wt, e.Data.GetWorldTransform().Position)] = caps[i] > 0f ? Math.Clamp(f[i] / caps[i], 0f, 1f) : 0f;
+            }
+        }
+    }
+
+    /// <summary>A client thruster's share: the published grid nearest its grid (fresh, within 30 m), its place in it.
+    /// -1: none published.</summary>
+    public static float ShareAt(in WorldTransform grid, Vector3D thrusterWorld)
+    {
+        Interlocked.Increment(ref FlameLookups);
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), fresh = System.Diagnostics.Stopwatch.Frequency / 2;
+        var key = Key(grid, thrusterWorld);
+        lock (_published)
+        {
+            Published best = null; double bestD = 30.0;
+            foreach (var kv in _published)
+            {
+                var p = kv.Value;
+                if (now - p.Stamp > fresh) continue;
+                double d = (p.Pos - grid.Position).Length();
+                if (d < bestD && p.Share.ContainsKey(key)) { bestD = d; best = p; }
+            }
+            if (best == null) return -1f;
+            Interlocked.Increment(ref FlameHits);
+            float s = best.Share[key];
+            if (s > 0.05f) Interlocked.Increment(ref FlameLit);
+            return s;
+        }
     }
 
     /// <summary>The largest eigenvalue of sum v v^T, v = (arm, sqrt(mu) dir) in R^6 (power iteration): the

@@ -18,6 +18,7 @@ public class InjectAeroComponents : Injections
     private static int _gridCount;
     private static int _thrusterCount;
     private static int _tankCount;
+    private static int _flameCount;
 
     public static void Please(PrefabDefinition entity)
     {
@@ -25,6 +26,7 @@ public class InjectAeroComponents : Injections
         bool hasCubeGrid = false;
         bool hasThruster = false;
         bool hasTank = false;
+        bool hasFlame = false;   // a client thruster (it draws flames)
 
         foreach (var type in composition.Types)
         {
@@ -34,6 +36,8 @@ public class InjectAeroComponents : Injections
                 hasThruster = true;
             if (type.Name == "ResourceContainerComponent")
                 hasTank = true;
+            if (type.Name == "ThrusterEffectsComponent")
+                hasFlame = true;
         }
 
         if (hasCubeGrid)
@@ -52,6 +56,14 @@ public class InjectAeroComponents : Injections
             if (_thrusterCount < 3)
                 Log.Default?.Info($"[AERO] Injected AeroThrustSettingsComponent into thruster prefab #{_thrusterCount}");
             _thrusterCount++;
+        }
+
+        if (hasFlame)
+        {
+            Add(entity, typeof(AeroFlameComponent));
+            if (_flameCount < 3)
+                Log.Default?.Info($"[AERO] Injected AeroFlameComponent into client thruster prefab #{_flameCount}");
+            _flameCount++;
         }
 
         if (hasTank)

@@ -1,5 +1,6 @@
 #pragma warning disable
 using System;
+using System.Threading;
 using Keen.Game2.Simulation;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
@@ -31,6 +32,7 @@ public partial class AeroGridComponent
         try { AeroSimJobCore(aero, wt); } finally { AeroCost.ExitSim(); }
         AeroCost.Sim.Stop(t0);
         AeroCost.Watch(aero);
+        if (aero.IsServerScene) Interlocked.Increment(ref AeroCost.SimServer); else Interlocked.Increment(ref AeroCost.SimClient);
         AeroCost.WatchThrust(aero);
         AeroCost.MaybeLog();
     }

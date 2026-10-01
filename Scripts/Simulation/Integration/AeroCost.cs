@@ -36,6 +36,7 @@ public sealed class AeroCost
     }
     static int ThreadCount() { lock (_threads) return _threads.Count; }
     public static void ExitSim() => Interlocked.Decrement(ref _inSim);
+    public static int SimServer, SimClient;
 
     // The grid whose thrust torque is largest this second (ThrustTorque's report).
     static AeroGridComponent _thr; static float _thrMag;
@@ -93,7 +94,7 @@ public sealed class AeroCost
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), n = Interlocked.Read(ref _next);
         if (now < n || Interlocked.CompareExchange(ref _next, now + System.Diagnostics.Stopwatch.Frequency, n) != n) return;
-        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()}");
+        if (Log) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-COST] {Blocks.Take()} | {Sim.Take()} | {Draw.Take()} || {Thrusters.Take()} | {Gyros.Take()} | {Compute.Take()} | {Sched.Take()} | {Flush.Take()} | {Wings.Take()} || {Pre.Take()} | {Thrust.Take()} | {Apply.Take()} || {TSetup.Take()} | {TLoop.Take()} | {TAtt.Take()} | {TWrite.Take()} || caught {System.Threading.Interlocked.Exchange(ref PhysicsHack.Caught, 0)} || threads {ThreadCount()} concurrent {Interlocked.Exchange(ref _maxInSim, 0)} || {Top()} || {Thr()} || {ThrustTorque.ClientNote} calls server {Interlocked.Exchange(ref ThrustTorque.ServerCalls, 0)} client {Interlocked.Exchange(ref ThrustTorque.ClientCalls, 0)} flames lit {Interlocked.Exchange(ref ThrustTorque.FlameLit, 0)} matched {Interlocked.Exchange(ref ThrustTorque.FlameHits, 0)}/{Interlocked.Exchange(ref ThrustTorque.FlameLookups, 0)} grids {Interlocked.Exchange(ref SimServer, 0)}/{Interlocked.Exchange(ref SimClient, 0)} || {Begin.Take()} | {Batch.Take()} | {FinSurface.Take()} | {FinWings.Take()} | {FinClassify.Take()} | {FinComponents.Take()}");
         lock (_threads) _threads.Clear();
     }
 }
