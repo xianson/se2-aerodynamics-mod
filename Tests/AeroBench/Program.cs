@@ -356,6 +356,41 @@ static class Program
         return last;
     }
 
+    /// <summary>The table cache's edges: its key ignores the blocks' order and sees the block size; a truncated or
+    /// garbage file is a miss, never an exception.</summary>
+    static bool CacheEdges(Ship ship, List<(Vector3I, Vector3I)> boxes, out string note)
+    {
+        var dsm = (DampedShadowedDragModel)ship.Model.InnerModel;
+        var phys = new FacePhysics(dsm);
+        var shuffled = new List<(Vector3I, Vector3I)>(boxes);
+        var rng = new Random(5);
+        for (int i = shuffled.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]); }
+        int k = SnapshotGridAccessor.CellScale(BlockSize);
+        string k1 = AeroTableCache.Key(boxes, BlockSize, k, phys), k2 = AeroTableCache.Key(shuffled, BlockSize, k, phys);
+        string k3 = AeroTableCache.Key(boxes, BlockSize * 0.2f, k, phys);
+        bool keys = k1 == k2 && k1 != k3;
+        // a real file, cut short / garbage
+        var chunks = new ChunkedTable(8, 8f, phys);
+        var table = dsm.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, ship.Com, n: 4, nj: 2, chunks: chunks);
+        string key = k1 + "edge";
+        AeroTableCache.Save(key, table, chunks, new List<LiftingSurface>());
+        string path = Path.Combine(Path.GetTempPath(), "AeroMod", "tables", key + ".bin");
+        bool miss1, miss2;
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            File.WriteAllBytes(path, bytes.Take(bytes.Length / 2).ToArray());
+            miss1 = !AeroTableCache.TryLoad(key, phys, out _, out _, out _);
+            var junk = new byte[4096]; new Random(7).NextBytes(junk);
+            File.WriteAllBytes(path, junk);
+            miss2 = !AeroTableCache.TryLoad(key, phys, out _, out _, out _);
+        }
+        catch (Exception e) { note = "threw: " + e.Message; return false; }
+        finally { try { File.Delete(path); } catch { } }
+        note = $"key order-free {k1 == k2}, sees block size {k1 != k3}; truncated file a miss {miss1}, garbage a miss {miss2}";
+        return keys && miss1 && miss2;
+    }
+
     static int Main(string[] args)
     {
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -381,6 +416,9 @@ static class Program
                 bool cok = CacheRoundTrip(ship, boxes, atmo, out string cnote);
                 if (!cok) fails++;
                 Console.WriteLine($"   {(cok ? "ok  " : "FAIL")} {name}: table cache {cnote}");
+                bool eok = CacheEdges(ship, boxes, out string enote);
+                if (!eok) fails++;
+                Console.WriteLine($"   {(eok ? "ok  " : "FAIL")} {name}: table cache edges: {enote}");
             }
             // a rebuild's garbage stays down (the reused tables and pools: 72 -> 20 MB on Red Ship, 2026-10-02)
             {
