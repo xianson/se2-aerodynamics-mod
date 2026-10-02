@@ -417,6 +417,23 @@ static class Program
         return ok;
     }
 
+    // The table cache keys on shape and AeroTableCache.Version: a change to how tables are built must bump Version, or
+    // players fly on stale tables from disk. The gate keeps a hash of the sources that build them (Tests/table_sources.txt:
+    // "version hash"); changed sources at the same version fail it. After bumping: dotnet run -- tablehash
+    static readonly string[] TableSources = {
+        @"Drag\DampedShadowedDragModel.cs", @"Drag\ChunkedTable.cs", @"Drag\ForceTable.cs", @"Drag\AeroTableCache.cs",
+        @"Surface\SmoothSurfaceProvider.cs", @"Surface\ManifoldClassifier.cs", @"Lift\ConnectedComponentWingDetector.cs",
+        @"Lift\LiftingSurface.cs", @"Core\SnapshotGridAccessor.cs" };
+    static string TableSourceHash()
+    {
+        string sim = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scripts", "Simulation");
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var all = new System.Text.StringBuilder();
+        foreach (var f in TableSources) all.Append(File.ReadAllText(Path.Combine(sim, f)).Replace("\r\n", "\n")).Append('|');
+        return Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(all.ToString())))[..16];
+    }
+    static string TableHashFile => Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "table_sources.txt");
+
     static int Main(string[] args)
     {
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -451,6 +468,18 @@ static class Program
                 bool eok = CacheEdges(ship, boxes, out string enote);
                 if (!eok) fails++;
                 Console.WriteLine($"   {(eok ? "ok  " : "FAIL")} {name}: table cache edges: {enote}");
+            }
+            // the table cache's version follows its sources
+            {
+                string h = TableSourceHash();
+                var rec = File.Exists(TableHashFile) ? File.ReadAllText(TableHashFile).Trim().Split(' ') : new[] { "", "" };
+                bool same = rec.Length == 2 && rec[1] == h;
+                bool bumped = rec.Length == 2 && rec[0] != AeroTableCache.Version.ToString();
+                bool ok = same || false;
+                if (!ok) fails++;
+                Console.WriteLine(ok ? $"   ok   table cache version {AeroTableCache.Version} matches its sources"
+                    : bumped ? $"   FAIL table sources recorded for another version: run 'dotnet run -- tablehash' in Tests/AeroBench"
+                    : $"   FAIL table-building sources changed at the same AeroTableCache.Version ({AeroTableCache.Version}): bump it (stale tables on disk otherwise), then 'dotnet run -- tablehash'");
             }
             // a rebuild's garbage stays down (the reused tables and pools: 72 -> 20 MB on Red Ship, 2026-10-02)
             {
@@ -507,6 +536,12 @@ static class Program
                 bool ok = CacheRoundTrip(ship, boxes, atmo, out string note);
                 Console.WriteLine($"   {(ok ? "ok  " : "FAIL")} {name}: table cache {note}");
             }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "tablehash")
+        {
+            File.WriteAllText(TableHashFile, $"{AeroTableCache.Version} {TableSourceHash()}");
+            Console.WriteLine($"recorded: version {AeroTableCache.Version}, sources {TableSourceHash()}");
             return 0;
         }
         if (args.Length > 0 && args[0] == "gcbuild")
