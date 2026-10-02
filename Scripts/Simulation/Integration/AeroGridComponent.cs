@@ -40,6 +40,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     //    ~0.1 s instead of a whole rebuild; the whole rebuild follows once damage has been quiet a while. --
     private ChunkedTable _chunks, _builtChunks;
     private readonly HashSet<long> _localDirty = new(LongKey.Comparer);
+    /// <summary>Per dirty chunk: how many block changes reached it (the most-changed chunks go first).</summary>
+    private readonly Dictionary<long, int> _localWeight = new(LongKey.Comparer);
+    /// <summary>Chunks per local update: bounded work (~30-50 ms on Red Ship) - the most-changed first, the rest after.</summary>
+    public static int ChunksPerUpdate = 8;
     private System.Threading.Tasks.Task _localTask;
 
     private int _chunkGen, _localGen;
@@ -54,6 +58,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private volatile ForceTable _quickTable;
     internal int ChunksDropped;
     private readonly HashSet<long> _dropKeys = new(LongKey.Comparer);
+    private readonly List<(long key, float[] share)> _orphanBuf = new();
+    private readonly HashSet<long> _tmpDirty = new(LongKey.Comparer);
+    private int _seedTries;
+    private readonly HashSet<Keen.VRage.DCS.Components.Entity> _thrusterSet = new();
+    private int _thrusterSetCount = -1;
+    internal void ThrustersRebuilt() => _thrusterSetCount = -1;
+    internal bool Seeded;
     private ChunkedTable.LocalResult _localRes;
     internal int LocalUpdatesDone;
     /// <summary>Grid cells per surface cell (large-block grids: 2). Such a surface is never updated cell by cell.</summary>
@@ -342,8 +353,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
         {
             if (block == null) continue;
             if (!thrustersChanged)
-                for (int ti = 0; ti < _thrusterCache.Count; ti++)
-                    if (ReferenceEquals(_thrusterCache[ti].ThrusterEntity, block.Entity)) { thrustersChanged = true; break; }
+            {
+                // (a set of the thrusters, refreshed when the cache is: a scan of all of them per removed block added
+                //  up when a split moved thousands of blocks at once)
+                if (_thrusterSetCount != _thrusterCache.Count) { _thrusterSet.Clear(); foreach (var t in _thrusterCache) if (t.ThrusterEntity != null) _thrusterSet.Add(t.ThrusterEntity); _thrusterSetCount = _thrusterCache.Count; }
+                if (block.Entity != null && _thrusterSet.Contains(block.Entity)) thrustersChanged = true;
+            }
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var min = cellGroup.Min;
@@ -403,7 +418,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
             const float M = 2f;
             foreach (var list in new List<List<(Vector3I, Vector3I)>> { _patchRemoved, _patchAdded })
                 foreach (var (a, b) in list)
-                    _chunks.KeysIn(new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(M), new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(M), _localDirty);
+                {
+                    _tmpDirty.Clear();
+                    _chunks.KeysIn(new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(M), new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(M), _tmpDirty);
+                    foreach (var k in _tmpDirty) { _localDirty.Add(k); _localWeight.TryGetValue(k, out int w); _localWeight[k] = w + 1; }
+                }
             _lastDamage = System.Diagnostics.Stopwatch.GetTimestamp();
             _fullAfterQuiet = true;
             // whole chunks emptied (an impact): out of the forces this frame - gathered here, applied once per frame
@@ -428,14 +447,36 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// smooth and shadowed - and worse where a chunk went; the wings, which carry the big changes, follow at once).</summary>
     public static bool TablePatching = false;
 
+    /// <summary>A piece just broken off: its parent's shares for its chunks, as its forces until its own build.</summary>
+    private void TrySeed(WorldTransform wt)
+    {
+        _seedTries++;
+        var keys = new HashSet<long>(LongKey.Comparer);
+        var keyer = new ChunkedTable(8, ChunkSize, default);
+        foreach (var block in _octree.GetAllCubeBlocks())
+        {
+            if (block == null) continue;
+            foreach (var g in block.GetTransformedOccupiedCellGroups())
+                keys.Add(keyer.KeyOf(new Vector3(g.Min.X + g.Max.X + 1, g.Min.Y + g.Max.Y + 1, g.Min.Z + g.Max.Z + 1) * 0.125f));
+        }
+        var t = OrphanChunks.Take(wt.Position, wt.Orientation, keys, 8, 3);
+        if (t == null) return;
+        _model.InstallForceTable(t);
+        Seeded = true;
+        Log.Default?.Info($"[AERO] grid {Entity?.DebugName} seeded from its parent: {keys.Count} chunks, try {_seedTries}");
+    }
+
     /// <summary>Simulation thread, every frame of a chunked grid: install a finished local update, start the next
     /// one, and once damage has been quiet QuietBeforeFullRebuild seconds queue the whole rebuild.</summary>
     private void TickLocal()
     {
         if (_dropKeys.Count > 0 && _model?.Table != null)
         {
-            var nt = _chunks.DropEmptied(_dropKeys, _model.Table, _localTask != null, out int dropped);
+            _orphanBuf.Clear();
+            var nt = _chunks.DropEmptied(_dropKeys, _model.Table, _localTask != null, out int dropped, _orphanBuf);
             if (!ReferenceEquals(nt, _model.Table)) _model.InstallForceTable(nt);
+            // (what left may be a piece breaking off: posted for it)
+            if (_orphanBuf.Count > 0) { var pwt = Data.GetWorldTransform(); OrphanChunks.Add(pwt.Position, pwt.Orientation, _chunks.N, _chunks.ChunkSize, _orphanBuf); }
             ChunksDropped += dropped;
             _dropKeys.Clear();
         }
@@ -451,7 +492,20 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_localDirty.Count > 0 && !_staggeredBuildActive && _model?.Table != null)
         {
             // the region: the dirty chunks and a margin; its blocks captured here (the octree is ours only now)
-            var dirty = new HashSet<long>(_localDirty, LongKey.Comparer); _localDirty.Clear();
+            // the most-changed chunks first, ChunksPerUpdate at a time
+            // (and near each other: chunks spread over the grid make the update's footprint the whole grid -
+            //  355 ms for 8 scattered chunks on Red Ship; the rest get their own updates)
+            var dirty = new HashSet<long>(LongKey.Comparer);
+            var ranked = _localDirty.OrderByDescending(k => _localWeight.TryGetValue(k, out int w) ? w : 0).ToList();
+            var (s0, s1) = _chunks.BoxOf(ranked[0]); var seedC = (s0 + s1) * 0.5f;
+            foreach (var k in ranked)
+            {
+                var (b0, b1) = _chunks.BoxOf(k);
+                if (((b0 + b1) * 0.5f - seedC).Length() > 24f) continue;
+                dirty.Add(k);
+                if (dirty.Count >= ChunksPerUpdate) break;
+            }
+            foreach (var k in dirty) { _localDirty.Remove(k); _localWeight.Remove(k); }
             // (each dirty chunk with a 3 m margin, in grid cells: scattered damage must not mean the whole grid)
             var regions = new List<(Vector3I lo, Vector3I hi)>();
             foreach (var k in dirty)
@@ -523,6 +577,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // it used to wait until the grid moved in air, which then flew without aero for the length of a build.
         if (_chunks != null && LocalUpdates) TickLocal();
         if (_quickTable != null) { var qt = _quickTable; _quickTable = null; if (_model.Table == null) _model.InstallForceTable(qt); }
+        if (_model?.Table == null && _seedTries < 120 && OrphanChunks.Any) TrySeed(wt);
 
         if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && _model?.Table == null && (density > 0f || InGravity) && !IsStatic)
         {

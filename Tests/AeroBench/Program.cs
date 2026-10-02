@@ -337,8 +337,29 @@ static class Program
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var keys = new HashSet<long>();
                 foreach (var (a, b) in removed) { long key = chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f); chunks.CountBlock(key, -1); keys.Add(key); }
-                var dropped = chunks.DropEmptied(keys, table, false, out int nDropped);
+                var gone = new List<(long, float[])>();
+                var dropped = chunks.DropEmptied(keys, table, false, out int nDropped, gone);
                 double dropMs = sw.Elapsed.TotalMilliseconds;
+                // the piece that broke off: seeded from what the parent dropped, against its own exact table
+                {
+                    OrphanChunks.Add(new Vector3D(0, 0, 0), Quaternion.Identity, chunks.N, chunks.ChunkSize, gone);
+                    var childKeys = new HashSet<long>();
+                    foreach (var (a, b) in removed) childKeys.Add(chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f));
+                    var seed = OrphanChunks.Take(new Vector3D(0, 0, 0), Quaternion.Identity, childKeys, chunks.N, 3);
+                    var child = Build(name + " piece", removed);
+                    var cd = (DampedShadowedDragModel)child.Model.InnerModel;
+                    var cexact = cd.BuildForceTable(child.Grid, child.Surface, child.Manifold, child.Com);
+                    var rr = new Random(6); var eF = new List<double>(); var eT = new List<double>();
+                    for (int i = 0; i < 300; i++)
+                    {
+                        var d = Vector3.Normalize(new Vector3((float)rr.NextDouble() * 2 - 1, (float)rr.NextDouble() * 2 - 1, (float)rr.NextDouble() * 2 - 1));
+                        var ctx = new AeroContext(child.Grid, child.Surface, d * 150f, atmo, child.Com, BlockSize, Vector3.Zero, -1f, child.Manifold);
+                        var a = cexact.Evaluate(ctx, cd.SubsonicLimit, cd.SupersonicLimit, cd.Streamlining); var b = seed.Evaluate(ctx, cd.SubsonicLimit, cd.SupersonicLimit, cd.Streamlining);
+                        eF.Add((a.Force - b.Force).Length() / Math.Max(a.Force.Length(), 1)); eT.Add((a.Torque - b.Torque).Length() / Math.Max(a.Torque.Length(), a.Force.Length() + 1));
+                    }
+                    eF.Sort(); eT.Sort();
+                    Console.WriteLine($"   the broken-off piece ({removed.Count} blocks), seeded from its parent: force off by median {eF[150] * 100:F0}% (p95 {eF[285] * 100:F0}%), torque median {eT[150] * 100:F0}% | its own build would take {cexact.BuildMs:F0} ms of table alone");
+                }
                 // then the local update of what is left of the touched chunks
                 var dirty = new HashSet<long>();
                 foreach (var (a, b) in removed) chunks.KeysIn(new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(2f), new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(2f), dirty);

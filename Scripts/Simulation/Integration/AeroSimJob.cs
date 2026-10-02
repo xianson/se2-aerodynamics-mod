@@ -101,6 +101,7 @@ public partial class AeroGridComponent
                 AeroCost.Thrusters.Stop(tc);
                 aero._thrusterCacheDirty = false;
                 aero._rcsGeomCount = -1;   // (ThrustTorque recomputes the thrusters' geometry)
+                aero.ThrustersRebuilt();
             }
         }
 

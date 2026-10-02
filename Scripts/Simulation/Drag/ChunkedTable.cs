@@ -305,7 +305,7 @@ public sealed class ChunkedTable
             Entries[c] = nw;
             Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
             foreach (var p in r.Occluders[d]) AddOccluder(c, p);
-            foreach (var kv in _index) if (kv.Value == c) { _shareCount[kv.Key] = BlockCount.TryGetValue(kv.Key, out int bc) ? bc : 0; break; }
+            foreach (var kv in _index) if (kv.Value == c) { _shareCount[kv.Key] = BlockCount.TryGetValue(kv.Key, out int bc) ? bc : 0; _hullBase.Remove(kv.Key); _hullGone.Remove(kv.Key); break; }
         }
         return table;
     }
@@ -317,6 +317,28 @@ public sealed class ChunkedTable
     /// is left the same frame, until its local update).</summary>
     readonly Dictionary<long, int> _shareCount = new(LongKey.Comparer);
     readonly List<int> _pendingOccClear = new();
+    // hull faces each share stands for, and how many of them removed blocks took (a chunk's loss is measured in its
+    // hull, not its blocks: a hollow ship's interior blocks carry no force)
+    readonly Dictionary<long, int> _hullBase = new(LongKey.Comparer), _hullGone = new(LongKey.Comparer);
+
+    /// <summary>A removed block (box of grid cells): the hull faces of its chunks inside it are gone.</summary>
+    public void RemoveHullIn(Vector3I min, Vector3I max, float faceReach = 0.13f)
+    {
+        // (grid cells are centred at cell x 0.25; a block's faces lie within half a surface cell of its cells)
+        var lo = new Vector3(min.X, min.Y, min.Z) * 0.25f - new Vector3(faceReach); var hi = new Vector3(max.X, max.Y, max.Z) * 0.25f + new Vector3(faceReach);
+        _tmpKeys.Clear();
+        KeysIn(lo, hi, _tmpKeys);
+        foreach (var key in _tmpKeys)
+        {
+            if (!_index.TryGetValue(key, out int c)) continue;
+            int n = 0;
+            foreach (var p in Occluders[c]) if (p.X >= lo.X && p.X <= hi.X && p.Y >= lo.Y && p.Y <= hi.Y && p.Z >= lo.Z && p.Z <= hi.Z) n++;
+            if (n == 0) continue;
+            if (!_hullBase.ContainsKey(key)) _hullBase[key] = Occluders[c].Count;
+            _hullGone.TryGetValue(key, out int g); _hullGone[key] = g + n;
+        }
+    }
+    readonly HashSet<long> _tmpKeys = new(LongKey.Comparer);
 
     public void CountBlock(long key, int delta)
     {
@@ -330,7 +352,7 @@ public sealed class ChunkedTable
     /// <summary>Simulation thread: the chunks among `keys` with no blocks left, out of the live table (one copy for
     /// all). Their shares become zero; their faces stop hiding anything once no background update reads them
     /// (`busy`: one is running; ClearPending after it).</summary>
-    public ForceTable DropEmptied(IEnumerable<long> keys, ForceTable live, bool busy, out int dropped)
+    public ForceTable DropEmptied(IEnumerable<long> keys, ForceTable live, bool busy, out int dropped, List<(long key, float[] share)> removedShares = null)
     {
         dropped = 0;
         ForceTable table = null;
@@ -340,12 +362,19 @@ public sealed class ChunkedTable
             BlockCount.TryGetValue(key, out int n);
             if (!_index.TryGetValue(key, out int c)) continue;
             int was = _shareCount.TryGetValue(key, out int w) ? w : n;
-            if (n > 0 && n >= was) continue;
-            // emptied: out; partly: scaled to the blocks left (the local update brings the faces as they are)
-            float keep = n <= 0 || was <= 0 ? 0f : n / (float)was;
+            _hullGone.TryGetValue(key, out int hg);
+            if (n > 0 && n >= was && hg == 0) continue;
+            // emptied: out; partly: scaled to the hull left (else the blocks left); the local update brings the faces
+            float keep;
+            if (n <= 0) keep = 0f;
+            else if (_hullBase.TryGetValue(key, out int hb) && hb > 0) keep = MathF.Max(0f, 1f - hg / (float)hb);
+            else keep = was <= 0 ? 0f : n / (float)was;
+            if (_hullBase.TryGetValue(key, out int hb2)) _hullBase[key] = Math.Max(0, hb2 - hg);
+            _hullGone[key] = 0;
             var old = Entries[c];
             table ??= live.Clone();
             var scaled = new float[slots * ForceTable.Stride];
+            float[] gone = removedShares != null ? new float[slots * ForceTable.Stride] : null;
             for (int sl = 0; sl < slots; sl++)
             {
                 int face = sl / ((N + 1) * (N + 1)), rr = sl % ((N + 1) * (N + 1));
@@ -355,10 +384,12 @@ public sealed class ChunkedTable
                     float o = old[sl * ForceTable.Stride + k];
                     e[k] -= o * (1f - keep);
                     scaled[sl * ForceTable.Stride + k] = o * keep;
+                    if (gone != null) gone[sl * ForceTable.Stride + k] = o * (1f - keep);
                 }
             }
             Entries[c] = scaled;
             _shareCount[key] = n;
+            removedShares?.Add((key, gone));
             if (n <= 0)
             {
                 if (busy) _pendingOccClear.Add(c); else { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
