@@ -379,6 +379,7 @@ static class Program
                     eS.Add((F(table) - fe).Length() / m); eD.Add((F(dropped) - fe).Length() / m); eL.Add((F(local) - fe).Length() / m);
                 }
                 eS.Sort(); eD.Sort(); eL.Sort();
+                Console.WriteLine($"   chunk memory: {chunks.Bytes() / 1048576.0:F1} MB for {chunks.ChunkCount} chunks");
                 Console.WriteLine($"{name}: half gone ({removed.Count} of {boxes.Count} blocks): stale off by median {eS[150] * 100:F0}% | the same frame, {nDropped} emptied chunks dropped in {dropMs:F1} ms: off by median {eD[150] * 100:F0}% (p95 {eD[285] * 100:F0}%) | + local update of {dirty.Count} chunks in {localMs:F0} ms: median {eL[150] * 100:F1}% (p95 {eL[285] * 100:F1}%) | full table {table.BuildMs:F0} ms");
             }
             return 0;

@@ -59,10 +59,63 @@ public sealed class ChunkedTable
     public readonly float ChunkSize;
     public readonly FacePhysics Phys;
     readonly Dictionary<long, int> _index = new(LongKey.Comparer);
-    /// <summary>Per chunk: [slot * 13 + k], slot = a direction of the table.</summary>
-    public readonly List<float[]> Entries = new();
-    /// <summary>Per chunk: its faces' centres (grid-local).</summary>
-    public readonly List<List<Vector3>> Occluders = new();
+    // Per chunk, its share of every direction ([slot * 13 + k]), kept in 8 bits with a scale per component (13): a
+    // share only feeds deltas against the full-precision total, so its rounding (0.4% of the chunk's own largest
+    // value) is small beside the grid's; it is a quarter of the memory (Red Ship: ~8 MB -> ~2 MB). Null: zero.
+    readonly List<sbyte[]> _q = new();
+    readonly List<float[]> _scale = new();
+    readonly List<float[]> _raw = new();     // (during a build: plain, until Seal)
+    /// <summary>Per chunk: its faces' centres, grid-local, in eighths of a metre (16 bits each: face centres sit on
+    /// a 0.125 m lattice, within +-4 km).</summary>
+    public readonly List<List<P16>> Occluders = new();
+    public readonly struct P16
+    {
+        public readonly short X, Y, Z;
+        public P16(Vector3 p) { X = (short)MathF.Round(p.X * 8f); Y = (short)MathF.Round(p.Y * 8f); Z = (short)MathF.Round(p.Z * 8f); }
+        public Vector3 V => new Vector3(X, Y, Z) * 0.125f;
+    }
+
+    /// <summary>During a build: chunk c's share, plain (Seal stores them all).</summary>
+    public float[] RawShare(int c) => _raw[c] ??= new float[Slots * ForceTable.Stride];
+
+    /// <summary>After a build: every share into its 8-bit form.</summary>
+    public void Seal()
+    {
+        for (int c = 0; c < _raw.Count; c++) { if (_raw[c] != null) SetShare(c, _raw[c]); _raw[c] = null; }
+    }
+
+    /// <summary>Chunk c's share, decoded (a new array).</summary>
+    public float[] GetShare(int c)
+    {
+        var r = new float[Slots * ForceTable.Stride];
+        var q = _q[c]; var sc = _scale[c];
+        if (q == null) return r;
+        for (int i = 0; i < r.Length; i++) r[i] = q[i] * sc[i % ForceTable.Stride];
+        return r;
+    }
+
+    public void SetShare(int c, float[] share)
+    {
+        const int K = ForceTable.Stride;
+        var sc = new float[K];
+        for (int i = 0; i < share.Length; i++) { float a = MathF.Abs(share[i]); if (a > sc[i % K]) sc[i % K] = a; }
+        bool any = false;
+        for (int k = 0; k < K; k++) { if (sc[k] > 0) any = true; sc[k] /= 127f; }
+        if (!any) { _q[c] = null; _scale[c] = null; return; }
+        var q = new sbyte[share.Length];
+        for (int i = 0; i < share.Length; i++) { float s = sc[i % K]; q[i] = s > 0 ? (sbyte)Math.Clamp((int)MathF.Round(share[i] / s), -127, 127) : (sbyte)0; }
+        _q[c] = q; _scale[c] = sc;
+    }
+
+    public bool HasShare(int c) => _q[c] != null;
+
+    /// <summary>Bytes held (shares and occluders).</summary>
+    public long Bytes()
+    {
+        long b = 0;
+        for (int c = 0; c < _q.Count; c++) { if (_q[c] != null) b += _q[c].Length + 13 * 4; b += Occluders[c].Count * 6L; }
+        return b;
+    }
     /// <summary>Faces another model owns (wing skins: the wing model carries them), by cell and side: left out of
     /// local updates as the full build leaves them out.</summary>
     public readonly HashSet<long> ExcludedFaces = new(LongKey.Comparer);
@@ -73,7 +126,7 @@ public sealed class ChunkedTable
     /// <summary>Per chunk: the box of its face centres (per direction, chunks out of line with the damage are skipped).</summary>
     public readonly List<(Vector3 lo, Vector3 hi)> Bounds = new();
     public int Slots => 6 * (N + 1) * (N + 1);
-    public int ChunkCount => Entries.Count;
+    public int ChunkCount => _q.Count;
     public double LastUpdateMs;
     public string LastProfile = "";
 
@@ -90,10 +143,10 @@ public sealed class ChunkedTable
     public int IndexOf(long key)
     {
         if (_index.TryGetValue(key, out int i)) return i;
-        i = Entries.Count;
+        i = _q.Count;
         _index[key] = i;
-        Entries.Add(new float[Slots * ForceTable.Stride]);
-        Occluders.Add(new List<Vector3>());
+        _q.Add(null); _scale.Add(null); _raw.Add(null);
+        Occluders.Add(new List<P16>());
         Bounds.Add((new Vector3(float.MaxValue), new Vector3(float.MinValue)));
         return i;
     }
@@ -103,7 +156,7 @@ public sealed class ChunkedTable
     /// <summary>A face centre among a chunk's occluders.</summary>
     public void AddOccluder(int ci, Vector3 p)
     {
-        Occluders[ci].Add(p);
+        Occluders[ci].Add(new P16(p));
         var (lo, hi) = Bounds[ci];
         Bounds[ci] = (Vector3.Min(lo, p), Vector3.Max(hi, p));
     }
@@ -185,7 +238,7 @@ public sealed class ChunkedTable
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var dirtyIdx = new List<int>();
         foreach (var k in dirty) if (_index.TryGetValue(k, out int di)) dirtyIdx.Add(di);
-        var isDirty = new bool[Entries.Count];
+        var isDirty = new bool[_q.Count];
         foreach (int i in dirtyIdx) isDirty[i] = true;
         // the new faces, by chunk
         var fp = new List<Vector3>(); var fn = new List<Vector3>(); var fa = new List<float>(); var fc = new List<int>();
@@ -231,32 +284,28 @@ public sealed class ChunkedTable
                 int W = (int)((umax - umin) / Pix) + 1, H = (int)((wmax - wmin) / Pix) + 1;
                 if (z.Length < W * H) z = new float[W * H];
                 System.Array.Fill(z, float.MinValue, 0, W * H);
-                for (int c = 0; c <= Occluders.Count + 1; c++)
+                void Raster(Vector3 p)
                 {
-                    List<Vector3> pts;
-                    if (c == Occluders.Count) pts = fp;
-                    else if (c == Occluders.Count + 1) pts = hideOnly;
-                    else
-                    {
-                        if (isDirty[c]) continue;
-                        var (blo, bhi) = Bounds[c];
-                        if (blo.X > bhi.X) continue;
-                        Proj(blo, bhi, e1, e2, out float cu0, out float cu1, out float cw0, out float cw1);
-                        if (cu1 < umin || cu0 > umax || cw1 < wmin || cw0 > wmax) continue;   // not in line
-                        if (Upstream(blo, bhi, v) < newMinDepth - Tol) continue;               // wholly downstream: hides none of them
-                        pts = Occluders[c];
-                    }
-                    foreach (var p in pts)
-                    {
-                        float u = Vector3.Dot(p, e1) - umin, w = Vector3.Dot(p, e2) - wmin;
-                        if (u < 0 || w < 0) continue;
-                        int iu = (int)(u / Pix), iw = (int)(w / Pix);
-                        if (iu >= W || iw >= H) continue;
-                        float d = Vector3.Dot(p, v);
-                        ref float zz = ref z[iw * W + iu];
-                        if (d > zz) zz = d;
-                    }
+                    float u = Vector3.Dot(p, e1) - umin, w = Vector3.Dot(p, e2) - wmin;
+                    if (u < 0 || w < 0) return;
+                    int iu = (int)(u / Pix), iw = (int)(w / Pix);
+                    if (iu >= W || iw >= H) return;
+                    float d = Vector3.Dot(p, v);
+                    ref float zz = ref z[iw * W + iu];
+                    if (d > zz) zz = d;
                 }
+                for (int c = 0; c < Occluders.Count; c++)
+                {
+                    if (isDirty[c]) continue;
+                    var (blo, bhi) = Bounds[c];
+                    if (blo.X > bhi.X) continue;
+                    Proj(blo, bhi, e1, e2, out float cu0, out float cu1, out float cw0, out float cw1);
+                    if (cu1 < umin || cu0 > umax || cw1 < wmin || cw0 > wmax) continue;   // not in line
+                    if (Upstream(blo, bhi, v) < newMinDepth - Tol) continue;               // wholly downstream: hides none of them
+                    foreach (var p in Occluders[c]) Raster(p.V);
+                }
+                foreach (var p in fp) Raster(p);
+                foreach (var p in hideOnly) Raster(p);
                 for (int i = 0; i < fp.Count; i++)
                 {
                     var p = fp[i];
@@ -295,14 +344,14 @@ public sealed class ChunkedTable
         for (int d = 0; d < r.Chunks.Count; d++)
         {
             int c = r.Chunks[d];
-            var old = Entries[c]; var nw = r.Shares[d];
+            var old = GetShare(c); var nw = r.Shares[d];
             for (int sl = 0; sl < slots; sl++)
             {
                 int face = sl / ((N + 1) * (N + 1)), rr = sl % ((N + 1) * (N + 1));
                 var e = table.At(face, rr / (N + 1), rr % (N + 1));
                 for (int k = 0; k < ForceTable.Stride; k++) e[k] += nw[sl * ForceTable.Stride + k] - old[sl * ForceTable.Stride + k];
             }
-            Entries[c] = nw;
+            SetShare(c, nw);
             Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
             foreach (var p in r.Occluders[d]) AddOccluder(c, p);
             foreach (var kv in _index) if (kv.Value == c) { _shareCount[kv.Key] = BlockCount.TryGetValue(kv.Key, out int bc) ? bc : 0; _hullBase.Remove(kv.Key); _hullGone.Remove(kv.Key); break; }
@@ -332,7 +381,7 @@ public sealed class ChunkedTable
         {
             if (!_index.TryGetValue(key, out int c)) continue;
             int n = 0;
-            foreach (var p in Occluders[c]) if (p.X >= lo.X && p.X <= hi.X && p.Y >= lo.Y && p.Y <= hi.Y && p.Z >= lo.Z && p.Z <= hi.Z) n++;
+            foreach (var q in Occluders[c]) { var p = q.V; if (p.X >= lo.X && p.X <= hi.X && p.Y >= lo.Y && p.Y <= hi.Y && p.Z >= lo.Z && p.Z <= hi.Z) n++; }
             if (n == 0) continue;
             if (!_hullBase.ContainsKey(key)) _hullBase[key] = Occluders[c].Count;
             _hullGone.TryGetValue(key, out int g); _hullGone[key] = g + n;
@@ -371,7 +420,8 @@ public sealed class ChunkedTable
             else keep = was <= 0 ? 0f : n / (float)was;
             if (_hullBase.TryGetValue(key, out int hb2)) _hullBase[key] = Math.Max(0, hb2 - hg);
             _hullGone[key] = 0;
-            var old = Entries[c];
+            if (!HasShare(c)) { _shareCount[key] = n; continue; }
+            var old = GetShare(c);
             table ??= live.Clone();
             var scaled = new float[slots * ForceTable.Stride];
             float[] gone = removedShares != null ? new float[slots * ForceTable.Stride] : null;
@@ -387,7 +437,7 @@ public sealed class ChunkedTable
                     if (gone != null) gone[sl * ForceTable.Stride + k] = o * (1f - keep);
                 }
             }
-            Entries[c] = scaled;
+            SetShare(c, scaled);
             _shareCount[key] = n;
             removedShares?.Add((key, gone));
             if (n <= 0)

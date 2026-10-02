@@ -317,6 +317,7 @@ public class DampedShadowedDragModel : IAeroDragModel
             for (int fi = 0; fi < csp.FaceCount; fi++)
                 if (!manifold.IsHull(fi)) { csp.GetFaceCellDir(fi, out var cc0, out int cd0); chunks.CavityFaces.Add(ChunkedTable.FaceKey(cc0, cd0)); }
         int nChunks = chunks?.ChunkCount ?? 0;
+        for (int c = 0; c < nChunks; c++) chunks.RawShare(c);   // (made here: the workers below write them in parallel)
         void Worker(TableWork wk)
         {
             try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
@@ -330,7 +331,7 @@ public class DampedShadowedDragModel : IAeroDragModel
                 if (acc != null)
                     for (int c = 0; c < nChunks; c++)
                     {
-                        var ent = chunks.Entries[c];
+                        var ent = chunks.RawShare(c);
                         for (int k2 = 0; k2 < ForceTable.Stride; k2++) ent[idx * ForceTable.Stride + k2] = (float)acc[c * ForceTable.Stride + k2];
                     }
             }
@@ -361,6 +362,7 @@ public class DampedShadowedDragModel : IAeroDragModel
                     }
                 }
         _lastShadowVersion = -1;
+        chunks?.Seal();
         table.BuildMs = sw.Elapsed.TotalMilliseconds;
         return table;
     }
