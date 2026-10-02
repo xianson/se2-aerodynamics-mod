@@ -61,7 +61,13 @@ public static class AeroTableCache
         {
             using (var r = new BinaryReader(new BufferedStream(File.OpenRead(path), 1 << 16)))
             {
-                if (r.ReadUInt32() != Magic || r.ReadInt32() != Version || r.ReadString() != key) throw new InvalidDataException("header");
+                // (another version's file - every player's, after a Version bump - is a plain miss: an exception costs
+                //  ~200 ms in SE2, even caught)
+                if (r.BaseStream.Length < 8 || r.ReadUInt32() != Magic || r.ReadInt32() != Version || r.ReadString() != key)
+                {
+                    System.Threading.Interlocked.Increment(ref Misses);
+                    return false;
+                }
                 table = ForceTable.Read(r);
                 chunks = ChunkedTable.Read(r, phys);
                 int nw = r.ReadInt32();
