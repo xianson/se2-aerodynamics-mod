@@ -391,6 +391,32 @@ static class Program
         return keys && miss1 && miss2;
     }
 
+    /// <summary>Wing detection with its pooled working sets: the same detector run again, and a fresh one, find the
+    /// same wings (count, cells, area, sweep).</summary>
+    static bool WingsRepeat(Ship ship, out string note)
+    {
+        int k = SnapshotGridAccessor.CellScale(BlockSize); var (cs, co) = SnapshotGridAccessor.CellGeometry(k);
+        List<LiftingSurface> Run(IWingDetector d)
+        {
+            if (d is ConnectedComponentWingDetector cc) { cc.Manifold = ship.Manifold; cc.ManifoldSurface = ship.Surface; cc.CellSize = cs; cc.CellOffset = co; }
+            d.Invalidate();
+            return d.Detect(ship.Grid, ship.Surface, BlockSize);
+        }
+        var det = new LiftingSurfaceModel(new DampedShadowedDragModel(), liftModel: new CompressibleWingModel()).Detector;
+        var a = Run(det); var b = Run(det);
+        var c = Run(new LiftingSurfaceModel(new DampedShadowedDragModel(), liftModel: new CompressibleWingModel()).Detector);
+        bool Same(List<LiftingSurface> x, List<LiftingSurface> y)
+        {
+            if (x.Count != y.Count) return false;
+            for (int i = 0; i < x.Count; i++)
+                if (x[i].PlanformArea != y[i].PlanformArea || x[i].SweepAngle != y[i].SweepAngle || !x[i].Cells.SequenceEqual(y[i].Cells)) return false;
+            return true;
+        }
+        bool ok = a.Count > 0 && Same(a, b) && Same(a, c);
+        note = $"{a.Count} wing(s); again {Same(a, b)}, fresh detector {Same(a, c)}";
+        return ok;
+    }
+
     static int Main(string[] args)
     {
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -416,6 +442,12 @@ static class Program
                 bool cok = CacheRoundTrip(ship, boxes, atmo, out string cnote);
                 if (!cok) fails++;
                 Console.WriteLine($"   {(cok ? "ok  " : "FAIL")} {name}: table cache {cnote}");
+                if (name == "pelican")
+                {
+                    bool wok = WingsRepeat(ship, out string wnote);
+                    if (!wok) fails++;
+                    Console.WriteLine($"   {(wok ? "ok  " : "FAIL")} {name}: wings with pooled working sets: {wnote}");
+                }
                 bool eok = CacheEdges(ship, boxes, out string enote);
                 if (!eok) fails++;
                 Console.WriteLine($"   {(eok ? "ok  " : "FAIL")} {name}: table cache edges: {enote}");
