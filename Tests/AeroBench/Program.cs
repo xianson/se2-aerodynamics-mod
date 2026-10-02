@@ -201,7 +201,14 @@ static class Program
             if (p.X >= lo.X && p.X <= hi.X && p.Y >= lo.Y && p.Y <= hi.Y && p.Z >= lo.Z && p.Z <= hi.Z) cells.Add((c, c));
         }
         _hideOnly.Clear();
-        return ct.FacesFor(new SnapshotGridAccessor(cells), dirty, cs, co, BlockSize, _hideOnly);
+        long m0 = GC.GetAllocatedBytesForCurrentThread();
+        if (Environment.GetEnvironmentVariable("ALLOC") != null) AllocSampler.Instance ??= new AllocSampler(); var aFrom = DateTime.UtcNow;
+        var acc = new SnapshotGridAccessor(cells);
+        long m1 = GC.GetAllocatedBytesForCurrentThread();
+        var res = ct.FacesFor(acc, dirty, cs, co, BlockSize, _hideOnly);
+        AllocSampler.Instance?.Dump("region surface", aFrom, DateTime.UtcNow);
+        Console.WriteLine($"        region {cells.Count} cells: accessor {(m1 - m0) / 1048576.0:F1} MB, surface {(GC.GetAllocatedBytesForCurrentThread() - m1) / 1048576.0:F1} MB");
+        return res;
     }
 
     static void DamageCheck(string name, List<(Vector3I, Vector3I)> boxes, AtmosphereState atmo)
@@ -230,14 +237,18 @@ static class Program
                 var lo = new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(2f); var hi = new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(2f);
                 chunks.KeysIn(lo, hi, dirty);
             }
+            long mem0 = GC.GetAllocatedBytesForCurrentThread(); var wFrom = DateTime.UtcNow;
             var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
+            long memSurf = GC.GetAllocatedBytesForCurrentThread() - mem0;
             double surfMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             chunks.Prepare(dirty);
             table = chunks.Apply(chunks.ComputeLocal(dirty, faces, 3, _hideOnly), table);
+            ChunkedTable.FacesDone(faces);
             double patchMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             int patches = dirty.Count;
-            Console.WriteLine($"      local: {chunks.LastProfile}");
+            AllocSampler.Instance?.Dump("whole local update", wFrom, DateTime.UtcNow);
+            Console.WriteLine($"      local: {chunks.LastProfile}; garbage: surface {memSurf / 1048576.0:F1} MB, all {(GC.GetAllocatedBytesForCurrentThread() - mem0) / 1048576.0:F1} MB (this thread)");
             var adsm = (DampedShadowedDragModel)after.Model.InnerModel;
             var exact = adsm.BuildForceTable(after.Grid, after.Surface, after.Manifold, whole.Com);
             var r = new Random(9); var ePatched = new List<double>(); var eStale = new List<double>(); double change = 0;
@@ -313,6 +324,54 @@ static class Program
             }
             return 0;
         }
+        if (args.Length > 0 && args[0] == "gcbuild")
+        {
+            // a grid's full rebuild as the game runs it (its surfaces, classifier, detector and table builder reused
+            // build after build): what each stage allocates, by type, for the first build and the ones after
+            AllocSampler.Instance ??= new AllocSampler();
+            foreach (var name in args.Skip(1))
+            {
+                var boxes = LoadBoxes(Path.Combine(dataDir, name + ".boxes"));
+                int k = SnapshotGridAccessor.CellScale(BlockSize); var (cs, co) = SnapshotGridAccessor.CellGeometry(k);
+                var surfaces = new[] { new SmoothSurfaceProvider(), new SmoothSurfaceProvider() };
+                var manifolds = new[] { new ManifoldClassifier(), new ManifoldClassifier() };
+                var builder = new DampedShadowedDragModel();
+                var model = new LiftingSurfaceModel(new DampedShadowedDragModel(), liftModel: new CompressibleWingModel());
+                var detector = model.Detector;
+                for (int run = 0; run < 3; run++)
+                {
+                    var surface = surfaces[run & 1]; var manifold = manifolds[run & 1];
+                    var stages = new List<(string, DateTime, DateTime, long)>();
+                    DateTime t0 = DateTime.UtcNow; long m0 = GC.GetAllocatedBytesForCurrentThread();
+                    void Stage(string label) { var t1 = DateTime.UtcNow; long m1 = GC.GetAllocatedBytesForCurrentThread(); stages.Add((label, t0, t1, m1 - m0)); t0 = t1; m0 = m1; }
+                    var snapshot = k > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(k) : new SnapshotGridAccessor(boxes);
+                    surface.CellSize = cs; surface.CellOffset = co;
+                    Stage("snapshot");
+                    surface.BeginBuild(snapshot, BlockSize);
+                    while (!surface.AddCellBatch(int.MaxValue)) { }
+                    Stage("faces");
+                    surface.FinalizeBuild();
+                    Stage("finalize");
+                    manifold.Classify(surface);
+                    Stage("classify");
+                    if (detector is ConnectedComponentWingDetector cc) { cc.Manifold = manifold; cc.ManifoldSurface = surface; cc.CellSize = cs; cc.CellOffset = co; }
+                    detector.Invalidate();
+                    var wings = detector.Detect(snapshot, surface, BlockSize);
+                    Stage("wings");
+                    var tmp = new LiftingSurfaceModel(builder, liftModel: new CompressibleWingModel());
+                    tmp.InstallWings(wings);
+                    tmp.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
+                    tmp.ExcludeWingFaces(builder, surface.Version);
+                    var com = Vector3.Zero;
+                    var chunks = new ChunkedTable(8, 8f, new FacePhysics(builder));
+                    var table = builder.BuildForceTable(snapshot, surface, manifold, com, chunks: chunks);
+                    Stage("table");
+                    Console.WriteLine($"{name} build {run + 1}: {surface.FaceCount} faces, {string.Join(", ", stages.Select(x => $"{x.Item1} {x.Item4 / 1048576.0:F1} MB"))}, total {stages.Sum(x => x.Item4) / 1048576.0:F0} MB (this thread)");
+                    foreach (var (label, a, b, _) in stages) AllocSampler.Instance.Dump(label, a, b);
+                }
+            }
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "impact")
         {
             // half the ship gone (everything past its middle along its longest axis): drop, then local, vs exact
@@ -368,6 +427,7 @@ static class Program
                 var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
                 chunks.Prepare(dirty);
                 var local = chunks.Apply(chunks.ComputeLocal(dirty, faces, 3, _hideOnly), dropped);
+                ChunkedTable.FacesDone(faces);
                 double localMs = sw.Elapsed.TotalMilliseconds;
                 var r = new Random(5); var eS = new List<double>(); var eD = new List<double>(); var eL = new List<double>();
                 for (int i = 0; i < 300; i++)

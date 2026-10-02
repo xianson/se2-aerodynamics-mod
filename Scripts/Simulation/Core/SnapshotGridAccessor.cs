@@ -98,11 +98,27 @@ public sealed class SnapshotGridAccessor : IGridAccessor
             if (counts[i] < 255) counts[i]++;
         }
         int need = k * k * k / 2 + 1;
-        var boxes = new List<(Vector3I, Vector3I)>();
+        // straight into the coarse bits (a list of one-cell boxes first was 24 MB per Red Ship rebuild)
+        int x0 = int.MaxValue, y0 = int.MaxValue, z0 = int.MaxValue, x1 = -1, y1 = -1, z1 = -1;
         for (int x = 0; x < sx; x++) for (int y = 0; y < sy; y++) for (int z = 0; z < sz; z++)
-            if (counts[((long)x * sy + y) * sz + z] >= need) { var q = new Vector3I(x + q0.X, y + q0.Y, z + q0.Z); boxes.Add((q, q)); }
-        return new SnapshotGridAccessor(boxes);
+            if (counts[((long)x * sy + y) * sz + z] >= need)
+            {
+                if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+            }
+        if (x1 < 0) return new SnapshotGridAccessor(new List<(Vector3I, Vector3I)>());
+        var size = new Vector3I(x1 - x0 + 1, y1 - y0 + 1, z1 - z0 + 1);
+        var bits = new ulong[((long)size.X * size.Y * size.Z + 63) / 64];
+        int count = 0;
+        for (int x = x0; x <= x1; x++) for (int y = y0; y <= y1; y++) for (int z = z0; z <= z1; z++)
+            if (counts[((long)x * sy + y) * sz + z] >= need)
+            {
+                long i = ((long)(x - x0) * size.Y + (y - y0)) * size.Z + (z - z0);
+                bits[i >> 6] |= 1UL << (int)(i & 63); count++;
+            }
+        return new SnapshotGridAccessor(bits, new Vector3I(x0 + q0.X, y0 + q0.Y, z0 + q0.Z), size, count);
     }
+
+    private SnapshotGridAccessor(ulong[] bits, Vector3I min, Vector3I size, int count) { _bits = bits; _min = min; _size = size; _count = count; }
 
     /// <summary>A surface cell's size (m) and centre offset (cells) at scale k.</summary>
     public static (float size, float offset) CellGeometry(int k) => (0.25f * k, (k - 1) / (2f * k));

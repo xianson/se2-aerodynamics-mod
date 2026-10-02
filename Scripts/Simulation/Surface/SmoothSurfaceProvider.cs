@@ -187,13 +187,20 @@ public class SmoothSurfaceProvider : ISurfaceProvider
         public HashSet<long> C; public List<Vector3I> S; public Dictionary<long, Vector3> NA, NB;
     }
     private static readonly Stack<Scratch> _scratchPool = new();
+    /// <summary>Build table sets kept (one per background worker: another build meanwhile allocates its own).</summary>
+    public const int ScratchPoolSize = 2;
     private bool _released;
     /// <summary>Whether the build tables are handed back (a block-by-block update then rebuilds whole).</summary>
     public bool Released => _released;
 
+    /// <summary>Borrow the build tables from the shared pool and give them back after every build, whatever the
+    /// size (the damage updates' surfaces: built again and again, they hold no tables of their own between builds,
+    /// and take ones already grown instead of growing their own - 30-100 MB of garbage per update on Red Ship).</summary>
+    public bool BorrowScratch { get; set; }
+
     private void AcquireScratch(IGridAccessor grid)
     {
-        if (!_released && (grid == null || grid.CellCount <= ReleaseAboveFaces)) return;   // (small: its own tables)
+        if (!_released && !BorrowScratch && (grid == null || grid.CellCount <= ReleaseAboveFaces)) return;   // (small: its own tables)
         if (!_released) ReleaseScratch();   // (a growing grid: trade its own small tables for pooled big ones)
         Scratch sc = null;
         lock (_scratchPool) if (_scratchPool.Count > 0) sc = _scratchPool.Pop();
@@ -207,7 +214,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     {
         var sc = new Scratch { W = _vertexDirWeights, V = _vertexToFaceIndex, E = _edgeRefCount ?? _edgeStore, C = _creaseEdges ?? _creaseStore, S = _stagingCells ?? _stagingStore, NA = _normA, NB = _normB };
         sc.W?.Clear(); sc.V?.Clear(); sc.E?.Clear(); sc.C?.Clear(); sc.S?.Clear(); sc.NA?.Clear(); sc.NB?.Clear();
-        lock (_scratchPool) if (_scratchPool.Count < 1) _scratchPool.Push(sc);   // (one: a grid's two surfaces build in turn; another big build meanwhile allocates its own)
+        lock (_scratchPool) if (_scratchPool.Count < ScratchPoolSize) _scratchPool.Push(sc);   // (a grid's two surfaces build in turn; one per background worker)
         _vertexDirWeights = null; _vertexToFaceIndex = null; _edgeRefCount = null; _edgeStore = null;
         _creaseEdges = null; _creaseStore = null; _stagingCells = null; _stagingStore = null; _normA = null; _normB = null;
         _released = true;
@@ -215,7 +222,7 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
     private void ReleaseIfBig()
     {
-        if (_rawFaceKeys.Count > ReleaseAboveFaces) ReleaseScratch();
+        if (BorrowScratch || _rawFaceKeys.Count > ReleaseAboveFaces) ReleaseScratch();
     }
 
     /// <summary>Everything let go (a big grid flies on its force table between rebuilds; the next build starts

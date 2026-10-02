@@ -547,6 +547,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 var hide = new List<Vector3>();
                 var faces = chunks.FacesFor(snap, dirty, geo.size, geo.offset, bs, hide);
                 _localRes = chunks.ComputeLocal(dirty, faces, AeroWork.ThreadsForJob(), hide);
+                ChunkedTable.FacesDone(faces);
                 LastLocalMs = sw.Elapsed.TotalMilliseconds;
             });
             return;

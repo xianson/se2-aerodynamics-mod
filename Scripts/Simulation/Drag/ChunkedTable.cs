@@ -168,21 +168,44 @@ public sealed class ChunkedTable
     /// </summary>
     public List<SurfaceFace> FacesFor(IGridAccessor region, HashSet<long> dirty, float cellSize, float cellOffset, float blockSize, List<Vector3> occludeOnly = null)
     {
-        var surf = new SmoothSurfaceProvider { CellSize = cellSize, CellOffset = cellOffset };
-        surf.Build(region, blockSize);
-        var r = new List<SurfaceFace>();
-        for (int i = 0; i < surf.FaceCount; i++)
+        // (a surface reused from a small pool, its build tables borrowed from the builds' shared pool: a fresh one
+        // every update was 5-100 MB of garbage on Red Ship)
+        SmoothSurfaceProvider surf = null;
+        lock (_surfPool) if (_surfPool.Count > 0) surf = _surfPool.Pop();
+        surf ??= new SmoothSurfaceProvider { BorrowScratch = true };
+        surf.CellSize = cellSize; surf.CellOffset = cellOffset;
+        List<SurfaceFace> r = null;
+        lock (_surfPool) if (_facePool.Count > 0) r = _facePool.Pop();
+        r ??= new List<SurfaceFace>();
+        r.Clear();
+        try
         {
-            var f = surf.Faces[i];
-            if (!dirty.Contains(KeyOf(f.Position))) continue;
-            surf.GetFaceCellDir(i, out var c, out int d);
-            long fk = FaceKey(c, d);
-            if (CavityFaces.Contains(fk)) continue;
-            if (ExcludedFaces.Contains(fk)) { occludeOnly?.Add(f.Position); continue; }   // (a wing: hides, carried by the wing model)
-            r.Add(f);
+            surf.Build(region, blockSize);
+            for (int i = 0; i < surf.FaceCount; i++)
+            {
+                var f = surf.Faces[i];
+                if (!dirty.Contains(KeyOf(f.Position))) continue;
+                surf.GetFaceCellDir(i, out var c, out int d);
+                long fk = FaceKey(c, d);
+                if (CavityFaces.Contains(fk)) continue;
+                if (ExcludedFaces.Contains(fk)) { occludeOnly?.Add(f.Position); continue; }   // (a wing: hides, carried by the wing model)
+                r.Add(f);
+            }
         }
+        finally { lock (_surfPool) if (_surfPool.Count < AeroSurfPoolSize) _surfPool.Push(surf); }
         return r;
     }
+    static readonly Stack<SmoothSurfaceProvider> _surfPool = new();
+    static readonly Stack<List<SurfaceFace>> _facePool = new();
+
+    /// <summary>A FacesFor list done with (after ComputeLocal): kept for the next update.</summary>
+    public static void FacesDone(List<SurfaceFace> faces)
+    {
+        if (faces == null) return;
+        faces.Clear();
+        lock (_surfPool) if (_facePool.Count < AeroSurfPoolSize) _facePool.Push(faces);
+    }
+    const int AeroSurfPoolSize = 2;   // (one per background worker)
 
     /// <summary>The chunks a box of grid-local space (metres) reaches.</summary>
     public void KeysIn(Vector3 lo, Vector3 hi, HashSet<long> into)
@@ -241,7 +264,7 @@ public sealed class ChunkedTable
         var isDirty = new bool[_q.Count];
         foreach (int i in dirtyIdx) isDirty[i] = true;
         // the new faces, by chunk
-        var fp = new List<Vector3>(); var fn = new List<Vector3>(); var fa = new List<float>(); var fc = new List<int>();
+        var fp = new List<Vector3>(faces.Count); var fn = new List<Vector3>(faces.Count); var fa = new List<float>(faces.Count); var fc = new List<int>(faces.Count);
         foreach (var f in faces)
         {
             if (!_index.TryGetValue(KeyOf(f.Position), out int ci) || ci >= isDirty.Length || !isDirty[ci]) continue;

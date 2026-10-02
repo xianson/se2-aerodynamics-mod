@@ -91,15 +91,52 @@ public class ConnectedComponentWingDetector : IWingDetector
                 _cellToWing[cell] = i;
     }
 
+    // ─── Working sets, shared ────────────────────────────────────
+    // A detection's sets, maps and lists, kept between detections in a small pool (two: one per background worker)
+    // rather than made anew each time: ~28 MB per Red Ship rebuild was these.
+    private sealed class Scratch
+    {
+        public readonly Dictionary<long, int> MinX = new(LongKey.Comparer), MaxX = new(LongKey.Comparer), MinY = new(LongKey.Comparer),
+            MaxY = new(LongKey.Comparer), MinZ = new(LongKey.Comparer), MaxZ = new(LongKey.Comparer);
+        public readonly List<HashSet<Vector3I>> Exposed = new() { new(), new(), new() };
+        public readonly HashSet<Vector3I> Visited = new();
+        public readonly Queue<Vector3I> Queue = new();
+        public readonly List<Vector3I> Component = new();
+        public readonly Dictionary<int, List<Vector3I>> BySpan = new();
+        public readonly Stack<List<Vector3I>> SpanLists = new();
+        public readonly Dictionary<int, int> ChordExtent = new(), LeBySpan = new();
+        public readonly List<int> ChordValues = new();
+        public readonly Dictionary<(int, int), int> ColumnThickness = new();
+        public void Clear()
+        {
+            MinX.Clear(); MaxX.Clear(); MinY.Clear(); MaxY.Clear(); MinZ.Clear(); MaxZ.Clear();
+            foreach (var e in Exposed) e.Clear();
+            Visited.Clear(); Queue.Clear(); Component.Clear(); ChordExtent.Clear(); LeBySpan.Clear(); ChordValues.Clear(); ColumnThickness.Clear();
+            ClearSpans();
+        }
+        public void ClearSpans() { foreach (var l in BySpan.Values) { l.Clear(); SpanLists.Push(l); } BySpan.Clear(); }
+    }
+    private static readonly Stack<Scratch> _scratchPool = new();
+    private Scratch _s;
+    private void Acquire() { lock (_scratchPool) _s = _scratchPool.Count > 0 ? _scratchPool.Pop() : null; _s ??= new Scratch(); }
+    private void Release() { var sc = _s; _s = null; if (sc == null) return; sc.Clear(); lock (_scratchPool) if (_scratchPool.Count < 2) _scratchPool.Push(sc); }
+
     // ─── Full detection ──────────────────────────────────────────
 
     public static volatile string LastProfile = "";
 
     public List<LiftingSurface> Detect(IGridAccessor grid, ISurfaceProvider surface, float blockSize)
     {
+        Acquire();
+        try { return DetectAll(grid, blockSize); }
+        finally { Release(); }
+    }
+
+    private List<LiftingSurface> DetectAll(IGridAccessor grid, float blockSize)
+    {
         var results = new List<LiftingSurface>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        double tFlood = 0, tAnalyze = 0; int comps = 0, analyzed = 0;
+        double tAnalyze = 0; int comps = 0, analyzed = 0;
 
         // Single-pass: collect all exposed faces and per-axis bounding box
         var allExposed = CollectAllExposedFaces(grid, out var gridBBox);
@@ -109,16 +146,14 @@ public class ConnectedComponentWingDetector : IWingDetector
         {
             var posNormal = PositiveNormals[d];
 
-            if (!allExposed.TryGetValue(d, out var faces) || faces.Count < MinFaceCount)
+            var faces = allExposed[d];
+            if (faces.Count < MinFaceCount)
                 continue;
 
-            double t0 = sw.Elapsed.TotalMilliseconds;
-            var components = FloodFill(faces, posNormal);
-            double t1 = sw.Elapsed.TotalMilliseconds; tFlood += t1 - t0;
-            comps += components.Count;
-
-            foreach (var component in components)
+            double t1 = sw.Elapsed.TotalMilliseconds;
+            foreach (var component in FloodFill(faces, posNormal, _s))
             {
+                comps++;
                 if (component.Count < MinFaceCount) continue;
                 analyzed++;
                 var wing = AnalyzeComponent(grid, component, posNormal, blockSize, gridBBox);
@@ -131,7 +166,7 @@ public class ConnectedComponentWingDetector : IWingDetector
         double t2 = sw.Elapsed.TotalMilliseconds;
         int before = results.Count;
         results = MergeCoplanarWings(results, blockSize);
-        LastProfile = $"collect {tCollect:F0} ms, flood {tFlood:F0} ms ({comps} components), analyze {tAnalyze:F0} ms ({analyzed}), merge {sw.Elapsed.TotalMilliseconds - t2:F0} ms ({before} -> {results.Count} wings)";
+        LastProfile = $"collect {tCollect:F0} ms, flood + analyze {tAnalyze:F0} ms ({comps} components, {analyzed} analyzed), merge {sw.Elapsed.TotalMilliseconds - t2:F0} ms ({before} -> {results.Count} wings)";
 
         _cachedWings = results;
         BuildCellLookup();
@@ -195,7 +230,10 @@ public class ConnectedComponentWingDetector : IWingDetector
         }
 
         // Re-detect wings in the dirty region only (simple neighbor check, no ray-march)
-        var newWings = DetectInRegion(grid, dirtyCells, blockSize);
+        List<LiftingSurface> newWings;
+        Acquire();
+        try { newWings = DetectInRegion(grid, dirtyCells, blockSize); }
+        finally { Release(); }
 
         // Build result: unaffected wings + newly detected wings
         var result = new List<LiftingSurface>();
@@ -258,7 +296,8 @@ public class ConnectedComponentWingDetector : IWingDetector
 
             // Simple exposure check: cell is in region AND neighbor in normal direction is empty
             // If manifold classifier is available, also require the face to be hull (not cavity)
-            var exposed = new HashSet<Vector3I>();
+            var exposed = _s.Exposed[0];
+            exposed.Clear();
             foreach (var cell in regionCells)
             {
                 if (!grid.IsCellOccupied(cell + posNormal))
@@ -275,9 +314,7 @@ public class ConnectedComponentWingDetector : IWingDetector
 
             if (exposed.Count < MinFaceCount) continue;
 
-            var components = FloodFill(exposed, posNormal);
-
-            foreach (var component in components)
+            foreach (var component in FloodFill(exposed, posNormal, _s))
             {
                 if (component.Count < MinFaceCount) continue;
 
@@ -434,7 +471,7 @@ public class ConnectedComponentWingDetector : IWingDetector
     /// Returns Dictionary keyed by axis index (0=X, 1=Y, 2=Z), each containing
     /// cells exposed on either side of that axis.
     /// </summary>
-    private Dictionary<int, HashSet<Vector3I>> CollectAllExposedFaces(
+    private List<HashSet<Vector3I>> CollectAllExposedFaces(
         IGridAccessor grid, out GridBBox bbox)
     {
         bbox = new GridBBox
@@ -448,12 +485,8 @@ public class ConnectedComponentWingDetector : IWingDetector
         // For X-axis: column key = (Y,Z), store min/max X
         // For Y-axis: column key = (X,Z), store min/max Y
         // For Z-axis: column key = (X,Y), store min/max Z
-        var colMinX = new Dictionary<long, int>(LongKey.Comparer);
-        var colMaxX = new Dictionary<long, int>(LongKey.Comparer);
-        var colMinY = new Dictionary<long, int>(LongKey.Comparer);
-        var colMaxY = new Dictionary<long, int>(LongKey.Comparer);
-        var colMinZ = new Dictionary<long, int>(LongKey.Comparer);
-        var colMaxZ = new Dictionary<long, int>(LongKey.Comparer);
+        var colMinX = _s.MinX; var colMaxX = _s.MaxX; var colMinY = _s.MinY;
+        var colMaxY = _s.MaxY; var colMinZ = _s.MinZ; var colMaxZ = _s.MaxZ;
 
         foreach (var cell in grid.EnumerateOccupiedCells())
         {
@@ -479,12 +512,8 @@ public class ConnectedComponentWingDetector : IWingDetector
 
         // Pass 2: A face is exterior if the cell is at the min or max of its column
         // AND the adjacent cell in the normal direction is empty
-        var result = new Dictionary<int, HashSet<Vector3I>>
-        {
-            { 0, new HashSet<Vector3I>() }, // X-axis
-            { 1, new HashSet<Vector3I>() }, // Y-axis
-            { 2, new HashSet<Vector3I>() }, // Z-axis
-        };
+        var result = _s.Exposed;   // (X, Y, Z axes)
+        foreach (var e in result) e.Clear();
 
         foreach (var cell in grid.EnumerateOccupiedCells())
         {
@@ -521,18 +550,20 @@ public class ConnectedComponentWingDetector : IWingDetector
 
     // ─── BFS flood-fill ──────────────────────────────────────────
 
-    private static List<List<Vector3I>> FloodFill(HashSet<Vector3I> faces, Vector3I normal)
+    /// <summary>The connected components, one at a time, in one reused list (copy one to keep it).</summary>
+    private static IEnumerable<List<Vector3I>> FloodFill(HashSet<Vector3I> faces, Vector3I normal, Scratch sc)
     {
         var adjacencyDirs = GetPlanformAdjacency(normal);
-        var visited = new HashSet<Vector3I>();
-        var components = new List<List<Vector3I>>();
+        var visited = sc.Visited; visited.Clear();
+        var component = sc.Component;
+        var queue = sc.Queue;
 
         foreach (var face in faces)
         {
             if (!visited.Add(face)) continue;
 
-            var component = new List<Vector3I>();
-            var queue = new Queue<Vector3I>();
+            component.Clear();
+            queue.Clear();
             queue.Enqueue(face);
 
             while (queue.Count > 0)
@@ -548,10 +579,8 @@ public class ConnectedComponentWingDetector : IWingDetector
                 }
             }
 
-            components.Add(component);
+            yield return component;
         }
-
-        return components;
     }
 
     private static readonly List<Vector3I> AdjX = new() { new(0, 1, 0), new(0, -1, 0), new(0, 0, 1), new(0, 0, -1) };
@@ -612,19 +641,20 @@ public class ConnectedComponentWingDetector : IWingDetector
         }
 
         // Strip analysis: identify fuselage core
-        var cellsBySpan = new Dictionary<int, List<Vector3I>>();
+        _s.ClearSpans();
+        var cellsBySpan = _s.BySpan;
         foreach (var cell in cells)
         {
             int s = ProjectOnAxis(cell, axis1);
             if (!cellsBySpan.TryGetValue(s, out var list))
             {
-                list = new List<Vector3I>();
+                list = _s.SpanLists.Count > 0 ? _s.SpanLists.Pop() : new List<Vector3I>();
                 cellsBySpan[s] = list;
             }
             list.Add(cell);
         }
 
-        var chordExtent = new Dictionary<int, int>();
+        var chordExtent = _s.ChordExtent; chordExtent.Clear();
         foreach (var (s, spanCells) in cellsBySpan)
         {
             int minC = int.MaxValue, maxC = int.MinValue;
@@ -637,7 +667,7 @@ public class ConnectedComponentWingDetector : IWingDetector
             chordExtent[s] = maxC - minC + 1;
         }
 
-        var chordValues = chordExtent.Values.ToList();
+        var chordValues = _s.ChordValues; chordValues.Clear(); chordValues.AddRange(chordExtent.Values);
         chordValues.Sort();
         int medianChordCells = chordValues[chordValues.Count / 2];
 
@@ -672,7 +702,7 @@ public class ConnectedComponentWingDetector : IWingDetector
         else if (normal.Y != 0) { nMin = gridBBox.MinY; nMax = gridBBox.MaxY; }
         else { nMin = gridBBox.MinZ; nMax = gridBBox.MaxZ; }
 
-        var columnThickness = new Dictionary<(int, int), int>();
+        var columnThickness = _s.ColumnThickness; columnThickness.Clear();
         foreach (var cell in wingCells)
         {
             int s = ProjectOnAxis(cell, axis1);
@@ -727,7 +757,7 @@ public class ConnectedComponentWingDetector : IWingDetector
         centroid /= wingCells.Count;
 
         // Sweep
-        float sweepAngle = ComputeSweep(wingCells, axis1, axis2, blockSize);
+        float sweepAngle = ComputeSweep(wingCells, axis1, axis2, blockSize, _s.LeBySpan);
 
         // Aero center: quarter-chord from leading edge
         var normalF = new Vector3(normal.X, normal.Y, normal.Z);
@@ -737,7 +767,7 @@ public class ConnectedComponentWingDetector : IWingDetector
             normalF, spanVec, chordVec,
             planformArea, span, tc, sweepAngle,
             centroid, aeroCenter, wingCells.Count,
-            wingCells);
+            new List<Vector3I>(wingCells));   // (the component list is reused: the wing keeps a copy)
     }
 
     private static void GetPlanformAxes(Vector3I normal,
@@ -770,9 +800,9 @@ public class ConnectedComponentWingDetector : IWingDetector
     private static int ProjectOnAxis(Vector3I cell, Vector3I axis)
         => cell.X * axis.X + cell.Y * axis.Y + cell.Z * axis.Z;
 
-    private static float ComputeSweep(List<Vector3I> cells, Vector3I spanAxis, Vector3I chordAxis, float blockSize)
+    private static float ComputeSweep(List<Vector3I> cells, Vector3I spanAxis, Vector3I chordAxis, float blockSize, Dictionary<int, int> leBySpan)
     {
-        var leBySpan = new Dictionary<int, int>();
+        leBySpan.Clear();
         foreach (var cell in cells)
         {
             int s = ProjectOnAxis(cell, spanAxis);
