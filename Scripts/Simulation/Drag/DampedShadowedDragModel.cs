@@ -273,7 +273,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     }
 
     /// <summary>Workers for one force table (the directions are independent).</summary>
-    public static int TableThreads = 3;
+    public static int TableThreads = 2;   // (3 lengthened the game's own hitches while it streamed a ship in; 2 measured within its noise)
 
     public ForceTable BuildForceTable(IGridAccessor grid, ISurfaceProvider cache, ManifoldClassifier manifold, Vector3 com, int n = 8, int nj = 3, ChunkedTable chunks = null)
     {

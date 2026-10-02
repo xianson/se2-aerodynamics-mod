@@ -215,7 +215,7 @@ static class Program
         {
             var whole = Build(name, boxes);
             var dsm = (DampedShadowedDragModel)whole.Model.InnerModel;
-            var chunks = new ChunkedTable(8, 16f, new FacePhysics(dsm));
+            var chunks = new ChunkedTable(8, float.Parse(Environment.GetEnvironmentVariable("CHUNK") ?? "16", System.Globalization.CultureInfo.InvariantCulture), new FacePhysics(dsm));
             var table = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com, chunks: chunks);
             var before = table.Clone();
             var idx = new HashSet<int>(pick());
@@ -233,9 +233,11 @@ static class Program
             var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
             double surfMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-            table = chunks.UpdateLocal(table, dirty, faces, 3, _hideOnly);
+            chunks.Prepare(dirty);
+            table = chunks.Apply(chunks.ComputeLocal(dirty, faces, 3, _hideOnly), table);
             double patchMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             int patches = dirty.Count;
+            Console.WriteLine($"      local: {chunks.LastProfile}");
             var adsm = (DampedShadowedDragModel)after.Model.InnerModel;
             var exact = adsm.BuildForceTable(after.Grid, after.Surface, after.Manifold, whole.Com);
             var r = new Random(9); var ePatched = new List<double>(); var eStale = new List<double>(); double change = 0;
@@ -308,6 +310,55 @@ static class Program
                     Console.WriteLine($"   +X: fine F {a1.Force / 1000} kN frontal {a1.FrontalArea:F0} m2 | coarse F {b1.Force / 1000} kN frontal {b1.FrontalArea:F0} m2 | hull faces fine {Enumerable.Range(0, fine.Surface.FaceCount).Count(fine.Manifold.IsHull)} coarse {Enumerable.Range(0, coarse.Surface.FaceCount).Count(coarse.Manifold.IsHull)}");
                 }
                 Console.WriteLine($"   tables: fine {tf:F0} ms, coarse {tc:F0} ms | coarse vs fine force median {err[200] * 100:F1}% p95 {err[380] * 100:F1}%, torque median {errT[200] * 100:F1}% p95 {errT[380] * 100:F1}% | wings fine {fine.Model.Wings?.Count} coarse {coarse.Model.Wings?.Count}");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "impact")
+        {
+            // half the ship gone (everything past its middle along its longest axis): drop, then local, vs exact
+            foreach (var name in args.Skip(1))
+            {
+                var boxes = LoadBoxes(Path.Combine(dataDir, name + ".boxes"));
+                var whole = Build(name, boxes);
+                var dsm = (DampedShadowedDragModel)whole.Model.InnerModel;
+                var chunks = new ChunkedTable(8, 8f, new FacePhysics(dsm));
+                var table = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com, chunks: chunks);
+                foreach (var (a, b) in boxes) chunks.CountBlock(chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); chunks.SealCounts();
+                var lo = boxes.Aggregate(new Vector3I(int.MaxValue), (m, b) => Vector3I.Min(m, b.Item1)); var hi = boxes.Aggregate(new Vector3I(int.MinValue), (m, b) => Vector3I.Max(m, b.Item2));
+                var ext = hi - lo; int axis = ext.X >= ext.Y && ext.X >= ext.Z ? 0 : ext.Y >= ext.Z ? 1 : 2;
+                int mid = axis == 0 ? (lo.X + hi.X) / 2 : axis == 1 ? (lo.Y + hi.Y) / 2 : (lo.Z + hi.Z) / 2;
+                int Ax(Vector3I v) => axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
+                var removed = boxes.Where(b => Ax(b.Item1) + Ax(b.Item2) > 2 * mid).ToList();
+                var rest = boxes.Where(b => Ax(b.Item1) + Ax(b.Item2) <= 2 * mid).ToList();
+                var after = Build(name, rest);
+                var adsm = (DampedShadowedDragModel)after.Model.InnerModel;
+                var exact = adsm.BuildForceTable(after.Grid, after.Surface, after.Manifold, whole.Com);
+                // the frame of the impact: emptied chunks out
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var keys = new HashSet<long>();
+                foreach (var (a, b) in removed) { long key = chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f); chunks.CountBlock(key, -1); keys.Add(key); }
+                var dropped = chunks.DropEmptied(keys, table, false, out int nDropped);
+                double dropMs = sw.Elapsed.TotalMilliseconds;
+                // then the local update of what is left of the touched chunks
+                var dirty = new HashSet<long>();
+                foreach (var (a, b) in removed) chunks.KeysIn(new Vector3(a.X, a.Y, a.Z) * 0.25f - new Vector3(2f), new Vector3(b.X + 1, b.Y + 1, b.Z + 1) * 0.25f + new Vector3(2f), dirty);
+                dirty.RemoveWhere(k => !chunks.BlockCount.TryGetValue(k, out int c) || c == 0);   // (emptied ones are done)
+                sw.Restart();
+                var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
+                chunks.Prepare(dirty);
+                var local = chunks.Apply(chunks.ComputeLocal(dirty, faces, 3, _hideOnly), dropped);
+                double localMs = sw.Elapsed.TotalMilliseconds;
+                var r = new Random(5); var eS = new List<double>(); var eD = new List<double>(); var eL = new List<double>();
+                for (int i = 0; i < 300; i++)
+                {
+                    var d = Vector3.Normalize(new Vector3((float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1));
+                    var ctx = new AeroContext(after.Grid, after.Surface, d * 150f, atmo, whole.Com, BlockSize, Vector3.Zero, -1f, after.Manifold);
+                    Vector3 F(ForceTable t) => t.Evaluate(ctx, adsm.SubsonicLimit, adsm.SupersonicLimit, adsm.Streamlining).Force;
+                    var fe = F(exact); double m = Math.Max(fe.Length(), 1);
+                    eS.Add((F(table) - fe).Length() / m); eD.Add((F(dropped) - fe).Length() / m); eL.Add((F(local) - fe).Length() / m);
+                }
+                eS.Sort(); eD.Sort(); eL.Sort();
+                Console.WriteLine($"{name}: half gone ({removed.Count} of {boxes.Count} blocks): stale off by median {eS[150] * 100:F0}% | the same frame, {nDropped} emptied chunks dropped in {dropMs:F1} ms: off by median {eD[150] * 100:F0}% (p95 {eD[285] * 100:F0}%) | + local update of {dirty.Count} chunks in {localMs:F0} ms: median {eL[150] * 100:F1}% (p95 {eL[285] * 100:F1}%) | full table {table.BuildMs:F0} ms");
             }
             return 0;
         }

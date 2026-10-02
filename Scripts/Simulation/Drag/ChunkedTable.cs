@@ -75,6 +75,7 @@ public sealed class ChunkedTable
     public int Slots => 6 * (N + 1) * (N + 1);
     public int ChunkCount => Entries.Count;
     public double LastUpdateMs;
+    public string LastProfile = "";
 
     public ChunkedTable(int n, float chunkSize, FacePhysics phys) { N = n; ChunkSize = chunkSize; Phys = phys; }
 
@@ -138,6 +139,10 @@ public sealed class ChunkedTable
             into.Add(((long)(x & 0x1FFFFF) << 42) | ((long)(y & 0x1FFFFF) << 21) | (long)(z & 0x1FFFFF));
     }
 
+    /// <summary>How far upstream (along v) a box reaches.</summary>
+    static float Upstream(Vector3 lo, Vector3 hi, Vector3 v)
+        => (v.X > 0 ? hi.X : lo.X) * v.X + (v.Y > 0 ? hi.Y : lo.Y) * v.Y + (v.Z > 0 ? hi.Z : lo.Z) * v.Z;
+
     /// <summary>A box's extent across a flow (on e1, e2).</summary>
     static void Proj(Vector3 lo, Vector3 hi, Vector3 e1, Vector3 e2, out float u0, out float u1, out float w0, out float w1)
     {
@@ -163,11 +168,23 @@ public sealed class ChunkedTable
     /// kept) with the dirty chunks' old shares out and the new in. Thread-safe against readers of `current` (it is
     /// not touched); not against another update of this ChunkedTable.
     /// </summary>
-    public ForceTable UpdateLocal(ForceTable current, HashSet<long> dirty, List<SurfaceFace> faces, int threads = 3, List<Vector3> occludeOnly = null)
+    /// <summary>The new shares of some chunks: computed in the background, applied on the simulation thread.</summary>
+    public sealed class LocalResult
+    {
+        public List<int> Chunks = new();
+        public List<float[]> Shares = new();
+        public List<List<Vector3>> Occluders = new();
+    }
+
+    /// <summary>Make the dirty chunks' indices (the simulation thread, before a background ComputeLocal).</summary>
+    public void Prepare(HashSet<long> dirty) { foreach (var k in dirty) IndexOf(k); }
+
+    /// <summary>Background: the dirty chunks' new shares (Prepare first). Reads the chunks; changes nothing.</summary>
+    public LocalResult ComputeLocal(HashSet<long> dirty, List<SurfaceFace> faces, int threads = 3, List<Vector3> occludeOnly = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var dirtyIdx = new List<int>();
-        foreach (var k in dirty) dirtyIdx.Add(IndexOf(k));
+        foreach (var k in dirty) if (_index.TryGetValue(k, out int di)) dirtyIdx.Add(di);
         var isDirty = new bool[Entries.Count];
         foreach (int i in dirtyIdx) isDirty[i] = true;
         // the new faces, by chunk
@@ -205,6 +222,8 @@ public sealed class ChunkedTable
                 var e1 = Vector3.Normalize(Vector3.Cross(v, seed)); var e2 = Vector3.Cross(v, e1);
                 const float Pix = 0.5f, Tol = 0.4f;
                 if (fp.Count == 0) continue;
+                float newMinDepth = float.MaxValue;
+                foreach (var p in fp) { float d = Vector3.Dot(p, v); if (d < newMinDepth) newMinDepth = d; }
                 // the new faces' footprint across the flow: the depth buffer covers just that
                 Proj(newLo, newHi, e1, e2, out float umin, out float umax, out float wmin, out float wmax);
                 umin -= Pix; wmin -= Pix; umax += Pix; wmax += Pix;
@@ -224,6 +243,7 @@ public sealed class ChunkedTable
                         if (blo.X > bhi.X) continue;
                         Proj(blo, bhi, e1, e2, out float cu0, out float cu1, out float cw0, out float cw1);
                         if (cu1 < umin || cu0 > umax || cw1 < wmin || cw0 > wmax) continue;   // not in line
+                        if (Upstream(blo, bhi, v) < newMinDepth - Tol) continue;               // wholly downstream: hides none of them
                         pts = Occluders[c];
                     }
                     foreach (var p in pts)
@@ -250,29 +270,108 @@ public sealed class ChunkedTable
                         fresh[d][s * ForceTable.Stride + k] = (float)acc[d * ForceTable.Stride + k];
             }
         }
+        double tSetup = sw.Elapsed.TotalMilliseconds;
         var helpers = new List<System.Threading.Tasks.Task>();
         for (int t = 1; t < threads; t++) helpers.Add(System.Threading.Tasks.Task.Factory.StartNew(Worker));
         Worker();
         foreach (var h in helpers) h.Wait();
 
-        // the total: old shares out, new in
-        var table = current.Clone();
-        for (int d = 0; d < nd; d++)
-        {
-            var old = Entries[dirtyIdx[d]]; var nw = fresh[d];
-            for (int s = 0; s < slots; s++)
-            {
-                int face = s / ((N + 1) * (N + 1)), r = s % ((N + 1) * (N + 1));
-                var e = table.At(face, r / (N + 1), r % (N + 1));
-                for (int k = 0; k < ForceTable.Stride; k++) e[k] += nw[s * ForceTable.Stride + k] - old[s * ForceTable.Stride + k];
-            }
-            Entries[dirtyIdx[d]] = nw;
-            Occluders[dirtyIdx[d]].Clear();
-            Bounds[dirtyIdx[d]] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
-        }
-        for (int i = 0; i < fp.Count; i++) AddOccluder(fc[i], fp[i]);
-        for (int i = 0; i < hideOnly.Count; i++) AddOccluder(hideChunk[i], hideOnly[i]);
+        double tWork = sw.Elapsed.TotalMilliseconds;
+        var result = new LocalResult();
+        for (int d = 0; d < nd; d++) { result.Chunks.Add(dirtyIdx[d]); result.Shares.Add(fresh[d]); result.Occluders.Add(new List<Vector3>()); }
+        for (int i = 0; i < fp.Count; i++) result.Occluders[slotOf[fc[i]]].Add(fp[i]);
+        for (int i = 0; i < hideOnly.Count; i++) result.Occluders[slotOf[hideChunk[i]]].Add(hideOnly[i]);
         LastUpdateMs = sw.Elapsed.TotalMilliseconds;
+        LastProfile = $"setup {tSetup:F1} ms, directions {tWork - tSetup:F1} ms ({fp.Count} new faces, {nd} chunks)";
+        return result;
+    }
+
+    /// <summary>Simulation thread: a background result into the live table - the chunks' shares as they are now
+    /// out (a chunk dropped meanwhile is already out: zero), the new in.</summary>
+    public ForceTable Apply(LocalResult r, ForceTable live)
+    {
+        var table = live.Clone();
+        int slots = Slots;
+        for (int d = 0; d < r.Chunks.Count; d++)
+        {
+            int c = r.Chunks[d];
+            var old = Entries[c]; var nw = r.Shares[d];
+            for (int sl = 0; sl < slots; sl++)
+            {
+                int face = sl / ((N + 1) * (N + 1)), rr = sl % ((N + 1) * (N + 1));
+                var e = table.At(face, rr / (N + 1), rr % (N + 1));
+                for (int k = 0; k < ForceTable.Stride; k++) e[k] += nw[sl * ForceTable.Stride + k] - old[sl * ForceTable.Stride + k];
+            }
+            Entries[c] = nw;
+            Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
+            foreach (var p in r.Occluders[d]) AddOccluder(c, p);
+            foreach (var kv in _index) if (kv.Value == c) { _shareCount[kv.Key] = BlockCount.TryGetValue(kv.Key, out int bc) ? bc : 0; break; }
+        }
         return table;
+    }
+
+    // -- Whole chunks gone (an impact): out of the live table the same frame --
+    /// <summary>Blocks per chunk (by block centre); a chunk that empties is dropped at once (DropEmptied).</summary>
+    public readonly Dictionary<long, int> BlockCount = new(LongKey.Comparer);
+    /// <summary>Per chunk: the block count its share was computed for (a partly destroyed chunk is scaled to what
+    /// is left the same frame, until its local update).</summary>
+    readonly Dictionary<long, int> _shareCount = new(LongKey.Comparer);
+    readonly List<int> _pendingOccClear = new();
+
+    public void CountBlock(long key, int delta)
+    {
+        BlockCount.TryGetValue(key, out int n);
+        BlockCount[key] = Math.Max(0, n + delta);
+    }
+
+    /// <summary>After the full build's counting: every chunk's share stands for its blocks as they are.</summary>
+    public void SealCounts() { _shareCount.Clear(); foreach (var kv in BlockCount) _shareCount[kv.Key] = kv.Value; }
+
+    /// <summary>Simulation thread: the chunks among `keys` with no blocks left, out of the live table (one copy for
+    /// all). Their shares become zero; their faces stop hiding anything once no background update reads them
+    /// (`busy`: one is running; ClearPending after it).</summary>
+    public ForceTable DropEmptied(IEnumerable<long> keys, ForceTable live, bool busy, out int dropped)
+    {
+        dropped = 0;
+        ForceTable table = null;
+        int slots = Slots;
+        foreach (var key in keys)
+        {
+            BlockCount.TryGetValue(key, out int n);
+            if (!_index.TryGetValue(key, out int c)) continue;
+            int was = _shareCount.TryGetValue(key, out int w) ? w : n;
+            if (n > 0 && n >= was) continue;
+            // emptied: out; partly: scaled to the blocks left (the local update brings the faces as they are)
+            float keep = n <= 0 || was <= 0 ? 0f : n / (float)was;
+            var old = Entries[c];
+            table ??= live.Clone();
+            var scaled = new float[slots * ForceTable.Stride];
+            for (int sl = 0; sl < slots; sl++)
+            {
+                int face = sl / ((N + 1) * (N + 1)), rr = sl % ((N + 1) * (N + 1));
+                var e = table.At(face, rr / (N + 1), rr % (N + 1));
+                for (int k = 0; k < ForceTable.Stride; k++)
+                {
+                    float o = old[sl * ForceTable.Stride + k];
+                    e[k] -= o * (1f - keep);
+                    scaled[sl * ForceTable.Stride + k] = o * keep;
+                }
+            }
+            Entries[c] = scaled;
+            _shareCount[key] = n;
+            if (n <= 0)
+            {
+                if (busy) _pendingOccClear.Add(c); else { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
+                dropped++;
+            }
+        }
+        return table ?? live;
+    }
+
+    /// <summary>The dropped chunks' faces stop hiding (call when no background update is running).</summary>
+    public void ClearPending()
+    {
+        foreach (int c in _pendingOccClear) { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
+        _pendingOccClear.Clear();
     }
 }

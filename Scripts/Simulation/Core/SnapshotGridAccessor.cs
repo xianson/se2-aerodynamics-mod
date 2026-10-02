@@ -86,15 +86,21 @@ public sealed class SnapshotGridAccessor : IGridAccessor
     /// slopes (where any solid cell counted, a slope block filled out to a box: +34% frontal area on Red Ship).</summary>
     public SnapshotGridAccessor CoarsenMajority(int k)
     {
-        var counts = new Dictionary<Vector3I, int>();
+        // counted in a flat array over the coarse box (a dictionary of 3 million cells: 0.24 s, 62 MB on Red Ship)
+        if (_bits.Length == 0) return new SnapshotGridAccessor(new List<(Vector3I, Vector3I)>());
+        var q0 = new Vector3I(FloorDiv(_min.X, k), FloorDiv(_min.Y, k), FloorDiv(_min.Z, k));
+        var q1 = new Vector3I(FloorDiv(_min.X + _size.X - 1, k), FloorDiv(_min.Y + _size.Y - 1, k), FloorDiv(_min.Z + _size.Z - 1, k));
+        int sx = q1.X - q0.X + 1, sy = q1.Y - q0.Y + 1, sz = q1.Z - q0.Z + 1;
+        var counts = new byte[(long)sx * sy * sz];
         foreach (var c in EnumerateOccupiedCells())
         {
-            var q = new Vector3I(FloorDiv(c.X, k), FloorDiv(c.Y, k), FloorDiv(c.Z, k));
-            counts.TryGetValue(q, out int n); counts[q] = n + 1;
+            long i = ((long)(FloorDiv(c.X, k) - q0.X) * sy + (FloorDiv(c.Y, k) - q0.Y)) * sz + (FloorDiv(c.Z, k) - q0.Z);
+            if (counts[i] < 255) counts[i]++;
         }
         int need = k * k * k / 2 + 1;
         var boxes = new List<(Vector3I, Vector3I)>();
-        foreach (var kv in counts) if (kv.Value >= need) boxes.Add((kv.Key, kv.Key));
+        for (int x = 0; x < sx; x++) for (int y = 0; y < sy; y++) for (int z = 0; z < sz; z++)
+            if (counts[((long)x * sy + y) * sz + z] >= need) { var q = new Vector3I(x + q0.X, y + q0.Y, z + q0.Z); boxes.Add((q, q)); }
         return new SnapshotGridAccessor(boxes);
     }
 

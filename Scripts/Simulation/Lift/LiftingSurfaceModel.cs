@@ -85,6 +85,8 @@ public class LiftingSurfaceModel : IAeroDragModel
         }
     }
 
+    public bool HasWings => _wingOfCell.Count > 0;
+
     /// <summary>A cell is gone: if a wing owned it, that wing has that much less of itself.</summary>
     public void RemoveWingCell(Vector3I cell)
     {

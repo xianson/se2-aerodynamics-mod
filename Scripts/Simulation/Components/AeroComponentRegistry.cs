@@ -32,6 +32,22 @@ public class AeroComponentRegistry
     }
 
     /// <summary>Remove all components at a given block position.</summary>
+    /// <summary>The components of blocks inside a box of cells (one pass: per cell it was a pass per cell).</summary>
+    public int RemoveInBox(Vector3I min, Vector3I max)
+    {
+        int removed = 0;
+        for (int i = _components.Count - 1; i >= 0; i--)
+        {
+            var p = _components[i].BlockPosition;
+            if (p.X >= min.X && p.X <= max.X && p.Y >= min.Y && p.Y <= max.Y && p.Z >= min.Z && p.Z <= max.Z)
+            {
+                _components.RemoveAt(i);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
     public int RemoveBlock(Vector3I blockPos)
     {
         int removed = 0;
