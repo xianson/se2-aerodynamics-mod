@@ -160,7 +160,7 @@ public static class ThrustTorque
     // way. The aero simulation runs on the server copy of a grid only, so while its controller shares the thrust it
     // publishes each thruster's share (force / max), keyed by the thruster's place in its grid; each CLIENT thruster
     // (AeroFlameComponent) looks its share up and sets its own override, visual only.
-    sealed class Published { public Vector3D Pos; public Dictionary<Vector3I, float> Share = new(); public long Stamp; }
+    sealed class Published { public Vector3D Pos; public Dictionary<Vector3I, float> Share = new(); public long Stamp; public bool Gone; }
     static readonly Dictionary<AeroGridComponent, Published> _published = new();
     static volatile int _publishedCount;
     /// <summary>Thruster flames for the controller's sharing (harness: aeroflames on|off).</summary>
@@ -180,7 +180,7 @@ public static class ThrustTorque
     {
         lock (_published)
         {
-            if (!steering || !FlamesEnabled) { if (_published.Remove(aero)) _publishedCount = _published.Count; return; }
+            if (!steering || !FlamesEnabled) { if (_published.Remove(aero, out var gone)) { gone.Gone = true; _publishedCount = _published.Count; } return; }
             if (!_published.TryGetValue(aero, out var p)) { _published[aero] = p = new Published(); _publishedCount = _published.Count; }
             var thrusters = aero._thrusterCache; var f = aero._rcsF; var caps = aero._rcsCap;
             p.Pos = wt.Position; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -196,13 +196,24 @@ public static class ThrustTorque
 
     /// <summary>A client thruster's share: the published grid nearest its grid (fresh, within 30 m), its place in it.
     /// -1: none published.</summary>
-    public static float ShareAt(in WorldTransform grid, Vector3D thrusterWorld)
+    public static float ShareAt(in WorldTransform grid, Vector3D thrusterWorld) { object h = null; return ShareAt(grid, thrusterWorld, ref h); }
+
+    /// <summary>The same, keeping the grid matched last time in `hint` (no search while it still fits: a search of every
+    /// published grid per thruster per frame).</summary>
+    public static float ShareAt(in WorldTransform grid, Vector3D thrusterWorld, ref object hint)
     {
         Interlocked.Increment(ref FlameLookups);
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), fresh = System.Diagnostics.Stopwatch.Frequency / 2;
         var key = Key(grid, thrusterWorld);
         lock (_published)
         {
+            if (hint is Published h && !h.Gone && now - h.Stamp <= fresh && (h.Pos - grid.Position).LengthSquared() < 30.0 * 30.0
+                && h.Share.TryGetValue(key, out float hs))
+            {
+                Interlocked.Increment(ref FlameHits);
+                if (hs > 0.05f) Interlocked.Increment(ref FlameLit);
+                return hs;
+            }
             Published best = null; double bestD = 30.0;
             foreach (var kv in _published)
             {
@@ -211,6 +222,7 @@ public static class ThrustTorque
                 double d = (p.Pos - grid.Position).Length();
                 if (d < bestD && p.Share.ContainsKey(key)) { bestD = d; best = p; }
             }
+            hint = best;
             if (best == null) return -1f;
             Interlocked.Increment(ref FlameHits);
             float s = best.Share[key];

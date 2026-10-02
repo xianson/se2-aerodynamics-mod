@@ -18,6 +18,7 @@ namespace AeroMod;
 public partial class AeroFlameComponent : Component, IInSceneListener
 {
     internal float Shown = -1f;
+    internal object _match;   // (the published grid found last frame)
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene() { }
@@ -39,7 +40,7 @@ public partial class AeroFlameComponent : Component, IInSceneListener
         {
             var gwt = grid.Data.GetWorldTransform();
             var pos = flame.Entity.Data.GetWorldTransform().Position;
-            share = ThrustTorque.ShareAt(gwt, pos);
+            share = ThrustTorque.ShareAt(gwt, pos, ref flame._match);
         }
         if (share < 0f)
         {
