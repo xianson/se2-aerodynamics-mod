@@ -72,6 +72,7 @@ public sealed class ChunkedTable
     {
         public readonly short X, Y, Z;
         public P16(Vector3 p) { X = (short)MathF.Round(p.X * 8f); Y = (short)MathF.Round(p.Y * 8f); Z = (short)MathF.Round(p.Z * 8f); }
+        public P16(short x, short y, short z) { X = x; Y = y; Z = z; }
         public Vector3 V => new Vector3(X, Y, Z) * 0.125f;
     }
 
@@ -131,6 +132,63 @@ public sealed class ChunkedTable
     public string LastProfile = "";
 
     public ChunkedTable(int n, float chunkSize, FacePhysics phys) { N = n; ChunkSize = chunkSize; Phys = phys; }
+
+    /// <summary>Saved (AeroTableCache), sealed: every chunk's share, occluders and box, and the left-out faces. The
+    /// block counts are not: they come from the blocks (CountBlock, SealCounts) as after a build.</summary>
+    public void Write(System.IO.BinaryWriter w)
+    {
+        w.Write(N); w.Write(ChunkSize); w.Write(_q.Count);
+        var keys = new List<long>(_q.Count); for (int i = 0; i < _q.Count; i++) keys.Add(0);
+        foreach (var kv in _index) keys[kv.Value] = kv.Key;
+        var buf = new byte[Slots * ForceTable.Stride];
+        for (int c = 0; c < _q.Count; c++)
+        {
+            w.Write(keys[c]);
+            var q = _q[c];
+            w.Write(q != null);
+            if (q != null)
+            {
+                for (int i = 0; i < q.Length; i++) buf[i] = (byte)q[i];
+                w.Write(buf, 0, q.Length);
+                foreach (float x in _scale[c]) w.Write(x);
+            }
+            var occ = Occluders[c];
+            w.Write(occ.Count);
+            foreach (var p in occ) { w.Write(p.X); w.Write(p.Y); w.Write(p.Z); }
+            var (blo, bhi) = Bounds[c];
+            w.Write(blo.X); w.Write(blo.Y); w.Write(blo.Z); w.Write(bhi.X); w.Write(bhi.Y); w.Write(bhi.Z);
+        }
+        w.Write(ExcludedFaces.Count); foreach (long f in ExcludedFaces) w.Write(f);
+        w.Write(CavityFaces.Count); foreach (long f in CavityFaces) w.Write(f);
+    }
+
+    public static ChunkedTable Read(System.IO.BinaryReader r, FacePhysics phys)
+    {
+        int n = r.ReadInt32(); float cs = r.ReadSingle(); int count = r.ReadInt32();
+        if (n < 1 || n > 64 || count < 0 || count > 1 << 22) throw new System.IO.InvalidDataException("chunks");
+        var t = new ChunkedTable(n, cs, phys);
+        int len = t.Slots * ForceTable.Stride;
+        for (int c = 0; c < count; c++)
+        {
+            int ci = t.IndexOf(r.ReadInt64());
+            if (r.ReadBoolean())
+            {
+                var b = r.ReadBytes(len);
+                if (b.Length != len) throw new System.IO.EndOfStreamException();
+                var q = new sbyte[len]; for (int i = 0; i < len; i++) q[i] = (sbyte)b[i];
+                var sc = new float[ForceTable.Stride]; for (int k = 0; k < sc.Length; k++) sc[k] = r.ReadSingle();
+                t._q[ci] = q; t._scale[ci] = sc;
+            }
+            int no = r.ReadInt32();
+            if (no < 0 || no > 1 << 24) throw new System.IO.InvalidDataException("occluders");
+            var occ = t.Occluders[ci]; occ.Capacity = no;
+            for (int i = 0; i < no; i++) occ.Add(new P16(r.ReadInt16(), r.ReadInt16(), r.ReadInt16()));
+            t.Bounds[ci] = (new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle()), new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle()));
+        }
+        int ne = r.ReadInt32(); for (int i = 0; i < ne; i++) t.ExcludedFaces.Add(r.ReadInt64());
+        int nc = r.ReadInt32(); for (int i = 0; i < nc; i++) t.CavityFaces.Add(r.ReadInt64());
+        return t;
+    }
 
     static int Fl(float x) => (int)MathF.Floor(x);
     public long KeyOf(Vector3 p)

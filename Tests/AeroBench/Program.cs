@@ -267,6 +267,47 @@ static class Program
         }
     }
 
+    /// <summary>The table cache: a ship's table, chunks and wings saved and read back give the same forces exactly.</summary>
+    static bool CacheRoundTrip(Ship ship, List<(Vector3I, Vector3I)> boxes, AtmosphereState atmo, out string note)
+    {
+        var dsm = (DampedShadowedDragModel)ship.Model.InnerModel;
+        var phys = new FacePhysics(dsm);
+        var chunks = new ChunkedTable(8, 8f, phys);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var table = dsm.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, ship.Com, chunks: chunks);
+        double tBuild = sw.Elapsed.TotalMilliseconds;
+        var wings = ship.Model.Wings?.ToList() ?? new List<LiftingSurface>();
+        string key = AeroTableCache.Key(boxes, BlockSize, SnapshotGridAccessor.CellScale(BlockSize), phys) + "test";
+        sw.Restart();
+        AeroTableCache.Save(key, table, chunks, wings);
+        double tSave = sw.Elapsed.TotalMilliseconds; sw.Restart();
+        bool ok = AeroTableCache.TryLoad(key, phys, out var t2, out var c2, out var w2);
+        double tLoad = sw.Elapsed.TotalMilliseconds;
+        note = $"build {tBuild:F0} ms, save {tSave:F0} ms, load {tLoad:F0} ms";
+        if (!ok) { note += ", NOT READ BACK"; return false; }
+        var r = new Random(9); double worst = 0;
+        for (int i = 0; i < 300; i++)
+        {
+            var d = Vector3.Normalize(new Vector3((float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1));
+            var ctx = new AeroContext(ship.Grid, ship.Surface, d * (50f + 400f * (float)r.NextDouble()), atmo, ship.Com, BlockSize, d * 0.3f, -1f, ship.Manifold);
+            var a = table.Evaluate(ctx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining); var b = t2.Evaluate(ctx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining);
+            worst = Math.Max(worst, (a.Force - b.Force).Length() + (a.Torque - b.Torque).Length());
+        }
+        bool same = worst == 0 && c2.ChunkCount == chunks.ChunkCount && c2.Bytes() == chunks.Bytes()
+            && c2.ExcludedFaces.SetEquals(chunks.ExcludedFaces) && c2.CavityFaces.SetEquals(chunks.CavityFaces) && w2.Count == wings.Count;
+        for (int c = 0; same && c < chunks.ChunkCount; c++)
+        {
+            var x = chunks.GetShare(c); var y = c2.GetShare(c);
+            for (int i = 0; i < x.Length; i++) if (x[i] != y[i]) { same = false; break; }
+            if (chunks.Bounds[c] != c2.Bounds[c]) same = false;
+        }
+        for (int i = 0; same && i < wings.Count; i++)
+            same = wings[i].Cells.SequenceEqual(w2[i].Cells) && wings[i].Normal == w2[i].Normal && wings[i].PlanformArea == w2[i].PlanformArea && wings[i].CLAlpha == w2[i].CLAlpha;
+        note += same ? $", identical ({chunks.ChunkCount} chunks, {wings.Count} wings)" : $", DIFFERENT (force/torque diff {worst})";
+        try { System.IO.File.Delete(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AeroMod", "tables", key + ".bin")); } catch { }
+        return same;
+    }
+
     static int Main(string[] args)
     {
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -283,11 +324,15 @@ static class Program
             {
                 var path = Path.Combine(dataDir, name + ".boxes");
                 if (!File.Exists(path)) { Console.WriteLine($"   {name}: no data, skipped"); continue; }
-                var ship = Build(name, LoadBoxes(path));
+                var boxes = LoadBoxes(path);
+                var ship = Build(name, boxes);
                 var (med, p95) = TableCheck(ship, atmo);
                 bool ok = med < 0.05 && p95 < 0.15;
                 if (!ok) fails++;
                 Console.WriteLine($"   {(ok ? "ok  " : "FAIL")} {name}: table error median {med * 100:F1}% p95 {p95 * 100:F1}%");
+                bool cok = CacheRoundTrip(ship, boxes, atmo, out string cnote);
+                if (!cok) fails++;
+                Console.WriteLine($"   {(cok ? "ok  " : "FAIL")} {name}: table cache {cnote}");
             }
             Console.WriteLine($"AeroBench: {(fails == 0 ? "1/1 passed" : fails + " FAILED")}");
             return fails == 0 ? 0 : 1;
@@ -321,6 +366,17 @@ static class Program
                     Console.WriteLine($"   +X: fine F {a1.Force / 1000} kN frontal {a1.FrontalArea:F0} m2 | coarse F {b1.Force / 1000} kN frontal {b1.FrontalArea:F0} m2 | hull faces fine {Enumerable.Range(0, fine.Surface.FaceCount).Count(fine.Manifold.IsHull)} coarse {Enumerable.Range(0, coarse.Surface.FaceCount).Count(coarse.Manifold.IsHull)}");
                 }
                 Console.WriteLine($"   tables: fine {tf:F0} ms, coarse {tc:F0} ms | coarse vs fine force median {err[200] * 100:F1}% p95 {err[380] * 100:F1}%, torque median {errT[200] * 100:F1}% p95 {errT[380] * 100:F1}% | wings fine {fine.Model.Wings?.Count} coarse {coarse.Model.Wings?.Count}");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "cache")
+        {
+            foreach (var name in args.Skip(1))
+            {
+                var boxes = LoadBoxes(Path.Combine(dataDir, name + ".boxes"));
+                var ship = Build(name, boxes);
+                bool ok = CacheRoundTrip(ship, boxes, atmo, out string note);
+                Console.WriteLine($"   {(ok ? "ok  " : "FAIL")} {name}: table cache {note}");
             }
             return 0;
         }

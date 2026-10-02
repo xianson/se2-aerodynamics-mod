@@ -57,6 +57,24 @@ public sealed class ForceTable
         return t;
     }
 
+    /// <summary>Saved (AeroTableCache): both maps.</summary>
+    public void Write(System.IO.BinaryWriter w)
+    {
+        w.Write(N); w.Write(NJ); w.Write(BuildCom.X); w.Write(BuildCom.Y); w.Write(BuildCom.Z);
+        foreach (float x in _f) w.Write(x);
+        foreach (float x in _j) w.Write(x);
+    }
+
+    public static ForceTable Read(System.IO.BinaryReader r)
+    {
+        int n = r.ReadInt32(), nj = r.ReadInt32();
+        if (n < 1 || n > 64 || nj < 1 || nj > 64) throw new System.IO.InvalidDataException("table size");
+        var t = new ForceTable(n, nj) { BuildCom = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle()) };
+        for (int i = 0; i < t._f.Length; i++) t._f[i] = r.ReadSingle();
+        for (int i = 0; i < t._j.Length; i++) t._j[i] = r.ReadSingle();
+        return t;
+    }
+
     public int Index(int face, int i, int j) => ((face * (N + 1) + i) * (N + 1) + j);
     public int IndexJ(int face, int i, int j) => ((face * (NJ + 1) + i) * (NJ + 1) + j);
     public Span<float> At(int face, int i, int j) => _f.AsSpan(Index(face, i, j) * Stride, Stride);

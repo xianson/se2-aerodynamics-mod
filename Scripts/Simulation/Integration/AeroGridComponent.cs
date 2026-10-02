@@ -80,6 +80,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
+    /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key.</summary>
+    private static readonly FacePhysics TablePhysics = new FacePhysics(new DampedShadowedDragModel());
+    /// <summary>Builds shorter than this are not cached (a small grid's: a file costs more than it saves).</summary>
+    private const double CacheAboveMs = 40;
+    /// <summary>Whether the last build came from the table cache.</summary>
+    public bool FromCache { get; private set; }
     private static DampedShadowedDragModel RentTableBuilder() { lock (_tableBuilders) return _tableBuilders.Count > 0 ? _tableBuilders.Pop() : new DampedShadowedDragModel(); }
     private static void ReturnTableBuilder(DampedShadowedDragModel b) { lock (_tableBuilders) if (_tableBuilders.Count < 1) _tableBuilders.Push(b); }
     private volatile string _rebuildNote = "";
@@ -1380,6 +1386,20 @@ public partial class AeroGridComponent : Component, IInSceneListener
             try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Lowest; } catch { }
             long t = AeroCost.Start(), tStart = t;
             var sw = System.Diagnostics.Stopwatch.StartNew(); var ms = new double[6];
+            // a shape seen before (a reloaded world, a pasted blueprint, a copy): its table from disk, no build
+            var phys = TablePhysics;
+            string cacheKey = AeroTableCache.Enabled ? AeroTableCache.Key(boxes, blockSize, cellScale, phys) : null;
+            if (cacheKey != null && AeroTableCache.TryLoad(cacheKey, phys, out var cTable, out var cChunks, out var cWings))
+            {
+                foreach (var (a, b) in boxes) cChunks.CountBlock(cChunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); cChunks.SealCounts();
+                surface.ReleaseAll();   // (the swap puts this surface live: empty, as a big grid's is after its build)
+                _builtWings = cWings; _builtShadow = null; _builtChunks = cChunks; _builtTable = cTable;
+                FromCache = true;
+                _rebuildNote = $"from the table cache in {sw.Elapsed.TotalMilliseconds:F0} ms ({cChunks.ChunkCount} chunks, {cWings.Count} wings)";
+                Log.Default?.Info($"[AERO] grid {Entity?.DebugName}: {_rebuildNote}");
+                return;
+            }
+            FromCache = false;
             long m0 = GC.GetAllocatedBytesForCurrentThread(), m;
             // large-block grids at 0.5 m (majority of their 0.25 m cells): 4.5x fewer faces, forces within ~8%
             var snapshot = cellScale > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(cellScale) : new SnapshotGridAccessor(boxes);
@@ -1424,6 +1444,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 }
                 var chunks = new ChunkedTable(8, ChunkSize, new FacePhysics(builder));
                 _builtTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom, chunks: chunks);
+                // (saved before the counts and before anything shares it; small grids build in a moment, not kept)
+                if (cacheKey != null && sw.Elapsed.TotalMilliseconds > CacheAboveMs) AeroTableCache.Save(cacheKey, _builtTable, chunks, _builtWings);
                 foreach (var (a, b) in boxes) chunks.CountBlock(chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); chunks.SealCounts();
                 _builtChunks = chunks;
             }
@@ -1473,7 +1495,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                     _chunks = _builtChunks; _builtChunks = null; _chunkGen++;
                     // a big grid flies on its table: its surfaces and per-face arrays go (~30 MB for Red Ship; damage
                     // rebuilds it whole anyway)
-                    if (_cellScale > 1 || _surface.FaceCount > BigSurfaceFaces)
+                    if (_cellScale > 1 || _surface.FaceCount > BigSurfaceFaces || FromCache)
                     {
                         _lastFaces = _surface.FaceCount;
                         _surface.ReleaseAll(); _buildSurface.ReleaseAll();
