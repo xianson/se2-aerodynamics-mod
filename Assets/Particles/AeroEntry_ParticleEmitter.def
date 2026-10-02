@@ -11,20 +11,20 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "ba3c4a5b-2a5d-4f53-95c2-b0389eb60aa7",
+              "Key": "a0610e9c-21ef-4921-9bb9-aa0399cd52f5",
               "Value": {
                 "Value": {
                   "KeyFrames": {
                     "_data": [
                       {
-                        "Key": "bff400b8-1d33-4075-90d9-c5632baa36b9",
+                        "Key": "3ed098dc-42c5-491c-ac0d-99937c2c76b3",
                         "Value": {
                           "Value": 0,
                           "Key": 0
                         }
                       },
                       {
-                        "Key": "390092ed-4536-458e-9d2c-299b37ba253b",
+                        "Key": "a54c70ec-1bee-4834-bd50-b9b4f84cc63c",
                         "Value": {
                           "Value": 0,
                           "Key": 1
@@ -43,30 +43,30 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "85712b94-d5c4-4bbe-a7d9-e8e980fdf2b6",
+              "Key": "21825d73-50d5-48d0-bb20-5fdb07c7a371",
               "Value": {
                 "Value": 0,
                 "Key": 0
               }
             },
             {
-              "Key": "bd6933ac-4867-48d6-ab12-280e728a134e",
+              "Key": "f8f9728e-8bc0-45ad-981e-69abcb179333",
               "Value": {
-                "Value": 300,
+                "Value": 600,
                 "Key": 0.05
               }
             },
             {
-              "Key": "24250d7d-a3f4-4410-a015-5bcbf020b09e",
+              "Key": "f4f1ada9-3a98-407a-9ead-5fcfca68a129",
               "Value": {
-                "Value": 4000,
+                "Value": 9000,
                 "Key": 1
               }
             },
             {
-              "Key": "a66540a2-f7a4-4a69-b794-17f1801420c0",
+              "Key": "e306720d-2121-4ea6-a491-51cc5aaea11c",
               "Value": {
-                "Value": 4000,
+                "Value": 9000,
                 "Key": 2
               }
             }
@@ -77,7 +77,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "0af3694e-8429-4cfa-85b5-a2bb04f87d81",
+              "Key": "88dc8be5-e7a1-46bc-9c6b-e6f9e40c22ed",
               "Value": {
                 "Value": 0.8,
                 "Key": 0
@@ -90,7 +90,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "0046b928-9916-4b7c-8f60-84d0c5859777",
+              "Key": "40d70afb-e048-476c-8786-c5d50f34c5e9",
               "Value": {
                 "Value": {
                   "X": 0.5,
@@ -107,7 +107,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "3b60e88f-73e3-4ff5-8eec-df516a1ff9fc",
+              "Key": "01fd11d3-917f-4b97-81b6-b866a4ff3ec2",
               "Value": {
                 "Value": 0,
                 "Key": 0
@@ -120,7 +120,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "063d0cba-10c2-4f74-879b-6f932a2a0f4f",
+              "Key": "e21ae2ce-468a-4734-92f8-8d5ec17eb77d",
               "Value": {
                 "Value": 120,
                 "Key": 0
@@ -133,7 +133,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "0a567a4c-2c3c-40af-87e3-5e780710139e",
+              "Key": "c6f94b00-dbe0-4cbd-9348-01dd1b2a52d5",
               "Value": {
                 "Value": 0.5,
                 "Key": 0
@@ -146,7 +146,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "33ec724d-fd34-4dee-a052-337abade8c5d",
+              "Key": "dcd44908-24e7-424b-b142-06e9a8cb5e5e",
               "Value": {
                 "Value": 2,
                 "Key": 0
@@ -159,7 +159,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "e940eb98-d6a2-40a3-9e15-5e13bf74a17d",
+              "Key": "cd1ed4e6-99cd-4d78-bf3c-19d9a9d5dad4",
               "Value": {
                 "Value": 0.1,
                 "Key": 0
@@ -172,13 +172,13 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "3cf9ccae-a24d-4bc9-93e7-40fb53e88d91",
+              "Key": "39f67db4-90b9-4b6d-9895-91a6a48f2f85",
               "Value": {
                 "Value": {
                   "KeyFrames": {
                     "_data": [
                       {
-                        "Key": "4741b371-aa65-4fae-8ccd-76c3ab337579",
+                        "Key": "c2adc005-48c3-4473-9fe7-4c80f1dbde3f",
                         "Value": {
                           "Value": {
                             "X": 0.92,
@@ -190,7 +190,7 @@
                         }
                       },
                       {
-                        "Key": "fe6a3380-3f3e-48f8-8d73-ddbff507c40d",
+                        "Key": "45bd4524-6457-4ef9-a262-628c042c995a",
                         "Value": {
                           "Value": {
                             "X": 0.52,
@@ -202,7 +202,7 @@
                         }
                       },
                       {
-                        "Key": "0ef8e05a-91c7-404b-b267-ce59c56a965c",
+                        "Key": "464a18a9-41a2-4cbd-80f0-5cb28581bdb7",
                         "Value": {
                           "Value": {
                             "X": 0.3,
@@ -272,34 +272,34 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "f7d0a50a-c4ab-4d54-a4f0-3fc89939b7f8",
+              "Key": "c2b0a3df-4ae5-4006-a091-0309feaf796d",
               "Value": {
                 "Value": {
                   "KeyFrames": {
                     "_data": [
                       {
-                        "Key": "171e880a-642c-4fd6-8a94-c848bba1f03a",
+                        "Key": "f9210467-130c-4f2f-b358-4785631ecf22",
                         "Value": {
                           "Value": 600,
                           "Key": 0
                         }
                       },
                       {
-                        "Key": "a6769b78-6778-4277-9d91-d74c59e89f92",
+                        "Key": "d7d30278-e6e1-4cfd-8c18-d1add3fd6e1c",
                         "Value": {
                           "Value": 1000,
                           "Key": 0.05
                         }
                       },
                       {
-                        "Key": "317de89e-5971-4122-88b7-b9b54cf68369",
+                        "Key": "03bdb9a4-d06e-402c-8ac6-1859495a5e5a",
                         "Value": {
                           "Value": 800,
                           "Key": 0.3
                         }
                       },
                       {
-                        "Key": "7c94f971-8221-47ef-b41d-5eff424683ef",
+                        "Key": "667f3cbc-cd77-4f51-966c-3e72c3d4a80f",
                         "Value": {
                           "Value": 0,
                           "Key": 1
@@ -318,36 +318,36 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "cfbe4b04-78c0-43e7-b43e-46d6baf14723",
+              "Key": "f33e5789-a09d-4c9f-ab83-31bf72513be1",
               "Value": {
                 "Value": {
                   "KeyFrames": {
                     "_data": [
                       {
-                        "Key": "6b85f4c5-dea5-4677-be0c-7afb54e3a385",
+                        "Key": "c013bfbb-ba04-4943-a016-f4500e034a6e",
                         "Value": {
                           "Value": 0,
                           "Key": 0
                         }
                       },
                       {
-                        "Key": "359ba158-b684-4751-8841-5ddc972f2be3",
+                        "Key": "72822705-9324-42f9-8308-48b6a1d96b28",
                         "Value": {
-                          "Value": 0.018,
+                          "Value": 0.006,
                           "Key": 0.008
                         }
                       },
                       {
-                        "Key": "0ffc4672-0edc-4ae6-b435-36fbe88e6151",
+                        "Key": "08204f42-99c1-40c5-adf5-25854336ca5c",
                         "Value": {
-                          "Value": 0.009,
+                          "Value": 0.003,
                           "Key": 0.054
                         }
                       },
                       {
-                        "Key": "1184ffe6-f84e-41ba-9921-7667c00a43ca",
+                        "Key": "dafdbb8b-7246-41f1-9442-dd878edbb730",
                         "Value": {
-                          "Value": 0.004,
+                          "Value": 0.0012,
                           "Key": 1
                         }
                       }
@@ -364,20 +364,20 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "a6cf7454-68c6-49da-a2c3-4808987f41b8",
+              "Key": "e9c9fe86-572f-4c68-9852-4a0347d3d8a3",
               "Value": {
                 "Value": {
                   "KeyFrames": {
                     "_data": [
                       {
-                        "Key": "4fec272d-a5db-42b7-92a4-5ab57f0b4f6c",
+                        "Key": "92232f16-727d-4353-b5da-30742b5bed3e",
                         "Value": {
                           "Value": 1,
                           "Key": 0
                         }
                       },
                       {
-                        "Key": "e86e75aa-6426-4e5a-8371-a6ca3314639f",
+                        "Key": "ad7478c6-e9cc-4897-bb13-9785193f7d9a",
                         "Value": {
                           "Value": 1,
                           "Key": 1
@@ -396,7 +396,7 @@
         "KeyFrames": {
           "_data": [
             {
-              "Key": "745e596e-26f9-4880-96c2-57e5abae17c7",
+              "Key": "cd02246e-3d97-4c03-8bca-4e5b62a31368",
               "Value": {
                 "Value": {
                   "X": 0,
@@ -461,7 +461,7 @@
       "ValueColorVariance": 0,
       "SoftParticleDistanceScale": 1,
       "ShadowParticleAlphaMultiplier": 0,
-      "StreakMultiplier": 1.0,
+      "StreakMultiplier": 4.0,
       "OITWeightFactor": 1,
       "CameraSoftRadius": 0,
       "CameraBias": 0,

@@ -34,7 +34,7 @@ def emitter():
     v = d["$Value"]
     v["Guid"] = EMITTER_GUID
     t = v["TimeLines"]
-    t["ParticlesPerSecond"] = curve([(0, 0), (0.05, 300), (1, 4000), (2, 4000)])   # (strength = effect time, 0..1)
+    t["ParticlesPerSecond"] = curve([(0, 0), (0.05, 600), (1, 9000), (2, 9000)])   # (strength = effect time, 0..1)
     t["ParticleLifeSpan"] = const(0.8)
     t["EmitterSize"] = const(v3(0.5, 0.5, 0.5))
     t["EmitterShellThickness"] = const(0)
@@ -47,13 +47,13 @@ def emitter():
     t["Emissivity"] = over_life([(0, 600), (0.05, 1000), (0.3, 800), (1, 0)])
     # (the code scales the whole effect by the frontal radius, m: per metre of radius, these give 0.1-0.3 m
     # streaks off a radius-sized emitter - Flip and Burn's SE1 sizes, scaled by radius / 5, were a dot in SE2)
-    t["ParticleSize"] = over_life([(0, 0), (0.008, 0.018), (0.054, 0.009), (1, 0.004)])
+    t["ParticleSize"] = over_life([(0, 0), (0.008, 0.006), (0.054, 0.003), (1, 0.0012)])
     t["ParticleThickness"] = over_life([(0, 1), (1, 1)])
     t["Offset"] = const(v3(0, 0, -0.05))
     v["EmissionParameters"].update({"ParticleBurst": 0, "ParticleLifeSpanVariance": 0.5, "Direction": v3(0, 0, 1)})
     v["EmitterFlags"].update({"EnableStreaks": True, "EnableCollisions": True, "EnableRandomRotation": True,
                               "EnableLocalSpaceSimulation": False})
-    v["RenderingParameters"].update({"StreakMultiplier": 1.0, "SoftParticleDistanceScale": 1, "DistanceScalingFactor": 0.08,
+    v["RenderingParameters"].update({"StreakMultiplier": 4.0, "SoftParticleDistanceScale": 1, "DistanceScalingFactor": 0.08,
                                      "ParticleSizeVariance": 0.1, "AmbientMultiplier": 10})
     v["SimulationParameters"].update({"Bounciness": 0.4, "CollisionCountToKill": 0, "EmitterMotionInheritance": 1,
                                       "AngularVelocityCollisionMultiplier": 1})
