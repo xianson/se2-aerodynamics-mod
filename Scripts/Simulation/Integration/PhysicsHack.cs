@@ -197,7 +197,7 @@ public static class PhysicsHack
             // Building that cache needs the content builder, which is blocked on the stale Mod
             // SDK (see tools/SE2-UPDATE-RUNBOOK.md). Delete this once the cache builds.
             Log.Default?.Info($"[AERO] CONFIGPROBE before override: MaximumSpeedLinear={config.MaximumSpeedLinear} GravityMultiplier={config.GravityMultiplier} MaximumCharacterSpeedLinear={config.MaximumCharacterSpeedLinear}");
-            // (2026-10-01: the cache builds now - D:ero	oolsuild_mod_content.py - and the probe reads the
+            // (2026-10-01: the cache builds now - D:/aero/tools/build_mod_content.py - and the probe reads the
             // mod's 1000 / 1. Called with apply: false; the setters below are kept for a world without it.)
             if (!apply) return;
 
