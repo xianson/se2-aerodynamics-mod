@@ -126,11 +126,26 @@ public partial class AeroGridComponent
 
         // ── Aero computation ──
         long tco = AeroCost.Start();
+        aero.CachedPriority = aero.BuildPriority;
+        AeroFrameBudget.Touch();
         int every = aero.ComputeInterval;
-        if (every <= 1 || !aero.HasResult || ((aero._simFrameCount + aero.LodPhase) % every) == 0)
+        bool due = every <= 1 || !aero.HasResult || ((aero._simFrameCount + aero.LodPhase) % every) == 0 || aero.BudgetSkips > 0;
+        // the frame budget: once spent, due grids wait (not piloted / fast ones, nor one that has waited MaxSkips)
+        if (due && every > 1 && aero.HasResult && AeroFrameBudget.Spent && aero.BudgetSkips < AeroFrameBudget.MaxSkips)
+        {
+            aero.BudgetSkips++;
+            due = false;
+            System.Threading.Interlocked.Increment(ref AeroFrameBudget.SkippedThisSecond);
+        }
+        if (due)
+        {
+            aero.BudgetSkips = 0;
             aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+            System.Threading.Interlocked.Increment(ref AeroFrameBudget.ComputedThisSecond);
+        }
         else
             aero.SkipCompute(wt, angVel);   // (the last forces, in the grid's frame, are applied again below)
+        AeroFrameBudget.Add(System.Diagnostics.Stopwatch.GetTimestamp() - tco);
         AeroCost.Compute.Stop(tco);
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)

@@ -273,7 +273,9 @@ public class DampedShadowedDragModel : IAeroDragModel
     }
 
     /// <summary>Workers for one force table (the directions are independent).</summary>
-    public static int TableThreads = 2;   // (3 lengthened the game's own hitches while it streamed a ship in; 2 measured within its noise)
+    public static int TableThreads = 2;
+    /// <summary>Threads a table build may use now (AeroWork sets it: the background budget); null: TableThreads.</summary>
+    public static Func<int> ThreadBudget;   // (3 lengthened the game's own hitches while it streamed a ship in; 2 measured within its noise)
 
     public ForceTable BuildForceTable(IGridAccessor grid, ISurfaceProvider cache, ManifoldClassifier manifold, Vector3 com, int n = 8, int nj = 3, ChunkedTable chunks = null)
     {
@@ -286,9 +288,10 @@ public class DampedShadowedDragModel : IAeroDragModel
 
         // the directions, on up to TableThreads workers (each its own buffers; the faces are only read)
         int per = (n + 1) * (n + 1), count = 6 * per;
-        var works = new List<TableWork>(TableThreads);   // (arrays of mod types are banned in scripts: VRS1001)
+        int threads = Math.Max(1, ThreadBudget?.Invoke() ?? TableThreads);
+        var works = new List<TableWork>(threads);   // (arrays of mod types are banned in scripts: VRS1001)
         int next = -1;
-        for (int k = 0; k < TableThreads; k++) works.Add(k == 0 ? _work0 : new TableWork());
+        for (int k = 0; k < threads; k++) works.Add(k == 0 ? _work0 : new TableWork());
         // chunks: each hull face's chunk, and its centre among that chunk's occluders
         int[] faceChunk = null;
         if (chunks != null)

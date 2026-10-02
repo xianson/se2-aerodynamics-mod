@@ -32,7 +32,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // A rebuild in the background (StartBackgroundBuild): the spare classifier it classifies into, the
     // wings it detects, and the task. The active surface, classifier and wings serve the simulation until the swap.
     private ManifoldClassifier _buildManifold;
-    private System.Threading.Tasks.Task _finalizeTask;
+    private AeroWork.Item _finalizeTask;
     private List<LiftingSurface> _builtWings;
     private PrecomputedShadowMap _builtShadow, _spareShadow;
     private ForceTable _builtTable;
@@ -44,7 +44,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private readonly Dictionary<long, int> _localWeight = new(LongKey.Comparer);
     /// <summary>Chunks per local update: bounded work (~30-50 ms on Red Ship) - the most-changed first, the rest after.</summary>
     public static int ChunksPerUpdate = 8;
-    private System.Threading.Tasks.Task _localTask;
+    private AeroWork.Item _localTask;
 
     private int _chunkGen, _localGen;
     private long _lastDamage;
@@ -52,6 +52,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>Damage quiet this long (s): the whole rebuild (downstream shadowing, wings) runs.</summary>
     public static double QuietBeforeFullRebuild = 5.0;
     public static bool LocalUpdates = true;
+    /// <summary>Below this speed (m/s) a damaged grid's table waits (q ~ 50 Pa at sea level: its drag is nothing).</summary>
+    public static float MinSpeedForUpdates = 10f;
+    internal int DeferredFrames;
     /// <summary>Chunk size (m): 8 measured best (Red Ship, a block: 95 ms at 16 m -> 27 ms; 4 m no faster).</summary>
     public static float ChunkSize = 8f;
     internal double LastLocalMs, QuickMs;
@@ -75,7 +78,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Vector3 _rcsGeomCom;
     internal float _rcsArmSq;
     private static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
-    private static readonly System.Threading.SemaphoreSlim _buildSlots = new(2);
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
     private static DampedShadowedDragModel RentTableBuilder() { lock (_tableBuilders) return _tableBuilders.Count > 0 ? _tableBuilders.Pop() : new DampedShadowedDragModel(); }
@@ -222,7 +224,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _lastFaces;
     internal bool Rebuilding => _staggeredBuildActive;
     internal bool UsesTable => _model?.UsedTable ?? false;
-    internal string LocalNote => _chunks == null ? "" : $"chunks={_chunks.ChunkCount} local={LocalUpdatesDone} last {LastLocalMs:F0} ms dropped={ChunksDropped}";
+    internal string LocalNote => _chunks == null ? "" : $"chunks={_chunks.ChunkCount} local={LocalUpdatesDone} last {LastLocalMs:F0} ms dropped={ChunksDropped} waiting={_localDirty.Count}";
 
     /// <summary>In a planet's gravity (set by the job): a grid there may meet air soon, so it is built beforehand.</summary>
     internal bool InGravity;
@@ -233,6 +235,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>Rebuild order (AeroScheduler): grids without forces yet first, then piloted, then by speed in air.</summary>
     internal float BuildPriority =>
         (_model?.Table == null ? 1000f : 0f) + (Data.Has<TargetControlData>() ? 500f : 0f) + (LastDensity > 0f ? MathF.Min(LastSpeed, 300f) : 0f);
+
+    /// <summary>BuildPriority as of this grid's last frame (the work queue reads it from its own threads).</summary>
+    internal volatile float CachedPriority;
+    /// <summary>Frames in a row this grid's recompute waited for the frame budget (AeroFrameBudget).</summary>
+    internal int BudgetSkips;
 
     /// <summary>Recompute the forces every how many frames (the last ones are applied between): piloted or fast
     /// grids every frame, slower ones every 2nd or 4th - many grids cost proportionally less.</summary>
@@ -484,11 +491,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
         {
             if (!_localTask.IsCompleted) return;
             var t = _localTask; _localTask = null;
-            if (t.IsFaulted) Log.Default?.Info($"[AERO] local update failed: {t.Exception?.GetBaseException().Message}");
+            if (t.IsFaulted) Log.Default?.Info($"[AERO] local update failed: {t.Error?.Message}");
             else if (_localGen == _chunkGen && _localRes != null && _model?.Table != null) { _model.InstallForceTable(_chunks.Apply(_localRes, _model.Table)); LocalUpdatesDone++; }
             _localRes = null;
             _chunks?.ClearPending();
         }
+        // background work only while the air matters: a wreck on the ground (or anything barely moving) keeps its
+        // damage noted - the same-frame drops above still apply - and catches up the moment it moves again
+        bool airMatters = LastSpeed >= MinSpeedForUpdates && LastDensity > 0f;
+        if (!airMatters) { DeferredFrames++; return; }
         if (_localDirty.Count > 0 && !_staggeredBuildActive && _model?.Table != null)
         {
             // the region: the dirty chunks and a margin; its blocks captured here (the octree is ours only now)
@@ -529,13 +540,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _chunks.Prepare(dirty);
             var chunks = _chunks; int k2 = _cellScale; var geo = SnapshotGridAccessor.CellGeometry(k2); float bs = _blockSize;
             _localGen = _chunkGen;
-            _localTask = System.Threading.Tasks.Task.Factory.StartNew(() =>
+            _localTask = AeroWork.Enqueue(() => CachedPriority + 2000f, () =>   // (damage on a grid that has forces: before builds)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var snap = k2 > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(k2) : new SnapshotGridAccessor(boxes);
                 var hide = new List<Vector3>();
                 var faces = chunks.FacesFor(snap, dirty, geo.size, geo.offset, bs, hide);
-                _localRes = chunks.ComputeLocal(dirty, faces, 3, hide);
+                _localRes = chunks.ComputeLocal(dirty, faces, AeroWork.ThreadsForJob(), hide);
                 LastLocalMs = sw.Elapsed.TotalMilliseconds;
             });
             return;
@@ -1359,10 +1370,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
         foreach (var (lo, hi) in boxes) cellEstimate += (long)(hi.X - lo.X + 1) * (hi.Y - lo.Y + 1) * (hi.Z - lo.Z + 1);
         bool bigBuild = cellEstimate > AeroGc.BigBuildCells;
         if (bigBuild) { AeroGc.Enter(); Log.Default?.Info($"[AERO] big build start: grid {Entity?.DebugName}, ~{cellEstimate} cells (capture {AeroCost.Ms(tb):F0} ms)"); }
-        _finalizeTask = System.Threading.Tasks.Task.Factory.StartNew(() =>
+        _finalizeTask = AeroWork.Enqueue(() => CachedPriority, () =>
         {
-          // (at most two rebuilds at a time: a hundred grids arriving at once must not start a hundred threads)
-          _buildSlots.Wait();
+          // (AeroWork: a hundred grids arriving at once queue for its workers)
           try
           {
             // below the game's own threads: a rebuild must never compete with a frame
@@ -1422,8 +1432,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
             AeroCost.FinShadow.Stop(t);
             AeroCost.RebuildAlloc = $"rebuild alloc MB: snapshot {aSnap / 1048576.0:F1} faces {aFaces / 1048576.0:F1} finalize {aFin / 1048576.0:F1} classify {aCls / 1048576.0:F1} wings {aWing / 1048576.0:F1} shadow {aShd / 1048576.0:F1} ({surface.FaceCount} faces)";
           }
-          finally { _buildSlots.Release(); if (bigBuild) AeroGc.Exit(); }
-        }, System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
+          finally { if (bigBuild) AeroGc.Exit(); }
+        });
     }
 
     /// <summary>
@@ -1438,7 +1448,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _finalizeTask = null;
             if (task.IsFaulted)
             {
-                Log.Default?.Info($"[AERO] background rebuild failed ({task.Exception?.GetBaseException().Message}); rebuilding in one go");
+                Log.Default?.Info($"[AERO] background rebuild failed ({task.Error?.Message}); rebuilding in one go");
                 _buildSurface.CellSize = _surface.CellSize = 0.25f; _buildSurface.CellOffset = _surface.CellOffset = 0f; _cellScale = 1;
             }
             else
