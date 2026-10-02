@@ -754,30 +754,7 @@ public static class OffsetThrustJob
         Log.Default?.Info($"[AERO] OffsetThrust: scanned {totalChildren} hierarchy children, {thrustBlocks} with ThrusterComponent, cached {outThrusters.Count} thrusters ({airBreathing} air-breathing)");
     }
 
-    /// <summary>
-    /// Block definition GUID. HOLDOUT: CubeBlockComponent.Definition is public, but
-    /// CubeBlockDefinition derives from MaxHealthComponentDefinition in VRage.Game, which is
-    /// NOT a referenced assembly for mod scripts:
-    ///   CS0012: The type 'MaxHealthComponentDefinition' is defined in an assembly that is not
-    ///   referenced
-    /// so the compiler cannot walk the base chain to Definition.Guid. Reading it late-bound is
-    /// the only way in until VRage.Game joins GameCompilationDescriptor.MetaDatas.
-    /// </summary>
-    private static Guid? GetBlockDefinitionGuid(CubeBlockComponent block)
-    {
-        if (block == null) return null;
-        _blockDefProp ??= typeof(CubeBlockComponent).GetProperty("Definition",
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-        var def = _blockDefProp?.GetValue(block);
-        if (def == null) return null;
 
-        _blockGuidProp ??= def.GetType().GetProperty("Guid",
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-        return _blockGuidProp != null ? (Guid)_blockGuidProp.GetValue(def) : (Guid?)null;
-    }
-
-    private static System.Reflection.PropertyInfo _blockDefProp;
-    private static System.Reflection.PropertyInfo _blockGuidProp;
 
     /// <summary>
     /// Convert Base6Directions.Direction (int) to a unit vector.
@@ -988,11 +965,4 @@ public static class OffsetThrustJob
             Log.Default?.Info($"[AERO] Gyros: {(enabled ? "enabled" : "disabled")} {toggled}/{gyros.Count}");
     }
 
-    /// <summary>Check if gyros are currently enabled.</summary>
-    public static bool AreGyrosEnabled(List<GyroInfo> gyros)
-    {
-        if (gyros.Count == 0) return true;
-        try { return ((PowerableBlockComponent)gyros[0].BlockComponent).Enabled; }
-        catch { return true; }
-    }
 }

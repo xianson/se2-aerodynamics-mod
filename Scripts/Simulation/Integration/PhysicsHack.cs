@@ -62,15 +62,6 @@ public static class PhysicsHack
     }
     private static bool _gravityFixed;
 
-    public static bool Available
-    {
-        get
-        {
-            if (!_initialized)
-                Initialize();
-            return _available;
-        }
-    }
 
     /// <summary>
     /// DEntityContext.TryGet throws NullReferenceException from deep inside
@@ -253,11 +244,6 @@ public static class PhysicsHack
     /// </summary>
     private static float _savedMaxTorque = -1f;
 
-    public static bool TryRestoreGyroTorque(DEntityContext data)
-    {
-        if (_savedMaxTorque < 0f) return false;
-        return TrySetGyroTorque(data, _savedMaxTorque, "restored");
-    }
 
     public static bool TryZeroGyroTorque(DEntityContext data)
     {
@@ -283,13 +269,6 @@ public static class PhysicsHack
         return true;
     }
 
-    /// <summary>
-    /// Apply linear velocity delta to the entity's RigidBodyData.
-    /// </summary>
-    public static bool ApplyDeltaV(DEntityContext data, Vector3 deltaV)
-    {
-        return ApplyDeltaVAndTorque(data, deltaV, Vector3.Zero);
-    }
 
     /// <summary>
     /// Apply linear and angular velocity deltas.
@@ -333,17 +312,6 @@ public static class PhysicsHack
 
     public static bool GroundSystemReady => _groundSystemInitialized;
 
-    /// <summary>Read a thruster's max power and Base6Directions.Direction (as int).</summary>
-    public static bool TryGetThrustData(DEntityContext data, out float maxPower, out int direction)
-    {
-        maxPower = 0f;
-        direction = 0;
-        if (!SafeTryGet<ThrustData>(data, out var td))
-            return false;
-        maxPower = td.MaxThrustPower;
-        direction = (int)td.Direction;
-        return true;
-    }
 
     /// <summary>True if the thruster currently carries the IsThrusting tag.</summary>
     public static bool IsEntityThrusting(DEntityContext data)
@@ -369,9 +337,6 @@ public static class PhysicsHack
         return SafeTryRemove<ThrusterOverrideData>(data);
     }
 
-    // Resolved SetData<OverriddenThrustData> on Component base class
-    private static MethodInfo _setDataOnComponent;
-    private static Type _thrustCompType;
 
     /// <summary>
     /// Write grid-level OverriddenThrustData, which ComputeThrust reads.
@@ -408,7 +373,6 @@ public static class PhysicsHack
         return EngineOverrides.TrySetComponentData<ThrustComponent, ControlData>(gridEntity, cd);
     }
 
-    private static MethodInfo _setDataControlMethod;
 
 
 
@@ -418,12 +382,6 @@ public static class PhysicsHack
         return SafeTryGet<OverriddenThrustData>(gridData, out var o) ? o.DirectionalThrust : Vector3.Zero;
     }
 
-    public static bool TryGetWorldTransform(DEntityContext data, out WorldTransform wt)
-    {
-        return SafeGetWorldTransform(data, out wt);
-    }
-
-    private static MethodInfo _setWorldTransformMethod;
 
     /// <summary>
     /// Set orientation while keeping position. Does NOT zero angular velocity -- call
@@ -592,14 +550,6 @@ public static class PhysicsHack
         return true;
     }
 
-    // ── Async raycast state ──
-    private static object _pendingRayTask;   // Task<Buffer<SweepQueryHit>> in flight
-    // Cached PropertyInfo for task/buffer result reading (resolved on first completed task)
-    private static PropertyInfo _taskIsCompletedProp;
-    private static PropertyInfo _taskResultProp;
-    private static PropertyInfo _bufferCountProp;
-    private static PropertyInfo _bufferIndexerProp;
-    private static bool _taskPropsResolved;
 
     /// <summary>
     /// Distance to ground along gravity, via an async physics ray. Fires every few frames and

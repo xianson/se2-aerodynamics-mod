@@ -82,17 +82,7 @@ public static class AeroScheduler
         }
     }
 
-    /// <summary>True if the given grid is currently mid-staggered-build.</summary>
-    public static bool IsActiveRebuild(AeroGridComponent grid)
-    {
-        lock (_lock) return _activeRebuilds.Contains(grid);
-    }
 
-    /// <summary>True if the given grid is queued or actively rebuilding.</summary>
-    public static bool IsEnqueued(AeroGridComponent grid)
-    {
-        lock (_lock) return _rebuildQueue.Contains(grid) || _activeRebuilds.Contains(grid);
-    }
 
     // ── Tick-once guard ──
     // At most once per 15 ms (one 60 Hz frame). It used Environment.TickCount (1 ms resolution): with ~90 grids'

@@ -106,16 +106,4 @@ public readonly struct LiftingSurface
         $"Wing(AR={AspectRatio:F1}, S={PlanformArea:F1}m², span={Span:F1}m, t/c={ThicknessRatio:F2}, " +
         $"sweep={SweepAngle * 180f / MathF.PI:F0}°, CLα={CLAlpha:F2}, faces={FaceCount})";
 
-    /// <summary>Collect all cells from multiple wings into a single set.</summary>
-    public static HashSet<Vector3I> CollectWingCells(ReadOnlySpan<LiftingSurface> wings)
-    {
-        int total = 0;
-        foreach (ref readonly var w in wings)
-            total += w.Cells.Count;
-        var set = new HashSet<Vector3I>(total);
-        foreach (ref readonly var w in wings)
-            foreach (var c in w.Cells)
-                set.Add(c);
-        return set;
-    }
 }

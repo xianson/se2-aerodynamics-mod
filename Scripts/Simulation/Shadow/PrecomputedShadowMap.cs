@@ -175,8 +175,6 @@ public class PrecomputedShadowMap : IShadowMap
 
     private int _b0 = -1, _b1 = -1, _b2 = -1;
 
-    /// <summary>The next Update re-blends whatever the change (the force table needs each direction's own blend).</summary>
-    public void ResetBlend() { _b0 = _b1 = _b2 = -1; }
     private float _w0, _w1, _w2;
 
     /// <summary>
@@ -298,18 +296,6 @@ public class PrecomputedShadowMap : IShadowMap
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FindNearest(Vector3 dir)
-    {
-        int best = 0;
-        float bestDot = -2f;
-        for (int i = 0; i < DirCount; i++)
-        {
-            float dot = Vector3.Dot(dir, Directions[i]);
-            if (dot > bestDot) { bestDot = dot; best = i; }
-        }
-        return best;
-    }
 
     private void InvalidateAll()
     {

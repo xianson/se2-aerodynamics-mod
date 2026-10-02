@@ -48,19 +48,6 @@ public class AeroComponentRegistry
         return removed;
     }
 
-    public int RemoveBlock(Vector3I blockPos)
-    {
-        int removed = 0;
-        for (int i = _components.Count - 1; i >= 0; i--)
-        {
-            if (_components[i].BlockPosition == blockPos)
-            {
-                _components.RemoveAt(i);
-                removed++;
-            }
-        }
-        return removed;
-    }
 
     /// <summary>Enumerate components of a specific type.</summary>
     public IEnumerable<T> OfType<T>() where T : class

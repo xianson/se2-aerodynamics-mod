@@ -129,7 +129,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private bool _faceOverridesDirty = true;
 
     // ── Cascaded flight controller state ──
-    private Vector3 _rateIntegral = Vector3.Zero;  // inner loop integrator (per-axis)
 
     // ── SAS (hidden stability augmentation) ──
     // Direct torque applied to physics, independent of aero surfaces.
@@ -227,7 +226,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal bool _rcsWarm;
     internal bool IsServerScene = true;
     static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
-    internal float[] _flameShown = Array.Empty<float>();   // the override each client thruster shows (-1: none)
     private Quaternion _rcsHold; private bool _rcsHoldValid; private int _holdStall;
 
     /// <summary>

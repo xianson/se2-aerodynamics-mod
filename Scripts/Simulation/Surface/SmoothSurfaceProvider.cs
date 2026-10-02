@@ -246,8 +246,6 @@ public class SmoothSurfaceProvider : ISurfaceProvider
 
 
 
-    /// <summary>The cells a staggered build is working through (null when not building): its snapshot of the grid.</summary>
-    public IReadOnlyList<Vector3I> StagedCells => _stagingCells;
 
     // ─── Staggered build state ──────────────────────────────────
     private List<Vector3I> _stagingCells, _stagingStore;
@@ -390,12 +388,6 @@ public class SmoothSurfaceProvider : ISurfaceProvider
     /// <summary>This surface's last FinalizeBuild stage times.</summary>
     public string LastFinalizeProfile = "";
 
-    /// <summary>Abort a staggered build in progress (e.g., grid topology changed mid-build).</summary>
-    public void AbortBuild()
-    {
-        _stagingCells = null;
-        _stagingGrid = null;
-    }
 
     // ─── Incremental updates ─────────────────────────────────────
 

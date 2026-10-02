@@ -216,15 +216,11 @@ public static class AeroStats
     private static float _lastFaceOvrUs, _lastSurfUs, _lastWingUs, _lastDrawUs, _lastReadUs;
 
     public static void SetDrag(float us)    { GridDragUs.Set(us);    _lastDragUs = us; }
-    public static void SetPhys(float us)    { GridPhysUs.Set(us);    _lastPhysUs = us; }
-    public static void SetThrust(float us)  { GridThrustUs.Set(us);  _lastThrustUs = us; }
     public static void SetCtrl(float us)    { GridCtrlUs.Set(us);    _lastCtrlUs = us; }
     public static void SetComp(float us)    { GridCompUs.Set(us);    _lastCompUs = us; }
     public static void SetFaceOvr(float us) { GridFaceOvrUs.Set(us); _lastFaceOvrUs = us; }
     public static void SetSurf(float us)    { GridSurfUs.Set(us);    _lastSurfUs = us; }
     public static void SetWing(float us)    { GridWingUs.Set(us);    _lastWingUs = us; }
-    public static void SetDraw(float us)    { GridDrawUs.Set(us);    _lastDrawUs = us; }
-    public static void SetRead(float us)    { GridReadUs.Set(us);    _lastReadUs = us; }
 
     // ── Stopwatch helpers ──
     private static readonly double TicksToUs = 1_000_000.0 / Stopwatch.Frequency;

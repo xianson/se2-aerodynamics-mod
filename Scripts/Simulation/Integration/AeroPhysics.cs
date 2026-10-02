@@ -98,45 +98,7 @@ public static class AeroPhysics
         }
     }
 
-    /// <summary>
-    /// Apply a force at a world point. The resulting moment about the centre of mass falls out
-    /// of the geometry, so a lifting surface pushing at its aerodynamic centre produces the
-    /// right pitching moment without a separately computed torque term.
-    /// </summary>
-    public static bool ApplyForceAtPoint(Entity entity, in WorldTransform wt,
-                                         Vector3 worldForce, Vector3D worldPosition,
-                                         float dt = Dt)
-    {
-        if (!IsFinite(worldForce) || !IsDynamic(entity))
-            return false;
 
-        try
-        {
-            var data = entity.Data;
-            ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
-            if (Unsafe.IsNullRef(in rb))
-                return false;
-            if (!data.TryGet<RigidBodyMassProperties>(out var mass))
-                return false;
-
-            rb.ApplyImpulseAt(in mass, in wt, worldPosition, worldForce * dt);
-            return true;
-        }
-        catch { return false; }
-    }
-
-    /// <summary>Read mass properties without reflection.</summary>
-    public static bool TryGetMass(Entity entity, out float mass, out Vector3 centerOfMass)
-    {
-        mass = 0f;
-        centerOfMass = Vector3.Zero;
-        RigidBodyMassProperties mp;
-        try { if (!entity.Data.TryGet<RigidBodyMassProperties>(out mp)) return false; }
-        catch { return false; }
-        mass = mp.InvMass > 0f ? 1f / mp.InvMass : 0f;
-        centerOfMass = mp.CenterOfMass;
-        return true;
-    }
 
     /// <summary>Read velocities without reflection.</summary>
     public static bool TryGetVelocity(Entity entity, out Vector3 linear, out Vector3 angular)
