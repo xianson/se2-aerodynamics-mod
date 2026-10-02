@@ -12,7 +12,7 @@
     "IsLooping": true,
     "ParticleEmitters": [
       {
-        "Key": "3489dcd8-9680-43c2-9b90-56690e465eb5",
+        "Key": "c13c0de7-155f-5cba-9e56-1eb042d5b07c",
         "Value": {
           "Definition": "a3e0c7d1-5b2f-4e8a-9c61-0d7e2f4a1b02",
           "Parameters": {
@@ -28,7 +28,7 @@
     "ParticleAudio": null,
     "ParticleLight": [
       {
-        "Key": "0c1ac647-3d37-4388-a8b1-4332393fa6c1",
+        "Key": "781dfc16-31f0-5cf6-92e9-bf384ed8e879",
         "Value": "a3e0c7d1-5b2f-4e8a-9c61-0d7e2f4a1b03"
       }
     ]

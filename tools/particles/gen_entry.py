@@ -18,7 +18,10 @@ LIGHT_GUID = "a3e0c7d1-5b2f-4e8a-9c61-0d7e2f4a1b03"
 def load(rel):
     with open(os.path.join(GAME, rel), encoding="utf-8-sig") as f: return json.load(f)
 
-def kid(): return str(uuid.uuid4())
+_kids = 0
+def kid():   # (stable keys: a rerun with the same values writes the same files)
+    global _kids; _kids += 1
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"aero-entry-key-{_kids}"))
 
 def const(v): return {"KeyFrames": {"_data": [{"Key": kid(), "Value": {"Value": v, "Key": 0}}]}}
 def curve(points): return {"KeyFrames": {"_data": [{"Key": kid(), "Value": {"Value": v, "Key": t}} for t, v in points]}}
