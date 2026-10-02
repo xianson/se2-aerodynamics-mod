@@ -43,8 +43,6 @@ public static class AeroEntryFx
     public static int Active, Published;
     /// <summary>Diagnostics: client grids that looked, found an entry, had no render parent; spawns tried / failed.</summary>
     public static int ClientLooks, ClientFound, ClientNoRender, SpawnTries, SpawnFails;
-    /// <summary>Diagnostics: the nearest published entry (m, carried forward) a client grid missed.</summary>
-    public static double ClientNearestMiss = double.MaxValue;
     /// <summary>Diagnostics: the heaviest moving glowing grid's nose (world), frontal radius, strength.</summary>
     public static string Diag = "";
     static float _diagMass;
@@ -55,6 +53,7 @@ public static class AeroEntryFx
         public Vector3 TravelLocal, NoseLocal;
         public float Radius, Strength, Speed;
         public long Stamp;
+        public bool Gone;   // (no longer published: a client's remembered match must search again)
     }
     static readonly Dictionary<AeroGridComponent, Pub> _pub = new();
     static volatile int _count;
@@ -84,7 +83,7 @@ public static class AeroEntryFx
         if (extStrength > 0f && !aero.HasTable) aero.EntryWantsTable = true;
         if (strength <= 0f || speed < 1f || !aero.HasTable)
         {
-            if (aero.EntryPublished) lock (_pub) { _pub.Remove(aero); _count = _pub.Count; aero.EntryPublished = false; }
+            if (aero.EntryPublished) lock (_pub) { if (_pub.Remove(aero, out var gone)) gone.Gone = true; _count = _pub.Count; aero.EntryPublished = false; }
             return;
         }
         var travel = WorldTransform.TransformDirectionInv(vel / speed, wt);
@@ -109,16 +108,27 @@ public static class AeroEntryFx
     internal static void Forget(AeroGridComponent aero)
     {
         if (!aero.EntryPublished) return;
-        lock (_pub) { _pub.Remove(aero); _count = _pub.Count; aero.EntryPublished = false; }
+        lock (_pub) { if (_pub.Remove(aero, out var gone)) gone.Gone = true; _count = _pub.Count; aero.EntryPublished = false; }
     }
 
     /// <summary>Client: the published entry of the grid at this place (carried forward to now), if any.</summary>
-    internal static bool Find(in WorldTransform grid, out Vector3 travel, out Vector3 nose, out float radius, out float strength, out float speed)
+    internal static bool Find(in WorldTransform grid, ref object hint, out Vector3 travel, out Vector3 nose, out float radius, out float strength, out float speed)
     {
         travel = nose = default; radius = strength = speed = 0f;
         long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
         lock (_pub)
         {
+            // the entry matched last time, while it is still published, fresh and here: no search (a search per
+            // client grid per frame over every entry was O(n^2) with many grids glowing)
+            if (hint is Pub h && !h.Gone)
+            {
+                double ha = (now - h.Stamp) / freq;
+                if (ha <= 0.5 && (h.Pos + h.Vel * ha - grid.Position).LengthSquared() < 20.0 * 20.0)
+                {
+                    travel = h.TravelLocal; nose = h.NoseLocal; radius = h.Radius; strength = h.Strength; speed = h.Speed;
+                    return true;
+                }
+            }
             Pub best = null; double bestD = 60.0;
             foreach (var kv in _pub)
             {
@@ -128,13 +138,8 @@ public static class AeroEntryFx
                 double d = (p.Pos + p.Vel * age - grid.Position).Length();
                 if (d < bestD) { bestD = d; best = p; }
             }
-            if (best == null)
-            {
-                double nearest = double.MaxValue;
-                foreach (var kv in _pub) { var p = kv.Value; double age = (now - p.Stamp) / freq; nearest = Math.Min(nearest, (p.Pos + p.Vel * age - grid.Position).Length()); }
-                if (nearest < ClientNearestMiss) ClientNearestMiss = nearest;
-                return false;
-            }
+            hint = best;
+            if (best == null) return false;
             travel = best.TravelLocal; nose = best.NoseLocal; radius = best.Radius; strength = best.Strength; speed = best.Speed;
             return true;
         }
@@ -193,6 +198,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     internal Vector3 ShownTravel, ShownNose;
     internal float ShownStrength = -1f, ShownScale = -1f, Fade;
     internal int RetryIn;
+    internal object Match;   // (the published entry found last frame)
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene()
@@ -215,7 +221,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         var wt = c.Data.GetWorldTransform();
         System.Threading.Interlocked.Increment(ref AeroEntryFx.ClientLooks);
         Vector3 travel = default, nose = default; float radius = 0f, strength = 0f, speed = 0f;
-        bool found = AeroEntryFx.Enabled && AeroEntryFx.Find(wt, out travel, out nose, out radius, out strength, out speed);
+        bool found = AeroEntryFx.Enabled && AeroEntryFx.Find(wt, ref c.Match, out travel, out nose, out radius, out strength, out speed);
         if (found) System.Threading.Interlocked.Increment(ref AeroEntryFx.ClientFound);
         // (only the nearest MaxActive to the camera glow: the rest fade as if cooled)
         if (found && AeroEntryFx.CameraAt(observers, out var cam) && !AeroEntryFx.Near(c, (wt.Position - cam).Length())) found = false;
