@@ -171,6 +171,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float EntryHeat;
     internal bool EntryPublished;
     internal bool HasTable => _model?.Table != null;
+    /// <summary>The entry plasma needs this grid's table though it sees no air (another mod flies it through some).</summary>
+    internal bool EntryWantsTable;
     Vector3 _esTravel, _esNose; float _esRadius; int _esGen = -1, _esAge;
 
     /// <summary>For the entry plasma, flying along `travel` (grid frame): the nose - the most upstream of the hull
@@ -641,7 +643,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_quickTable != null) { var qt = _quickTable; _quickTable = null; if (_model.Table == null) _model.InstallForceTable(qt); }
         if (_model?.Table == null && _seedTries < 120 && OrphanChunks.Any) TrySeed(wt);
 
-        if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && _model?.Table == null && (density > 0f || InGravity) && !IsStatic)
+        if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && _model?.Table == null && (density > 0f || InGravity || EntryWantsTable) && !IsStatic)
         {
             if (_blockSize <= 0) _blockSize = DetectBlockSize();
             _gridAccessor.SetOctree(_octree);

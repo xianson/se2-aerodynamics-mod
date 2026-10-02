@@ -33,6 +33,10 @@ public static class AeroEntryFx
     /// <summary>TEST (harness: aeroset AeroEntryFx.TestSpeed 2000): every grid as if flying forward at this speed in
     /// sea-level air - the plasma on a parked ship, to look at.</summary>
     public static float TestSpeed;
+    /// <summary>Another mod's entry state for a grid, set by it (the Orbital Mod's reentry on rails: its grids sit
+    /// still in their frame while the frame is braked through the air): the air's velocity past the grid (world,
+    /// m/s) in xyz, and how hard it glows (0..1) in w; w &lt;= 0: none (the grid's own motion counts).</summary>
+    public static Func<Keen.VRage.DCS.Components.Entity, Vector4> External;
     /// <summary>TEST knobs: strength as the effect's fixed time (else the timeline runs); the size, x.</summary>
     public static bool FixTime = true;
     public static float ScaleMul = 1f;
@@ -61,12 +65,23 @@ public static class AeroEntryFx
     {
         if (!Enabled) return;
         if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(-Vector3.UnitZ, wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
+        float extStrength = 0f;
+        var ext = External;
+        if (ext != null && aero.Entity != null)
+        {
+            var e = ext(aero.Entity);
+            if (e.W > 0f) { vel = new Vector3(e.X, e.Y, e.Z); extStrength = MathF.Min(1f, e.W); }
+        }
         float speed = vel.Length();
         float v = speed * 0.001f;
         float target = density > 0f ? MathF.Sqrt(density / 1.225f) * v * v * v : 0f;
         float k = MathF.Min(1f, dt / MathF.Max(0.05f, HeatLag));
         aero.EntryHeat += (target - aero.EntryHeat) * k;
+        if (extStrength > 0f) aero.EntryHeat = MathF.Max(aero.EntryHeat, OnsetHeat + extStrength * (FullHeat - OnsetHeat));   // (its glow, held; cools by the lag after)
         float strength = Math.Clamp((aero.EntryHeat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f);
+        // (a grid on rails sees no air of its own, so its first table was never built: wanted now - from the table
+        //  cache this is a few ms - and it glows once it is in)
+        if (extStrength > 0f && !aero.HasTable) aero.EntryWantsTable = true;
         if (strength <= 0f || speed < 1f || !aero.HasTable)
         {
             if (aero.EntryPublished) lock (_pub) { _pub.Remove(aero); _count = _pub.Count; aero.EntryPublished = false; }
