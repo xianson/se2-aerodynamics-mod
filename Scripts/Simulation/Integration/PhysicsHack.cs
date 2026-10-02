@@ -29,8 +29,6 @@ namespace AeroMod;
 /// </summary>
 public static class PhysicsHack
 {
-    private static bool _initialized;
-    private static bool _available;
     private static bool _groundSystemInitialized;
     private static IPhysics _physics;
     public static IPhysics Physics => _physics;
@@ -127,15 +125,6 @@ public static class PhysicsHack
     {
         try { return ref data.TryGetWritePtr<T>(); }
         catch { return ref Unsafe.NullRef<T>(); }
-    }
-
-    private static void Initialize()
-    {
-        // Nothing to resolve any more: every type this class touches is directly referenced.
-        // Availability is simply whether the entity actually carries RigidBodyData, which each
-        // method checks for itself.
-        _initialized = true;
-        _available = true;
     }
 
     /// <summary>Read gyro MaxTorque from an entity's MaxTorqueData.</summary>

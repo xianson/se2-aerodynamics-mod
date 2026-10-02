@@ -200,9 +200,8 @@ public static class AeroStats
                 $"[AERO-PROF] {_frameGridCount} grids {_frameTotalUs:F0}µs ({pct:F1}%) " +
                 $"drag={_lastShadowUs + _lastForceUs + _lastLiftUs:F0} " +
                 $"[shad={_lastShadowUs:F0} force={_lastForceUs:F0} lift={_lastLiftUs:F0}] " +
-                $"phys={_lastPhysUs:F0} thrust={_lastThrustUs:F0} " +
                 $"cs={_lastCtrlUs:F0} comp={_lastCompUs:F0} faceOvr={_lastFaceOvrUs:F0} " +
-                $"surf={_lastSurfUs:F0} wing={_lastWingUs:F0} draw={_lastDrawUs:F0} read={_lastReadUs:F0}");
+                $"surf={_lastSurfUs:F0} wing={_lastWingUs:F0}");
         }
     }
 
@@ -212,8 +211,8 @@ public static class AeroStats
     public static void SetLift(float us)   { DragLiftUs.Set(us);   _lastLiftUs = us; }
 
     // ── Grid subsystem stashes (for logging) ──
-    private static float _lastDragUs, _lastPhysUs, _lastThrustUs, _lastCtrlUs, _lastCompUs;
-    private static float _lastFaceOvrUs, _lastSurfUs, _lastWingUs, _lastDrawUs, _lastReadUs;
+    private static float _lastDragUs, _lastCtrlUs, _lastCompUs;
+    private static float _lastFaceOvrUs, _lastSurfUs, _lastWingUs;
 
     public static void SetDrag(float us)    { GridDragUs.Set(us);    _lastDragUs = us; }
     public static void SetCtrl(float us)    { GridCtrlUs.Set(us);    _lastCtrlUs = us; }
