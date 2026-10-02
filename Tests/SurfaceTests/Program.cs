@@ -140,12 +140,33 @@ static class Program
         Check(!ss.Released, "small surface keeps its build tables");
     }
 
+    /// <summary>A pooled surface (the damage updates': BorrowScratch, reused build after build, its tables borrowed
+    /// from the shared pool) builds exactly what a fresh surface builds, shape after shape.</summary>
+    static void BorrowedTablesBuildTheSame()
+    {
+        var pooled = new SmoothSurfaceProvider { BorrowScratch = true };
+        var big = new SetGrid();
+        for (int x = -40; x < 40; x++) for (int y = -1; y <= 1; y++) for (int z = -40; z < 40; z++) big.Cells.Add(new Vector3I(x, y, z));
+        var small = new SetGrid();
+        for (int x = 0; x < 7; x++) for (int y = 0; y < 3; y++) for (int z = 0; z < 2; z++) small.Cells.Add(new Vector3I(x, y, z));
+        var damaged = new SetGrid();
+        foreach (var c in big.Cells) if (!(Math.Abs(c.X + 3) <= 4 && Math.Abs(c.Z - 9) <= 5)) damaged.Cells.Add(c);
+        foreach (var (g, what) in new[] { (big, "big"), (small, "small"), (damaged, "big, damaged"), (small, "small again") })
+        {
+            pooled.Build(g, 0.25f);
+            var fresh = new SmoothSurfaceProvider(); fresh.Build(g, 0.25f);
+            SameSurface(pooled, fresh, "pooled surface (BorrowScratch), " + what);
+            Check(pooled.Released, "pooled surface gave its build tables back (" + what + ")");
+        }
+    }
+
     static int Main()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         SnapshotHoldsItsCells();
         BigPlateIsFast();
         BigSurfaceReleasesAndRebuilds();
+        BorrowedTablesBuildTheSame();
         foreach (var (rings, crease) in new[] { (2, 90f), (1, 90f), (3, 90f), (2, 45f), (2, 180f) })
             IncrementalEqualsFresh(rings, crease);
         Console.WriteLine($"SurfaceTests: {_checks - _fails}/{_checks} passed ({sw.ElapsedMilliseconds} ms)");
