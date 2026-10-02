@@ -4,6 +4,7 @@ using Keen.VRage.Core;
 using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Systems;
 using Keen.VRage.DCS.Annotations;
+using Keen.VRage.Core.Game.GameSystems.Observers;
 
 namespace AeroMod;
 
@@ -124,6 +125,44 @@ public static class AeroEntryFx
         }
     }
 
+    // nearest MaxActive to the camera: each glowing client grid notes its distance; four times a second the cutoff is
+    // the MaxActive-th nearest (grids past it fade out and do not spawn)
+    static readonly Dictionary<AeroEntryFxComponent, (double d, long stamp)> _dist = new();
+    static double _cutoff = double.MaxValue;
+    static long _cutoffAt;
+    static readonly List<double> _ds = new();
+    static readonly Keen.VRage.Library.Utils.StringId CameraTag = Keen.VRage.Library.Utils.StringId.Get("VisualEffectsObserver");
+
+    /// <summary>Client: whether this grid, at distance d from the camera, is among the nearest MaxActive glowing.</summary>
+    internal static bool Near(AeroEntryFxComponent c, double d)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
+        lock (_dist)
+        {
+            _dist[c] = (d, now);
+            if (now - _cutoffAt > f / 4)
+            {
+                _cutoffAt = now;
+                _ds.Clear();
+                List<AeroEntryFxComponent> stale = null;
+                foreach (var kv in _dist)
+                    if (now - kv.Value.stamp < f / 2) _ds.Add(kv.Value.d);
+                    else (stale ??= new()).Add(kv.Key);
+                if (stale != null) foreach (var s in stale) _dist.Remove(s);
+                if (_ds.Count <= MaxActive) _cutoff = double.MaxValue;
+                else { _ds.Sort(); _cutoff = _ds[MaxActive - 1]; }
+            }
+            return d <= _cutoff;
+        }
+    }
+
+    internal static bool CameraAt(IObservers observers, out Vector3D at)
+    {
+        at = default;
+        if (observers == null || !observers.TryGetFirstTransform(CameraTag, out WorldTransform cam)) return false;
+        at = cam.Position; return true;
+    }
+
     /// <summary>The emitter's frame: its +Z (the spray's axis) downwind, at the nose.</summary>
     internal static RelativeTransform At(Vector3 travel, Vector3 nose)
         => new RelativeTransform(nose, Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -travel));
@@ -151,7 +190,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
 
     [OnAeroEntryFx]
     [MustHave(typeof(AeroEntryFxComponent))]
-    private static void EntryJob(AeroEntryFxComponent c)
+    private static void EntryJob(AeroEntryFxComponent c, IObservers observers)
     {
         if (c.NoRender) return;
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
@@ -163,6 +202,8 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         Vector3 travel = default, nose = default; float radius = 0f, strength = 0f, speed = 0f;
         bool found = AeroEntryFx.Enabled && AeroEntryFx.Find(wt, out travel, out nose, out radius, out strength, out speed);
         if (found) System.Threading.Interlocked.Increment(ref AeroEntryFx.ClientFound);
+        // (only the nearest MaxActive to the camera glow: the rest fade as if cooled)
+        if (found && AeroEntryFx.CameraAt(observers, out var cam) && !AeroEntryFx.Near(c, (wt.Position - cam).Length())) found = false;
         // eased in and out (no popping at the onset): ~0.5 s
         c.Fade += ((found ? 1f : 0f) - c.Fade) * 0.12f;
         if (!found && c.Fade < 0.02f)
@@ -173,7 +214,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (!found) { travel = c.ShownTravel; nose = c.ShownNose; strength = MathF.Max(0f, c.ShownStrength); radius = c.ShownScale; speed = 0f; }
         if (c.Fx == null)
         {
-            if (AeroEntryFx.Active >= AeroEntryFx.MaxActive || !found) return;
+            if (AeroEntryFx.Active >= AeroEntryFx.MaxActive + 4 || !found) return;   // (a few spare while the farthest fade)
             if (c.RetryIn > 0) { c.RetryIn--; return; }
             if (c.RenderParent == null)
             {
