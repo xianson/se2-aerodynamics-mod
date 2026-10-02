@@ -43,6 +43,7 @@ public class InjectAeroComponents : Injections
         if (hasCubeGrid)
         {
             Add(entity, typeof(AeroGridComponent));
+            Add(entity, typeof(AeroEntryFxComponent));
 
             if (_gridCount < 3)
                 Log.Default?.Info($"[AERO] Injected AeroGridComponent into prefab #{_gridCount}");

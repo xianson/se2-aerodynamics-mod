@@ -13,3 +13,6 @@ Tests/**/bin/
 Tests/**/obj/
 # Ship shapes exported from local blueprints (others' workshop ships: not committed)
 Tests/data/
+
+# build_mod_content.py keeps the previous Content here on each build
+Content.before-*/

@@ -168,6 +168,51 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float LastMass;
     internal float LastDensity;
     internal float LastSpeed;
+    /// <summary>Entry plasma (AeroEntryFx): the hull's visual heat, and whether this grid's entry is published.</summary>
+    internal float EntryHeat;
+    internal bool EntryPublished;
+    internal bool HasTable => _model?.Table != null;
+    Vector3 _esTravel, _esNose; float _esRadius; int _esGen = -1, _esAge;
+
+    /// <summary>For the entry plasma, flying along `travel` (grid frame): the nose - the most upstream of the hull
+    /// (its chunks' face boxes; across the flow, the middle of the chunks within a chunk of the front) - and the
+    /// frontal radius (the force table's frontal area). Kept while the flow turns less than 3 degrees.</summary>
+    internal void EntryShape(Vector3 travel, out Vector3 nose, out float radius)
+    {
+        if (_esGen == _chunkGen && ++_esAge < 120 && Vector3.Dot(travel, _esTravel) > 0.9986f) { nose = _esNose; radius = _esRadius; return; }
+        _esGen = _chunkGen; _esAge = 0; _esTravel = travel;
+        Span<float> s = stackalloc float[ForceTable.Stride];
+        _model.Table.Sample(travel, s);
+        radius = MathF.Sqrt(MathF.Max(s[12], 0.01f) / MathF.PI);
+        nose = travel * radius;
+        var ch = _chunks;
+        if (ch != null && ch.ChunkCount > 0)
+        {
+            float front = float.MinValue;
+            for (int c = 0; c < ch.ChunkCount; c++)
+            {
+                var (lo, hi) = ch.Bounds[c];
+                if (lo.X > hi.X) continue;
+                float d = (travel.X > 0 ? hi.X : lo.X) * travel.X + (travel.Y > 0 ? hi.Y : lo.Y) * travel.Y + (travel.Z > 0 ? hi.Z : lo.Z) * travel.Z;
+                if (d > front) front = d;
+            }
+            if (front > float.MinValue)
+            {
+                var mid = Vector3.Zero; int n = 0;
+                for (int c = 0; c < ch.ChunkCount; c++)
+                {
+                    var (lo, hi) = ch.Bounds[c];
+                    if (lo.X > hi.X) continue;
+                    float d = (travel.X > 0 ? hi.X : lo.X) * travel.X + (travel.Y > 0 ? hi.Y : lo.Y) * travel.Y + (travel.Z > 0 ? hi.Z : lo.Z) * travel.Z;
+                    if (d < front - ch.ChunkSize) continue;
+                    mid += (lo + hi) * 0.5f; n++;
+                }
+                mid /= Math.Max(1, n);
+                nose = mid - travel * Vector3.Dot(mid, travel) + travel * front;
+            }
+        }
+        _esNose = nose; _esRadius = radius;
+    }
     internal Vector3 LastInvInertia;      // (1/Ixx, 1/Iyy, 1/Izz) principal axes
     internal Quaternion LastInertiaMajorAxisRot = Quaternion.Identity; // principal → body rotation
 
@@ -323,6 +368,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
+        AeroEntryFx.Forget(this);
         _initialized = false;
         AeroTestHarness.UntrackGrid(this);
         AeroScheduler.Remove(this);
