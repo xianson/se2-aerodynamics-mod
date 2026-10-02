@@ -63,7 +63,7 @@ public static class AeroEntryFx
     /// <summary>Server, each aero step: the grid's heat, and its entry while it glows.</summary>
     internal static void Server(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, float dt)
     {
-        if (!Enabled) return;
+        if (!Enabled || !aero.IsServerScene) return;   // (the sim job runs on client copies too: they only draw)
         if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(-Vector3.UnitZ, wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
         float extStrength = 0f;
         var ext = External;
