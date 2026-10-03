@@ -37,7 +37,9 @@ def emitter():
     v = d["$Value"]
     v["Guid"] = EMITTER_GUID
     t = v["TimeLines"]
-    t["ParticlesPerSecond"] = curve([(0, 0), (0.05, 600), (1, 9000), (2, 9000)])   # (strength = effect time, 0..1)
+    # (strength = effect time 0..1 s of the 2 s effect; effect-time keys are FRACTIONS of the duration, 0..1 - a key
+    #  past 1 fails validation: so strength 1 s is 0.5 here)
+    t["ParticlesPerSecond"] = curve([(0, 0), (0.025, 600), (0.5, 9000), (1, 9000)])
     t["ParticleLifeSpan"] = const(0.8)
     t["EmitterSize"] = const(v3(0.5, 0.5, 0.5))
     t["EmitterShellThickness"] = const(0)
@@ -68,7 +70,7 @@ def light():
     v["Guid"] = LIGHT_GUID
     t = v["TimeLines"]
     t["Color"] = const(v4(1, 0.3, 0.11, 1))
-    t["Intensity"] = curve([(0, 0), (0.05, 20), (1, 300), (2, 300)])
+    t["Intensity"] = curve([(0, 0), (0.025, 20), (0.5, 300), (1, 300)])   # (fractions of the duration, as above)
     t["IntensityVariance"] = const(0)
     t["FalloffMultiplier"] = const(1)
     t["FalloffMultiplierVariance"] = const(0)

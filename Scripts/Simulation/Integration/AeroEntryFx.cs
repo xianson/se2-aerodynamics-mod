@@ -33,6 +33,14 @@ public static class AeroEntryFx
     /// <summary>TEST (harness: aeroset AeroEntryFx.TestSpeed 2000): every grid as if flying forward at this speed in
     /// sea-level air - the plasma on a parked ship, to look at.</summary>
     public static float TestSpeed;
+    /// <summary>TEST: the grid axis TestSpeed flies along: "-z" (forward), "+z", "-x", "+x", "-y", "+y" (a ship built
+    /// along another axis flies nose first).</summary>
+    public static string TestAxis = "-z";
+    static Vector3 TestDir() => TestAxis switch
+    { "+z" => Vector3.UnitZ, "-x" => -Vector3.UnitX, "+x" => Vector3.UnitX, "-y" => -Vector3.UnitY, "+y" => Vector3.UnitY, _ => -Vector3.UnitZ };
+    /// <summary>TEST: particle speed from the frontal radius (the effect's whole shape per metre of radius, speed
+    /// independent - the renderer scales sizes by the effect's scale, but speeds only by the velocity multiplier).</summary>
+    public static bool VelocityPerRadius;
     /// <summary>Another mod's entry state for a grid, set by it (the Orbital Mod's reentry on rails: its grids sit
     /// still in their frame while the frame is braked through the air): the air's velocity past the grid (world,
     /// m/s) in xyz, and how hard it glows (0..1) in w; w &lt;= 0: none (the grid's own motion counts).</summary>
@@ -40,6 +48,8 @@ public static class AeroEntryFx
     /// <summary>TEST knobs: strength as the effect's fixed time (else the timeline runs); the size, x.</summary>
     public static bool FixTime = true;
     public static float ScaleMul = 1f;
+    /// <summary>TEST: another effect's Guid in place of the entry effect (side-by-side looks); "" the entry effect.</summary>
+    public static string TestEffect = "";
     public static int Active, Published;
     /// <summary>Diagnostics: client grids that looked, found an entry, had no render parent; spawns tried / failed.</summary>
     public static int ClientLooks, ClientFound, ClientNoRender, SpawnTries, SpawnFails;
@@ -63,7 +73,7 @@ public static class AeroEntryFx
     internal static void Server(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, float dt)
     {
         if (!Enabled || !aero.IsServerScene) return;   // (the sim job runs on client copies too: they only draw)
-        if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(-Vector3.UnitZ, wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
+        if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
         float extStrength = 0f;
         var ext = External;
         if (ext != null && aero.Entity != null)
@@ -233,6 +243,8 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             return;
         }
         if (!found) { travel = c.ShownTravel; nose = c.ShownNose; strength = MathF.Max(0f, c.ShownStrength); radius = c.ShownScale; speed = 0f; }
+        if (c.Fx != null && !ReferenceEquals(c.Fx.Key, AeroEntryFx.TestEffect))   // (test effect switched: start again with it)
+        { EntryFxBridge.Stop(c.Fx); c.Fx = null; c.ShownStrength = -1f; System.Threading.Interlocked.Decrement(ref AeroEntryFx.Active); }
         if (c.Fx == null)
         {
             if (AeroEntryFx.Active >= AeroEntryFx.MaxActive + 4 || !found) return;   // (a few spare while the farthest fade)
@@ -259,7 +271,8 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         // hotter: orange to yellow-white; faster: longer streaks; pushed downwind (world)
         float vr = Math.Clamp((speed - 800f) / 2200f, 0f, 1f);
         var push = WorldTransform.TransformDirection(-travel, wt) * 150f;
-        EntryFxBridge.Set(c.Fx, scale, push, 1f, 0.75f + 0.25f * s, 0.6f + 0.4f * s, 0.7f + 0.8f * vr, s);
+        if (AeroEntryFx.VelocityPerRadius) push = Vector3.Zero;   // (the authored plasma flows by itself: no world push)
+        EntryFxBridge.Set(c.Fx, scale, push, 1f, 0.75f + 0.25f * s, 0.6f + 0.4f * s, AeroEntryFx.VelocityPerRadius ? scale : 0.7f + 0.8f * vr, s);
         c.ShownStrength = s; c.ShownScale = scale;
     }
 }

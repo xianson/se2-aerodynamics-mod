@@ -1,0 +1,190 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.2.0.538"
+  },
+  "$Type": "VRage:Keen.VRage.Render.Data.ParticleLightDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "9c84951f-70a1-58f4-8e7b-83df732be0fb",
+    "TimeLines": {
+      "Position": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "5a3cbd79-e9ee-4b7e-99a6-71cf1a91cb9a",
+              "Value": {
+                "Value": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "PositionVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "72fe45c1-14a3-4e1d-ab78-8f0abfc5117f",
+              "Value": {
+                "Value": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Color": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "64665e30-83fe-5b04-aaf5-762ba0a9d6e7",
+              "Value": {
+                "Value": {
+                  "X": 1,
+                  "Y": 0.42,
+                  "Z": 0.12,
+                  "W": 1
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "HueVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "0f56c803-95e0-4a09-a9a7-261635ba8a66",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "SaturationVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "3399a8af-c1c2-4e12-bd52-46f6ffe6348b",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ValueVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "64a789f9-bd69-43e2-b8b7-b6b4245f0d0b",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Intensity": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "9685689f-b924-50fb-94aa-f245ee7dbb4e",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            },
+            {
+              "Key": "38fc1963-a010-54ad-bd6e-fa4a568561ed",
+              "Value": {
+                "Value": 100.0,
+                "Key": 0.025
+              }
+            },
+            {
+              "Key": "0aa0a3f2-d9ae-58c7-9092-86f9312e34f8",
+              "Value": {
+                "Value": 1000,
+                "Key": 0.5
+              }
+            },
+            {
+              "Key": "a6c61f7f-768f-5c58-97c4-c316a5038ebf",
+              "Value": {
+                "Value": 1000,
+                "Key": 1
+              }
+            }
+          ]
+        }
+      },
+      "IntensityVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "42f349ab-42dc-5b2a-a4f9-e59b47639889",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "FalloffMultiplier": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "adf75c07-da8f-51dc-af9a-4f025502b81c",
+              "Value": {
+                "Value": 1,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "FalloffMultiplierVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "c1b90652-6d71-5f5d-9d27-8e79e7a30b0b",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    "FlareDefinition": null,
+    "GravityDisplacement": 0,
+    "LifeTime": 2,
+    "LifeTimeVariance": 0,
+    "StartTime": 0,
+    "StartTimeVariance": 0,
+    "FlickeringParams": {
+      "EnableFlickering": true,
+      "Frequency1": 7,
+      "Frequency2": 13,
+      "Amplitude1": 0.08,
+      "Amplitude2": 0.04,
+      "PhaseShift": 0.3
+    }
+  }
+}

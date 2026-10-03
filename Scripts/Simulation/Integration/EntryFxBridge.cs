@@ -30,6 +30,7 @@ public static class EntryFxBridge
     public sealed class Fx
     {
         internal object Handle, Params;
+        internal string Key;   // (AeroEntryFx.TestEffect it was spawned with)
         internal readonly object[] Arg1 = new object[1], Arg2 = new object[2];
     }
 
@@ -87,6 +88,17 @@ public static class EntryFxBridge
         catch (Exception e) { Fail("render parent: " + e.Message); return null; }
     }
 
+    private static string _testKey; private static Definition _testDef;
+    /// <summary>The effect to spawn: the entry effect, or (test) the one TestEffect names by Guid.</summary>
+    private static object Effect(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return _effect;
+        if (ReferenceEquals(key, _testKey)) return _testDef;
+        _testKey = key; _testDef = null;
+        if (!Guid.TryParse(key, out var g) || !DefinitionManager.Instance.TryGetDefinition(g, out _testDef)) { _testDef = null; Problem = "test effect not found: " + key; }   // (a test knob: not Fail, which turns plasma off)
+        return _testDef;
+    }
+
     /// <summary>A new effect under the grid's render root at a grid-local transform (null: none).</summary>
     public static Fx Spawn(Entity grid, object renderParent, in RelativeTransform at)
     {
@@ -98,10 +110,13 @@ public static class EntryFxBridge
             object effects = null;
             foreach (var comp in comps.Components) if (comp != null && _sessionCompType.IsInstanceOfType(comp)) { effects = comp; break; }
             if (effects == null) { Fail("no particle effects session component"); return null; }
-            var fx = new Fx { Params = Activator.CreateInstance(_userParamsType) };
+            string key = AeroEntryFx.TestEffect;
+            object def = Effect(key);
+            if (def == null) return null;
+            var fx = new Fx { Params = Activator.CreateInstance(_userParamsType), Key = key };
             var args = new object[_spawnParams.Length];
             for (int i = 0; i < args.Length; i++) args[i] = _spawnParams[i].HasDefaultValue ? _spawnParams[i].DefaultValue : null;
-            args[0] = at; args[1] = _effect; args[2] = fx.Params; args[3] = renderParent;
+            args[0] = at; args[1] = def; args[2] = fx.Params; args[3] = renderParent;
             for (int i = 4; i < args.Length; i++) if (_spawnParams[i].ParameterType == typeof(string)) args[i] = "AeroEntryFx";
             fx.Handle = _spawn.Invoke(effects, args);
             return fx.Handle != null ? fx : null;

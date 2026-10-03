@@ -53,21 +53,21 @@
               "Key": "57d35af5-12fe-594c-8e0f-1e4e08b8c2c9",
               "Value": {
                 "Value": 600,
-                "Key": 0.05
+                "Key": 0.025
               }
             },
             {
               "Key": "efe448c9-7e6e-54ae-8741-84375aaa6334",
               "Value": {
                 "Value": 9000,
-                "Key": 1
+                "Key": 0.5
               }
             },
             {
               "Key": "1ef5dfd1-1a12-5048-9050-1d583a9d97c6",
               "Value": {
                 "Value": 9000,
-                "Key": 2
+                "Key": 1
               }
             }
           ]
