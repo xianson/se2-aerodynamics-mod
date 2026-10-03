@@ -25,6 +25,9 @@ public static class AeroEntryFx
 {
     public static readonly Guid EffectGuid = new Guid("a3e0c7d1-5b2f-4e8a-9c61-0d7e2f4a1b01");
     public static bool Enabled = true;
+    /// <summary>Every aero visual effect on this client (AeroSettings "Fx.Effects"): off, the flight field and the nose
+    /// plasma are dropped and none start.</summary>
+    public static bool AllEffects = true;
     /// <summary>Heat where the plasma starts, and where it is full. Heat is by MACH, not density (the user: it starts at
     /// Mach 2 at any height): OnsetHeat (OnsetMach-relative M)^3, so Mach 2 = onset, full at ~Mach 2.5. Density then scales
     /// the strength (DensityScale).</summary>
@@ -77,7 +80,7 @@ public static class AeroEntryFx
     // effect, and its strength replaces aero's own heat model. Registering again under the same owner replaces (a new
     // session, or a reloaded mod); a source that throws is dropped. Checked across both repos by the Orbital Mod's fast
     // gate (tools/check_contract.sh); a change here bumps EntrySourceContract and that check.
-    public const int EntrySourceContract = AeroApi.Version;
+    public const int EntrySourceContract = 2;   // (the source's shape, unchanged since API version 2: not AeroApi.Version)
     static (string owner, Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>> fn)[] _sources = Array.Empty<(string, Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>>)>();
     static readonly object _sourcesLock = new();
 
@@ -255,7 +258,7 @@ public static class AeroEntryFx
     /// <summary>Client (any thread): the published air of the grid at this world position (carried forward to now, within
     /// 20 m, under 0.5 s old): its travel in its own frame (the direction INTO the air), Mach, density, speed, and its
     /// lift: direction in its own frame and strength (lift / (dynamic pressure x frontal area)).
-    /// PUBLIC: the Orbital Mod reads it by reflection (D:\aero\docs\REFLECTION_AND_WHITELIST.md).</summary>
+    /// PUBLIC: the Orbital Mod reads it by reflection (the Orbital Mod's docs/REFLECTION_AND_WHITELIST.md, §3.10).</summary>
     public static bool TryGetFlow(Vector3D gridPos, out Vector3 travelLocal, out float mach, out float density, out float speed, out Vector3 liftLocal, out float liftCoef)
     {
         travelLocal = liftLocal = default; mach = density = speed = liftCoef = 0f;
@@ -553,6 +556,14 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     {
         if (c.NoRender) return;
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
+        if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
+        AeroSettings.Poll();   // (the settings files, every ~2 s)
+        if (!AeroEntryFx.AllEffects)
+        {
+            if (c.Flight != null) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
+            if (c.Fx != null) { EntryFxBridge.Stop(c.Fx); c.Fx = null; c.ShownStrength = -1f; System.Threading.Interlocked.Decrement(ref AeroEntryFx.Active); }
+            return;
+        }
         if (FlightField.On) { FlightJob(c, observers); return; }
         if (c.Flight != null) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }   // (the flight field: plasma, vapour, tip trails - the nose effect below is the old look)
         if (c.Fx == null && (!AeroEntryFx.Any || !AeroEntryFx.Enabled || !EntryFxBridge.Usable)) return;   // (nothing glowing anywhere: cheap)

@@ -66,6 +66,12 @@ public partial class AeroGridComponent
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
             density = air.Density;
+        if (aero.IsServerScene)
+        {
+            if (!AeroSettings.SawServer) AeroSettings.SawServer = true;
+            AtmosphereProbe.Tick(aero);   // (the API's point query: the generator list, every ~10 s)
+            AeroSettings.Poll();          // (the settings files, every ~2 s)
+        }
 
         // ── Ground height (async raycast) ──
         if (!PhysicsHack.GroundSystemReady)
@@ -174,7 +180,11 @@ public partial class AeroGridComponent
 
         if (aero.HasResult && mass > 0f)
         {
-            Vector3 worldForce = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
+            // (the world's drag / lift multipliers - AeroSettings, server - on the model's result: 1 / 1 is the model as is)
+            Vector3 forceLocal = aero.LastResult.Force, torqueLocal = aero.LastResult.Torque;
+            if (AeroTuning.DragMultiplier != 1f || AeroTuning.LiftMultiplier != 1f)
+                AeroTuning.Scale(ref forceLocal, ref torqueLocal, WorldTransform.TransformDirectionInv(linVel, wt));
+            Vector3 worldForce = WorldTransform.TransformDirection(forceLocal, wt);
             Vector3 deltaV = worldForce * (dt / mass); // diagnostics only; the impulse path uses worldForce
 
             // Log first 120 frames of force application to diagnose launch acceleration
@@ -184,11 +194,11 @@ public partial class AeroGridComponent
                 Log.Default?.Info($"[AERO-SIM] f={aero._simFrameCount} v={aero.LastSpeed:F1} " +
                     $"|dV|={deltaV.Length():F4} |F|={worldForce.Length():F0} " +
                     $"FdotV={fDotV:F0} d={density:F4} " +
-                    $"localF=({aero.LastResult.Force.X:F0},{aero.LastResult.Force.Y:F0},{aero.LastResult.Force.Z:F0})");
+                    $"localF=({forceLocal.X:F0},{forceLocal.Y:F0},{forceLocal.Z:F0})");
             }
 
             Vector3 sasTorque = (ThrustTorque.Enabled || aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;   // (no phantom: ThrustTorque)
-            Vector3 totalTorque = aero.LastResult.Torque + sasTorque;
+            Vector3 totalTorque = torqueLocal + sasTorque;
 
             // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
             // ref into component storage and uses the engine's own inertia math, instead of

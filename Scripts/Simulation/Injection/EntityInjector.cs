@@ -27,6 +27,7 @@ public class InjectAeroComponents : Injections
         bool hasThruster = false;
         bool hasTank = false;
         bool hasFlame = false;   // a client thruster (it draws flames)
+        bool isServerPlanet = false;   // (carries the world's aero settings in the save)
 
         foreach (var type in composition.Types)
         {
@@ -38,6 +39,21 @@ public class InjectAeroComponents : Injections
                 hasTank = true;
             if (type.Name == "ThrusterEffectsComponent")
                 hasFlame = true;
+            if (type == typeof(Keen.Game2.Simulation.GameSystems.Discoveries.Discoverables.DiscoverablePlanetComponent))
+                isServerPlanet = true;
+        }
+
+        if (isServerPlanet)
+        {
+            // (a fixed component id and an object builder: the settings are saved with it, so the id must be the same
+            //  every load - not derived from the composition size, which depends on what other mods inject)
+            Add(entity, new Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo
+            {
+                Type = typeof(AeroWorldSettingsComponent),
+                ComponentId = new System.Guid("ae205e77-1a65-4c0d-9b1e-0000000000a5"),
+                ObjectBuilder = new Keen.Game2.Simulation.GameSystems.EntityNameSessionComponentObjectBuilder(),
+            });
+            Log.Default?.Info($"[AERO] Injected AeroWorldSettingsComponent into server planet prefab '{entity.DebugName}'");
         }
 
         if (hasCubeGrid)

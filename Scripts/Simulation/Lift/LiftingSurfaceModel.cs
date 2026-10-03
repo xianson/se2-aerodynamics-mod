@@ -37,6 +37,12 @@ public class LiftingSurfaceModel : IAeroDragModel
     private List<LiftingSurface>? _wings;
     private List<WingForceResult>? _lastWingForces;
 
+    /// <summary>Change counters for consumers that cache (AeroApi.TryGetChangeCounters): bumped whenever the wing set
+    /// (detected, installed, updated, cleared, a wing cell lost) or the force table (installed) changes.</summary>
+    public int WingsVersion => _wingsVersion;
+    public int TableVersion => _tableVersion;
+    private volatile int _wingsVersion, _tableVersion;
+
     // ─── Face override index (wing + component Cp overrides) ─────
     private List<int>? _faceOwnerIdx;   // face index → owner index (-1 = no override)
     private List<float>? _ownerCp;      // effective Cp per owner
@@ -55,6 +61,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     public void DetectWings(IGridAccessor grid, ISurfaceProvider surface, float blockSize)
     {
         _wings = Detector.Detect(grid, surface, blockSize);
+        _wingsVersion++;
         InvalidateLiftModelInfluence();
     }
 
@@ -62,6 +69,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     public void InstallWings(List<LiftingSurface>? wings)
     {
         _wings = wings;
+        _wingsVersion++;
         InvalidateLiftModelInfluence();
         IndexWingCells();
     }
@@ -92,6 +100,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         if (_wingOfCell.Count == 0 || !_wingOfCell.Remove(cell, out int wi)) return;
         if (wi < _wingLeft.Length && _wingLeft[wi] > 0) _wingLeft[wi]--;
+        _wingsVersion++;
     }
 
     /// <summary>The fraction of wing i still there.</summary>
@@ -102,6 +111,7 @@ public class LiftingSurfaceModel : IAeroDragModel
         IReadOnlyList<Vector3I> addedCells, IReadOnlyList<Vector3I> removedCells)
     {
         _wings = Detector.Update(grid, surface, blockSize, addedCells, removedCells);
+        _wingsVersion++;
         InvalidateLiftModelInfluence();
     }
 
@@ -115,6 +125,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     public void InvalidateWings()
     {
         _wings = null;
+        _wingsVersion++;
         Detector.Invalidate();
     }
 
@@ -134,6 +145,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         _prevTable = _table;
         _table = table;
+        _tableVersion++;
         _blendLeft = _prevTable != null ? BlendFrames : 0;
     }
 

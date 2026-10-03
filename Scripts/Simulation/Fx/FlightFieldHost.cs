@@ -21,6 +21,9 @@ internal sealed partial class FlightField
     /// <summary>Off switch (aeroset FlightField.On 0) and a rebuild-everything bump (aeroset FlightField.Rebuild 1).</summary>
     public static bool On = true;
     public static int Rebuild;
+    /// <summary>The groups, each on or off (AeroSettings "Fx.Plasma", "Fx.Vapour", "Fx.Tips", "Fx.SpotLight": client):
+    /// a group switched off is dropped on the next frame, and placed again when switched back on.</summary>
+    public static bool PlasmaOn = true, VapourOn = true, TipsOn = true, SpotOn = true;
     /// <summary>The cone (the transonic shock's cone round the body): off until tuned.</summary>
     public static bool ConeOn;
 
@@ -66,17 +69,17 @@ internal sealed partial class FlightField
             }
 
             // the groups the regime needs
-            bool wantPlasma = _entryS > 0.001f || _mach > AeroEntryFx.OnsetMach - PlasmaLead;
-            bool dropPlasma = _entryS <= 0.001f && _mach < AeroEntryFx.OnsetMach - PlasmaLead - 0.1f;
-            bool wantEdges = _mach > EdgeBand[0] - VapourLead && _mach < EdgeBand[3] + VapourLead && _rho > 0f;
-            bool dropEdges = _mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f;
-            bool wantTips = _speed > TipMinSpeed;
+            bool wantPlasma = PlasmaOn && (_entryS > 0.001f || _mach > AeroEntryFx.OnsetMach - PlasmaLead);
+            bool dropPlasma = !PlasmaOn || (_entryS <= 0.001f && _mach < AeroEntryFx.OnsetMach - PlasmaLead - 0.1f);
+            bool wantEdges = VapourOn && _mach > EdgeBand[0] - VapourLead && _mach < EdgeBand[3] + VapourLead && _rho > 0f;
+            bool dropEdges = !VapourOn || _mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f;
+            bool wantTips = TipsOn && _speed > TipMinSpeed;
             if (wantPlasma && !_plasmaUp) PlacePlasma(f, R, N);
             else if (dropPlasma && _plasmaUp) DropPlasma();
             if (wantEdges && !_edgesUp) PlaceEdges(f, R, N, pts);
             else if (dropEdges && _edgesUp) DropEdges();
             if (wantTips && !_tipsUp) PlaceTips(f, N);
-            else if (!wantTips && _tipsUp && _speed < 0.5f * TipMinSpeed) DropTips();
+            else if (!wantTips && _tipsUp && (!TipsOn || _speed < 0.5f * TipMinSpeed)) DropTips();
             else if (_tipsUp && _tipSpeedUsed > 0f && MathF.Abs(_speed - _tipSpeedUsed) > TipRespawn * _tipSpeedUsed) { DropTips(); PlaceTips(f, N); }   // (their length is fixed at spawn)
 
             // the spot light follows the grid (its own render root)
@@ -137,7 +140,7 @@ internal sealed partial class FlightField
         // the spot: off below 2 %, else Spot x strength, placed again when it moved a quarter
         if (Spot > 0f && _P3 != null)
         {
-            bool want = _plasmaUp && _entryS > 0.02f;
+            bool want = SpotOn && _plasmaUp && _entryS > 0.02f;
             if (!want) { if (_spotUsed > 0f) StopSpot(); _spotUsed = -1f; }
             else if (_spotUsed < 0f || MathF.Abs(_entryS - _spotUsed) > 0.25f * _spotUsed)
             {

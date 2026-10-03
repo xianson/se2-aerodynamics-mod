@@ -26,8 +26,10 @@ namespace AeroMod;
 /// </summary>
 public static class AeroApi
 {
-    /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it).</summary>
-    public const int Version = 2;
+    /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
+    /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
+    /// version-2 member unchanged.</summary>
+    public const int Version = 3;
 
     // ── the air, per grid ──
 
@@ -186,14 +188,220 @@ public static class AeroApi
         return true;
     }
 
+    // ── the atmosphere (version 3) ──
+
+    /// <summary>The air at a world point: density (kg/m3) as the game's atmosphere generators make it (their sum, the
+    /// engine's own law), and from it aero's model: pressure (Pa), temperature (K), speed of sound (m/s). False: the
+    /// generator list is not known yet (no aero grid simulated in this process - see <see cref="GetAtmosphereStatus"/>).
+    /// Vacuum answers true with zeros. Any thread; the generators are refreshed every ~10 s.</summary>
+    public static bool TryGetAtmosphereAt(Vector3D worldPoint, out float density, out float pressure, out float temperature, out float speedOfSound)
+    {
+        density = pressure = temperature = speedOfSound = 0f;
+        if (!AtmosphereProbe.DensityAt(worldPoint, out density)) return false;
+        AtmosphereAtDensity(density, out pressure, out temperature, out speedOfSound);
+        return true;
+    }
+
+    /// <summary>The air an entity is in, exactly as the game gave it this tick (its AirData: grids, characters - any
+    /// simulated entity in an atmosphere), with aero's pressure, temperature and speed of sound. False: the entity
+    /// carries no air data (not simulated here, or never in an atmosphere).</summary>
+    public static bool TryGetAtmosphere(Keen.VRage.DCS.Components.Entity entity, out float density, out float pressure, out float temperature, out float speedOfSound)
+    {
+        density = pressure = temperature = speedOfSound = 0f;
+        if (entity == null || !PhysicsHack.Alive(entity.Data) || !entity.Data.TryGet<AirData>(out var air)) return false;
+        density = air.Density;
+        AtmosphereAtDensity(density, out pressure, out temperature, out speedOfSound);
+        return true;
+    }
+
+    /// <summary>Aero's atmosphere model at a density (SE2 gives density only; the temperature follows from the standard
+    /// atmosphere at that density, then the ideal gas): pressure (Pa), temperature (K), speed of sound (m/s). Vacuum
+    /// (under 1e-6 kg/m3): zero pressure and speed of sound. Pure.</summary>
+    public static void AtmosphereAtDensity(float density, out float pressure, out float temperature, out float speedOfSound)
+    {
+        var st = AtmosphereProbe.State(density);
+        pressure = (float)st.Pressure; temperature = (float)st.Temperature; speedOfSound = (float)st.SpeedOfSound;
+    }
+
+    /// <summary>Why <see cref="TryGetAtmosphereAt"/> cannot answer ("" when it can).</summary>
+    public static string GetAtmosphereStatus() => AtmosphereProbe.Why;
+    /// <summary>How many atmosphere generators the point query knows.</summary>
+    public static int GetAtmosphereGeneratorCount() => AtmosphereProbe.Generators;
+
+    // ── thrust (version 3) ──
+
+    /// <summary>The thrust profiles by name (Rocket, Propeller, Turbofan, Turbojet, Ramjet, Scramjet, HelicopterRotor).
+    /// The list is cleared first; returns the count.</summary>
+    public static int GetThrustProfiles(List<string> names)
+    {
+        if (names == null) return 0;
+        names.Clear();
+        foreach (var k in ThrustProfiles.All.Keys) names.Add(k);
+        return names.Count;
+    }
+
+    /// <summary>A profile's thrust at a Mach number, relative to its static (Mach 0) rating: 0 outside its operating
+    /// envelope, above 1 where ram pressure helps. -1: no such profile. Pure.</summary>
+    public static float ThrustEffectiveness(string profile, float mach)
+        => profile != null && ThrustProfiles.All.TryGetValue(profile, out var p) ? (float)p.Evaluate(mach) : -1f;
+
+    /// <summary>A profile's operating envelope (Mach; the top is float.MaxValue for none). False: no such profile.</summary>
+    public static bool TryGetThrustProfile(string profile, out float minMach, out float maxMach)
+    {
+        minMach = maxMach = 0f;
+        if (profile == null || !ThrustProfiles.All.TryGetValue(profile, out var p)) return false;
+        minMach = (float)p.MinOperatingMach; maxMach = (float)Math.Min(p.MaxOperatingMach, float.MaxValue);
+        return true;
+    }
+
+    /// <summary>The grid's thrusters as aero sees them: each block entity, its profile ("Rocket": none, flat) and its
+    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0). Lists
+    /// are cleared first; pass null for any you do not want. Returns the count (0: no aero here or no thrusters).</summary>
+    public static int GetThrusters(Keen.VRage.DCS.Components.Entity grid, List<Keen.VRage.DCS.Components.Entity> thrusters, List<string> profiles, List<float> effectiveness)
+    {
+        thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear();
+        var aero = AeroOf(grid);
+        if (aero == null) return 0;
+        bool flying = AeroEntryFx.FlowOf(grid, out var p);
+        float mach = flying ? p.Mach : 0f; Vector3 travel = flying ? p.TravelLocal : Vector3.Zero;
+        try
+        {
+            var cache = aero._thrusterCache;
+            int n = cache.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var t = cache[i];
+                thrusters?.Add(t.ThrusterEntity);
+                profiles?.Add(t.Profile?.Name ?? "Rocket");
+                effectiveness?.Add(t.Profile == null ? 1f : flying ? (float)t.Profile.Evaluate(mach, travel, t.IntakeDirection) : (float)t.Profile.Evaluate(0.0));
+            }
+            return n;
+        }
+        catch (Exception) { thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear(); return 0; }   // (rebuilt under us)
+    }
+
+    // ── change counters (version 3): cache what you read, read again when a counter moves ──
+
+    /// <summary>The grid's change counters: hull (its exposed surface rebuilt, or updated cell by cell), wings (detected
+    /// again, updated, or a wing cell lost) and table (a new force table installed: the hull's forces changed). Each only
+    /// goes up; compare with what you saw last. False: no aero for this grid here. A rebuild of every grid (aero on
+    /// again, a setting that needs it) also shows in <see cref="GetGeneration"/>.</summary>
+    public static bool TryGetChangeCounters(Keen.VRage.DCS.Components.Entity grid, out int hull, out int wings, out int table)
+    {
+        hull = wings = table = 0;
+        var aero = AeroOf(grid);
+        if (aero == null) return false;
+        var model = aero.FxModel;
+        wings = model?.WingsVersion ?? 0; table = model?.TableVersion ?? 0;
+        var surf = aero.FxSurface;
+        int ver = surf?.Version ?? 0;
+        // (the surface is double-buffered - two providers swapped at each rebuild, each with its own version that only
+        //  goes up - so the hull counter moves whenever the (provider, version) pair moves: no pair comes back)
+        lock (_hulls)
+        {
+            var h = _hulls.GetOrCreateValue(aero);
+            if (!ReferenceEquals(h.Surface, surf) || h.SurfaceVersion != ver) { h.Surface = surf; h.SurfaceVersion = ver; h.Counter++; }
+            hull = h.Counter;
+        }
+        return true;
+    }
+
+    sealed class HullTrack { public object Surface; public int SurfaceVersion, Counter; }
+    static readonly ConditionalWeakTable<AeroGridComponent, HullTrack> _hulls = new();
+
+    /// <summary>Bumped whenever every grid rebuilds from scratch (aero switched on again, a setting that needs it).</summary>
+    public static int GetGeneration() => AeroSwitch.Generation;
+
+    // ── aero blocks (version 3, read only) ──
+
+    /// <summary>The grid's aero blocks: kind ("ControlSurface", "Airbrake", "AirIntake", "AtmosphericScoop",
+    /// "HelicopterRotor"), grid cell, action point (local m). Lists are cleared first; pass null for any you do not
+    /// want. Returns the count.</summary>
+    public static int GetAeroBlocks(Keen.VRage.DCS.Components.Entity grid, List<string> kinds, List<Vector3I> cells, List<Vector3> positionsLocal)
+    {
+        kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear();
+        var reg = AeroOf(grid)?.Components;
+        if (reg == null) return 0;
+        try
+        {
+            var list = reg.Components;
+            int n = list.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var c = list[i];
+                kinds?.Add(c.GetType().Name); cells?.Add(c.BlockPosition); positionsLocal?.Add(c.Position);
+            }
+            return n;
+        }
+        catch (Exception) { kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear(); return 0; }   // (changed under us)
+    }
+
+    /// <summary>An aero block's state on the last tick, as named values (both lists cleared, then filled; units in
+    /// docs/API.md). Control surface: DeflectionInput (-1..1), MaxDeflection (deg), Lift, Drag (N), AoA (deg). Airbrake:
+    /// DeployFraction (0..1), Drag (N), Effectiveness (0..1). Intake: MassFlow (kg/s), TotalPressure (Pa),
+    /// RamPressureRatio. Scoop: MassFlow (kg/s), CollectionRate, Collected, Drag (N). Rotor: Collective (0..1),
+    /// Thrust (N), DensityScale, TranslationalLift, GroundEffect, Autorotation (N). Returns the count (0: no block there).</summary>
+    public static int GetAeroBlockState(Keen.VRage.DCS.Components.Entity grid, Vector3I cell, List<string> names, List<float> values)
+    {
+        if (names == null || values == null) return 0;
+        names.Clear(); values.Clear();
+        var reg = AeroOf(grid)?.Components;
+        if (reg == null) return 0;
+        IAeroBlockComponent c = null;
+        try { var list = reg.Components; for (int i = 0; i < list.Count; i++) if (list[i].BlockPosition == cell) { c = list[i]; break; } }
+        catch (Exception) { return 0; }
+        switch (c)
+        {
+            case ControlSurface s: V(names, values, "DeflectionInput", s.DeflectionInput); V(names, values, "MaxDeflection", s.MaxDeflection); V(names, values, "Lift", s.CurrentLift); V(names, values, "Drag", s.CurrentDrag); V(names, values, "AoA", s.EffectiveAoA); break;
+            case Airbrake b: V(names, values, "DeployFraction", b.DeployFraction); V(names, values, "Drag", b.DragForce); V(names, values, "Effectiveness", b.Effectiveness); break;
+            case AirIntake a: V(names, values, "MassFlow", a.MassFlowRate); V(names, values, "TotalPressure", a.TotalPressure); V(names, values, "RamPressureRatio", a.RamPressureRatio); break;
+            case AtmosphericScoop sc: V(names, values, "MassFlow", sc.MassFlowRate); V(names, values, "CollectionRate", sc.CollectionRate); V(names, values, "Collected", (float)sc.CumulativeCollected); V(names, values, "Drag", sc.DragForce); break;
+            case HelicopterRotor r: V(names, values, "Collective", r.CollectivePitch); V(names, values, "Thrust", r.CurrentThrust); V(names, values, "DensityScale", r.DensityScale); V(names, values, "TranslationalLift", r.TranslationalLiftFactor); V(names, values, "GroundEffect", r.GroundEffectFactor); V(names, values, "Autorotation", r.AutorotationThrust); break;
+        }
+        return names.Count;
+    }
+
+    static void V(List<string> names, List<float> values, string n, float v) { names.Add(n); values.Add(v); }
+
+    // ── on / off and the settings (version 3) ──
+
+    /// <summary>The whole aero simulation on (forces, thrust offsets, block tracking) or off: the world setting
+    /// "Aero.Enabled".</summary>
+    public static bool GetEnabled() => AeroSwitch.Enabled;
+
+    /// <summary>Switch aero on or off (the world setting "Aero.Enabled": every grid rebuilds when it comes back on).
+    /// False: not allowed here (see <see cref="SetSetting"/>).</summary>
+    public static bool SetEnabled(bool on) => AeroSettings.Set("Aero.Enabled", on ? 1 : 0, out _);
+
+    /// <summary>Every setting's name (world ones first). The list is cleared first; returns the count.</summary>
+    public static int GetSettings(List<string> names) => AeroSettings.Names(names);
+
+    /// <summary>A setting's description: type ("bool", "int", "float"), default, range (min..max; a bool is 0..1), scope
+    /// ("world": the same for everyone, saved with the world, set by the host / server; "client": this player's own,
+    /// saved on this PC), whether a change rebuilds every grid (a few seconds of rebuilding), and what it does.</summary>
+    public static bool TryGetSettingInfo(string name, out string type, out double defaultValue, out double min, out double max, out string scope, out bool rebuilds, out string description)
+        => AeroSettings.Info(name, out type, out defaultValue, out min, out max, out scope, out rebuilds, out description);
+
+    /// <summary>A setting's value now (a bool as 0 / 1).</summary>
+    public static bool TryGetSetting(string name, out double value) => AeroSettings.TryGet(name, out value);
+
+    /// <summary>Change a setting. It takes effect at once (the next tick or frame) and is saved (world: with the world;
+    /// client: to this PC). False, with why: no such setting, out of range or not a number, a rule between settings
+    /// (Entry.OnsetMach under Entry.FullMach), or a world setting where the server does not run.</summary>
+    public static bool SetSetting(string name, double value, out string why) => AeroSettings.Set(name, value, out why);
+
+    /// <summary>Bumped on every change of any setting (the API, a settings file, a world load): watch it to re-read.</summary>
+    public static int GetSettingsVersion() => AeroSettings.Version;
+
     // ── telling aero what it cannot see ──
 
     /// <summary>Register an entry source under an owner name (registering again replaces): a
     /// <c>Func&lt;Entity, ValueTuple&lt;Vector3, float&gt;&gt;</c> returning, per grid, the air's velocity past it (world
     /// m/s) and how hard it burns (0..1; &lt;= 0: none). While it answers with a strength it OWNS that grid's entry: its air
     /// replaces the grid's motion for the flow and the effects, its strength aero's heating. For grids whose motion aero
-    /// cannot see (the Orbital Mod's reentry on rails). Returns <see cref="Version"/>, or 0 for a wrong delegate type. A
-    /// source that throws is dropped (register again).</summary>
+    /// cannot see (the Orbital Mod's reentry on rails). Returns the entry-source contract (2, unchanged since API version
+    /// 2: AeroEntryFx.EntrySourceContract), or 0 for a wrong delegate type. A source that throws is dropped (register
+    /// again).</summary>
     public static int RegisterEntrySource(string owner, Delegate source) => AeroEntryFx.RegisterEntrySource(owner, source);
     public static bool UnregisterEntrySource(string owner) => AeroEntryFx.UnregisterEntrySource(owner);
     /// <summary>Still registered (cheap: a session change or a reloaded aero mod drops it - check now and then).</summary>
