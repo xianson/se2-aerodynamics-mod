@@ -1,0 +1,11 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.4.0.16"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Metafiles.MetaData",
+  "$Value": {
+    "AssetID": "6b8496e0-728a-5fe5-b3ef-97a11d34c8e6",
+    "InternalItems": []
+  }
+}

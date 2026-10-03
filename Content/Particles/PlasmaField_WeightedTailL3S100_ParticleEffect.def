@@ -1,0 +1,31 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.4.0.95"
+  },
+  "$Type": "VRage:Keen.VRage.Render.Data.ParticleEffectDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "5d0c7a3e-0006-4003-8064-000000000001",
+    "EffectDuration": 2,
+    "EffectDurationVariation": 0,
+    "EffectMaxDistance": 20000,
+    "IsLooping": true,
+    "ParticleEmitters": [
+      {
+        "Key": "c297d755-bcf0-56de-b87d-5ad99c689cd7",
+        "Value": {
+          "Definition": "5224f952-7579-56c8-a7e0-a742b62d4963",
+          "Parameters": {
+            "GlobalScaleFactor": 1,
+            "EmitterLifeTime": 2,
+            "EmitterStartTime": 0,
+            "GravityMultiplier": 0,
+            "WindMultiplier": 0
+          }
+        }
+      }
+    ],
+    "ParticleAudio": null,
+    "ParticleLight": []
+  }
+}

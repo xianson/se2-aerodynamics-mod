@@ -25,8 +25,23 @@ public static class AeroEntryFx
 {
     public static readonly Guid EffectGuid = new Guid("a3e0c7d1-5b2f-4e8a-9c61-0d7e2f4a1b01");
     public static bool Enabled = true;
-    /// <summary>Heat (sqrt(rho/1.225) (V/1000)^3) where the plasma starts, and where it is full.</summary>
-    public static float OnsetHeat = 0.3f, FullHeat = 5f;
+    /// <summary>Heat where the plasma starts, and where it is full. Heat is by MACH, not density (the user: it starts at
+    /// Mach 2 at any height): OnsetHeat (OnsetMach-relative M)^3, so Mach 2 = onset, full at ~Mach 2.5. Density then scales
+    /// the strength (DensityScale).</summary>
+    public static float OnsetHeat = 0.3f, FullHeat = 0.59f, OnsetMach = 2f;   // (full at ~Mach 2.5: the game's practical top speed - the user)
+    /// <summary>The strength x a density factor: 1 at sea level (1.225) down to 0 at DensityFloor kg/m3, on a log scale (a
+    /// thin upper atmosphere still glows, fainter; a linear or square-root factor made a real entry invisible).</summary>
+    public static float DensityFloor = 1e-6f;
+    /// <summary>The plasma strength 0..1 at this Mach and density, unlagged: (heat - onset) / (full - onset), heat =
+    /// OnsetHeat (Mach / OnsetMach)^3, x DensityScale. (Server's own glow is the same with the HeatLag.)</summary>
+    public static float EntryStrength(float mach, float density)
+    {
+        float mr = mach / MathF.Max(0.1f, OnsetMach);
+        float heat = OnsetHeat * mr * mr * mr;
+        return Math.Clamp((heat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f) * DensityScale(density);
+    }
+    public static float DensityScale(float rho) =>
+        rho <= DensityFloor ? 0f : Math.Clamp((MathF.Log10(rho) - MathF.Log10(DensityFloor)) / (MathF.Log10(1.225f) - MathF.Log10(DensityFloor)), 0f, 1f);
     /// <summary>Seconds the hull takes to heat up / cool down (the glow lingers after slowing).</summary>
     public static float HeatLag = 2f;
     public static int MaxActive = 16;
@@ -37,7 +52,15 @@ public static class AeroEntryFx
     /// along another axis flies nose first).</summary>
     public static string TestAxis = "-z";
     static Vector3 TestDir() => TestAxis switch
-    { "+z" => Vector3.UnitZ, "-x" => -Vector3.UnitX, "+x" => Vector3.UnitX, "-y" => -Vector3.UnitY, "+y" => Vector3.UnitY, _ => -Vector3.UnitZ };
+    { "+z" => Vector3.UnitZ, "-x" => -Vector3.UnitX, "+x" => Vector3.UnitX, "-y" => -Vector3.UnitY, "+y" => Vector3.UnitY, "-z" => -Vector3.UnitZ, _ => ParseAxis(TestAxis) };
+    static Vector3 ParseAxis(string s)
+    {
+        var p = s.Split(',');
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (p.Length == 3 && float.TryParse(p[0], System.Globalization.NumberStyles.Float, ci, out float x) && float.TryParse(p[1], System.Globalization.NumberStyles.Float, ci, out float y) && float.TryParse(p[2], System.Globalization.NumberStyles.Float, ci, out float z))
+        { var v = new Vector3(x, y, z); if (v.LengthSquared() > 1e-6f) return Vector3.Normalize(v); }
+        return -Vector3.UnitZ;
+    }
     /// <summary>TEST: particle speed from the frontal radius (the effect's whole shape per metre of radius, speed
     /// independent - the renderer scales sizes by the effect's scale, but speeds only by the velocity multiplier).</summary>
     public static bool VelocityPerRadius;
@@ -82,12 +105,14 @@ public static class AeroEntryFx
             if (e.W > 0f) { vel = new Vector3(e.X, e.Y, e.Z); extStrength = MathF.Min(1f, e.W); }
         }
         float speed = vel.Length();
-        float v = speed * 0.001f;
-        float target = density > 0f ? MathF.Sqrt(density / 1.225f) * v * v * v : 0f;
+        double m0 = aero.LastResult.Mach;
+        float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
+        float mr = speed / MathF.Max(1f, a) / MathF.Max(0.1f, OnsetMach);
+        float target = density > 0f ? OnsetHeat * mr * mr * mr : 0f;
         float k = MathF.Min(1f, dt / MathF.Max(0.05f, HeatLag));
         aero.EntryHeat += (target - aero.EntryHeat) * k;
         if (extStrength > 0f) aero.EntryHeat = MathF.Max(aero.EntryHeat, OnsetHeat + extStrength * (FullHeat - OnsetHeat));   // (its glow, held; cools by the lag after)
-        float strength = Math.Clamp((aero.EntryHeat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f);
+        float strength = Math.Clamp((aero.EntryHeat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f) * (extStrength > 0f ? 1f : DensityScale(density));
         // (a grid on rails sees no air of its own, so its first table was never built: wanted now - from the table
         //  cache this is a few ms - and it glows once it is in)
         if (extStrength > 0f && !aero.HasTable) aero.EntryWantsTable = true;
@@ -114,9 +139,124 @@ public static class AeroEntryFx
         }
     }
 
+    // ── FLOW: every moving grid's air, for other visual effects (the Orbital Mod's vapour cone / plasma spike) ──
+
+    internal sealed class FlowPub
+    {
+        public Vector3D Pos, Vel;
+        public Vector3 TravelLocal, LiftLocal;
+        public float Mach, Density, Speed, LiftCoef;
+        public long Stamp;
+    }
+    static readonly Dictionary<AeroGridComponent, FlowPub> _flow = new();
+
+    /// <summary>Server, each aero step, for every grid (not gated by the entry plasma's switch or heat): the air past it -
+    /// its travel in its own frame, Mach (speed over the speed of sound the aero model last used; 340 m/s before it has
+    /// one), density. TestSpeed applies here too (sea-level air).</summary>
+    internal static void Flow(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density)
+    {
+        if (!aero.IsServerScene) return;
+        if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
+        var ext = External;
+        if (ext != null && aero.Entity != null) { var e = ext(aero.Entity); if (e.W > 0f) vel = new Vector3(e.X, e.Y, e.Z); }
+        float speed = vel.Length();
+        if (speed < 1f || density <= 0f)
+        {
+            if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; }
+            return;
+        }
+        double m0 = aero.LastResult.Mach;
+        float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
+        lock (_flow)
+        {
+            if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; }
+            p.Pos = wt.Position; p.Vel = vel; p.TravelLocal = WorldTransform.TransformDirectionInv(vel / speed, wt);
+            p.Speed = speed; p.Mach = speed / MathF.Max(1f, a); p.Density = density; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            // the lift: the aero result's force (grid frame, components included) across the travel; its strength per
+            // dynamic pressure x frontal area (a lift coefficient on the frontal area). Zero under TestSpeed (no real air)
+            var F = aero.LastResult.Force; var tl = p.TravelLocal;
+            Vector3 L = F - Vector3.Dot(F, tl) * tl;
+            float qA = (float)(aero.LastResult.DynamicPressure * aero.LastResult.FrontalArea);
+            p.LiftLocal = L.LengthSquared() > 1e-6f ? Vector3.Normalize(L) : Vector3.Zero;
+            p.LiftCoef = qA > 1e-3f ? L.Length() / qA : 0f;
+        }
+    }
+
+    /// <summary>Client (any thread): the published air of the grid at this world position (carried forward to now, within
+    /// 20 m, under 0.5 s old): its travel in its own frame (the direction INTO the air), Mach, density, speed, and its
+    /// lift: direction in its own frame and strength (lift / (dynamic pressure x frontal area)).
+    /// PUBLIC: the Orbital Mod reads it by reflection (D:\aero\docs\REFLECTION_AND_WHITELIST.md).</summary>
+    public static bool TryGetFlow(Vector3D gridPos, out Vector3 travelLocal, out float mach, out float density, out float speed, out Vector3 liftLocal, out float liftCoef)
+    {
+        travelLocal = liftLocal = default; mach = density = speed = liftCoef = 0f;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
+        lock (_flow)
+        {
+            FlowPub best = null; double bestD = 20.0;
+            foreach (var p in _flow.Values)
+            {
+                double age = (now - p.Stamp) / freq;
+                if (age > 0.5) continue;
+                double d = (p.Pos + p.Vel * age - gridPos).Length();
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            if (best == null) return false;
+            travelLocal = best.TravelLocal; mach = best.Mach; density = best.Density; speed = best.Speed;
+            liftLocal = best.LiftLocal; liftCoef = best.LiftCoef;
+            return true;
+        }
+    }
+
+    /// <summary>The wing tips of a grid from the aero mod's detected wings (grid-local metres): each wing's span end(s) far
+    /// from the wings' middle (a half wing's outer end; both ends of a wing that spans the fuselage; a fin's top), at that
+    /// end's trailing edge. normals: each tip's wing lift normal. Returns the count (0: no aero / no wings yet).</summary>
+    public static int WingTips(Keen.VRage.DCS.Components.Entity grid, List<Vector3> tips, List<Vector3> normals)
+    {
+        tips.Clear(); normals.Clear();
+        AeroGridComponent aero = null;
+        foreach (var c in grid.Components) if (c is AeroGridComponent a) { aero = a; break; }
+        var wings = aero?.FxWings;
+        if (wings == null || wings.Count == 0) return 0;
+        var (cs, co) = aero.FxCellGeo;
+        Vector3 Pos(Vector3I c) => new Vector3((c.X + co) * cs, (c.Y + co) * cs, (c.Z + co) * cs);
+        // the wings' middle: the mean of every wing cell (on the centre line of a symmetric aircraft)
+        Vector3 mid = Vector3.Zero; int n = 0;
+        foreach (var w in wings) if (w.Cells != null) foreach (var c in w.Cells) { mid += Pos(c); n++; }
+        if (n == 0) return 0;
+        mid /= n;
+        foreach (var w in wings)
+        {
+            if (w.Cells == null || w.Cells.Count == 0) continue;
+            float sMin = float.MaxValue, sMax = float.MinValue;
+            foreach (var c in w.Cells) { float s = Vector3.Dot(Pos(c), w.SpanAxis); sMin = Math.Min(sMin, s); sMax = Math.Max(sMax, s); }
+            float sMid = Vector3.Dot(mid, w.SpanAxis);
+            float dMin = MathF.Abs(sMin - sMid), dMax = MathF.Abs(sMax - sMid), dFar = Math.Max(dMin, dMax);
+            if (dFar < 4f * cs) continue;
+            for (int end = 0; end < 2; end++)
+            {
+                float sEnd = end == 0 ? sMin : sMax, d = end == 0 ? dMin : dMax;
+                if (d < 0.75f * dFar) continue;   // (a root)
+                float sign = end == 0 ? -1f : 1f;
+                // the trailing edge at that end: the cell furthest along the chord within 1.5 cells of the end
+                Vector3 best = default; float bestCh = float.MinValue;
+                foreach (var c in w.Cells)
+                {
+                    var p = Pos(c);
+                    if (MathF.Abs(Vector3.Dot(p, w.SpanAxis) - sEnd) > 1.5f * cs) continue;
+                    float ch = Vector3.Dot(p, w.ChordAxis);
+                    if (ch > bestCh) { bestCh = ch; best = p; }
+                }
+                tips.Add(best + w.SpanAxis * (sign * 0.5f * cs) + w.ChordAxis * (0.5f * cs));
+                normals.Add(w.Normal);
+            }
+        }
+        return tips.Count;
+    }
+
     /// <summary>Server: a grid going away stops publishing.</summary>
     internal static void Forget(AeroGridComponent aero)
     {
+        if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; }
         if (!aero.EntryPublished) return;
         lock (_pub) { if (_pub.Remove(aero, out var gone)) gone.Gone = true; _count = _pub.Count; aero.EntryPublished = false; }
     }

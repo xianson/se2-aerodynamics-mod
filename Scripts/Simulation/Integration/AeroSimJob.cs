@@ -147,6 +147,7 @@ public partial class AeroGridComponent
             aero.SkipCompute(wt, angVel);   // (the last forces, in the grid's frame, are applied again below)
         AeroFrameBudget.Add(System.Diagnostics.Stopwatch.GetTimestamp() - tco);
         AeroCost.Compute.Stop(tco);
+        AeroEntryFx.Flow(aero, wt, linVel, density);
         AeroEntryFx.Server(aero, wt, linVel, density, 1f / 60f);
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)

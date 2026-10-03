@@ -7,6 +7,9 @@
 # (VelocityMultiplier) by the spacing of the points. Local space (+Z downwind; the code turns each effect to the flow),
 # no distance scaling: speed independent, its true size far away. Looping, constant rate (no strength curve yet).
 # usage: python gen_plasma_field.py  ->  prints "name effectGuid"
+# GravityMultiplier 0 (audited): a multiplier > 0 attaches a planet-gravity probe whose world-space vector the GPU adds
+# in the effect's LOCAL frame - sparks fell sideways in parallel columns. The downwind push is AccelerationFactor
+# (along each spark's own, already downwind, direction) instead.
 import json, os, copy, uuid
 
 GAME = r"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData\Vanilla\Content\System\Particles"
@@ -190,3 +193,111 @@ for lvl, em in ((2, 1000), (3, 330), (4, 165), (5, 80)):
         effect_fixed(f"DeepShockL{lvl}R{rate}", [deep(f"DeepShockL{lvl}R{rate}", pps=250 * f, life=0.4, size=[(0, 0.024), (0.5, 0.021), (1, 0.012)], velocity=6, cone=25)], rate_guid(3, lvl, rate))
         effect_fixed(f"DeepTailL{lvl}R{rate}", [deep(f"DeepTailL{lvl}R{rate}", pps=300 * f, life=0.8, size=[(0, 0.03), (0.5, 0.024), (1, 0.015)], velocity=9, cone=8)], rate_guid(4, lvl, rate))
 print("deep variants:", rate_guid(3, 4, 25))
+
+# WEIGHTED: the spawn rate follows the effect's (held) time - the code holds each emitter's time at heat x its local
+# drag weight (0..1 s of the 2 s effect = 0..0.5 of it: rate 0..full), so the hull's hot spots spray hardest.
+# Deep colour, thin; levels 3-5. Guid kinds 5 shock, 6 tail, rate field 0: 5d0c7a3e-000K-4LLL-8000-000000000001
+def by_time(pps): return curve([(0, 0), (0.5, pps), (1, pps)])
+for lvl, em in ((3, 330), (4, 165), (5, 80)):
+    def weighted(name, pps, **kw):
+        g = emitter(name, base="sparks", life_var=0.4, size_var=0.5, emitter_size=0.6, pps=pps,
+                    emissive=[(0, em), (0.3, em * 0.7), (0.7, em * 0.3), (1, 0)], **kw)
+        p = os.path.join(OUT, f"PlasmaField_{name}_ParticleEmitter.def")
+        d = json.load(open(p, encoding="utf-8")); v = d["$Value"]
+        v["TimeLines"]["ParticlesPerSecond"] = by_time(pps)
+        v["TimeLines"]["Color"] = over_life([(0, DEEP), (0.3, DEEP_RED), (0.6, MAGENTA), (1, VIOLET)])
+        v["EmitterFlags"]["EnableStreaks"] = True
+        v["RenderingParameters"]["StreakMultiplier"] = 4
+        write(f"PlasmaField_{name}_ParticleEmitter.def", d, g)
+        return g
+    effect_fixed(f"WeightedShockL{lvl}", [weighted(f"WeightedShockL{lvl}", 250, life=0.4, size=[(0, 0.024), (0.5, 0.021), (1, 0.012)], velocity=6, cone=25)], rate_guid(5, lvl, 0))
+    effect_fixed(f"WeightedTailL{lvl}", [weighted(f"WeightedTailL{lvl}", 300, life=0.8, size=[(0, 0.03), (0.5, 0.024), (1, 0.015)], velocity=9, cone=8)], rate_guid(6, lvl, 0))
+print("weighted:", rate_guid(5, 4, 0))
+
+# STREAK variants of the weighted sparks: a spark is drawn 0.5 x speed x StreakMultiplier long
+# (ParticleGeometry.hlsli) - pushed downwind they speed up and 4 made metres-long whiskers. Streak 1 / 0.3 / 0.1 in
+# the Guid's rate field (x100: 0x64 / 0x1e / 0x0a); field 0 is the original 4.
+for lvl, em in ((3, 330), (4, 165), (5, 80)):
+    for streak in (1.0, 0.3, 0.1):
+        def weighted_s(name, pps, **kw):
+            g = emitter(name, base="sparks", life_var=0.4, size_var=0.5, emitter_size=0.6, pps=pps,
+                        emissive=[(0, em), (0.3, em * 0.7), (0.7, em * 0.3), (1, 0)], **kw)
+            p = os.path.join(OUT, f"PlasmaField_{name}_ParticleEmitter.def")
+            d = json.load(open(p, encoding="utf-8")); v = d["$Value"]
+            v["TimeLines"]["ParticlesPerSecond"] = by_time(pps)
+            v["TimeLines"]["Color"] = over_life([(0, DEEP), (0.3, DEEP_RED), (0.6, MAGENTA), (1, VIOLET)])
+            v["EmitterFlags"]["EnableStreaks"] = True
+            v["RenderingParameters"]["StreakMultiplier"] = streak
+            write(f"PlasmaField_{name}_ParticleEmitter.def", d, g)
+            return g
+        sf = int(round(streak * 100)); tag = f"S{sf}"
+        effect_fixed(f"WeightedShockL{lvl}{tag}", [weighted_s(f"WeightedShockL{lvl}{tag}", 250, life=0.4, size=[(0, 0.024), (0.5, 0.021), (1, 0.012)], velocity=6, cone=25)], rate_guid(5, lvl, sf))
+        effect_fixed(f"WeightedTailL{lvl}{tag}", [weighted_s(f"WeightedTailL{lvl}{tag}", 300, life=0.8, size=[(0, 0.03), (0.5, 0.024), (1, 0.015)], velocity=9, cone=8)], rate_guid(6, lvl, sf))
+print("streak variants:", rate_guid(5, 4, 30))
+
+# TEXTURE variants of the weighted sparks: a streak stretches its texture along the motion, so a soft fuzzy blob
+# (FireSparks') drew splotches; a point with a soft falloff draws a long tapered diamond. Thorn (the rain streaks'
+# texture) kinds 7/8, ThrusterFlame_Dot kinds 9/10; levels 3-5; streak 1 / 0.3 / 0.1 in the rate field (x100).
+TEXTURES = ((7, "Thorn", "{G}63eaa9aa-e08f-4a87-a3d2-1cb28f681a2b"), (9, "Dot", "{G}6e5854ae-5747-4634-80ae-c2529420cc23"))
+for kind, tname, tex in TEXTURES:
+    for lvl, em in ((3, 330), (4, 165), (5, 80)):
+        for streak in (1.0, 0.3, 0.1):
+            def textured(name, pps, **kw):
+                g = emitter(name, base="sparks", life_var=0.4, size_var=0.5, emitter_size=0.6, pps=pps,
+                            emissive=[(0, em), (0.3, em * 0.7), (0.7, em * 0.3), (1, 0)], **kw)
+                p = os.path.join(OUT, f"PlasmaField_{name}_ParticleEmitter.def")
+                d = json.load(open(p, encoding="utf-8")); v = d["$Value"]
+                v["TimeLines"]["ParticlesPerSecond"] = by_time(pps)
+                v["TimeLines"]["Color"] = over_life([(0, DEEP), (0.3, DEEP_RED), (0.6, MAGENTA), (1, VIOLET)])
+                v["EmitterFlags"].update({"EnableStreaks": True, "EnableRandomRotation": False})
+                v["RenderingParameters"]["StreakMultiplier"] = streak
+                v["AnimationParameters"].update({"AtlasTexture": tex, "NumFramesInAtlas": {"X": 1, "Y": 1}, "FirstFrameIndex": 0,
+                                                 "NumFramesInAnimation": 1, "AnimationFramerate": 1, "TextureIsAdditive": True,
+                                                 "TextureIsMonochromatic": True})
+                write(f"PlasmaField_{name}_ParticleEmitter.def", d, g)
+                return g
+            sf = int(round(streak * 100)); tag = f"{tname}L{lvl}S{sf}"
+            effect_fixed(f"WShock{tag}", [textured(f"WShock{tag}", 250, life=0.4, size=[(0, 0.024), (0.5, 0.021), (1, 0.012)], velocity=6, cone=25)], rate_guid(kind, lvl, sf))
+            effect_fixed(f"WTail{tag}", [textured(f"WTail{tag}", 300, life=0.8, size=[(0, 0.03), (0.5, 0.024), (1, 0.015)], velocity=9, cone=8)], rate_guid(kind + 1, lvl, sf))
+print("texture variants:", rate_guid(7, 4, 30))
+
+# RECIPES: the game's own spark emitters as they are - texture, size, thickness, streak, speed, life, brightness - only
+# made ours: our colours (monochrome textures take them; coloured ones are tinted), local space, sprayed down +Z
+# (cone 25 at the shock, 8 on the tail, the tail living twice as long), no collisions, no bursts, the rate the code's
+# (held effect time x 600 / s at full heat). Effect Guids 5d0c7a3e-000K-4000-8000-000000000001: K 11/12 grinder,
+# 13/14 welder, 15/16 explosion sparks, 17/18 directional (shock / tail).
+LONG_ORANGE = {"X": 1.0, "Y": 0.42, "Z": 0.07, "W": 1}   # (the recipes hold orange to 55 % of life, then magenta, violet)
+RECIPE_ACCEL = 40   # speed gained per second along each spark's direction (downwind), local units
+RECIPES = ((11, "Grinder", r"Blocks\Grinder\400\ParticleEmitter_Grinder400_MainSpark_A.def"),
+           (13, "Welder", r"Tools and Weapons\Welder\WelderContact\ParticleEmitter_Welder_Sparks.def"),
+           (15, "Explosion", r"Generic\Explosion\Massive\ParticleEmitter_MassiveExplosion_Sparks.def"),
+           (17, "Directional", r"Generic\MeshCollisionDirectional\ParticleEmitter__DirectionalSparks.def"))
+def recipe(kind, rname, rel, tail):
+    d = load(rel); v = d["$Value"]
+    name = f"Recipe{rname}{'Tail' if tail else 'Shock'}"
+    g = str(uuid.uuid5(NS, "emitter/" + name)); v["Guid"] = g
+    t = v["TimeLines"]
+    t["ParticlesPerSecond"] = by_time(600)
+    t["ConeAngle"] = const(8 if tail else 25)
+    t["ConeInnerAngle"] = const(0)
+    t["EmitterSize"] = const(v3(0.3, 0.3, 0.3))
+    t["EmitterShellThickness"] = const(0)
+    t["Offset"] = const(v3(0, 0, 0))
+    # (audited) the GPU adds the speed VARIANCE unscaled by VelocityMultiplier: 6 +- 4 at our 0.05 multiplier left ~46 %
+    # of sparks born still - planet gravity then carried them sideways. A quarter of the speed; a push along their way
+    vel = t["LinearVelocity"]["KeyFrames"]["_data"][0]["Value"]["Value"]
+    t["LinearVelocityVariance"] = const(vel * 0.25)
+    t["AccelerationFactor"] = over_life([(0, RECIPE_ACCEL), (1, RECIPE_ACCEL)])
+    t["Color"] = over_life([(0, DEEP), (0.55, LONG_ORANGE), (0.8, MAGENTA), (1, VIOLET)])   # (orange for longer: the user's pick)
+    if tail:   # (twice the life)
+        life = t["ParticleLifeSpan"]["KeyFrames"]["_data"][0]["Value"]["Value"]
+        t["ParticleLifeSpan"] = const(life * 2)
+    v["EmissionParameters"].update({"ParticleBurst": 0, "Direction": v3(0, 0, 1)})
+    v["EmitterFlags"].update({"EnableCollisions": False, "EnableLocalSpaceSimulation": True, "EnableStreaks": True})
+    v["RenderingParameters"]["DistanceScalingFactor"] = 0
+    v["SimulationParameters"].update({"EmitterMotionInheritance": 0, "CollisionCountToKill": 0, "Bounciness": 0})
+    write(f"PlasmaField_{name}_ParticleEmitter.def", d, g)
+    effect_fixed(name, [g], f"5d0c7a3e-{kind + (1 if tail else 0):04x}-4000-8000-000000000001")
+for kind, rname, rel in RECIPES:
+    recipe(kind, rname, rel, False); recipe(kind, rname, rel, True)
+print("recipes:", f"5d0c7a3e-{11:04x}-4000-8000-000000000001")

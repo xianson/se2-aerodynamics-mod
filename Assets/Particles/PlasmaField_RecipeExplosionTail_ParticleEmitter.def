@@ -1,0 +1,484 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.1737"
+  },
+  "$Type": "VRage:Keen.VRage.Render.Data.ParticleEmitterDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "693c12c0-03f8-5902-a9db-438dddeeee5f",
+    "TimeLines": {
+      "AccelerationFactor": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "8eaab35c-c3f5-51cb-8af1-d4494007c9de",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "ec56daf4-b9c5-5979-8d31-9123420163f3",
+                        "Value": {
+                          "Value": 40,
+                          "Key": 0
+                        }
+                      },
+                      {
+                        "Key": "f338952a-431d-5935-979e-cb5a22e365f9",
+                        "Value": {
+                          "Value": 40,
+                          "Key": 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ParticlesPerSecond": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "dba04876-664f-5986-9bfc-d9004af1cfbf",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            },
+            {
+              "Key": "1a97220a-e0e2-5060-84e3-c9ba80330f0f",
+              "Value": {
+                "Value": 600,
+                "Key": 0.5
+              }
+            },
+            {
+              "Key": "9e349715-0f48-50ed-aca1-ed8c25ee8470",
+              "Value": {
+                "Value": 600,
+                "Key": 1
+              }
+            }
+          ]
+        }
+      },
+      "ParticleLifeSpan": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "9eef3a9b-1513-5a9e-a72e-5d5cb07c8b36",
+              "Value": {
+                "Value": 1.4,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "EmitterSize": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "2f4cf31f-5743-5723-bae1-059602ec9976",
+              "Value": {
+                "Value": {
+                  "X": 0.3,
+                  "Y": 0.3,
+                  "Z": 0.3
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "EmitterShellThickness": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "5194d685-ceb4-5cf5-8559-5119e7f208a6",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ConeAngle": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "3489f64a-44a8-569b-abad-27f900659ef7",
+              "Value": {
+                "Value": 8,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ConeInnerAngle": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "68504140-4d48-516e-9a6d-b2a6538758be",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "LinearVelocity": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "6bd50b8b-0822-4d77-99f9-2d6144eae116",
+              "Value": {
+                "Value": 6,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "LinearVelocityVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "ae04be2f-f6c1-534d-b25e-58b1dbb8c86a",
+              "Value": {
+                "Value": 1.5,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Color": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "d87bc32b-660f-5a40-9c64-50b81cb0a8c9",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "ae3756d3-5eda-57c8-96e0-f4c6f0e13179",
+                        "Value": {
+                          "Value": {
+                            "X": 1.0,
+                            "Y": 0.35,
+                            "Z": 0.06,
+                            "W": 1
+                          },
+                          "Key": 0
+                        }
+                      },
+                      {
+                        "Key": "cf2febfe-7b2f-535d-a5c6-7611e6adf0bd",
+                        "Value": {
+                          "Value": {
+                            "X": 1.0,
+                            "Y": 0.42,
+                            "Z": 0.07,
+                            "W": 1
+                          },
+                          "Key": 0.55
+                        }
+                      },
+                      {
+                        "Key": "302f52f4-1857-5739-95d7-034c18728ea3",
+                        "Value": {
+                          "Value": {
+                            "X": 0.95,
+                            "Y": 0.25,
+                            "Z": 0.65,
+                            "W": 1
+                          },
+                          "Key": 0.8
+                        }
+                      },
+                      {
+                        "Key": "c8ac9129-7efe-57b5-94cc-c590a9985d39",
+                        "Value": {
+                          "Value": {
+                            "X": 0.45,
+                            "Y": 0.12,
+                            "Z": 1.0,
+                            "W": 0
+                          },
+                          "Key": 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ScatteringIntensity": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "33cba414-d7f5-48a4-b09d-98ca09da14a7",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "b0e4d36f-5ff2-46df-9cde-a5ee3c647a3c",
+                        "Value": {
+                          "Value": 0,
+                          "Key": 0
+                        }
+                      },
+                      {
+                        "Key": "b8f19e76-422b-45fb-af12-9ea17a8c6afd",
+                        "Value": {
+                          "Value": 0,
+                          "Key": 0.33
+                        }
+                      },
+                      {
+                        "Key": "b5c9ddb8-a403-4ae5-8b62-5102aae1c6b0",
+                        "Value": {
+                          "Value": 0,
+                          "Key": 0.66
+                        }
+                      },
+                      {
+                        "Key": "34529d29-6e83-45c6-87f3-b39bde797892",
+                        "Value": {
+                          "Value": 0,
+                          "Key": 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Emissivity": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "1d8182e0-29be-42c6-a720-a1dafec250e4",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "f47c29b4-9fd8-4cf3-bacd-f5ab6a90cc43",
+                        "Value": {
+                          "Value": 1000,
+                          "Key": 0
+                        }
+                      },
+                      {
+                        "Key": "b028ee06-8ea2-4773-8fca-754f489ef7bd",
+                        "Value": {
+                          "Value": 800,
+                          "Key": 0.33
+                        }
+                      },
+                      {
+                        "Key": "94c9843a-4f41-48d7-87ae-cdbd1a0afa38",
+                        "Value": {
+                          "Value": 600,
+                          "Key": 0.66
+                        }
+                      },
+                      {
+                        "Key": "176d8e34-e19f-43f9-818b-0ba4f1653750",
+                        "Value": {
+                          "Value": 0,
+                          "Key": 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ParticleSize": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "bb3c7349-5c36-4028-88b7-e3a891fe741f",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "bdb61f68-8d6e-4b0a-823d-db4caf2c68d0",
+                        "Value": {
+                          "Value": 0.005,
+                          "Key": 0
+                        }
+                      },
+                      {
+                        "Key": "a70cbda0-068b-4e0f-957b-abf8a33bf9ec",
+                        "Value": {
+                          "Value": 0.005,
+                          "Key": 0.33
+                        }
+                      },
+                      {
+                        "Key": "16a43f8d-77ea-4fd5-9959-81761b2977c3",
+                        "Value": {
+                          "Value": 0.005,
+                          "Key": 0.66
+                        }
+                      },
+                      {
+                        "Key": "15a603b1-9ce9-4112-925f-e7c465b437d6",
+                        "Value": {
+                          "Value": 0.01,
+                          "Key": 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ParticleThickness": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "b25c3bca-fca5-4608-ad85-8044e1533890",
+              "Value": {
+                "Value": {
+                  "KeyFrames": {
+                    "_data": [
+                      {
+                        "Key": "b9a602ba-cf53-4ae6-b0d1-7961bce464dc",
+                        "Value": {
+                          "Value": 3,
+                          "Key": 0
+                        }
+                      }
+                    ]
+                  }
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Offset": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "3d98e646-8fe2-5de8-8147-df86341d8fdd",
+              "Value": {
+                "Value": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    "EmitterFlags": {
+      "EnableStreaks": true,
+      "EnableCollisions": false,
+      "EnableLighting": false,
+      "EnableRandomRotation": false,
+      "EnableLocalRotation": false,
+      "EnableAxisOrientedBillboard": false,
+      "EnableAlphaAnisotropy": false,
+      "EnableParticlesKillZone": false,
+      "EnableConstantEmitterSize": false,
+      "EnableConstantScaleMultiplier": false,
+      "AlwaysVisibleInFirstPersonView": false,
+      "EnableLocalSpaceSimulation": true,
+      "EnableExposureCompensation": true,
+      "SingleFrameParticles": false,
+      "EnhanceVisibility": false
+    },
+    "EmissionParameters": {
+      "ParticleBurst": 0,
+      "ParticleLifeSpanVariance": 0.1,
+      "Direction": {
+        "X": 0,
+        "Y": 0,
+        "Z": 1
+      },
+      "AngularVelocity": 0,
+      "AngularVelocityVariance": 0,
+      "RotationAngle": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "RotationAngleVariance": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      }
+    },
+    "SimulationParameters": {
+      "Bounciness": 0,
+      "AngularVelocityCollisionMultiplier": 0,
+      "CollisionCountToKill": 0,
+      "EmitterMotionInheritance": 0
+    },
+    "RenderingParameters": {
+      "AmbientMultiplier": 1,
+      "HueColorVariance": 0,
+      "SaturationColorVariance": 0,
+      "ValueColorVariance": 0,
+      "SoftParticleDistanceScale": 0,
+      "ShadowParticleAlphaMultiplier": 0,
+      "StreakMultiplier": 3,
+      "OITWeightFactor": 1,
+      "CameraSoftRadius": 0,
+      "CameraBias": 0,
+      "ParticleSizeVariance": 0.02,
+      "DistanceScalingFactor": 0,
+      "FSRReactiveMaskMultiplier": 0
+    },
+    "AnimationParameters": {
+      "NumFramesInAtlas": {
+        "X": 8,
+        "Y": 1
+      },
+      "FirstFrameIndex": 0,
+      "NumFramesInAnimation": 1,
+      "AnimationFramerate": 1,
+      "AnimationStartTimeVariance": 0,
+      "AtlasTexture": "{G}e29a669d-64cc-4b33-8562-e92cdb645767",
+      "TextureIsMonochromatic": false,
+      "TextureIsAdditive": true
+    }
+  }
+}

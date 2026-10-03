@@ -170,7 +170,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>Entry plasma (AeroEntryFx): the hull's visual heat, and whether this grid's entry is published.</summary>
     internal float EntryHeat;
     internal bool EntryPublished;
+    internal bool FlowPublished;   // (AeroEntryFx.Flow: published for other effects)
     internal bool HasTable => _model?.Table != null;
+    /// <summary>The detected wings and the cell geometry they are in (size, offset) - for the effects (AeroEntryFx.WingTips).</summary>
+    internal List<LiftingSurface> FxWings => _model?.Wings;
+    internal (float size, float offset) FxCellGeo => _surface != null ? (_surface.CellSize, _surface.CellOffset) : (0.25f, 0f);
     /// <summary>The entry plasma needs this grid's table though it sees no air (another mod flies it through some).</summary>
     internal bool EntryWantsTable;
     Vector3 _esTravel, _esNose; float _esRadius; int _esGen = -1, _esAge;
