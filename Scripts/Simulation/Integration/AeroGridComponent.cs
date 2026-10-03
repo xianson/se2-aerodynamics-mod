@@ -174,6 +174,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal bool HasTable => _model?.Table != null;
     /// <summary>The detected wings and the cell geometry they are in (size, offset) - for the effects (AeroEntryFx.WingTips).</summary>
     internal List<LiftingSurface> FxWings => _model?.Wings;
+    /// <summary>The force table's chunks (hull points, per-chunk drag) - for the flight effects (FlightField).</summary>
+    internal ChunkedTable FxChunks => _chunks;
+    /// <summary>The model and the surface it runs on - for the public API (AeroApi: wings, surfaces, prediction).</summary>
+    internal LiftingSurfaceModel FxModel => _model;
+    internal SmoothSurfaceProvider FxSurface => _surface;
     internal (float size, float offset) FxCellGeo => _surface != null ? (_surface.CellSize, _surface.CellOffset) : (0.25f, 0f);
     /// <summary>The entry plasma needs this grid's table though it sees no air (another mod flies it through some).</summary>
     internal bool EntryWantsTable;

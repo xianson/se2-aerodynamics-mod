@@ -64,10 +64,72 @@ public static class AeroEntryFx
     /// <summary>TEST: particle speed from the frontal radius (the effect's whole shape per metre of radius, speed
     /// independent - the renderer scales sizes by the effect's scale, but speeds only by the velocity multiplier).</summary>
     public static bool VelocityPerRadius;
-    /// <summary>Another mod's entry state for a grid, set by it (the Orbital Mod's reentry on rails: its grids sit
-    /// still in their frame while the frame is braked through the air): the air's velocity past the grid (world,
-    /// m/s) in xyz, and how hard it glows (0..1) in w; w &lt;= 0: none (the grid's own motion counts).</summary>
-    public static Func<Keen.VRage.DCS.Components.Entity, Vector4> External;
+    // ── ENTRY SOURCES: the cross-mod contract (another mod tells aero about grids whose motion it cannot see) ──
+    // The Orbital Mod's reentry on rails: its grids sit still in their frame while the frame is braked through the
+    // air. It registers a source BY REFLECTION (mods compile separately: only BCL / engine types cross), which aero
+    // asks per grid. Contract 2:
+    //   int  RegisterEntrySource(string owner, Delegate source)  -> EntrySourceContract, or 0 (wrong delegate type)
+    //   bool UnregisterEntrySource(string owner)
+    //   bool HasEntrySource(string owner, Delegate source)        (still registered: cheap, no assembly scan)
+    //   source: Func<Entity, ValueTuple<Vector3, float>> = (the air's velocity past the grid, world m/s; how hard it
+    //           burns 0..1, &lt;= 0: none - the grid's own motion counts).
+    // A source with a strength OWNS that grid's entry: its air replaces the grid's motion for the flow and every
+    // effect, and its strength replaces aero's own heat model. Registering again under the same owner replaces (a new
+    // session, or a reloaded mod); a source that throws is dropped. Checked across both repos by the Orbital Mod's fast
+    // gate (tools/check_contract.sh); a change here bumps EntrySourceContract and that check.
+    public const int EntrySourceContract = AeroApi.Version;
+    static (string owner, Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>> fn)[] _sources = Array.Empty<(string, Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>>)>();
+    static readonly object _sourcesLock = new();
+
+    public static int RegisterEntrySource(string owner, Delegate source)
+    {
+        if (string.IsNullOrEmpty(owner) || source is not Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>> fn) return 0;
+        lock (_sourcesLock)
+        {
+            var l = new List<(string, Func<Keen.VRage.DCS.Components.Entity, ValueTuple<Vector3, float>>)>(_sources.Length + 1);
+            foreach (var e in _sources) if (e.owner != owner) l.Add(e);
+            l.Add((owner, fn));
+            _sources = l.ToArray();   // (copy on write: readers take the array without a lock)
+        }
+        Log.Default?.Info($"[AERO] entry source registered: {owner} (contract {EntrySourceContract})");
+        return EntrySourceContract;
+    }
+
+    /// <summary>Diagnostics: the registered sources' owners.</summary>
+    public static string EntrySources { get { var src = _sources; var n = new string[src.Length]; for (int i = 0; i < n.Length; i++) n[i] = src[i].owner; return string.Join(",", n); } }
+
+    public static bool UnregisterEntrySource(string owner)
+    {
+        lock (_sourcesLock)
+        {
+            int n = _sources.Length;
+            _sources = Array.FindAll(_sources, e => e.owner != owner);
+            return _sources.Length != n;
+        }
+    }
+
+    public static bool HasEntrySource(string owner, Delegate source)
+    {
+        foreach (var e in _sources) if (e.owner == owner && Equals(e.fn, source)) return true;
+        return false;
+    }
+
+    /// <summary>The registered sources' word on a grid: the strongest one with a strength. False: none (the grid's own
+    /// motion and aero's heat model count).</summary>
+    internal static bool ExternalAt(Keen.VRage.DCS.Components.Entity grid, out Vector3 airWorld, out float strength)
+    {
+        airWorld = default; strength = 0f;
+        var src = _sources;
+        if (src.Length == 0 || grid == null) return false;
+        for (int i = 0; i < src.Length; i++)
+        {
+            ValueTuple<Vector3, float> r;
+            try { r = src[i].fn(grid); }
+            catch (Exception e) { Log.Default?.Info($"[AERO] entry source {src[i].owner} threw, dropped: {e.GetType().Name}"); UnregisterEntrySource(src[i].owner); continue; }
+            if (r.Item2 > strength) { strength = MathF.Min(1f, r.Item2); airWorld = r.Item1; }
+        }
+        return strength > 0f;
+    }
     /// <summary>TEST knobs: strength as the effect's fixed time (else the timeline runs); the size, x.</summary>
     public static bool FixTime = true;
     public static float ScaleMul = 1f;
@@ -96,14 +158,10 @@ public static class AeroEntryFx
     internal static void Server(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, float dt)
     {
         if (!Enabled || !aero.IsServerScene) return;   // (the sim job runs on client copies too: they only draw)
+        Vector3 moving = vel;   // (the real motion: carries the record forward for a client's match - not the air)
         if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
         float extStrength = 0f;
-        var ext = External;
-        if (ext != null && aero.Entity != null)
-        {
-            var e = ext(aero.Entity);
-            if (e.W > 0f) { vel = new Vector3(e.X, e.Y, e.Z); extStrength = MathF.Min(1f, e.W); }
-        }
+        if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extStrength = es; }
         float speed = vel.Length();
         double m0 = aero.LastResult.Mach;
         float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
@@ -133,7 +191,7 @@ public static class AeroEntryFx
         lock (_pub)
         {
             if (!_pub.TryGetValue(aero, out var p)) { _pub[aero] = p = new Pub(); _count = _pub.Count; aero.EntryPublished = true; }
-            p.Pos = wt.Position; p.Vel = vel; p.TravelLocal = travel; p.NoseLocal = nose; p.Radius = radius;
+            p.Pos = wt.Position; p.Vel = moving; p.TravelLocal = travel; p.NoseLocal = nose; p.Radius = radius;
             p.Strength = strength; p.Speed = speed; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
             Published = _count;
         }
@@ -146,6 +204,11 @@ public static class AeroEntryFx
         public Vector3D Pos, Vel;
         public Vector3 TravelLocal, LiftLocal;
         public float Mach, Density, Speed, LiftCoef;
+        internal object MemberwiseCloneFlow() => MemberwiseClone();
+        public float ExtStrength = -1f;   // (an entry source's strength: it owns the plasma; -1 none)
+        public AeroGridComponent Aero;    // (its server copy: the force table, the wings)
+        public Vector3 ForceLocal, TorqueLocal;   // (the aero result, grid frame: components included)
+        public float Drag, Lift, Q, FrontalArea;  // (N, N, Pa, m2)
         public long Stamp;
     }
     static readonly Dictionary<AeroGridComponent, FlowPub> _flow = new();
@@ -156,9 +219,10 @@ public static class AeroEntryFx
     internal static void Flow(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density)
     {
         if (!aero.IsServerScene) return;
+        Vector3 moving = vel;   // (the grid's real motion: what carries its published position forward for a client's match)
         if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
-        var ext = External;
-        if (ext != null && aero.Entity != null) { var e = ext(aero.Entity); if (e.W > 0f) vel = new Vector3(e.X, e.Y, e.Z); }
+        float extS = -1f;
+        if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extS = es; }
         float speed = vel.Length();
         if (speed < 1f || density <= 0f)
         {
@@ -170,8 +234,11 @@ public static class AeroEntryFx
         lock (_flow)
         {
             if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; }
-            p.Pos = wt.Position; p.Vel = vel; p.TravelLocal = WorldTransform.TransformDirectionInv(vel / speed, wt);
+            // (Vel is the real motion, not the air: a held test grid's or a railed grid's air speed carried its position
+            //  hundreds of metres off, and a client matched its subgrid's record - the wrong hull)
+            p.Pos = wt.Position; p.Vel = moving; p.TravelLocal = WorldTransform.TransformDirectionInv(vel / speed, wt);
             p.Speed = speed; p.Mach = speed / MathF.Max(1f, a); p.Density = density; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            p.ExtStrength = extS; p.Aero = aero;
             // the lift: the aero result's force (grid frame, components included) across the travel; its strength per
             // dynamic pressure x frontal area (a lift coefficient on the frontal area). Zero under TestSpeed (no real air)
             var F = aero.LastResult.Force; var tl = p.TravelLocal;
@@ -179,6 +246,9 @@ public static class AeroEntryFx
             float qA = (float)(aero.LastResult.DynamicPressure * aero.LastResult.FrontalArea);
             p.LiftLocal = L.LengthSquared() > 1e-6f ? Vector3.Normalize(L) : Vector3.Zero;
             p.LiftCoef = qA > 1e-3f ? L.Length() / qA : 0f;
+            p.ForceLocal = F; p.TorqueLocal = aero.LastResult.Torque;
+            p.Drag = aero.LastResult.DragMagnitude; p.Lift = aero.LastResult.LiftMagnitude;
+            p.Q = (float)aero.LastResult.DynamicPressure; p.FrontalArea = aero.LastResult.FrontalArea;
         }
     }
 
@@ -251,6 +321,45 @@ public static class AeroEntryFx
             }
         }
         return tips.Count;
+    }
+
+    /// <summary>Client: the published flow of the grid at pos (the nearest within 20 m, carried forward by its velocity,
+    /// under 0.5 s old), or null. The record is the publisher's own (read, never written).</summary>
+    internal static FlowPub FindFlow(Vector3D pos)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
+        lock (_flow)
+        {
+            FlowPub best = null; double bestD = 20.0;
+            foreach (var p in _flow.Values)
+            {
+                double age = (now - p.Stamp) / freq;
+                if (age > 0.5) continue;
+                double d = (p.Pos + p.Vel * age - pos).Length();
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            return best;
+        }
+    }
+    public static bool AnyFlow { get { lock (_flow) return _flow.Count > 0; } }
+
+    /// <summary>A grid's flow record, copied under the lock: its own (server copy) or, for a client copy, the nearest
+    /// published one (FindFlow). False: not flying (under 1 m/s or no air), or not published in this process.</summary>
+    internal static bool FlowOf(Keen.VRage.DCS.Components.Entity grid, out FlowPub copy)
+    {
+        copy = null;
+        if (grid == null) return false;
+        AeroGridComponent aero = null;
+        foreach (var c in grid.Components) if (c is AeroGridComponent a) { aero = a; break; }
+        FlowPub p = null;
+        lock (_flow)
+        {
+            if (aero != null && aero.IsServerScene) _flow.TryGetValue(aero, out p);
+        }
+        if (p == null) p = FindFlow(grid.Data.GetWorldTransform().Position);
+        if (p == null) return false;
+        lock (_flow) copy = (FlowPub)p.MemberwiseCloneFlow();
+        return true;
     }
 
     /// <summary>Server: a grid going away stops publishing.</summary>
@@ -326,6 +435,40 @@ public static class AeroEntryFx
         }
     }
 
+    /// <summary>Client: flight fields live (FlightField.FlightMax), the last one's status (diagnostics).</summary>
+    public static int FlightActive;
+    public static string FlightStatus = "";
+    internal static readonly Dictionary<AeroEntryFxComponent, string> FlightLines = new();
+    /// <summary>Diagnostics: every live flight field's position, camera distance and status.</summary>
+    public static string FlightAll { get { lock (FlightLines) return string.Join(" || ", FlightLines.Values); } }
+    static readonly Dictionary<AeroEntryFxComponent, (double d, long stamp)> _flightDist = new();
+    static double _flightCut = double.MaxValue;
+    static long _flightCutAt;
+
+    /// <summary>Client: whether this grid, at distance d from the camera, is among the nearest FlightMax flying.</summary>
+    internal static bool NearFlight(AeroEntryFxComponent c, double d)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
+        lock (_flightDist)
+        {
+            _flightDist[c] = (d, now);
+            if (now - _flightCutAt > f / 4)
+            {
+                _flightCutAt = now;
+                var ds = new List<double>();
+                List<AeroEntryFxComponent> stale = null;
+                foreach (var kv in _flightDist)
+                    if (now - kv.Value.stamp < f / 2) ds.Add(kv.Value.d);
+                    else (stale ??= new()).Add(kv.Key);
+                if (stale != null) foreach (var s in stale) _flightDist.Remove(s);
+                int max = Math.Max(1, FlightField.FlightMax);
+                if (ds.Count <= max) _flightCut = double.MaxValue;
+                else { ds.Sort(); _flightCut = ds[max - 1]; }
+            }
+            return d <= _flightCut;
+        }
+    }
+
     internal static bool CameraAt(IObservers observers, out Vector3D at)
     {
         at = default;
@@ -349,15 +492,60 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     internal float ShownStrength = -1f, ShownScale = -1f, Fade;
     internal int RetryIn;
     internal object Match;   // (the published entry found last frame)
+    internal FlightField Flight;
+    internal int FlightLost;
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
+        if (Flight != null) { Flight.DropAll(); Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); }
+        lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(this);
         if (Fx != null) { EntryFxBridge.Stop(Fx); Fx = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.Active); }
     }
 
     [After(typeof(RenderSubmissionBegin))]
     private class OnAeroEntryFx : JobGroup;
+
+    /// <summary>The flight field: kept while the grid publishes a flow, is within FlightRange and among the nearest
+    /// FlightMax to the camera; dropped a second after it stops.</summary>
+    private static void FlightJob(AeroEntryFxComponent c, IObservers observers)
+    {
+        if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
+        var grid = c.Entity;
+        if (grid == null || !PhysicsHack.Alive(c.Data)) return;
+        var wt = c.Data.GetWorldTransform();
+        var p = AeroEntryFx.FindFlow(wt.Position);
+        bool keep = p != null && p.Aero != null && !AeroApi.Suppressed(grid, wt.Position);
+        double d = -1;
+        if (keep && AeroEntryFx.CameraAt(observers, out var cam))
+        {
+            d = (wt.Position - cam).Length();
+            keep = d < FlightField.FlightRange && AeroEntryFx.NearFlight(c, d);
+        }
+        if (!keep)
+        {
+            if (c.Flight != null && ++c.FlightLost > 60) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
+            return;
+        }
+        c.FlightLost = 0;
+        if (c.Flight == null)
+        {
+            if (AeroEntryFx.FlightActive >= FlightField.FlightMax + 1) return;
+            if (c.RenderParent == null)
+            {
+                // (a client grid just streamed in or moved may not have its render component yet: try again later -
+                //  never "no render" for good here, the scene check above already tells a server copy)
+                if (c.RetryIn > 0) { c.RetryIn--; return; }
+                c.RenderParent = EntryFxBridge.RenderParent(grid);
+                if (c.RenderParent == null) { c.RetryIn = 30; return; }
+            }
+            c.Flight = new FlightField(grid, c.RenderParent);
+            System.Threading.Interlocked.Increment(ref AeroEntryFx.FlightActive);
+        }
+        c.Flight.Update(p, wt);
+        AeroEntryFx.FlightStatus = c.Flight.Status;
+        lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines[c] = $"[{wt.Position.X:F0} {wt.Position.Y:F0} {wt.Position.Z:F0} cam {d:F0} m] {c.Flight.Status}";
+    }
 
     [OnAeroEntryFx]
     [MustHave(typeof(AeroEntryFxComponent))]
@@ -365,6 +553,8 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     {
         if (c.NoRender) return;
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
+        if (FlightField.On) { FlightJob(c, observers); return; }
+        if (c.Flight != null) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }   // (the flight field: plasma, vapour, tip trails - the nose effect below is the old look)
         if (c.Fx == null && (!AeroEntryFx.Any || !AeroEntryFx.Enabled || !EntryFxBridge.Usable)) return;   // (nothing glowing anywhere: cheap)
         var grid = c.Entity;
         if (grid == null || !PhysicsHack.Alive(c.Data)) return;
@@ -392,7 +582,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             if (c.RenderParent == null)
             {
                 c.RenderParent = EntryFxBridge.RenderParent(grid);
-                if (c.RenderParent == null) { c.NoRender = true; System.Threading.Interlocked.Increment(ref AeroEntryFx.ClientNoRender); return; }   // (a server copy)
+                if (c.RenderParent == null) { c.RetryIn = 30; System.Threading.Interlocked.Increment(ref AeroEntryFx.ClientNoRender); return; }   // (not drawn yet: again later - the scene check tells a server copy)
             }
             System.Threading.Interlocked.Increment(ref AeroEntryFx.SpawnTries);
             c.Fx = EntryFxBridge.Spawn(grid, c.RenderParent, AeroEntryFx.At(travel, nose));

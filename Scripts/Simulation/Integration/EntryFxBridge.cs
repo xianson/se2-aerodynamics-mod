@@ -8,7 +8,7 @@ using Keen.VRage.Library.Definitions;
 namespace AeroMod;
 
 /// <summary>
-/// THE AERO MOD'S ONLY REFLECTION: the game's particle effects (VRage.Game.Client, VRage.Render) are outside the
+/// Reflection (with Fx/FlightFieldHost.cs, which drives the same API for the flight field): the game's particle effects (VRage.Game.Client, VRage.Render) are outside the
 /// assemblies mod scripts compile against, so the entry plasma's calls are late-bound here, as the game's own
 /// MeteorEffectsRenderComponent makes them: IParticleEffects.TrySpawnEffect(local transform, definition, user
 /// parameters, the grid's IRenderParent), then the handle's UpdateTransform / SetParameters / FixEffectTime /
