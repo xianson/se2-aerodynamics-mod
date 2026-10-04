@@ -178,7 +178,7 @@ Both files are read again within ~2 s of an edit, so they can be changed while p
 | `Perf.MinSpeedForUpdates` | world | float | 10 | 0..1000 | Below this speed (m/s) an edited hull waits before updating its forces. |
 | `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Seconds without block changes before a cleanup rebuild. |
 | `Fx.Effects` | client | bool | true | | Every aero visual effect. |
-| `Fx.FlightField` | client | bool | true | | The full flight effects; off: the older single nose plasma. |
+| `Fx.FlightField` | client | bool | true | | The flight effects (plasma, vapour, tip trails); off: none. |
 | `Fx.Plasma` / `Fx.Vapour` / `Fx.Tips` / `Fx.SpotLight` | client | bool | true | | Each group of the flight effects. |
 | `Fx.MaxGrids` | client | int | 4 | 1..32 | Grids with flight effects at once (the nearest). |
 | `Fx.Range` | client | float | 4000 | 100..50000 | Distance (m) past which a grid shows no flight effects. |
