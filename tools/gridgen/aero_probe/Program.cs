@@ -54,7 +54,14 @@ static class Program
         return g;
     }
 
+    public static double LastBuildMs;
     static void Build(Grid g)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try { BuildInner(g); } finally { LastBuildMs = sw.Elapsed.TotalMilliseconds; }
+    }
+
+    static void BuildInner(Grid g)
     {
         int k = SnapshotGridAccessor.CellScale(g.BlockSize);
         (g.Cs, g.Co) = SnapshotGridAccessor.CellGeometry(k);
@@ -105,7 +112,10 @@ static class Program
         }
         if (files.Count < 1) { Console.WriteLine("usage: AeroProbe MAIN.boxes [GRID.boxes ...] [--speed 220] [--com cx,cy,cz] [--quiet]"); return 2; }
         var grids = files.Select(Load).ToList();
-        foreach (var g in grids) Build(g);
+        double buildMain = 0, buildAll = 0;
+        foreach (var g in grids) { Build(g); buildAll += LastBuildMs; if (g == grids[0]) buildMain = LastBuildMs; }
+        // (the same steps the game's background rebuild runs: cells, surface, classify, wings, shadow map; one thread)
+        Console.WriteLine($"  build: main grid {buildMain:F0} ms, all {grids.Count} grids {buildAll:F0} ms (one thread, warm-up included)");
         var main = grids[0];
         var registry = new AeroComponentRegistry();
         if (intake)
