@@ -449,8 +449,6 @@ public class DampedShadowedDragModel : IAeroDragModel
         e[12] = (float)frontal;
     }
 
-    /// <summary>A flat patch of faces into a force table, with this model's constants (ForceTable.AddPatch).</summary>
-    public void AddPatch(ForceTable t, Vector3 n, Vector3 p, float area) => t.AddPatch(n, p, area, CdBluff, CpMax, CfSkin, Streamlining, CpBase);
 
     /// <summary>The exact face forces at this flight state by SumFaces, rotation included: what the table approximates.</summary>
     public AeroResult ExactTableValue(in AeroContext ctx, ForceTable shape)

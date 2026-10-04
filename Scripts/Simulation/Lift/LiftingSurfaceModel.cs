@@ -155,7 +155,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     /// <summary>The faces' forces: the force table if it is for this surface, else the face loop.</summary>
     private AeroResult InnerForces(in AeroContext ctx)
     {
-        // (kept current through damage by patches - AeroGridComponent.PatchTable - so no longer tied to a surface version)
+        // (kept current through damage by the local chunk updates - so no longer tied to a surface version)
         if (_table != null && InnerModel is DampedShadowedDragModel d)
         {
             UsedTable = true;

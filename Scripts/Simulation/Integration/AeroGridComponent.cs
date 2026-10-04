@@ -448,8 +448,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
 
         long tp = AeroCost.Start();
-        PatchTable(_patchRemoved, removed: true);
-        PatchTable(_patchAdded, removed: false);
         if (_chunks != null && LocalUpdates)
         {
             // the chunks the changed blocks reach (2 m around): recomputed in the background (TickLocal)
@@ -477,13 +475,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     // -- Damage, at once: the force table patched block by block --
     private readonly List<(Vector3I, Vector3I)> _patchRemoved = new(), _patchAdded = new();
-    /// <summary>Patches applied since the running rebuild took its snapshot: replayed onto its table at the swap.</summary>
-    private readonly List<(Vector3 n, Vector3 p, float area)> _patchLog = new();
 
-    /// <summary>Patch the force table block by block on damage (off: measured against rebuilt tables it did no
-    /// better than leaving the table be until the rebuild - the patches are flat and unshadowed, the rebuilt surface
-    /// smooth and shadowed - and worse where a chunk went; the wings, which carry the big changes, follow at once).</summary>
-    public static bool TablePatching = false;
 
     /// <summary>A piece just broken off: its parent's shares for its chunks, as its forces until its own build.</summary>
     private void TrySeed(WorldTransform wt)
@@ -591,13 +583,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _gridAccessor.SetOctree(_octree);
             AeroScheduler.EnqueueRebuild(this);
         }
-    }
-
-    private void PatchTable(List<(Vector3I min, Vector3I max)> boxes, bool removed)
-    {
-        if (!TablePatching) return;
-        if (_model?.Table == null || _model.InnerModel is not DampedShadowedDragModel dsm || _gridAccessor == null) return;
-        TablePatcher.PatchBoxes(_model.Table, dsm, _gridAccessor, boxes, removed, _staggeredBuildActive ? _patchLog : null);
     }
 
     // ── Compute (called from debug draw for now) ──
@@ -1395,7 +1380,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
         var cellGeo = SnapshotGridAccessor.CellGeometry(cellScale);
         _cellScale = cellScale;
         _builtTable = null; _builtChunks = null;
-        _patchLog.Clear();   // (the snapshot below has every change so far)
         _builtWings = null; _builtShadow = null;
         var spareShadow = _spareShadow; _spareShadow = null;
         // (its own thread, not a thread-pool one: a rebuild runs ~1 s on a big grid, and the game's own async work
@@ -1518,9 +1502,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 if (_model.InnerModel is DampedShadowedDragModel dsm && _builtShadow != null) _spareShadow = dsm.InstallShadowMap(_builtShadow);
                 if (_builtTable != null)
                 {
-                    // changes since the rebuild took its snapshot: onto its table too
-                    if (_model.InnerModel is DampedShadowedDragModel pdsm)
-                        foreach (var (n, p, area) in _patchLog) pdsm.AddPatch(_builtTable, n, p, area);
                     _model.InstallForceTable(_builtTable);
                     _chunks = _builtChunks; _builtChunks = null; _chunkGen++;
                     // a big grid flies on its table: its surfaces and per-face arrays go (~30 MB for Red Ship; damage
@@ -1533,7 +1514,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
                         _spareShadow = null;
                     }
                 }
-                _patchLog.Clear();
                 _builtTable = null;
                 _builtShadow = null;
                 _components.Clear();

@@ -80,44 +80,6 @@ public sealed class ForceTable
     public Span<float> At(int face, int i, int j) => _f.AsSpan(Index(face, i, j) * Stride, Stride);
     public Span<float> AtJ(int face, int i, int j) => _j.AsSpan(IndexJ(face, i, j) * 9, 9);
 
-    /// <summary>
-    /// Damage, at once: a flat patch of faces (unit normal n, centre p grid-local, area - negative to take faces
-    /// away) added to every direction, by the face model's own per-face terms (assumed reached by the air: the
-    /// background rebuild brings the exact shadowing and fades in). ~0.1 ms for a large block's dozen patches.
-    /// </summary>
-    public void AddPatch(Vector3 n, Vector3 p, float area, float cdBluff, float cpMax, float cfSkin, float streamlining, float cpBase)
-    {
-        float baseCp = streamlining > 0f ? cpBase * (1f - 0.7f * streamlining) : cpBase;
-        for (int face = 0; face < 6; face++)
-            for (int i = 0; i <= N; i++)
-                for (int j = 0; j <= N; j++)
-                {
-                    var v = Direction(face, i, j, N);
-                    float cosA = Vector3.Dot(v, n);
-                    float cpSub, cpSup, frontal = 0f;
-                    if (cosA > 0)
-                    {
-                        cpSub = cdBluff * cosA; cpSup = cpMax * cosA * cosA;
-                        if (streamlining > 0f) { float m = 1f - streamlining * (1f - (0.08f + 0.92f * cosA * cosA)); cpSub *= m; cpSup *= m; }
-                        frontal = area * cosA;
-                    }
-                    else
-                    {
-                        float ramp = MathF.Min(1f, -cosA * 2f); ramp = ramp * ramp * (3f - 2f * ramp);
-                        cpSub = cpSup = baseCp * ramp;
-                    }
-                    var fric = Vector3.Zero;
-                    float sinSq = 1f - cosA * cosA;
-                    if (cfSkin > 0 && sinSq > 1e-12f) fric = (cosA * n - v) * (cfSkin * area / MathF.Sqrt(sinSq));   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
-                    var f0 = -cpSub * area * n + fric; var f1 = -cpSup * area * n + fric;
-                    var t0 = Vector3.Cross(p, f0); var t1 = Vector3.Cross(p, f1);
-                    var e = At(face, i, j);
-                    e[0] += f0.X; e[1] += f0.Y; e[2] += f0.Z; e[3] += f1.X; e[4] += f1.Y; e[5] += f1.Z;
-                    e[6] += t0.X; e[7] += t0.Y; e[8] += t0.Z; e[9] += t1.X; e[10] += t1.Y; e[11] += t1.Z;
-                    e[12] += frontal;
-                }
-    }
-
     /// <summary>The cube face and (fractional) grid coordinates of a direction.</summary>
     static void Locate(Vector3 d, int n, out int face, out float u, out float w)
     {
