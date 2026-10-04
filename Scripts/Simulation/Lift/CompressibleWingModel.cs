@@ -361,7 +361,7 @@ public class CompressibleWingModel : IWingLiftModel
         }
 
         // Throttled wing diagnostics (~1/sec)
-        if (--_logCooldown <= 0 && n > 0)
+        if (AeroLog.Verbose && --_logCooldown <= 0 && n > 0)   // (a line per wing per second for every winged grid: verbose only)
         {
             _logCooldown = 60;
             float mach = speedOfSound > 0 ? comSpeed / speedOfSound : 0;

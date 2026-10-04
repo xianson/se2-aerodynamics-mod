@@ -156,7 +156,8 @@ public sealed class ForceTable
     public AeroResult Evaluate(in AeroContext ctx, float subsonicLimit, float supersonicLimit, float streamlining)
     {
         float speed = ctx.Speed;
-        if (speed < 0.01f || ctx.Atmosphere.Density < 1e-8) return default;
+        // (a NaN or infinite velocity made the table index int.MinValue and throw every frame - ~200 ms each)
+        if (!float.IsFinite(speed) || speed < 0.01f || ctx.Atmosphere.Density < 1e-8) return default;
         Vector3 vHat = ctx.Velocity / speed;
         Span<float> s = stackalloc float[Stride];
         Sample(vHat, s);

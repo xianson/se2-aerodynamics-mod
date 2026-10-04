@@ -338,6 +338,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         AeroEntryFx.Forget(this);
+        ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
         // (the ground ray's ignore list: released when no ray is in flight - the engine reads it until the cast completes)
         if (Ground.HasIgnore && !Ground.InFlight) { try { Ground.Ignore.Dispose(); } catch { } Ground.HasIgnore = false; }
         _initialized = false;
@@ -870,7 +871,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             if (checkEuler.LengthSquared() > 1f) // > ~1 radian total error
             {
                 _holdOrientation = gridOrientation;
-                Log.Default?.Info("[AERO-HOLD] Re-captured hold orientation (error too large)");
+                if (AeroLog.Verbose) Log.Default?.Info("[AERO-HOLD] Re-captured hold orientation (error too large)");   // (tumbling debris: lines/s)
             }
         }
 
@@ -954,7 +955,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         bool inputLog = _csLogCooldown <= 0 && hasInput;
         bool startupLog = _csLogOnceCountdown > 0 && --_csLogOnceCountdown == 0;
-        bool shouldLog = inputLog || startupLog;
+        bool shouldLog = AeroLog.Verbose && (inputLog || startupLog);   // (~20 + 13 per surface lines every 2 s per piloted grid: verbose only)
         if (inputLog) _csLogCooldown = 120;
         _csLogCooldown--;
 

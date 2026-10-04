@@ -62,6 +62,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         _wings = Detector.Detect(grid, surface, blockSize);
         _wingsVersion++;
+        IndexWingCells();   // (the wing-loss index follows every new wing list, not only installs: else WingRemaining used the old order)
         InvalidateLiftModelInfluence();
     }
 
@@ -112,6 +113,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         _wings = Detector.Update(grid, surface, blockSize, addedCells, removedCells);
         _wingsVersion++;
+        IndexWingCells();
         InvalidateLiftModelInfluence();
     }
 
@@ -126,6 +128,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         _wings = null;
         _wingsVersion++;
+        IndexWingCells();
         Detector.Invalidate();
     }
 

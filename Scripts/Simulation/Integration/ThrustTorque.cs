@@ -166,6 +166,11 @@ public static class ThrustTorque
     /// <summary>Thruster flames for the controller's sharing (harness: aeroflames on|off).</summary>
     public static bool FlamesEnabled = true;
     public static bool AnyPublished => _publishedCount > 0;
+    /// <summary>A grid leaving the scene: its published shares dropped (a grid destroyed while piloted stayed forever).</summary>
+    internal static void Forget(AeroGridComponent aero)
+    {
+        lock (_published) { if (_published.Remove(aero, out var gone)) { gone.Gone = true; _publishedCount = _published.Count; } }
+    }
     public static volatile string ClientNote = "-";
     public static int ServerCalls, ClientCalls, FlameLookups, FlameHits, FlameLit;
 

@@ -310,7 +310,7 @@ public partial class AeroGridComponent
         }
 
         // ── Throttled drag-vs-Mach log ──
-        if (aero.HasResult && aero.LastSpeed > 50f && --_simDragLogCooldown <= 0)
+        if (AeroLog.Verbose && aero.HasResult && aero.LastSpeed > 50f && --_simDragLogCooldown <= 0)
         {
             _simDragLogCooldown = 60;
             var r = aero.LastResult;
