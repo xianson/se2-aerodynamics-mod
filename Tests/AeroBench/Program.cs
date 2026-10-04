@@ -495,6 +495,39 @@ static class Program
             Console.WriteLine($"AeroBench: {(fails == 0 ? "1/1 passed" : fails + " FAILED")}");
             return fails == 0 ? 0 : 1;
         }
+        if (args.Length > 0 && args[0] == "strain")
+        {
+            // wing strain (Lift/WingStrain.cs) on the real ships, by hand: per wing, the wing loading (lift / planform
+            // area) that snaps it - light armour (the boxes say nothing of armour), Structure.WingStrength 1
+            var ships = args.Length > 1 ? args.Skip(1) : Directory.GetFiles(dataDir, "*.boxes").Select(Path.GetFileNameWithoutExtension);
+            foreach (var name in ships)
+            {
+                var boxes = LoadBoxes(Path.Combine(dataDir, name + ".boxes"));
+                var ship = Build(name, boxes);
+                int k = SnapshotGridAccessor.CellScale(BlockSize); var (cs, co) = SnapshotGridAccessor.CellGeometry(k);
+                var wings = ship.Model.Wings ?? new List<LiftingSurface>();
+                Console.WriteLine($"{name}: block {BlockSize} m, {wings.Count} wings");
+                for (int i = 0; i < wings.Count; i++)
+                {
+                    var w = wings[i];
+                    var r = WingStrain.Analyze(w, cs, co, ship.Com);
+                    if (r == null) continue;
+                    var sec = new WingStrain.Sections(r, k, (int)MathF.Round(BlockSize / 0.25f));
+                    foreach (var (lo, hi) in boxes) if (sec.Covers(lo, hi)) sec.Add(lo, hi, false);
+                    var line = $"   wing {i}: span {w.Span:F1} m along {w.SpanAxis}, area {w.PlanformArea:F1} m2";
+                    for (int s = 0; s < 2; s++)
+                    {
+                        var side = r.Get(s);
+                        if (side == null) continue;
+                        WingStrain.Finish(side, sec.Capacities(s));
+                        float snap = side.Compliance > 0 ? WingStrain.BreakStrain / (side.Compliance * w.PlanformArea) : float.PositiveInfinity;
+                        line += $" | side {(side.Dir > 0 ? "+" : "-")}: worst station {side.Critical}/{side.Stations} ({side.Critical * cs:F1} m out), snaps at {snap / 1000f:F1} kPa";
+                    }
+                    Console.WriteLine(line);
+                }
+            }
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "scale")
         {
             // coarse cells against the grid's own, same ship: forces over random directions
