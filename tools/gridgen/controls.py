@@ -238,12 +238,16 @@ def _panel(model, d, comp, ci, cells, side, span_ax, t_ax, ctl, mode, pitch_othe
     n_target = 5 if comp.role == "wing" else 2
     clean_style = clean_style_of(d)
     cf = float(ctl.get("chord", 0.45 if clean_style else 0.3))
+    min_seg = 1
     if ctl.get("square", clean_style):
-        # square-ish segments: span (columns per hinge) ~ the flap's chord (rows)
+        # square-ish segments, as wide as the aero detector needs a flap panel to be a wing: span >= 1.5 x chord
         mid = keys[len(keys) // 2]
         zs = [z for t, z in cols[mid]]
         n_rows = max(zs) - min(zs) + 1
-        per = int(ctl.get("per_hinge", max(2, int(round(cf * n_rows)))))
+        fr = flap_rows(n_rows, cf)
+        per = int(ctl.get("per_hinge", max(3, min_panel_span(fr))))
+        if fr >= FLAP_LIFT_ROWS:
+            min_seg = min_panel_span(fr)
     else:
         per = int(ctl.get("per_hinge", max(2 if d["grid"] == "large" else 3, int(math.ceil(len(keys) / n_target)))))
     coverage = ctl.get("coverage", d.get("coverage", "full"))
@@ -271,7 +275,7 @@ def _panel(model, d, comp, ci, cells, side, span_ax, t_ax, ctl, mode, pitch_othe
             rem = len(ks) - i
             target = rem if rem <= per + per // 2 and coverage != "sketch" else min(per, rem)
             done = False
-            for n in range(target, 0, -1):
+            for n in range(target, min(min_seg, target) - 1, -1):
                 plan = _plan(model, d, comp, ci, cols, ks[i:i + n], span_ax, t_ax, cf, role, side, hinge_name,
                              head_name, flap_block, cat, banned)
                 if plan is not None:
@@ -295,15 +299,48 @@ def _structure(model):
     return model.solid | model.engine_vox
 
 
+# What the aero mod's wing detector accepts (measured with aero_probe on isolated 1-block-thick plates): a plate is a
+# wing only if its shorter side is at least 2 blocks (t/c <= 0.5) and its longer side at least 1.5x the shorter -
+# a 1-block chord never, a square panel never.  A flap is its own grid in game (HingeSurfaces: "the flap's real
+# aerodynamics are its own grid's"), so:
+FIXED_MIN_ROWS = 1      # chord rows ahead of the hinge row that stay on the main grid (with the hinge row: >= 2, t/c <= 0.5)
+FLAP_LIFT_ROWS = 2      # a flap of this many rows or more is a wing on its own grid (if its span is >= 1.5x)
+
+
+def flap_rows(n, cf):
+    """Flap rows for a local chord of n rows: at least FLAP_LIFT_ROWS where the chord keeps FIXED_MIN_ROWS + the hinge
+    row ahead of it; a 4-row chord gets a 1-row (control-only) flap; 3 rows or fewer none inside the chord (only the
+    trailing-edge extension: hinge on the TE row, the flap a new row aft)."""
+    room = n - FIXED_MIN_ROWS - 1
+    if room <= 0:
+        return 0
+    if room < FLAP_LIFT_ROWS:
+        return room
+    return int(min(room, max(FLAP_LIFT_ROWS, round(cf * n), 3 if n >= 12 else 0)))
+
+
+def min_panel_span(fr):
+    """Columns per hinge so a lifting flap panel (fr rows) is a wing on its own grid: span >= 1.5 x chord."""
+    return int(math.ceil(1.5 * max(fr, FLAP_LIFT_ROWS)))
+
+
 def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_name, head_name, flap_block, cat,
           banned=()):
     """Plan one segment over the given columns without changing the model; None if it does not fit."""
     lat = model.lat
     TE = {k: max(z for t, z in cols[k]) for k in chunk}
     LE = {k: min(z for t, z in cols[k]) for k in chunk}
-    # flap chord: the fraction of the local chord, at least 2 rows (3 on long chords) where the chord allows
-    nf = lambda n: max(1 if n < 5 else (2 if n < 9 else 3), int(round(cf * n)))
-    target = [TE[k] - nf(TE[k] - LE[k] + 1) for k in chunk]
+    # flap chord (flap_rows): a lifting flap where the chord allows, never eating the fixed wing below
+    # FIXED_MIN_ROWS rows ahead of the hinge row
+    wing = comp.role == "wing"
+    if wing:
+        target = [TE[k] - max(1, flap_rows(TE[k] - LE[k] + 1, cf)) for k in chunk]
+        x_min = max(LE.values()) + FIXED_MIN_ROWS    # hinge row: at least FIXED_MIN_ROWS rows behind every LE
+    else:
+        # tails keep their control first: the fraction of the chord, at least 1-2 rows, the hinge anywhere
+        nf = lambda n: max(1 if n < 5 else (2 if n < 9 else 3), int(round(cf * n)))
+        target = [TE[k] - nf(TE[k] - LE[k] + 1) for k in chunk]
+        x_min = min(LE.values())
     x_top = min(int(np.median(target)), min(TE.values()) - 1)
     order = sorted(chunk, key=lambda k: abs(k - chunk[len(chunk) // 2]))
     span_vec = [0, 0, 0]
@@ -319,7 +356,12 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
     n0 = 0
     # candidate hinge lines: inside the chord (flap = the aft rows), then - for chords too short to keep a leading
     # row once the hinge row is cut - the recipe "hinge on the trailing-edge row, flap trailing aft as a new row"
-    cands = [(x_h, []) for x_h in range(x_top, min(LE.values()) - 1, -1)][:4]
+    # the target hinge row first, then smaller flaps (hinge further aft: more fixed wing kept), then larger ones
+    aft = list(range(x_top + 1, min(TE.values())))
+    fwd = list(range(x_top - 1, x_min - 1, -1))
+    cands = [(x_h, []) for x_h in ([x_top] if x_top >= x_min else []) + aft + fwd[:3]]
+    if wing and any(flap_rows(TE[k] - LE[k] + 1, cf) == 0 for k in chunk):
+        cands = []                     # a short wing chord in the chunk: only the trailing-edge extension
     xe = min(TE.values())
     ext = []
     for k in chunk:
@@ -332,6 +374,9 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
     if ext:
         cands.append((xe, ext))
     for x_h, ext in cands:
+        frows = 1 if ext else max(TE[k] - x_h for k in chunk)
+        if clean_style_of(d) and frows >= FLAP_LIFT_ROWS and len(chunk) < min_panel_span(frows):
+            continue                    # a lifting flap panel must be a wing on its own grid: span >= 1.5 x chord
         flap = [_idx(span_ax, t_ax, k, t, z) for k in chunk for (t, z) in cols[k] if z > x_h] + ext
         if {v[span_ax] for v in flap} != set(chunk):
             continue
@@ -356,6 +401,10 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
                 if res is None:
                     continue
                 swept, carve = res
+                # the fixed wing stays a wing for the aero detector: no column of the chunk may lose chord rows to
+                # the flap's swing below min(FIXED_MIN_ROWS + 1, its own chord) (the hinge cell itself excepted)
+                if comp.role == "wing" and _thins_fixed_wing(cols, chunk, span_ax, t_ax, x_h, hidx, carve):
+                    continue            # (tails: the elevator / rudder matters more than the tail's own lift)
                 plan = dict(comp=comp, chunk=chunk, span_ax=span_ax, t_ax=t_ax, x_h=x_h, hidx=hidx, flap=flap,
                             extended=len(ext), row=row, te_slope=clean_style_of(d),
                             carve=carve, swept=swept, orient_h=orient_h, lim=lim, pos_sense=pos_sense, role=role,
@@ -370,6 +419,22 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
             if best is not None:
                 return best
     return None
+
+
+def _thins_fixed_wing(cols, chunk, span_ax, t_ax, x_h, hidx, carve):
+    """True if the flap's swing would leave the fixed strip over this chunk too thin for the aero detector: its mean
+    chord (rows at or ahead of the hinge row, less the carved cells and the hinge) below min(FIXED_MIN_ROWS + 1, the
+    mean before).  (The detector works on the connected planform: a narrow column next to the hinge is fine, a
+    strip that is one row deep on average is not.)"""
+    before, after = [], []
+    for k in chunk:
+        rows = {z for t, z in cols[k] if z <= x_h}
+        lost = {v[2] for v in carve if v[span_ax] == k and v[2] <= x_h}
+        if hidx[span_ax] == k:
+            lost.add(x_h)
+        before.append(len(rows))
+        after.append(len(rows - lost))
+    return float(np.mean(after)) < min(FIXED_MIN_ROWS + 1, float(np.mean(before))) - 1e-9
 
 
 def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0, blocked=None):

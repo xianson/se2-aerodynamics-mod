@@ -25,6 +25,7 @@ import se2blocks as sb  # noqa: E402
 import spec as specio  # noqa: E402
 import validate as val  # noqa: E402
 import voxel as vx  # noqa: E402
+import gridgen as gg  # noqa: E402
 
 CAT = sb.Catalog(snapshot=True)
 
@@ -449,7 +450,8 @@ class TestAero(unittest.TestCase):
 SMALL = {
     "name": "unit_plane", "grid": "large",
     "fuselage": {"length": 40, "width": 11, "height": 11, "nose": 0.15, "tail": 0.3},
-    "surfaces": [{"id": "wing", "role": "wing", "span": 44, "root_chord": 11, "tip_chord": 8, "x": 14, "z": "mid"}],
+    # (wing at 22 m: the CoM trims within the wing slide's +-10 m limit; at 14 m it only did by overshooting it)
+    "surfaces": [{"id": "wing", "role": "wing", "span": 44, "root_chord": 11, "tip_chord": 8, "x": 22, "z": "mid"}],
     "tail": "conventional",
     "engines": [{"mount": "pod", "type": "atmospheric", "size": 500, "span_frac": [0.4]}],
 }
@@ -556,6 +558,30 @@ SKETCH = {"name": "unit_sketch", "fuselage": {"length": 19, "width": 3.5, "heigh
           "coverage": "sketch", "engines": [{"mount": "tail", "type": "hydrogen", "size": 200}]}
 
 
+class TestAeroRules(unittest.TestCase):
+    """Rules from the aero mod's own detector (measured with aero_probe on flat 1-block plates): a plate is a wing
+    only with its shorter side >= 2 blocks and its longer side >= 1.5x that; each flap is its own grid in game."""
+    def test_flap_rows(self):
+        F, L = controls.FIXED_MIN_ROWS, controls.FLAP_LIFT_ROWS
+        self.assertEqual(controls.flap_rows(F + 1, 0.45), 0)      # too short: trailing-edge extension flap only
+        for n in range(F + 2, 20):
+            fr = controls.flap_rows(n, 0.45)
+            self.assertGreaterEqual(n - fr - 1, F)                # the fixed rows + the hinge row always stay
+            if n >= F + 1 + L:
+                self.assertGreaterEqual(fr, L)                    # a lifting flap where the chord allows
+
+    def test_min_panel_span(self):
+        for fr in (1, 2, 3, 4):
+            self.assertGreaterEqual(controls.min_panel_span(fr), 1.5 * max(fr, 2))
+
+    def test_shape_cells_as_the_game(self):
+        """Exported occupied cells: a small slope is a 6-of-8 staircase, a corner 4, an inverted corner 8."""
+        counts = {n: len(gg.block_cell_lines(CAT, n, (0, 0, 0), sb.IDENTITY))
+                  for n in ("ArmorSlopeLight50", "ArmorCornerLight50", "ArmorInvCornerLight50", "ArmorCubeLight50")}
+        self.assertEqual(counts, {"ArmorSlopeLight50": 6, "ArmorCornerLight50": 4, "ArmorInvCornerLight50": 8,
+                                  "ArmorCubeLight50": 1})
+
+
 class TestCleanStyle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -575,6 +601,12 @@ class TestCleanStyle(unittest.TestCase):
         # cubes); only a hinge's half side against a cube may remain
         det = v["checks"]["connected"]["detail"]
         self.assertIn("margin:", det)
+        # lifting flap panels are wings on their own grids: span >= 1.5 x chord
+        for h in self.side["hinges"]:
+            cols = round(h["span_m"] / self.m.lat.B)
+            rows = h["flap_blocks"] / max(cols, 1)
+            if rows >= controls.FLAP_LIFT_ROWS:
+                self.assertGreaterEqual(cols, 1.5 * rows - 1e-9, h)
         via = det.split("joints through a partial face")[-1].split(")")[0]
         for shaped in ("Slope", "Corner"):
             self.assertNotIn(shaped, via)
@@ -625,7 +657,10 @@ class TestCleanStyle(unittest.TestCase):
         self.assertEqual(sorted(s["role"] for s in wing), ["aileron", "aileron", "flap", "flap"])
         for s in wing:
             rows = {f["voxel"][2] for f in s["flaps"]}
-            self.assertLessEqual(abs(len(s["columns"]) - len(rows)), 1)   # span ~ chord: square-ish
+            # square-ish, as wide as a lifting flap must be to be a wing on its own grid (span >= 1.5 x chord)
+            self.assertLessEqual(len(s["columns"]), 1.5 * max(len(rows), 2) + 3)
+            if len(rows) >= controls.FLAP_LIFT_ROWS:
+                self.assertGreaterEqual(len(s["columns"]), 1.5 * len(rows))
         self.assertTrue(all(h["limits"][0] < 90 < h["limits"][1] or h["limits"][0] == 90 for h in self.side["hinges"]))
 
     def test_skin_is_slopes_only(self):

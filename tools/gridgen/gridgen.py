@@ -20,6 +20,7 @@ import argparse
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -36,18 +37,68 @@ import spec as specio  # noqa: E402
 import validate as val  # noqa: E402
 
 
-def run_design(d, cat, out, do_preview=True, log=print):
-    t0 = time.time()
-    name = d["name"]
+def _build_and_check(d, cat, spath, log):
     m = bd.build(d, cat, log=lambda s: log(s))
-    spath = os.path.join(out, name + ".txt")
-    jpath = os.path.join(out, name + ".json")
     blocks, side = specio.write(spath, m)
     v = val.validate(spath, side, cat)
     # generator-side failures (an engine with no clear spot, no room for the cockpit...) fail the design too
     v["checks"]["generator"] = dict(ok=not side["problems"], detail="; ".join(side["problems"]))
     v["ok"] = v["ok"] and not side["problems"]
     side["validation"] = v
+    return m, blocks, side
+
+
+def probe_available():
+    return os.path.exists(os.path.join(PROBE_DIR, "AeroProbe.csproj")) and shutil.which("dotnet") is not None
+
+
+def run_design(d, cat, out, do_preview=True, log=print, probe_trim=True):
+    """Build, write, validate.  Then (when the aero probe can run) trim to the aero mod's OWN neutral point: probe the
+    plane without the thruster intakes (a mod-side ram drag, not the airframe), and while the measured NP - CoM misses
+    static_margin x MAC by more than a quarter of it, shift the neutral-point estimate by the miss and rebuild (the
+    batteries and the wing slide then move the CoM).  The best passing build is kept."""
+    t0 = time.time()
+    name = d["name"]
+    spath = os.path.join(out, name + ".txt")
+    jpath = os.path.join(out, name + ".json")
+    m, blocks, side = _build_and_check(d, cat, spath, log)
+    if probe_trim and probe_available() and d.get("probe_trim", True) and m.np_res is not None:
+        want = float(d.get("static_margin", 0.1)) * float(m.np_res["mac"])
+        shift = float(d.get("np_shift", 0.0))
+        best, hist = None, []
+        for it in range(6):
+            r = probe_spec(spath, cat, intake=False)
+            off = r.get("NP_aft_of_CoM")
+            if off is None:
+                break
+            err = off - want
+            side["aero_probe"] = dict(np_aft_of_com_m=round(off, 3), want_m=round(want, 3), np_shift_m=round(shift, 3),
+                                      CL4=r.get("CL4"), CL8=r.get("CL8"), CD0_no_intake=r.get("CD0"))
+            # passing first; then on the stable side (NP at least half the wanted margin behind the CoM); then closest
+            key = (not side["validation"]["ok"], off < 0.5 * want, abs(err))
+            if best is None or key < best[0]:
+                best = (key, m, blocks, side, open(spath, encoding="utf-8").read())
+            hist.append((shift, off, side["validation"]["ok"]))
+            if abs(err) <= max(0.25 * want, 0.1) and side["validation"]["ok"]:
+                break
+            # secant on (shift -> NP - CoM) over the last two passing builds (moving the CoM aft also slides the wing:
+            # the response is not 1:1), else a damped step
+            ok_h = [h for h in hist if h[2]]
+            step = 0.7 * err
+            if len(ok_h) >= 2 and abs(ok_h[-1][0] - ok_h[-2][0]) > 0.05:
+                slope = (ok_h[-1][1] - ok_h[-2][1]) / (ok_h[-1][0] - ok_h[-2][0])
+                if -4.0 < slope < -0.25:
+                    step = -err / slope
+            if not side["validation"]["ok"]:
+                step = -0.5 * (shift - (ok_h[-1][0] if ok_h else float(d.get("np_shift", 0.0))))   # back off
+            shift += step
+            log(f"    aero probe: NP {off:+.2f} m aft of the CoM (want {want:.2f}): neutral point shifted {shift:+.2f} m")
+            d2 = dict(d)
+            d2["np_shift"] = shift
+            m, blocks, side = _build_and_check(d2, cat, spath, log)
+        _, m, blocks, side, txt = best
+        with open(spath, "w", encoding="utf-8") as fh:
+            fh.write(txt)
     with open(jpath, "w", encoding="utf-8") as fh:
         json.dump(side, fh, indent=1)
     if do_preview:
@@ -142,6 +193,32 @@ def cmd_validate(args):
     return 0 if v["ok"] else 1
 
 
+def block_cell_lines(cat, name, pos, orient):
+    """A block's occupied cells as .boxes lines (inclusive, game cell indexing).  Plain blocks: their AABB.  Armor
+    shapes: the 0.25 m cells holding a positive volume of the cut cube (solid where n.p <= cut, p in [-0.5, 0.5] of
+    the block) - as the game's occupied-cell groups make a slope a staircase (a small slope: 6 of 8 cells, a corner
+    4).  The same rule reproduces the measured mount counts (slope sides 3 of 4, corner faces 3 of 4)."""
+    lo, hi = cat.box(name, pos, orient)
+    lo, hi = np.asarray(lo), np.asarray(hi)
+    off = sb.CAL["aabb_low_offset"]
+    shape = sb.shape_of(name)
+    if shape in (None, "cube") or sb.SHAPE_CUT.get(shape) is None:
+        return [" ".join(str(int(v)) for v in list(lo + off) + list(hi))]
+    n = sb.orient_matrix(*orient) @ np.array(sb.CAL["shape_normal"][shape], float)
+    cut = sb.SHAPE_CUT[shape]
+    size = (hi - lo).astype(float)
+    out = []
+    for i in range(int(size[0])):
+        for j in range(int(size[1])):
+            for k in range(int(size[2])):
+                c = (np.array([i, j, k]) + 0.5) / size - 0.5          # sub-cell centre, block units
+                half = 0.5 / size
+                if float(n @ c) - float(np.abs(n) @ half) < cut - 1e-9:   # positive volume on the solid side
+                    g = lo + np.array([i, j, k]) + off
+                    out.append(" ".join(str(int(v)) for v in list(g) + list(g)))
+    return out
+
+
 def export_boxes(spec_path, out_path, cat, flaps=False):
     """A spec as AeroBench/aero_probe .boxes: each main-grid block's occupied cells, inclusive, in the GAME's cell
     indexing (the catalog's AABB: continuous [lo, hi) is cells lo+1..hi), flaps optional (in
@@ -150,20 +227,118 @@ def export_boxes(spec_path, out_path, cat, flaps=False):
     grid = "small"
     lines = []
     for name, pos, orient in sp["main"]:
-        lo, hi = cat.box(name, pos, orient)
-        lines.append(" ".join(str(int(v)) for v in list(np.asarray(lo) + sb.CAL["aabb_low_offset"]) + list(hi)))
-        if name.endswith("250") or "250" in name:
-            grid = "large"
+        lines += block_cell_lines(cat, name, pos, orient)
+        if name.startswith("Armor") and "250" in name:      # (armor names the grid: ...Light50 small, ...Light250
+            grid = "large"                                  #  large; Battery250 etc. are small-grid blocks too)
     if flaps:
         for k, (bi, mn, mx) in enumerate(sp["hinges"]):
             hname, hpos, horient = sp["main"][bi]
             origin, Rh = sb.headgrid_frame(hpos, horient)
             for fname, fpos, forient in sp["flaps"].get(k, []):
                 p, o = sb.from_headgrid(fpos, forient, origin, Rh)
-                lo, hi = cat.box(fname, p, o)
-                lines.append(" ".join(str(int(v)) for v in list(np.asarray(lo) + sb.CAL["aabb_low_offset"]) + list(hi)))
+                lines += block_cell_lines(cat, fname, p, o)
     with open(out_path, "w", encoding="utf-8") as fh:
         fh.write(f"# blockSize {2.5 if grid == 'large' else 0.5}\n" + "\n".join(lines) + "\n")
+
+
+PROBE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aero_probe")
+
+
+def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True):
+    """The aero mod's own model on a spec, offline (aero_probe): the main grid plus every hinge head grid as a
+    separate aero grid (as in game), true airflow, torques about the mass CoM.  Returns the probe's SUMMARY as a dict
+    (CL4, CL8, CD0 on the frontal area, NP_aft_of_CoM in m, frontal m2, drag0_kN) plus the full text."""
+    import subprocess
+    import tempfile
+    sp = specio.parse(spec_path, cat)
+    work = work or tempfile.mkdtemp(prefix="probe_")
+    os.makedirs(work, exist_ok=True)
+    base = os.path.splitext(os.path.basename(spec_path))[0]
+    files = [os.path.join(work, base + "_main.boxes")]
+    export_boxes(spec_path, files[0], cat)
+    M = np.zeros(3)
+    W = 0.0
+
+    def add(name, p, o):
+        nonlocal M, W
+        lo, hi = cat.box(name, p, o)
+        m = float(cat[name].mass)
+        M += m * (np.asarray(lo) + np.asarray(hi)) / 2.0
+        W += m
+        return lo, hi
+    thr = []
+    for name, pos, orient in sp["main"]:
+        lo, hi = add(name, pos, orient)
+        if "Thruster" in name:
+            # as BlockComponentFactory.BuildBlockInfo: occupied cells (game indices lo+1..hi), centre in m, min cell,
+            # the block's Forward
+            gmin = np.asarray(lo) + sb.CAL["aabb_low_offset"]
+            gmax = np.asarray(hi)
+            c = (gmin + gmax) * 0.5 * sb.CELL_M
+            f = sb.orient_matrix(*orient) @ np.array([0, 0, -1])
+            thr += ["--thruster", ",".join(f"{x:g}" for x in list(c) + list(gmin) + list(f))]
+    for k, (bi, mn, mx) in enumerate(sp["hinges"]):
+        hname, hpos, horient = sp["main"][bi]
+        origin, Rh = sb.headgrid_frame(hpos, horient)
+        lines = []
+        for fname, fpos, forient in sp["flaps"].get(k, []):
+            p, o = sb.from_headgrid(fpos, forient, origin, Rh)
+            add(fname, p, o)
+            lines += block_cell_lines(cat, fname, p, o)
+        if lines:
+            f = os.path.join(work, f"{base}_head{k:02d}.boxes")
+            open(f, "w", encoding="utf-8").write("# blockSize 0.5" + chr(10) + chr(10).join(lines) + chr(10))
+            files.append(f)
+    com = M / W + 0.5            # continuous cell coordinates -> the game's cell index space (cell i spans [i-1, i))
+    exe = [p for p in (os.path.join(PROBE_DIR, "bin", "Release", "net9.0", "AeroProbe.dll"),) if os.path.exists(p)]
+    if not exe:
+        subprocess.run(["dotnet", "build", "-c", "Release"], cwd=PROBE_DIR, check=True, capture_output=True)
+        exe = [os.path.join(PROBE_DIR, "bin", "Release", "net9.0", "AeroProbe.dll")]
+    extra = thr + ([] if intake else ["--no-intake"])
+    out = subprocess.run(["dotnet", exe[0]] + files + ["--speed", str(speed), "--com", ",".join(f"{c:.3f}" for c in com),
+                                                      "--quiet"] + extra, capture_output=True, text=True,
+                         check=True).stdout
+    res = {"text": out}
+    for line in out.splitlines():
+        if "SUMMARY" in line:
+            t = line.split()
+            for i in range(t.index("SUMMARY") + 1, len(t) - 1, 2):
+                v = t[i + 1].replace("m", "")
+                try:
+                    res[t[i]] = float(v)
+                except ValueError:
+                    res[t[i]] = None
+    return res
+
+
+def cmd_probe(args):
+    """The aero probe over designs: as the game computes it today (every thruster carries the mod's AirIntake with a
+    30 m2 capture area) and without that intake.  CL / CD on the in-game readout's reference area (see aero_probe)."""
+    cat = sb.Catalog()
+    names = args.names or [os.path.splitext(f)[0] for f in sorted(os.listdir(os.path.join(HERE, "designs")))
+                           if f.endswith(".json")]
+    print(f"{'':16s} {'--------- as in game (intake) ---------':40s} {'----- without the intake -----':30s}")
+    print(f"{'design':16s} {'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'NP-CoM':>7s} {'D0 kN':>7s}   "
+          f"{'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'NP-CoM':>7s} {'D0 kN':>7s}  {'Aref':>5s}  flags")
+    for n in names:
+        src = n if n.endswith(".txt") else os.path.join(args.out, n + ".txt")
+        a = probe_spec(src, cat)
+        b = probe_spec(src, cat, intake=False)
+        if args.verbose:
+            print(a["text"])
+            print(b["text"])
+        flags = []
+        for tag, r in (("game", a), ("no-intake", b)):
+            f = [x for x, bad in (("CD0>0.6", r.get("CD0", 9) > 0.6), ("CL8<0.3", r.get("CL8", 0) < 0.3)) if bad]
+            if f:
+                flags.append(f"{tag}: {' '.join(f)}")
+
+        def row(r):
+            npv = r.get("NP_aft_of_CoM")
+            return (f"{r.get('CL4', 0):6.3f} {r.get('CL8', 0):6.3f} {r.get('CD0', 0):6.3f} "
+                    f"{(npv if npv is not None else float('nan')):7.2f} {r.get('drag0_kN', 0):7.0f}")
+        print(f"{os.path.basename(n):16s} {row(a)}   {row(b)}  {a.get('frontal', 0):5.1f}  {'; '.join(flags)}")
+    return 0
 
 
 def cmd_boxes(args):
@@ -233,9 +408,12 @@ def main(argv=None):
     bx.add_argument("spec")
     bx.add_argument("--to")
     bx.add_argument("--flaps", action="store_true")
+    pr = sub.add_parser("probe")
+    pr.add_argument("names", nargs="*", help="design names (default: every design) or spec paths")
+    pr.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     return {"all": cmd_all, "build": cmd_build, "mesh": cmd_mesh, "validate": cmd_validate, "cal": cmd_cal,
-            "boxes": cmd_boxes}[args.cmd](args)
+            "boxes": cmd_boxes, "probe": cmd_probe}[args.cmd](args)
 
 
 if __name__ == "__main__":

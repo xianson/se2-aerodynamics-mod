@@ -741,7 +741,16 @@ class Model:
         hs = [s for s in self.np_surfs]
         if not hs:
             return None
-        return aero.neutral_point(hs, self.np_fus)
+        res = aero.neutral_point(hs, self.np_fus)
+        # the aero mod's own neutral point (aero_probe, fed back by gridgen.run_design): the planform estimate
+        # plus the shift the probe measured (+ = aft)
+        shift = float(self.d.get("np_shift", 0.0))
+        if res is not None and shift:
+            res = dict(res)
+            res["x_np_planform"] = res["x_np"]
+            res["x_np"] = res["x_np"] + shift
+            res["np_shift_probe"] = shift
+        return res
 
     # --------------------------------------------------------------------------------------------------- batteries
     def place_batteries(self, np_res):
@@ -830,6 +839,8 @@ def build(d, cat, log=print):
         nxt = float(np.clip(round(nxt / (B / 4)) * (B / 4), -lim, lim))
         while any(abs(nxt - h[0]) < 1e-9 for h in hist):
             nxt += B / 4 * (1 if g > 0 else -1)
+        if abs(nxt) > lim + 1e-9:
+            break                                   # the slide is at its limit: keep the best build so far
         dx = nxt
         log(f"    auto-wing: CoM {g:+.2f} m from target, sliding the wing group to dx = {dx:+.2f} m")
     best = min(built, key=lambda m: (bool(m.problems), not m.com_ok, abs(getattr(m, "com_residual", 1e9))))

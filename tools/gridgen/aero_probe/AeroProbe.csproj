@@ -29,5 +29,7 @@
     <Compile Include="$(Sim)\Components\IFaceOverride.cs" />
     <Compile Include="$(Sim)\Components\ComponentForceResult.cs" />
     <Compile Include="$(Sim)\Components\LocalAeroConditions.cs" />
+    <Compile Include="$(Sim)\Components\AirIntake.cs" />
+    <Compile Include="$(Sim)\Components\AeroComponentRegistry.cs" />
   </ItemGroup>
 </Project>
