@@ -31,7 +31,7 @@ public static class HingeSurfaces
     /// <summary>Chord assumed for the moment arm when the head grid's size is unknown (m).</summary>
     public static float Chord = 2.5f;
 
-    sealed class Surface { public Entity Block; public HingeComponent Hinge; public Vector3 Pos, Axis, Chord0; public float Aim, Neutral; }
+    sealed class Surface { public Entity Block; public HingeComponent Hinge; public Vector3 Pos, Axis, Chord0; public float Aim, Neutral, Lo, Hi; public bool HighLift; }
     sealed class GridSurfaces { public List<Surface> List = new(); public int Seen = -1; public long At; }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AeroGridComponent, GridSurfaces> _byGrid = new();
 
@@ -61,11 +61,16 @@ public static class HingeSurfaces
             // (a vanilla hinge turns 0..180 degrees only: the flap's neutral is the middle of its limits - 90 for the
             //  default - and its chord there is the head's +Y turned by that angle about the hinge's Forward)
             float lo = h.EnableLocalLimits ? h.LocalMinLimit : h.MinLimit, hi = h.EnableLocalLimits ? h.LocalMaxLimit : h.MaxLimit;
-            float neutral = lo > -1e6f && hi < 1e6f ? 0.5f * (lo + hi) : 0f;
+            // (neutral 90 - the flap trailing - when the range holds it, else the middle; a range on one side of it only
+            //  - 90..125 - is a high-lift flap: held retracted, not mixed for roll and pitch)
+            const float n90 = MathF.PI / 2f, side = 3f * MathF.PI / 180f;
+            bool finite = lo > -1e6f && hi < 1e6f;
+            float neutral = finite && lo <= n90 && hi >= n90 ? n90 : finite ? 0.5f * (lo + hi) : 0f;
+            bool highLift = finite && (hi - neutral < side || neutral - lo < side);
             Vector3 axis = Vector3.Transform(Vector3.Forward, q), up0 = Vector3.Transform(Vector3.Up, q);
             gs.List.Add(new Surface
             {
-                Block = k, Hinge = h, Neutral = neutral,
+                Block = k, Hinge = h, Neutral = neutral, Lo = lo, Hi = hi, HighLift = highLift,
                 Pos = Vector3.Transform((Vector3)(bt.Position - gridWt.Position), inv),
                 Axis = axis,
                 Chord0 = up0 * MathF.Cos(neutral) + Vector3.Cross(axis, up0) * MathF.Sin(neutral),
@@ -84,6 +89,12 @@ public static class HingeSurfaces
         int n = 0; float sum = 0f;
         foreach (var s in list)
         {
+            if (s.HighLift)
+            {
+                // (a high-lift flap: held at its neutral - retracted - until a flap setting exists)
+                if (s.Block.Data.TryGet<HingeComponent.HingeData>(out var hdh)) s.Hinge.SetVelocity(Gain * (s.Neutral - hdh.CurrentAngle));
+                continue;
+            }
             Vector3 nrm = Vector3.Cross(s.Axis, s.Chord0);
             Vector3 r = s.Pos + s.Chord0 * (0.5f * Chord) - centerOfMass;
             Vector3 eff = Vector3.Cross(r, -nrm);
@@ -91,7 +102,7 @@ public static class HingeSurfaces
             if (len < 0.05f) continue;
             eff /= len;
             float cmd = Math.Clamp(Vector3.Dot(eff, targetAngVel) * Kp * gainScale - Vector3.Dot(eff, localAngVel) * Kd, -1f, 1f);
-            s.Aim = s.Neutral + cmd * max;
+            s.Aim = Math.Clamp(s.Neutral + cmd * max, s.Lo, s.Hi);
             if (!s.Block.Data.TryGet<HingeComponent.HingeData>(out var hd)) continue;
             s.Hinge.SetVelocity(Gain * (s.Aim - hd.CurrentAngle));
             n++; sum += MathF.Abs(cmd);

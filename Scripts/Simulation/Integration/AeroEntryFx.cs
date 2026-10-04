@@ -46,6 +46,12 @@ public static class AeroEntryFx
     /// <summary>TEST: the grid axis TestSpeed flies along: "-z" (forward), "+z", "-x", "+x", "-y", "+y" (a ship built
     /// along another axis flies nose first).</summary>
     public static string TestAxis = "-z";
+    /// <summary>TEST (harness: aeroset AeroEntryFx.TestForces 1, with TestSpeed): aero COMPUTES each grid's forces at
+    /// the test airflow - hull, wings, control surfaces - and publishes them (the API, gen aero) but does NOT apply
+    /// them: a held grid measured as if flying (angle-of-attack sweeps of generated planes).</summary>
+    public static bool TestForces;
+    internal static bool TestForcesOn => TestForces && TestSpeed > 0f;
+    internal static Vector3 TestVelocityWorld(in WorldTransform wt) => WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed;
     static Vector3 TestDir() => TestAxis switch
     { "+z" => Vector3.UnitZ, "-x" => -Vector3.UnitX, "+x" => Vector3.UnitX, "-y" => -Vector3.UnitY, "+y" => Vector3.UnitY, "-z" => -Vector3.UnitZ, _ => ParseAxis(TestAxis) };
     static Vector3 ParseAxis(string s)

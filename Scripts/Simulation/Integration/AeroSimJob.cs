@@ -146,7 +146,10 @@ public partial class AeroGridComponent
         if (due)
         {
             aero.BudgetSkips = 0;
-            aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+            if (AeroEntryFx.TestForcesOn)   // (TEST: the forces at the test airflow, measured not applied)
+                aero.TryCompute(wt, MathF.Max(density, 1.2f), AeroEntryFx.TestVelocityWorld(wt), angVel, com, aero.GroundHeight);
+            else
+                aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
             System.Threading.Interlocked.Increment(ref AeroFrameBudget.ComputedThisSecond);
         }
         else
@@ -178,7 +181,7 @@ public partial class AeroGridComponent
             && aero.Data.Has<TargetControlData>()
             && aero.EulerError.LengthSquared() > GyroHandoffRad * GyroHandoffRad;
 
-        if (aero.HasResult && mass > 0f)
+        if (aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn)
         {
             // (the world's drag / lift multipliers - AeroSettings, server - on the model's result: 1 / 1 is the model as is)
             Vector3 forceLocal = aero.LastResult.Force, torqueLocal = aero.LastResult.Torque;
