@@ -84,6 +84,18 @@ static class Program
     /// <summary>Ground effect (CompressibleWingModel.GroundPhi): a 10 m x 2 m wing at 8 deg, 80 m/s - near the ground
     /// (2 m: h/b 0.2) more lift and less induced drag than far from it; at 40 m (h/b 4) none; the switch off, none; the
     /// wing's own height (the grid's plus its offset along 'up'): mounted 10 m up it is 12 m up. Returns the failures.</summary>
+    /// <summary>Skin friction opposes the motion: a face parallel to the travel feels only friction, backwards (it was
+    /// forwards - every hull pushed along its travel).</summary>
+    static int FrictionSignCheck()
+    {
+        var fp = new FacePhysics(new DampedShadowedDragModel());
+        var acc = new double[13];
+        fp.Add(new Vector3(0, 0, -1), Vector3.UnitX, Vector3.Zero, 10f, acc, 0);   // moving -Z past a +X face
+        bool ok = fp.Cf > 0 && acc[2] > 0 && Math.Abs(acc[0]) < 1e-9 && acc[5] > 0;
+        Console.WriteLine($"AeroBench: skin friction along the travel {(ok ? "opposes it (ok)" : "FAIL: " + acc[2])}");
+        return ok ? 0 : 1;
+    }
+
     static int GroundEffectCheck(AtmosphereState atmo)
     {
         int fails = 0;
@@ -481,7 +493,7 @@ static class Program
         if (names.Length == 0) { Console.WriteLine("AeroBench: no ship data (Tests/data/*.boxes) - skipped, 0/0 passed"); return 0; }
 
         var atmo = new AtmosphereState { Density = 1.0, Pressure = 90000, Temperature = 288, SpeedOfSound = 340 };
-        int known = KnownShapes(atmo) + GroundEffectCheck(atmo);
+        int known = KnownShapes(atmo) + GroundEffectCheck(atmo) + FrictionSignCheck();
         if (args.Length > 0 && args[0] == "gate")
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships

@@ -36,7 +36,7 @@ public readonly struct FacePhysics
         if (Cf > 0 && sinSq > 1e-12f)
         {
             float fric = Cf * a / MathF.Sqrt(sinSq);
-            sx = (v.X - cosA * n.X) * fric; sy = (v.Y - cosA * n.Y) * fric; sz = (v.Z - cosA * n.Z) * fric;
+            sx = -(v.X - cosA * n.X) * fric; sy = -(v.Y - cosA * n.Y) * fric; sz = -(v.Z - cosA * n.Z) * fric;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
         }
         float ax = -cpSub * a * n.X + sx, ay = -cpSub * a * n.Y + sy, az = -cpSub * a * n.Z + sz;
         float bx = -cpSup * a * n.X + sx, by = -cpSup * a * n.Y + sy, bz = -cpSup * a * n.Z + sz;

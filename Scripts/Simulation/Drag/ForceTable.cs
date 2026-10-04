@@ -108,7 +108,7 @@ public sealed class ForceTable
                     }
                     var fric = Vector3.Zero;
                     float sinSq = 1f - cosA * cosA;
-                    if (cfSkin > 0 && sinSq > 1e-12f) fric = (v - cosA * n) * (cfSkin * area / MathF.Sqrt(sinSq));
+                    if (cfSkin > 0 && sinSq > 1e-12f) fric = (cosA * n - v) * (cfSkin * area / MathF.Sqrt(sinSq));   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
                     var f0 = -cpSub * area * n + fric; var f1 = -cpSup * area * n + fric;
                     var t0 = Vector3.Cross(p, f0); var t1 = Vector3.Cross(p, f1);
                     var e = At(face, i, j);

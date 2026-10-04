@@ -424,7 +424,7 @@ public class DampedShadowedDragModel : IAeroDragModel
             if (cf > 0 && sinSq > 1e-12f)
             {
                 float fric = cf * vai * qf / MathF.Sqrt(sinSq);
-                sx = (vx - cosA * nx) * fric; sy = (vy - cosA * ny) * fric; sz = (vz - cosA * nz) * fric;
+                sx = -(vx - cosA * nx) * fric; sy = -(vy - cosA * ny) * fric; sz = -(vz - cosA * nz) * fric;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
             }
             float ax = -cpSub * vai * qf * nx + sx, ay = -cpSub * vai * qf * ny + sy, az = -cpSub * vai * qf * nz + sz;
             float bx = -cpSup * vai * qf * nx + sx, by = -cpSup * vai * qf * ny + sy, bz = -cpSup * vai * qf * nz + sz;
@@ -768,15 +768,15 @@ public class DampedShadowedDragModel : IAeroDragModel
                 Vector256<float> tx, ty, tz;
                 if (Fma.IsSupported)
                 {
-                    tx = Fma.MultiplyAddNegated(cosA, nx, vhx);
-                    ty = Fma.MultiplyAddNegated(cosA, ny, vhy);
-                    tz = Fma.MultiplyAddNegated(cosA, nz, vhz);
+                    tx = Fma.MultiplySubtract(cosA, nx, vhx);   // (cosA n - v: friction opposes the motion)
+                    ty = Fma.MultiplySubtract(cosA, ny, vhy);
+                    tz = Fma.MultiplySubtract(cosA, nz, vhz);
                 }
                 else
                 {
-                    tx = vhx - cosA * nx;
-                    ty = vhy - cosA * ny;
-                    tz = vhz - cosA * nz;
+                    tx = cosA * nx - vhx;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
+                    ty = cosA * ny - vhy;
+                    tz = cosA * nz - vhz;
                 }
 
                 if (Fma.IsSupported)
@@ -956,9 +956,9 @@ public class DampedShadowedDragModel : IAeroDragModel
                 if (sinSq > 1e-12f)
                 {
                     float invSinA = RsqrtNR(sinSq);
-                    float tx = vhx - cosA * nxi;
-                    float ty = vhy - cosA * nyi;
-                    float tz = vhz - cosA * nzi;
+                    float tx = cosA * nxi - vhx;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
+                    float ty = cosA * nyi - vhy;
+                    float tz = cosA * nzi - vhz;
                     float fric = cfSkin * q * vai * invSinA;
                     fx += tx * fric; fy += ty * fric; fz += tz * fric;
                 }

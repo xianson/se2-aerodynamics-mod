@@ -104,7 +104,7 @@ public class NewtonianDragModel : IAeroDragModel
                 Vector3 tangent = faceVHat - Vector3.Dot(faceVHat, face.Normal) * face.Normal;
                 float tangentLen = tangent.Length();
                 if (tangentLen > 1e-6f)
-                    F += (tangent / tangentLen) * (CfSkin * faceQ * face.Area);
+                    F -= (tangent / tangentLen) * (CfSkin * faceQ * face.Area);   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
             }
 
             totalForce += F;
@@ -157,7 +157,7 @@ public class NewtonianDragModel : IAeroDragModel
                 Vector3 tangent = comVHat - Vector3.Dot(comVHat, grp.Normal) * grp.Normal;
                 float tangentLen = tangent.Length();
                 if (tangentLen > 1e-6f)
-                    F += (tangent / tangentLen) * (CfSkin * qf * grp.TotalArea);
+                    F -= (tangent / tangentLen) * (CfSkin * qf * grp.TotalArea);
             }
 
             totalForce += F;

@@ -14,7 +14,7 @@ namespace AeroMod;
 public static class AeroTableCache
 {
     /// <summary>Bump on any change to how a table, its chunks or its wings are built.</summary>
-    public const int Version = 1;
+    public const int Version = 2;   // (2: skin friction's sign fixed - tables saved before it are rebuilt)
     public static bool Enabled = true;
     /// <summary>The folder's cap: past it, the least recently used files go.</summary>
     public static long MaxBytes = 256L << 20;
