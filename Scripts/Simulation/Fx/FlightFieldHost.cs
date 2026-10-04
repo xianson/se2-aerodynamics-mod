@@ -355,12 +355,26 @@ internal sealed partial class FlightField
         _fixTime.Invoke(h, new object[] { true, TimeSpan.FromSeconds(seconds) });
     }
 
+    private static MethodInfo _stopEmitting, _disposeAfter;
+
+    /// <summary>An effect goes GRACEFULLY: it stops emitting and disposes itself once its particles have died (a
+    /// dropped group - tips re-placed for a new length, vapour leaving the band, plasma cooling - no longer pops: its
+    /// sparks and puffs in flight finish their life). Falls back to an immediate dispose.</summary>
     private static void DisposeEffect(object h)
     {
         if (h == null) return;
         try
         {
-            _dispose ??= h.GetType().GetMethod("Dispose", AnyInst, null, new[] { typeof(bool) }, null);
+            var t = h.GetType();
+            _stopEmitting ??= t.GetMethod("StopEmitting", AnyInst, null, new[] { typeof(bool) }, null);
+            _disposeAfter ??= t.GetMethod("DisposeAfterParticlesDie", AnyInst, null, Type.EmptyTypes, null);
+            if (_stopEmitting != null && _disposeAfter != null)
+            {
+                _stopEmitting.Invoke(h, new object[] { false });
+                _disposeAfter.Invoke(h, null);
+                return;
+            }
+            _dispose ??= t.GetMethod("Dispose", AnyInst, null, new[] { typeof(bool) }, null);
             _dispose?.Invoke(h, new object[] { true });
         }
         catch (Exception) { }
