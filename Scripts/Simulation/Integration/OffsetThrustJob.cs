@@ -90,7 +90,9 @@ public static class OffsetThrustJob
     // (Per-thruster blending manages its own overrides — no tracking needed)
 
     /// <summary>Per-grid debug states, keyed by thruster list reference. Written by Execute, read by draw.</summary>
-    public static readonly Dictionary<List<ThrusterInfo>, List<ThrusterDebugState>> DebugStatesByGrid = new();
+    // (thread-safe and weak: every grid's sim job adds here in parallel - a plain Dictionary could be corrupted by two
+    //  inserts at once - and a removed grid's entry goes with its thruster list; it was never pruned)
+    public static readonly System.Runtime.CompilerServices.ConditionalWeakTable<List<ThrusterInfo>, List<ThrusterDebugState>> DebugStatesByGrid = new();
     private static int _debugLogCooldown;
 
 
@@ -169,11 +171,7 @@ public static class OffsetThrustJob
         Vector3 hoverCoupling = Vector3.Zero;
 
         // Reset per-grid debug states for this frame
-        if (!DebugStatesByGrid.TryGetValue(thrusters, out var debugStates))
-        {
-            debugStates = new List<ThrusterDebugState>();
-            DebugStatesByGrid[thrusters] = debugStates;
-        }
+        var debugStates = DebugStatesByGrid.GetValue(thrusters, _ => new List<ThrusterDebugState>());
         while (debugStates.Count < thrusters.Count)
             debugStates.Add(default);
         while (debugStates.Count > thrusters.Count)
