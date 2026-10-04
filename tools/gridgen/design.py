@@ -11,7 +11,8 @@ Schema (all lengths in metres, angles in degrees; every key optional unless note
   "scale": 1.0,                       # multiplies every length (a large-grid variant of a small design)
   "skin": "slopes" | "cubes",         # refine the outer hull with slopes/corners, or cubes only
   "solid_below": 3,                   # parts thinner than this many blocks stay solid; thicker ones keep a 1-block shell
-  "static_margin": 0.10,              # CoM target: neutral point - margin * MAC
+  "static_margin": 0.08,              # CoM target: neutral point - margin * MAC (trimmed on the aero probe's
+                                      # TestForces view, ~5% MAC more pessimistic than the game's readout)
   "com_tolerance": 0.02,              # |margin error| allowed, fraction of MAC
   "auto_wing": true,                  # may slide the wing group fore/aft when batteries alone cannot reach the target
   "fuselage": {                       # omit / null for a pure flying wing
@@ -102,7 +103,7 @@ def defaults(d: dict) -> dict:
     d.setdefault("grid", "small")
     d.setdefault("skin", "slopes")
     d.setdefault("solid_below", 3)
-    d.setdefault("static_margin", 0.10)
+    d.setdefault("static_margin", 0.08)
     d.setdefault("com_tolerance", 0.02)
     d.setdefault("auto_wing", True)
     d.setdefault("engines", [])

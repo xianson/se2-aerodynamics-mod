@@ -63,42 +63,52 @@ def run_design(d, cat, out, do_preview=True, log=print, probe_trim=True):
     jpath = os.path.join(out, name + ".json")
     m, blocks, side = _build_and_check(d, cat, spath, log)
     if probe_trim and probe_available() and d.get("probe_trim", True) and m.np_res is not None:
-        want = float(d.get("static_margin", 0.1)) * float(m.np_res["mac"])
-        shift = float(d.get("np_shift", 0.0))
-        best, hist = None, []
-        for it in range(6):
-            r = probe_spec(spath, cat, intake=False)
+        want = float(side["static_margin_target"]) * float(m.np_res["mac"])
+        shift0 = float(d.get("np_shift", 0.0))
+        best = None
+
+        def judge(shift, m, blocks, side):
+            nonlocal best
+            # judged as the in-game TestForces readout measures it (each grid along its own axes, the main grid's
+            # torque about its own CoM): the most pessimistic of the views (real flight, with the flaps in the true
+            # airflow, is more stable), and the one the harness shows
+            r = probe_spec(spath, cat, testforces=True, com_ref="main")
             off = r.get("NP_aft_of_CoM")
             if off is None:
-                break
-            err = off - want
-            side["aero_probe"] = dict(np_aft_of_com_m=round(off, 3), want_m=round(want, 3), np_shift_m=round(shift, 3),
-                                      CL4=r.get("CL4"), CL8=r.get("CL8"), CD0_no_intake=r.get("CD0"))
-            # passing first; then on the stable side (NP at least half the wanted margin behind the CoM); then closest
-            key = (not side["validation"]["ok"], off < 0.5 * want, abs(err))
+                return None
+            side["aero_probe"] = dict(view="testforces, main-grid CoM", np_aft_of_com_m=round(off, 3),
+                                      want_m=round(want, 3), np_shift_m=round(shift, 3), dM_dAoA_kNm=r.get("dMdAoA_kNm"),
+                                      CL4=r.get("CL4"), CL8=r.get("CL8"), CD0=r.get("CD0"))
+            # passing first; then a real margin (NP at least half the wanted margin behind the CoM); then closest
+            key = (not side["validation"]["ok"], off < 0.5 * want, abs(off - want))
             if best is None or key < best[0]:
                 best = (key, m, blocks, side, open(spath, encoding="utf-8").read())
-            hist.append((shift, off, side["validation"]["ok"]))
-            if abs(err) <= max(0.25 * want, 0.1) and side["validation"]["ok"]:
-                break
-            # secant on (shift -> NP - CoM) over the last two passing builds (moving the CoM aft also slides the wing:
-            # the response is not 1:1), else a damped step
-            ok_h = [h for h in hist if h[2]]
-            step = 0.7 * err
-            if len(ok_h) >= 2 and abs(ok_h[-1][0] - ok_h[-2][0]) > 0.05:
-                slope = (ok_h[-1][1] - ok_h[-2][1]) / (ok_h[-1][0] - ok_h[-2][0])
-                if -4.0 < slope < -0.25:
-                    step = -err / slope
-            if not side["validation"]["ok"]:
-                step = -0.5 * (shift - (ok_h[-1][0] if ok_h else float(d.get("np_shift", 0.0))))   # back off
-            shift += step
-            log(f"    aero probe: NP {off:+.2f} m aft of the CoM (want {want:.2f}): neutral point shifted {shift:+.2f} m")
+            return off
+
+        def build_at(shift):
             d2 = dict(d)
             d2["np_shift"] = shift
-            m, blocks, side = _build_and_check(d2, cat, spath, log)
-        _, m, blocks, side, txt = best
-        with open(spath, "w", encoding="utf-8") as fh:
-            fh.write(txt)
+            return _build_and_check(d2, cat, spath, log)
+
+        off0 = judge(shift0, m, blocks, side)
+        if off0 is not None and abs(off0 - want) > max(0.25 * want, 0.03):
+            # the probe's NP moves in steps with each rebuild (the wing slides in block steps, the flaps re-plan):
+            # a small scan around the estimated shift rather than an iteration that chases that noise
+            s1 = shift0 + (off0 - want)
+            log(f"    aero probe: NP {off0:+.2f} m aft of the CoM (want {want:.2f}): scanning NP shifts around {s1:+.2f} m")
+            dlt = s1 - shift0
+            # the estimate, then partial steps (the CoM / NP response is not 1:1 and moves in steps: the wing slide
+            # snaps to blocks and saturates), stopping at the first build within a quarter of the wanted margin
+            for f in (1.0, 0.75, 0.5, 0.9, 0.6, 0.4, 1.1, 0.25):
+                s = shift0 + f * dlt
+                m2, b2, s2 = build_at(s)
+                off = judge(s, m2, b2, s2)
+                if off is not None and abs(off - want) <= max(0.25 * want, 0.03) and s2["validation"]["ok"]:
+                    break
+        if best is not None:
+            _, m, blocks, side, txt = best
+            with open(spath, "w", encoding="utf-8") as fh:
+                fh.write(txt)
     with open(jpath, "w", encoding="utf-8") as fh:
         json.dump(side, fh, indent=1)
     if do_preview:
@@ -244,7 +254,7 @@ def export_boxes(spec_path, out_path, cat, flaps=False):
 PROBE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aero_probe")
 
 
-def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True):
+def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True, testforces=False, com_ref="plane"):
     """The aero mod's own model on a spec, offline (aero_probe): the main grid plus every hinge head grid as a
     separate aero grid (as in game), true airflow, torques about the mass CoM.  Returns the probe's SUMMARY as a dict
     (CL4, CL8, CD0 on the frontal area, NP_aft_of_CoM in m, frontal m2, drag0_kN) plus the full text."""
@@ -269,14 +279,16 @@ def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True):
     thr = []
     for name, pos, orient in sp["main"]:
         lo, hi = add(name, pos, orient)
-        if "Thruster" in name:
+        if name.startswith("AtmosphericThruster"):          # the mod's intakes: air-breathing thrusters only
             # as BlockComponentFactory.BuildBlockInfo: occupied cells (game indices lo+1..hi), centre in m, min cell,
             # the block's Forward
             gmin = np.asarray(lo) + sb.CAL["aabb_low_offset"]
             gmax = np.asarray(hi)
             c = (gmin + gmax) * 0.5 * sb.CELL_M
             f = sb.orient_matrix(*orient) @ np.array([0, 0, -1])
-            thr += ["--thruster", ",".join(f"{x:g}" for x in list(c) + list(gmin) + list(f))]
+            width = {"100": 0.5, "250": 1.25, "500": 2.5, "1000": 7.5}.get(name[len("AtmosphericThruster"):], 0.5)
+            thr += ["--thruster", ",".join(f"{x:g}" for x in list(c) + list(gmin) + list(f) + [0.25 * width * width])]
+    M_main, W_main = M.copy(), W
     for k, (bi, mn, mx) in enumerate(sp["hinges"]):
         hname, hpos, horient = sp["main"][bi]
         origin, Rh = sb.headgrid_frame(hpos, horient)
@@ -287,14 +299,19 @@ def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True):
             lines += block_cell_lines(cat, fname, p, o)
         if lines:
             f = os.path.join(work, f"{base}_head{k:02d}.boxes")
-            open(f, "w", encoding="utf-8").write("# blockSize 0.5" + chr(10) + chr(10).join(lines) + chr(10))
+            # the head grid's axes in the main frame (row-major): TestForces blows each grid along its OWN -Z
+            frame = "# frame " + " ".join(f"{x:g}" for x in np.asarray(Rh, float).ravel())
+            open(f, "w", encoding="utf-8").write("# blockSize 0.5" + chr(10) + frame + chr(10) + chr(10).join(lines)
+                                                 + chr(10))
             files.append(f)
-    com = M / W + 0.5            # continuous cell coordinates -> the game's cell index space (cell i spans [i-1, i))
+    # moment reference: the whole plane's CoM, or ("main") the main grid's own - what the game's physics gives the
+    # main grid, whose torque the TestForces readout reports (the flap head grids are separate bodies)
+    com = (M_main / W_main if com_ref == "main" else M / W) + 0.5   # (continuous cells -> game cell indices)
     exe = [p for p in (os.path.join(PROBE_DIR, "bin", "Release", "net9.0", "AeroProbe.dll"),) if os.path.exists(p)]
     if not exe:
         subprocess.run(["dotnet", "build", "-c", "Release"], cwd=PROBE_DIR, check=True, capture_output=True)
         exe = [os.path.join(PROBE_DIR, "bin", "Release", "net9.0", "AeroProbe.dll")]
-    extra = thr + ([] if intake else ["--no-intake"])
+    extra = thr + ([] if intake else ["--no-intake"]) + (["--testforces"] if testforces else [])
     out = subprocess.run(["dotnet", exe[0]] + files + ["--speed", str(speed), "--com", ",".join(f"{c:.3f}" for c in com),
                                                       "--quiet"] + extra, capture_output=True, text=True,
                          check=True).stdout
@@ -312,32 +329,38 @@ def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True):
 
 
 def cmd_probe(args):
-    """The aero probe over designs: as the game computes it today (every thruster carries the mod's AirIntake with a
-    30 m2 capture area) and without that intake.  CL / CD on the in-game readout's reference area (see aero_probe)."""
+    """The aero probe over designs, two views: as the in-game TestForces readout measures (each grid blown along its
+    own axes, the main grid's torque about its own CoM) and real flight (true airflow on every grid, the whole plane's
+    CoM).  The mod's intakes (atmospheric thrusters, 0.25 x width^2) in both.  NP + = behind the CoM (stable);
+    dM/dAoA - = stable (+X torque is nose up).  CL / CD on the readout's reference area (see aero_probe)."""
     cat = sb.Catalog()
     names = args.names or [os.path.splitext(f)[0] for f in sorted(os.listdir(os.path.join(HERE, "designs")))
                            if f.endswith(".json")]
-    print(f"{'':16s} {'--------- as in game (intake) ---------':40s} {'----- without the intake -----':30s}")
-    print(f"{'design':16s} {'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'NP-CoM':>7s} {'D0 kN':>7s}   "
-          f"{'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'NP-CoM':>7s} {'D0 kN':>7s}  {'Aref':>5s}  flags")
+    print(f"{'':16s} {'---------- TestForces view (harness) ----------':48s} {'------ real flight ------':26s}")
+    print(f"{'design':16s} {'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'dM/da':>7s} {'NP m':>6s} {'NP%MAC':>7s}   "
+          f"{'dM/da':>7s} {'NP m':>6s} {'NP%MAC':>7s}  flags")
     for n in names:
         src = n if n.endswith(".txt") else os.path.join(args.out, n + ".txt")
-        a = probe_spec(src, cat)
-        b = probe_spec(src, cat, intake=False)
+        side = {}
+        try:
+            side = json.load(open(os.path.splitext(src)[0] + ".json", encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        mac = side.get("mac_m") or float("nan")
+        a = probe_spec(src, cat, testforces=True, com_ref="main")
+        b = probe_spec(src, cat)
         if args.verbose:
             print(a["text"])
             print(b["text"])
-        flags = []
-        for tag, r in (("game", a), ("no-intake", b)):
-            f = [x for x, bad in (("CD0>0.6", r.get("CD0", 9) > 0.6), ("CL8<0.3", r.get("CL8", 0) < 0.3)) if bad]
-            if f:
-                flags.append(f"{tag}: {' '.join(f)}")
+        flags = [x for x, bad in (("CD0>0.6", a.get("CD0", 9) > 0.6), ("CL8<0.3", a.get("CL8", 0) < 0.3),
+                                  ("UNSTABLE", (a.get("NP_aft_of_CoM") or -1) <= 0)) if bad]
 
-        def row(r):
-            npv = r.get("NP_aft_of_CoM")
-            return (f"{r.get('CL4', 0):6.3f} {r.get('CL8', 0):6.3f} {r.get('CD0', 0):6.3f} "
-                    f"{(npv if npv is not None else float('nan')):7.2f} {r.get('drag0_kN', 0):7.0f}")
-        print(f"{os.path.basename(n):16s} {row(a)}   {row(b)}  {a.get('frontal', 0):5.1f}  {'; '.join(flags)}")
+        def npv(r):
+            v = r.get("NP_aft_of_CoM")
+            return float("nan") if v is None else v
+        print(f"{os.path.basename(n):16s} {a.get('CL4', 0):6.3f} {a.get('CL8', 0):6.3f} {a.get('CD0', 0):6.3f} "
+              f"{a.get('dMdAoA_kNm', float('nan')):7.1f} {npv(a):6.2f} {100 * npv(a) / mac:6.1f}%   "
+              f"{b.get('dMdAoA_kNm', float('nan')):7.1f} {npv(b):6.2f} {100 * npv(b) / mac:6.1f}%  {' '.join(flags)}")
     return 0
 
 
