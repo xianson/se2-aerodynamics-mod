@@ -85,6 +85,14 @@ internal sealed partial class FlightField
             // the spot light follows the grid (its own render root)
             if (_spotRoot != null) UpdateRootTransform(_spotRoot, wt);
             // spawning a few a frame
+            // (a refused spawn stopped the field for good while its queue kept growing: drop the queue, retry after 2 s)
+            if (_puffWhy != null)
+            {
+                long nowTs = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (_puffWhyAt == 0) _puffWhyAt = nowTs;
+                _spawnQueue.Clear();
+                if (nowTs - _puffWhyAt > 2 * System.Diagnostics.Stopwatch.Frequency) { _puffWhy = null; _puffWhyAt = 0; }
+            }
             if (_spawnQueue.Count > 0)
             {
                 _draining = true;

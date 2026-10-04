@@ -426,7 +426,9 @@ internal sealed partial class FlightField
     private Guid ShockSparksOld => SparkColor == 2 ? ShockMatched[Math.Clamp(SparkLevel, 1, 5) - 1] : SparkColor == 1 ? ShockSparksViolet : ShockSparksOrange;
     private Guid TailSparksOld => SparkColor == 2 ? TailMatched[Math.Clamp(SparkLevel, 1, 5) - 1] : SparkColor == 1 ? TailSparksViolet : TailSparksOrange;
     private readonly List<object> _puffs = new List<object>();
+    // (the effect handle's methods - _setParams, _fixTime, declared in FlightFieldHost - looked up once, not by name per spawn)
     private string _puffWhy;
+    private long _puffWhyAt;   // (when the last spawn failure was seen: retried after 2 s)
 
     /// <summary>The hull shadow's outline as closed chains of grid-space points (marching squares over _hullHas,
     /// outside the grid empty): each point midway between a hull node and an empty one, at the hull node's depth.</summary>
@@ -635,9 +637,9 @@ internal sealed partial class FlightField
         _puffs.Add(h);
         try
         {
-            h.GetType().GetMethod("SetParameters", AnyInst).Invoke(h, new[] { prm });
+            (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
-            if (held > 0f) h.GetType().GetMethod("FixEffectTime", AnyInst).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
+            if (held > 0f) (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
         }
         catch (Exception ex) { _puffWhy = "set: " + Inner(ex); }
     }
@@ -1132,7 +1134,7 @@ internal sealed partial class FlightField
         int kind = tip ? 2 : cone ? 1 : 0;
         _vapour.Add((h, weight, kind));
         float held = Math.Clamp((kind == 1 ? _coneI : kind == 2 ? _tipI : _edgeI) * weight, 0.001f, 0.999f);
-        try { h.GetType().GetMethod("FixEffectTime", AnyInst).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); }
+        try { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); }
         catch (Exception e) { _puffWhy = "vapour time: " + Inner(e); }
     }
 
@@ -1271,9 +1273,9 @@ internal sealed partial class FlightField
         _puffs.Add(h);
         try
         {
-            h.GetType().GetMethod("SetParameters", AnyInst).Invoke(h, new[] { prm });
+            (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
-            if (held > 0f) h.GetType().GetMethod("FixEffectTime", AnyInst).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
+            if (held > 0f) (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
         }
         catch (Exception e) { _puffWhy = "set: " + Inner(e); }
     }
