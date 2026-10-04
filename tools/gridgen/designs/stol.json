@@ -1,0 +1,50 @@
+{
+ "name": "stol",
+ "title": "High-wing STOL utility",
+ "grid": "large",
+ "fuselage": {
+  "length": 52,
+  "width": 13,
+  "height": 14,
+  "nose": 0.14,
+  "tail": 0.38,
+  "section": 3.0,
+  "tail_width": 0.3,
+  "tail_height": 0.35,
+  "tail_upsweep": 0.5
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 72,
+   "root_chord": 11,
+   "tip_chord": 9,
+   "sweep": 0,
+   "dihedral": 2,
+   "x": 23.0,
+   "z": "high",
+   "controls": {
+    "chord": 0.35,
+    "aileron_from": 0.68
+   }
+  }
+ ],
+ "tail": "conventional",
+ "engines": [
+  {
+   "mount": "nose",
+   "type": "atmospheric",
+   "size": 500
+  },
+  {
+   "mount": "pod",
+   "type": "atmospheric",
+   "size": 500,
+   "side": "above",
+   "span_frac": [
+    0.3
+   ]
+  }
+ ]
+}

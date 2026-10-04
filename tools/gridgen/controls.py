@@ -1,0 +1,450 @@
+"""controls - full trailing-edge coverage with hinged control surfaces.
+
+For every lifting surface panel (left wing, right wing, fin, each canard, ...) the trailing-edge strip is split
+into segments along the span.  A segment has ONE straight, axis-aligned hinge line (all its flap cells are aft of
+row x_h), so its flap rotates about an axis parallel to the span and stays inside its own span-wise slab -
+neighbouring hinges sit along the axis, never across the swing plane.
+
+  main grid : the hinge block at (hinge column, x_h); the other x_h cells of the segment are cut away (the gap
+              that lets the flap's leading edge swing); the wing ahead of x_h stays.
+  head grid : every surface cell aft of x_h in the segment's columns, as F lines in the head grid's frame
+              (head at 0 0 0; chord along head +Y, span along head Z - the measured mount convention).
+
+Each segment's swept volume (over its limits, plus a margin) is checked against everything else: cells of the
+same surface ahead of the hinge are cut; anything else (fuselage, booms, engines, exhaust lanes, other segments'
+swept volumes) removes the offending column from the segment.
+
+Roles: wing -> flap (inboard) / aileron (outboard), or elevon (no other pitch surface); htail -> elevator;
+vtail -> rudder; canard -> canard; vee -> ruddervator.  Limits are given in "positive = trailing edge down
+(horizontal) / right (vertical)" and converted to the hinge's own sign.
+"""
+from __future__ import annotations
+
+import math
+
+import numpy as np
+from scipy import ndimage
+
+import se2blocks as sb
+
+LIMITS = {"aileron": (-25, 25), "flap": (0, 35), "elevator": (-25, 25), "rudder": (-25, 25), "elevon": (-25, 25),
+          "canard": (-20, 20), "ruddervator": (-25, 25)}
+SURFACE_ROLES = ("wing", "htail", "vtail", "canard", "vee")
+
+
+def _rot(axis, ang):
+    a = np.asarray(axis, float)
+    a = a / np.linalg.norm(a)
+    K = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+    return np.eye(3) + math.sin(ang) * K + (1 - math.cos(ang)) * K @ K
+
+
+_SWEEP = {}
+
+
+def _cell_sweep(rel_p, rel_q, frac, a, sign, lo_deg, hi_deg, margin, n_sub):
+    """2D voxel offsets (from the rounded pivot) touched by one cell at offset (rel_p, rel_q) rotating about axis a."""
+    key = (rel_p, rel_q, frac, a, sign, lo_deg, hi_deg, margin, n_sub)
+    if key in _SWEEP:
+        return _SWEEP[key]
+    p, q = [i for i in range(3) if i != a]
+    g = np.linspace(-0.4995, 0.4995, n_sub)
+    U, V = np.meshgrid(g, g, indexing="ij")
+    pts = np.zeros((U.size, 3))
+    pts[:, p] = rel_p + U.ravel() - frac[0]
+    pts[:, q] = rel_q + V.ravel() - frac[1]
+    axis = np.zeros(3)
+    axis[a] = sign
+    lo, hi = math.radians(lo_deg - margin), math.radians(hi_deg + margin)
+    out = set()
+    for ang in np.linspace(lo, hi, max(2, int(round(math.degrees(hi - lo))) + 1)):
+        r = pts @ _rot(axis, ang).T
+        r[:, p] += frac[0]
+        r[:, q] += frac[1]
+        rr = np.round(r).astype(int)
+        out |= set(zip(rr[:, p].tolist(), rr[:, q].tolist()))
+    _SWEEP[key] = out
+    return out
+
+
+def swept_voxels(cells, pivot, axis, lo_deg, hi_deg, margin=3.0, n_sub=9):
+    """Voxel indices touched by the cells rotated about the (lattice-aligned) axis through pivot, in voxel-index
+    coordinates.  Rotation keeps the span coordinate, so each cell is sampled densely over its full cross-section
+    in the rotation plane - edges included - at 1 degree steps (corners sweeping through a neighbour are caught);
+    the per-offset result is cached."""
+    a = int(np.argmax(np.abs(axis)))
+    sign = 1 if axis[a] > 0 else -1
+    p, q = [i for i in range(3) if i != a]
+    pv = np.asarray(pivot, float)
+    pr = np.round(pv).astype(int)
+    frac = (round(float(pv[p] - pr[p]), 4), round(float(pv[q] - pr[q]), 4))
+    out = set()
+    for c in cells:
+        c = [int(x) for x in c]
+        for op, oq in _cell_sweep(c[p] - pr[p], c[q] - pr[q], frac, a, sign, float(lo_deg), float(hi_deg), margin,
+                                  n_sub):
+            v = [0, 0, 0]
+            v[a], v[p], v[q] = c[a], pr[p] + op, pr[q] + oq
+            out.add(tuple(v))
+    return out
+
+
+def te_motion(hinge_orient):
+    """Direction the trailing edge moves for a positive hinge angle (grid vector)."""
+    M = sb.orient_matrix(*hinge_orient)
+    A = M @ np.array(sb.CAL["hinge_axis_local"]) * sb.CAL["hinge_angle_sign"]
+    return np.cross(A, np.array([0, 0, 1]))
+
+
+def place_controls(model, d, surfs, cat):
+    grid = d["grid"]
+    hinge_name, head_name = sb.hinge_names(grid)
+    pitch_other = any(s.role in ("htail", "vee", "canard") for s in surfs)
+    lat = model.lat
+    segs = []
+    for ci, comp in enumerate(model.comps):
+        if comp.role not in SURFACE_ROLES:
+            continue
+        ctl = dict(getattr(comp, "spec", {}).get("controls", {}))
+        mode = ctl.get("mode", "auto")
+        if mode == "none":
+            continue
+        flap_block = ctl.get("flap_block", d.get("flap_block", "half"))
+        vertical = bool(getattr(comp, "vertical", False))
+        span_ax = 1 if vertical else 0
+        t_ax = 0 if vertical else 1
+        mask = model.solid & (model.label == ci)
+        lab, n = ndimage.label(mask)
+        groups = []
+        for p in range(1, n + 1):
+            idx = np.argwhere(lab == p)
+            X = idx[:, 0] + lat.i0[0]
+            if vertical:
+                side = "center" if abs(X.mean()) < 0.5 else ("right" if X.mean() > 0 else "left")
+                groups.append((side, idx))
+            else:
+                groups.append(("right", idx[X > 0]))
+                groups.append(("left", idx[X < 0]))
+        groups = [g for g in groups if len(g[1])]
+        # right side first; the left side mirrors its plans exactly (symmetric hinges, symmetric mass).  A right
+        # plan whose mirror does not fit is banned and the surface replanned, so the result is always symmetric.
+        groups.sort(key=lambda g: {"right": 0, "center": 1, "left": 2}[g[0]])
+        args = (span_ax, t_ax, ctl, mode, pitch_other, hinge_name, head_name, flap_block, cat)
+        snap = _snapshot(model)
+        banned = set()
+        for attempt in range(60):
+            mine_all, failed = [], []
+            for side, cells in groups:
+                if side == "left" and any(g[0] == "right" for g in groups):
+                    for sg in [x for x in mine_all if x["side"] == "right"]:
+                        q = _mirror_plan(model, sg["_plan"], ci)
+                        if q is not None:
+                            mine_all.append(_commit(model, q))
+                        else:
+                            failed.append(sg)
+                    continue
+                mine_all += _panel(model, d, comp, ci, cells, side, *args, banned=banned)
+            if not failed:
+                break
+            for sg in failed:
+                banned.add((tuple(sg["columns"]), sg["x_h"], sg["hinge_voxel"]))
+            _restore(model, snap)
+            mine_all = []
+        else:
+            model.problems.append(f"{comp.id}: no symmetric control-surface layout found")
+        segs += mine_all
+    return segs
+
+
+def _snapshot(model):
+    return {k: getattr(model, k).copy() for k in ("solid", "engine_vox", "swept_taken", "frozen")}
+
+
+def _restore(model, snap):
+    for k, v in snap.items():
+        getattr(model, k)[...] = v
+
+
+def _mirror_plan(model, p, ci):
+    """The left-side twin of a right-side plan (X mirrored), checked against the current model; None if it clashes."""
+    lat = model.lat
+    nx = lat.shape[0]
+    mv = lambda v: (nx - 1 - v[0], v[1], v[2])
+    span_ax = p["span_ax"]
+    q = dict(p)
+    q["side"] = "left"
+    q["hidx"] = mv(p["hidx"])
+    q["flap"] = [mv(v) for v in p["flap"]]
+    q["chunk"] = [nx - 1 - k for k in p["chunk"]] if span_ax == 0 else list(p["chunk"])
+    row = {mv(v) for v in p["row"]}
+    for v in q["flap"] + [q["hidx"]]:
+        if v in row or v == q["hidx"]:
+            if not model.solid[v]:
+                return None
+    for v in q["flap"]:
+        own = model.solid[v] and model.label[v] == ci
+        if not own and (model.solid[v] or model.cavity[v] or model.blocked[v] or model.swept_taken[v]):
+            return None
+        if not own and p["extended"] == 0:
+            return None
+    struct0 = _structure(model)
+    n0 = ndimage.label(struct0)[1]
+    res = _try(model, ci, q["chunk"], span_ax, p["x_h"], q["hidx"], q["flap"], row, p["orient_h"], p["lim"],
+               struct0, n0)
+    if res is None:
+        return None
+    q["swept"], q["carve"] = res
+    q["row"] = row
+    return q
+
+
+def _role(comp, ctl, mode, pitch_other, eta):
+    r = comp.role
+    if r == "wing":
+        if mode == "elevon" or (mode == "auto" and not pitch_other):
+            return "elevon"
+        if ctl.get("flaps", True) is False:
+            return "aileron"
+        return "flap" if eta < float(ctl.get("aileron_from", 0.55)) else "aileron"
+    return {"htail": "elevator", "vtail": "rudder", "canard": "canard", "vee": "ruddervator"}[r]
+
+
+def _panel(model, d, comp, ci, cells, side, span_ax, t_ax, ctl, mode, pitch_other, hinge_name, head_name,
+           flap_block, cat, banned=()):
+    """Grow segments root to tip: from each free column, the longest run (up to per_hinge, or the whole remainder
+    when that is short) that plans cleanly becomes one hinge; a column that fits in no segment is left as wing."""
+    lat = model.lat
+    B = lat.B
+    cols = {}
+    for c in cells:
+        cols.setdefault(int(c[span_ax]), set()).add((int(c[t_ax]), int(c[2])))
+    keys = sorted(cols)
+    coord = lambda k: (k + lat.i0[span_ax]) * B
+    if span_ax == 0:
+        keys.sort(key=lambda k: abs(coord(k)))
+        semi = comp.span / 2 if comp.mirror else comp.span
+        eta = {k: abs(coord(k)) / max(semi, 1e-6) for k in keys}
+    else:
+        up = math.sin(comp.G) >= 0
+        keys.sort(key=lambda k: coord(k) if up else -coord(k))
+        root = comp.z0
+        eta = {k: abs(coord(k) - root) / max(comp.span, 1e-6) for k in keys}
+    # segment length: about five hinges per wing half (two or three on a tail), at least 2 (large) / 3 (small)
+    # blocks each, so a hinge carries a sensible share of the span
+    n_target = 5 if comp.role == "wing" else 2
+    per = int(ctl.get("per_hinge", max(2 if d["grid"] == "large" else 3, int(math.ceil(len(keys) / n_target)))))
+    cf = float(ctl.get("chord", 0.3))
+    runs = []
+    for k in keys:
+        zs = [z for t, z in cols[k]]
+        if max(zs) - min(zs) < 1:       # a single chord row: nothing to hinge
+            role = None
+        else:
+            role = _role(comp, ctl, mode, pitch_other, eta[k])
+        if runs and runs[-1][0] == role and abs(runs[-1][1][-1] - k) == 1:
+            runs[-1][1].append(k)
+        else:
+            runs.append((role, [k]))
+    out = []
+    for role, ks in runs:
+        if role is None:
+            continue
+        i = 0
+        while i < len(ks):
+            rem = len(ks) - i
+            target = rem if rem <= per + per // 2 else per
+            done = False
+            for n in range(target, 0, -1):
+                plan = _plan(model, d, comp, ci, cols, ks[i:i + n], span_ax, t_ax, cf, role, side, hinge_name,
+                             head_name, flap_block, cat, banned)
+                if plan is not None:
+                    out.append(_commit(model, plan))
+                    i += n
+                    done = True
+                    break
+            if not done:
+                i += 1
+    return out
+
+
+def _idx(span_ax, t_ax, k, t, z):
+    v = [0, 0, 0]
+    v[span_ax], v[t_ax], v[2] = k, t, z
+    return tuple(v)
+
+
+def _structure(model):
+    """Main-grid voxels for connectivity: armor, engines/pylons/cockpit, hinges."""
+    return model.solid | model.engine_vox
+
+
+def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_name, head_name, flap_block, cat,
+          banned=()):
+    """Plan one segment over the given columns without changing the model; None if it does not fit."""
+    lat = model.lat
+    TE = {k: max(z for t, z in cols[k]) for k in chunk}
+    LE = {k: min(z for t, z in cols[k]) for k in chunk}
+    target = [TE[k] - max(1, int(round(cf * (TE[k] - LE[k] + 1)))) for k in chunk]
+    x_top = min(int(np.median(target)), min(TE.values()) - 1)
+    order = sorted(chunk, key=lambda k: abs(k - chunk[len(chunk) // 2]))
+    span_vec = [0, 0, 0]
+    span_vec[span_ax] = 1
+    orient_h = sb.orient_for_hinge(tuple(span_vec), (0, 0, 1))
+    mot = te_motion(orient_h)
+    pos_sense = ("down" if mot[1] < 0 else "up") if span_ax == 0 else ("right" if mot[0] > 0 else "left")
+    lim = tuple(getattr(comp, "spec", {}).get("controls", {}).get("limits", {}).get(role, LIMITS[role]))
+    if pos_sense in ("up", "left"):
+        lim = (-lim[1], -lim[0])
+    struct0 = _structure(model)
+    n0 = ndimage.label(struct0)[1]
+    # candidate hinge lines: inside the chord (flap = the aft rows), then - for chords too short to keep a leading
+    # row once the hinge row is cut - the recipe "hinge on the trailing-edge row, flap trailing aft as a new row"
+    cands = [(x_h, []) for x_h in range(x_top, min(LE.values()) - 1, -1)]
+    xe = min(TE.values())
+    ext = []
+    for k in chunk:
+        if TE[k] == xe:
+            for t in {t for t, z in cols[k] if z == xe}:
+                v = _idx(span_ax, t_ax, k, t, xe + 1)
+                if all(0 <= a < n for a, n in zip(v, lat.shape)) and not (model.solid[v] or model.cavity[v] or
+                                                                         model.blocked[v] or model.swept_taken[v]):
+                    ext.append(v)
+    if ext:
+        cands.append((xe, ext))
+    for x_h, ext in cands:
+        flap = [_idx(span_ax, t_ax, k, t, z) for k in chunk for (t, z) in cols[k] if z > x_h] + ext
+        if {v[span_ax] for v in flap} != set(chunk):
+            continue
+        fset = set(flap)
+        row = {_idx(span_ax, t_ax, k, t, z) for k in chunk for (t, z) in cols[k] if z == x_h}
+        gone = fset | row
+        for k in order:
+            ts = sorted({t for t, z in cols[k] if z == x_h and _idx(span_ax, t_ax, k, t, x_h + 1) in fset},
+                        key=lambda t: abs(t - np.median([tt for tt, zz in cols[k]])))
+            for t in ts:
+                hidx = _idx(span_ax, t_ax, k, t, x_h)
+                attached = False
+                for dv in ((0, 0, -1), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0)):
+                    nb = tuple(a + b for a, b in zip(hidx, dv))
+                    if all(0 <= a < s for a, s in zip(nb, lat.shape)) and struct0[nb] and nb not in gone:
+                        attached = True
+                        break
+                if not attached or (tuple(chunk), x_h, hidx) in banned:
+                    continue
+                res = _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0)
+                if res is None:
+                    continue
+                swept, carve = res
+                return dict(comp=comp, chunk=chunk, span_ax=span_ax, t_ax=t_ax, x_h=x_h, hidx=hidx, flap=flap,
+                            extended=len(ext), row=row,
+                            carve=carve, swept=swept, orient_h=orient_h, lim=lim, pos_sense=pos_sense, role=role,
+                            side=side, hinge_name=hinge_name, head_name=head_name, flap_block=flap_block, cat=cat,
+                            grid=d["grid"])
+    return None
+
+
+def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0):
+    lat = model.lat
+    fl = set(flap) | {hidx}
+    arr = np.array(sorted(fl))
+    lo = arr.min(0)
+    g = np.zeros(tuple(arr.max(0) - lo + 1), bool)
+    g[tuple((arr - lo).T)] = True
+    if ndimage.label(g)[1] != 1:
+        return None
+    pos_h = lat.centre_cells(np.array(hidx))
+    axis, pivot_cells = sb.hinge_axis_and_pivot(pos_h, orient_h)
+    pivot = pivot_cells / lat.u - lat.i0
+    swept = swept_voxels(sorted(fl), pivot, axis * sb.CAL["hinge_angle_sign"], lim[0], lim[1])
+    swept.discard(hidx)
+    carve = set(v for v in row if v != hidx)
+    for v in swept:
+        if v in fl or any(a < 0 or a >= s for a, s in zip(v, lat.shape)):
+            continue
+        if model.blocked[v] or model.swept_taken[v]:
+            return None
+        if model.solid[v]:
+            if model.label[v] == ci and v[span_ax] in chunk and v[2] <= x_h:
+                carve.add(v)
+            else:
+                return None
+        elif model.cavity[v]:
+            return None
+    # the main grid must stay one piece
+    s2 = struct0.copy()
+    for v in fl | carve:
+        s2[v] = False
+    s2[hidx] = True
+    if ndimage.label(s2)[1] > n0:
+        return None
+    return swept, carve
+
+
+def _commit(model, p):
+    lat, cat = model.lat, p["cat"]
+    hidx = p["hidx"]
+    for v in p["flap"]:
+        model.solid[v] = False
+    for v in p["carve"]:
+        model.solid[v] = False
+    model.solid[hidx] = False
+    model.engine_vox[hidx] = True          # the hinge block is main-grid structure
+    for v in p["swept"]:
+        if all(0 <= a < s for a, s in zip(v, model.swept_taken.shape)):
+            model.swept_taken[v] = True
+    model.frozen[hidx] = True
+    orient_h = p["orient_h"]
+    hpos = cat.pos_for(p["hinge_name"], lat.voxel_box(np.array(hidx))[0], orient_h)
+    origin, Rh = sb.headgrid_frame(hpos, orient_h)
+    block = p["flap_block"]
+    if block == "half" and not _inplane_connected(set(p["flap"]) | {hidx}, p["t_ax"]):
+        block = "cube"                     # half blocks only touch within their layer: staircase flaps get cubes
+    fname = sb.armor(block, p["grid"])
+    t_vec = [0, 0, 0]
+    t_vec[p["t_ax"]] = 1
+    forient = _orient_thin(t_vec) if block == "half" else sb.IDENTITY
+    fblocks = []
+    for v in sorted(p["flap"]):
+        p_main = lat.centre_cells(np.array(v))
+        p_hg, o_hg = sb.to_headgrid(p_main, forient, origin, Rh)
+        lo, hi = cat.box(fname, p_main, forient)
+        fblocks.append(dict(name=fname, pos=p_main, orient=forient, hg_pos=np.round(p_hg).astype(int),
+                            hg_orient=o_hg, lo=lo, hi=hi, voxel=v))
+    axis, pivot_cells = sb.hinge_axis_and_pivot(hpos, orient_h)
+    hlo, hhi = cat.box(p["hinge_name"], hpos, orient_h)
+    headlo, headhi = cat.box(p["head_name"], origin, sb.orient_names(Rh))
+    comp = p["comp"]
+    return dict(surface=comp.id, surface_role=comp.role, role=p["role"], side=p["side"], span_axis=p["span_ax"],
+                columns=list(p["chunk"]), x_h=p["x_h"], hinge_voxel=hidx, hinge_name=p["hinge_name"],
+                head_name=p["head_name"], hinge_pos=np.asarray(hpos, int), hinge_orient=orient_h, hinge_lo=hlo,
+                hinge_hi=hhi, head_lo=headlo, head_hi=headhi, head_origin=origin, Rh=Rh,
+                axis=tuple(int(a) for a in axis), pivot_cells=tuple(float(a) for a in pivot_cells),
+                limits=p["lim"], positive_moves_te=p["pos_sense"], flaps=fblocks, carved=sorted(p["carve"]),
+                extended_rows=bool(p["extended"]), _plan=p,
+                swept=sorted(p["swept"]))
+
+
+def _inplane_connected(cells, t_ax):
+    arr = np.array(sorted(cells))
+    lo = arr.min(0)
+    g = np.zeros(tuple(arr.max(0) - lo + 1), bool)
+    g[tuple((arr - lo).T)] = True
+    st = ndimage.generate_binary_structure(3, 1)
+    c = [1, 1, 1]
+    for dv in (-1, 1):
+        c2 = list(c)
+        c2[t_ax] += dv
+        st[tuple(c2)] = False
+    return ndimage.label(g, structure=st)[1] == 1
+
+
+def _orient_thin(t_vec):
+    """Orientation putting a half block's thin local Z along the thickness axis, local Up kept upright if possible."""
+    want = np.array(t_vec)
+    for o in sb.ALL_ORIENTS:
+        M = sb.orient_matrix(*o)
+        if np.array_equal(M @ np.array([0, 0, 1]), want) or np.array_equal(M @ np.array([0, 0, 1]), -want):
+            if want[1] == 0 and M[1, 1] != 1:
+                continue
+            return o
+    return sb.IDENTITY

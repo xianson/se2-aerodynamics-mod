@@ -1,0 +1,41 @@
+{
+ "name": "fighter",
+ "title": "Small-grid fighter",
+ "grid": "small",
+ "fuselage": {
+  "length": 16,
+  "width": 2.8,
+  "height": 2.6,
+  "nose": 0.28,
+  "tail": 0.2,
+  "tail_width": 0.7,
+  "tail_height": 0.7,
+  "tail_upsweep": 0.0
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 10,
+   "root_chord": 4.6,
+   "tip_chord": 1.5,
+   "sweep": 38,
+   "dihedral": -3,
+   "x": 7.0,
+   "z": "mid",
+   "thickness": 0.05
+  }
+ ],
+ "tail": {
+  "type": "conventional",
+  "sweep": 40,
+  "fin_sweep": 45
+ },
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ]
+}

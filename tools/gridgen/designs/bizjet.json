@@ -1,0 +1,37 @@
+{
+ "name": "bizjet",
+ "title": "T-tail bizjet, rear engines",
+ "grid": "large",
+ "fuselage": {
+  "length": 58,
+  "width": 13,
+  "height": 13,
+  "nose": 0.18,
+  "tail": 0.34,
+  "tail_width": 0.3,
+  "tail_height": 0.45,
+  "tail_upsweep": 0.35
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 56,
+   "root_chord": 14,
+   "tip_chord": 5,
+   "sweep": 25,
+   "dihedral": 4,
+   "x": 20,
+   "z": "low"
+  }
+ ],
+ "tail": "t",
+ "engines": [
+  {
+   "mount": "rear_fuselage",
+   "type": "atmospheric",
+   "size": 500,
+   "x_frac": 0.7
+  }
+ ]
+}

@@ -1,0 +1,39 @@
+{
+ "name": "vtail_drone",
+ "title": "V-tail pusher drone",
+ "grid": "small",
+ "fuselage": {
+  "length": 8,
+  "width": 1.6,
+  "height": 1.6,
+  "nose": 0.3,
+  "tail": 0.25,
+  "tail_width": 0.6,
+  "tail_height": 0.6,
+  "tail_upsweep": 0.0
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 10,
+   "root_chord": 1.3,
+   "tip_chord": 0.8,
+   "sweep": 3,
+   "x": 5.3,
+   "z": "high"
+  }
+ ],
+ "tail": {
+  "type": "v",
+  "dihedral": 38,
+  "size": 1.2
+ },
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "atmospheric",
+   "size": 100
+  }
+ ]
+}

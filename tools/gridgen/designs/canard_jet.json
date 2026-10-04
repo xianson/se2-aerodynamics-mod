@@ -1,0 +1,58 @@
+{
+ "name": "canard_jet",
+ "title": "Canard delta fighter",
+ "grid": "small",
+ "fuselage": {
+  "length": 16,
+  "width": 2.8,
+  "height": 2.6,
+  "nose": 0.3,
+  "tail": 0.12,
+  "tail_width": 0.8,
+  "tail_height": 0.8,
+  "tail_upsweep": 0.0
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 10,
+   "root_chord": 6.5,
+   "tip_chord": 1.2,
+   "sweep": 45,
+   "x": 8.6,
+   "z": "mid",
+   "thickness": 0.05
+  },
+  {
+   "id": "fin",
+   "role": "vtail",
+   "span": 3.0,
+   "root_chord": 3.5,
+   "tip_chord": 1.2,
+   "sweep": 45,
+   "x": 12.0,
+   "z": 1.0,
+   "mirror": false
+  }
+ ],
+ "canard": {
+  "span": 4.4,
+  "root_chord": 1.7,
+  "tip_chord": 0.8,
+  "sweep": 30,
+  "x": 3.6,
+  "z": 0.5,
+  "thickness": 0.05
+ },
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "batteries": {
+  "max": 60
+ }
+}

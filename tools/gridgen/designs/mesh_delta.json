@@ -1,0 +1,15 @@
+{
+ "name": "mesh_delta",
+ "title": "Mesh import: delta_jet.stl",
+ "grid": "small",
+ "mesh": "../meshes/delta_jet.stl",
+ "mesh_axes": "x y z",
+ "mesh_length": 16,
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ]
+}

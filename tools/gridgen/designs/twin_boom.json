@@ -1,0 +1,42 @@
+{
+ "name": "twin_boom",
+ "title": "Twin-boom pusher",
+ "grid": "large",
+ "fuselage": {
+  "length": 36,
+  "width": 11,
+  "height": 11,
+  "nose": 0.25,
+  "tail": 0.15,
+  "tail_width": 0.75,
+  "tail_height": 0.75,
+  "tail_upsweep": 0.0
+ },
+ "surfaces": [
+  {
+   "id": "wing",
+   "role": "wing",
+   "span": 64,
+   "root_chord": 10,
+   "tip_chord": 7,
+   "sweep": 0,
+   "dihedral": 0,
+   "x": 29.5,
+   "z": "mid"
+  }
+ ],
+ "tail": {
+  "type": "twin_boom",
+  "boom_y": 10,
+  "x_end": 58,
+  "size": 1.2,
+  "htail_at": 1.0
+ },
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "atmospheric",
+   "size": 500
+  }
+ ]
+}
