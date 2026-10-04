@@ -710,7 +710,9 @@ public static class OffsetThrustJob
                         (aabb.Min.X + aabb.Max.X + 1) * 0.5f,
                         (aabb.Min.Y + aabb.Max.Y + 1) * 0.5f,
                         (aabb.Min.Z + aabb.Max.Z + 1) * 0.5f);
-                    Vector3 localPos = gridCenter * blockSize;
+                    // (the AABB is in 0.25 m cells, not blocks: x blockSize put every thruster ~10x too far out on a large grid -
+                    //  wrong torque arms for ThrustTorque, rotor distances. Cell i covers [0.25 i, 0.25 (i+1)]: the +1 above)
+                    Vector3 localPos = gridCenter * 0.25f;
 
                     const float CellSize = 0.25f;
                     Vector3 drawPos = new Vector3(
