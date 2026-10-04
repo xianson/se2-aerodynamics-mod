@@ -1,11 +1,10 @@
 {
  "name": "flying_wing",
- "title": "Blended flying wing",
- "grid": "large",
+ "title": "Blended flying wing (52 m span)",
  "fuselage": {
-  "length": 34,
-  "width": 22,
-  "height": 11,
+  "length": 21,
+  "width": 12,
+  "height": 3.6,
   "nose": 0.35,
   "tail": 0.45,
   "section": 2.5,
@@ -15,15 +14,17 @@
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 96,
-   "root_chord": 28,
-   "tip_chord": 6,
+   "id": "wing",
+   "span": 52,
+   "root_chord": 17,
+   "tip_chord": 3.0,
    "sweep": 33,
-   "x": 7.0,
+   "x": 2.5,
    "z": "mid",
-   "thickness": 0.1
+   "thickness": 0.11,
+   "thickness_tip": 0.08,
+   "fairing": false
   }
  ],
  "tail": "none",
@@ -31,7 +32,12 @@
   {
    "mount": "wing_root",
    "type": "atmospheric",
-   "size": 500
+   "size": 250,
+   "cluster": [
+    2,
+    1
+   ]
   }
- ]
+ ],
+ "grid": "small"
 }

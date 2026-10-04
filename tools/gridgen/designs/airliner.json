@@ -1,31 +1,37 @@
 {
  "name": "airliner",
- "title": "Twin-jet airliner",
- "grid": "large",
+ "title": "Twin-jet airliner (48 m)",
  "fuselage": {
-  "length": 72,
-  "width": 15,
-  "height": 15,
-  "nose": 0.16,
-  "tail": 0.32,
-  "tail_width": 0.25,
-  "tail_height": 0.4,
-  "tail_upsweep": 0.45
+  "length": 48,
+  "width": 5.0,
+  "height": 5.4,
+  "nose": 0.14,
+  "tail": 0.3,
+  "nose_shape": 0.55,
+  "tail_width": 0.18,
+  "tail_height": 0.3,
+  "tail_upsweep": 0.55
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 80,
-   "root_chord": 19,
-   "tip_chord": 6,
+   "id": "wing",
+   "span": 44,
+   "root_chord": 8.5,
+   "tip_chord": 2.2,
    "sweep": 28,
    "dihedral": 5,
-   "x": 26,
-   "z": "low"
+   "x": 16,
+   "z": "low",
+   "thickness": 0.15,
+   "thickness_tip": 0.1
   }
  ],
- "tail": "conventional",
+ "tail": {
+  "type": "conventional",
+  "sweep": 32,
+  "fin_sweep": 38
+ },
  "engines": [
   {
    "mount": "pod",
@@ -35,5 +41,6 @@
     0.34
    ]
   }
- ]
+ ],
+ "grid": "small"
 }

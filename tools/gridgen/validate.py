@@ -3,9 +3,10 @@
   prefabs      every Guid known; H lines point at hinge blocks; every hinge carries flap blocks
   overlap      no two main-grid blocks share a cell; no flap block overlaps the main grid, a head, or another flap
   attached     each hinge's flap blocks + head are one face-connected piece; flaps on the measured mount side (+Y)
-  hinge_line   hinge axis along the segment's span axis; a flap block directly aft of the head (leading edge on the
-               hinge line); the hinge block touches the main grid
-  sweep        rotated through its limits, no flap/head point enters a main-grid block (other than its own hinge)
+  hinge_line   hinge axis along the segment's span axis; a flap block directly aft of the head at the 90 deg
+               neutral (leading edge on the hinge line); limits inside 0..180 around the neutral; the hinge block
+               touches the main grid
+  sweep        rotated through its limits (about the 90 deg neutral), no flap/head point enters a main-grid block (other than its own hinge)
                or another hinge's swept cells
   engines      exhaust lanes (and atmospheric intakes) free of blocks and of flap sweeps
   connected    the main grid is one face-connected piece
@@ -103,8 +104,9 @@ def validate(spec_path, side, cat):
             p, o = sb.from_headgrid(fpos, forient, origin, Rh)
             flaps.append((fname, fpos, cat.box(fname, p, o)))
         axis, pivot = sb.hinge_axis_and_pivot(hpos, horient)
+        neu = sb.CAL["hinge_neutral_deg"]
         hinges.append(dict(k=k, bi=bi, head=head, head_box=head_box, flaps=flaps, axis=axis, pivot=pivot,
-                           lim=(mn, mx), origin=origin, Rh=Rh))
+                           lim=(mn - neu, mx - neu), abs_lim=(mn, mx), origin=origin, Rh=Rh))
         allboxes += [head_box] + [f[2] for f in flaps]
 
     # ---- main-grid overlaps
@@ -150,6 +152,9 @@ def validate(spec_path, side, cat):
             if int(np.asarray(fpos) @ mount) < u:
                 wrongside.append(h["k"])
                 break
+        r0, r1 = sb.CAL["hinge_range_deg"]
+        if not (r0 <= h["abs_lim"][0] <= sb.CAL["hinge_neutral_deg"] <= h["abs_lim"][1] <= r1):
+            notline.append(h["k"])                  # limits outside the hinge's 0..180, or not around neutral
         want = span_axes.get(h["k"])
         ax = "XYZ"[int(np.argmax(np.abs(h["axis"])))]
         lead = any(np.array_equal(np.asarray(f[1]), mount * u) for f in h["flaps"])

@@ -75,7 +75,7 @@ def surface(x_le, cr, ct, span, sweep, z, t=0.14, vertical=False, y0=0.0):
 
 def simple_plane():
     parts = [("fuselage", body(40, 2.6, 2.6)),
-             ("wing", surface(16.5, 7, 3, 36, 12, -1.0)),
+             ("wing", surface(18.0, 7, 3, 36, 12, -1.0)),
              ("htail", surface(34.5, 3.6, 2.2, 13, 18, 0.6)),
              ("fin", surface(33.5, 4.8, 2.4, 6.5, 35, 1.8, vertical=True))]
     tris, groups = [], []

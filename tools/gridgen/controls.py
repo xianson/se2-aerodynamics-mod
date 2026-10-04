@@ -90,10 +90,8 @@ def swept_voxels(cells, pivot, axis, lo_deg, hi_deg, margin=3.0, n_sub=9):
 
 
 def te_motion(hinge_orient):
-    """Direction the trailing edge moves for a positive hinge angle (grid vector)."""
-    M = sb.orient_matrix(*hinge_orient)
-    A = M @ np.array(sb.CAL["hinge_axis_local"]) * sb.CAL["hinge_angle_sign"]
-    return np.cross(A, np.array([0, 0, 1]))
+    """Direction the trailing edge (aft of the hinge at neutral) moves for an increasing hinge angle."""
+    return np.cross(sb.hinge_axis_vec(hinge_orient), np.array([0, 0, 1]))
 
 
 def place_controls(model, d, surfs, cat):
@@ -188,7 +186,7 @@ def _mirror_plan(model, p, ci):
         if not own and p["extended"] == 0:
             return None
     struct0 = _structure(model)
-    n0 = ndimage.label(struct0)[1]
+    n0 = 0
     res = _try(model, ci, q["chunk"], span_ax, p["x_h"], q["hidx"], q["flap"], row, p["orient_h"], p["lim"],
                struct0, n0)
     if res is None:
@@ -284,7 +282,9 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
     lat = model.lat
     TE = {k: max(z for t, z in cols[k]) for k in chunk}
     LE = {k: min(z for t, z in cols[k]) for k in chunk}
-    target = [TE[k] - max(1, int(round(cf * (TE[k] - LE[k] + 1)))) for k in chunk]
+    # flap chord: the fraction of the local chord, at least 2 rows (3 on long chords) where the chord allows
+    nf = lambda n: max(1 if n < 5 else (2 if n < 9 else 3), int(round(cf * n)))
+    target = [TE[k] - nf(TE[k] - LE[k] + 1) for k in chunk]
     x_top = min(int(np.median(target)), min(TE.values()) - 1)
     order = sorted(chunk, key=lambda k: abs(k - chunk[len(chunk) // 2]))
     span_vec = [0, 0, 0]
@@ -296,10 +296,11 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
     if pos_sense in ("up", "left"):
         lim = (-lim[1], -lim[0])
     struct0 = _structure(model)
-    n0 = ndimage.label(struct0)[1]
+    blocked = model.blocked
+    n0 = 0
     # candidate hinge lines: inside the chord (flap = the aft rows), then - for chords too short to keep a leading
     # row once the hinge row is cut - the recipe "hinge on the trailing-edge row, flap trailing aft as a new row"
-    cands = [(x_h, []) for x_h in range(x_top, min(LE.values()) - 1, -1)]
+    cands = [(x_h, []) for x_h in range(x_top, min(LE.values()) - 1, -1)][:4]
     xe = min(TE.values())
     ext = []
     for k in chunk:
@@ -307,7 +308,7 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
             for t in {t for t, z in cols[k] if z == xe}:
                 v = _idx(span_ax, t_ax, k, t, xe + 1)
                 if all(0 <= a < n for a, n in zip(v, lat.shape)) and not (model.solid[v] or model.cavity[v] or
-                                                                         model.blocked[v] or model.swept_taken[v]):
+                                                                         blocked[v] or model.swept_taken[v]):
                     ext.append(v)
     if ext:
         cands.append((xe, ext))
@@ -318,10 +319,10 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
         fset = set(flap)
         row = {_idx(span_ax, t_ax, k, t, z) for k in chunk for (t, z) in cols[k] if z == x_h}
         gone = fset | row
-        for k in order:
+        for k in order[:3]:
             ts = sorted({t for t, z in cols[k] if z == x_h and _idx(span_ax, t_ax, k, t, x_h + 1) in fset},
                         key=lambda t: abs(t - np.median([tt for tt, zz in cols[k]])))
-            for t in ts:
+            for t in ts[:2]:
                 hidx = _idx(span_ax, t_ax, k, t, x_h)
                 attached = False
                 for dv in ((0, 0, -1), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0)):
@@ -331,7 +332,7 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
                         break
                 if not attached or (tuple(chunk), x_h, hidx) in banned:
                     continue
-                res = _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0)
+                res = _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0, blocked)
                 if res is None:
                     continue
                 swept, carve = res
@@ -343,8 +344,10 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
     return None
 
 
-def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0):
+def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0, n0, blocked=None):
     lat = model.lat
+    if blocked is None:
+        blocked = model.blocked
     fl = set(flap) | {hidx}
     arr = np.array(sorted(fl))
     lo = arr.min(0)
@@ -361,7 +364,7 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
     for v in swept:
         if v in fl or any(a < 0 or a >= s for a, s in zip(v, lat.shape)):
             continue
-        if model.blocked[v] or model.swept_taken[v]:
+        if blocked[v] or model.swept_taken[v]:
             return None
         if model.solid[v]:
             if model.label[v] == ci and v[span_ax] in chunk and v[2] <= x_h:
@@ -370,12 +373,17 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
                 return None
         elif model.cavity[v]:
             return None
-    # the main grid must stay one piece
-    s2 = struct0.copy()
+    # the main grid must stay one piece: compare the pieces in a box around the segment before and after
+    allv = np.array(sorted(fl | carve))
+    a = np.maximum(allv.min(0) - 3, 0)
+    b = np.minimum(allv.max(0) + 4, np.array(lat.shape))
+    sl = tuple(slice(int(x), int(y)) for x, y in zip(a, b))
+    before = struct0[sl]
+    after = before.copy()
     for v in fl | carve:
-        s2[v] = False
-    s2[hidx] = True
-    if ndimage.label(s2)[1] > n0:
+        after[tuple(np.array(v) - a)] = False
+    after[tuple(np.array(hidx) - a)] = True
+    if ndimage.label(after)[1] > ndimage.label(before)[1]:
         return None
     return swept, carve
 
@@ -419,7 +427,9 @@ def _commit(model, p):
                 head_name=p["head_name"], hinge_pos=np.asarray(hpos, int), hinge_orient=orient_h, hinge_lo=hlo,
                 hinge_hi=hhi, head_lo=headlo, head_hi=headhi, head_origin=origin, Rh=Rh,
                 axis=tuple(int(a) for a in axis), pivot_cells=tuple(float(a) for a in pivot_cells),
-                limits=p["lim"], positive_moves_te=p["pos_sense"], flaps=fblocks, carved=sorted(p["carve"]),
+                deflection=p["lim"], neutral_deg=sb.CAL["hinge_neutral_deg"],
+                limits=(sb.CAL["hinge_neutral_deg"] + p["lim"][0], sb.CAL["hinge_neutral_deg"] + p["lim"][1]),
+                positive_moves_te=p["pos_sense"], flaps=fblocks, carved=sorted(p["carve"]),
                 extended_rows=bool(p["extended"]), _plan=p,
                 swept=sorted(p["swept"]))
 

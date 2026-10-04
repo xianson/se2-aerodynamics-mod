@@ -89,12 +89,19 @@ class TestAdapter(unittest.TestCase):
                 np.testing.assert_array_equal(CAT.pos_for(name, lo, o), [7, -3, 11])
                 np.testing.assert_array_equal(np.sort(hi - lo), np.sort(CAT[name].size))
 
-    def test_hinge_orientation_axis_along_span_flap_aft(self):
+    def test_hinge_orientation_axis_along_span_flap_aft_at_90(self):
         for span in ((1, 0, 0), (0, 1, 0)):
             o = sb.orient_for_hinge(span, (0, 0, 1))
             M = sb.orient_matrix(*o)
             np.testing.assert_array_equal(np.abs(M @ np.array(sb.CAL["hinge_axis_local"])), np.abs(span))
-            np.testing.assert_array_equal(M @ np.array(sb.CAL["flap_mount_local"]), [0, 0, 1])
+            # Up = aft x Forward: head +Y hangs along Up at 0 deg and trails aft at the 90 deg neutral
+            np.testing.assert_array_equal(M[:, 1], np.cross([0, 0, 1], -M[:, 2]))
+            at90 = sb.rot(sb.hinge_axis_vec(o), 90) @ (M @ np.array(sb.CAL["flap_mount_local"]))
+            np.testing.assert_array_equal(at90, [0, 0, 1])
+        # the coordinator's worked example: Forward = Left, aft = +Z -> Up = Down
+        o = ("Left", "Down")
+        M = sb.orient_matrix(*o)
+        np.testing.assert_array_equal(sb.rot(sb.hinge_axis_vec(o), 90) @ M[:, 1], [0, 0, 1])
 
     def test_headgrid_roundtrip(self):
         o = sb.orient_for_hinge((1, 0, 0), (0, 0, 1))
@@ -124,8 +131,13 @@ class TestVoxeliser(unittest.TestCase):
         class Ball:
             def inside(self, x, y, z):
                 return x * x + y * y + z * z <= 9.0
+
+            def bbox(self):
+                return np.array([-3.0] * 3), np.array([3.0] * 3)
         lat = vx.Lattice("small", (-3, -3, -3), (3, 3, 3), pad=1)
         cov, _ = vx.coverage_implicit(lat, [Ball()], s=3)
+        cov1, _ = vx.coverage_implicit(lat, [Ball()], s=3, chunk=1)
+        np.testing.assert_allclose(cov, cov1)                    # slab chunking changes nothing
         vol = (cov >= 0.5).sum() * lat.B ** 3
         self.assertAlmostEqual(vol / (4 / 3 * math.pi * 27), 1.0, delta=0.06)
         np.testing.assert_array_equal(cov, cov[::-1])           # mirror-symmetric
@@ -212,6 +224,50 @@ class TestVoxeliser(unittest.TestCase):
         out = vx.outside(f)
         res = vx.refine_skin(f, np.zeros_like(f), out, cov, f, np.zeros_like(f))
         self.assertTrue(any(s == "slope" for s, n in res.values()))
+
+
+    def test_halfslope_fill_in_stair_corner(self):
+        f = np.zeros((5, 6, 6), bool)
+        f[:, :2, :] = True                     # floor
+        f[:, 2:4, 3:] = True                   # a step up toward +Z
+        cov = f.astype(np.float32)
+        cov[:, 2, 2] = 0.3                     # the inside corner is partly material
+        out = vx.outside(f)
+        res = vx.halfslope_fill(f, f, out, cov, np.zeros_like(f))
+        self.assertIn((2, 2, 2), res)
+        self.assertEqual(res[(2, 2, 2)], ("halfslope", (0, 2, -1)))      # mostly up, leaning away from the riser
+
+    def test_shape_geometry_volumes(self):
+        import preview
+        for shape, vol in (("cube", 1.0), ("slope", 0.5), ("corner", 1 / 6), ("invcorner", 5 / 6), ("halfslope", 0.25)):
+            faces = preview.shape_faces(shape, ("Forward", "Up"))
+            v = 0.0                             # divergence theorem over the closed polyhedron
+            for poly, n, _ in faces:
+                newell = sum(np.cross(poly[i], poly[(i + 1) % len(poly)]) for i in range(len(poly)))
+                if np.dot(newell, n) < 0:
+                    poly = poly[::-1]
+                for i in range(1, len(poly) - 1):
+                    v += np.dot(poly[0], np.cross(poly[i], poly[i + 1])) / 6
+            self.assertAlmostEqual(abs(v), vol, places=6, msg=shape)
+
+
+class TestGeometry(unittest.TestCase):
+    def test_wing_root_two_blocks_thick_tip_thin_te(self):
+        s = dz.Surface(dict(role="wing", span=20, root_chord=3, tip_chord=1, x=0, z=0.0, thickness=0.05), None, 0.5)
+        self.assertGreaterEqual(s.thickness_at(0.0), 1.0 - 1e-9)          # >= 2 small blocks at the root
+        self.assertAlmostEqual(s.thickness_at(s.L), 0.5)                   # 1 block at the tip
+        x = np.array([0.9, 2.95])                                          # at 30% chord vs at the trailing edge
+        y = np.array([0.1, 0.1])
+        zz = np.array([0.45, 0.45])
+        np.testing.assert_array_equal(s.inside(x, y, zz), [True, False])   # thick at 30%, thin at the TE
+
+    def test_scale(self):
+        d = dz.defaults({"name": "s", "scale": 2.0, "fuselage": {"length": 10, "width": 2, "nose": 0.2},
+                         "surfaces": [{"span": 8, "root_chord": 2, "x": 3, "sweep": 20}]})
+        self.assertEqual(d["fuselage"]["length"], 20)
+        self.assertEqual(d["fuselage"]["nose"], 0.2)
+        self.assertEqual(d["surfaces"][0]["span"], 16)
+        self.assertEqual(d["surfaces"][0]["sweep"], 20)
 
 
 class TestCoM(unittest.TestCase):
@@ -320,6 +376,14 @@ class TestPipeline(unittest.TestCase):
         v = val.validate(self.spec, self.side, CAT)
         self.assertTrue(v["ok"], json.dumps(v["checks"], indent=1))
 
+    def test_hinge_limits_around_neutral(self):
+        for h in self.side["hinges"]:
+            self.assertEqual(h["neutral_deg"], 90.0)
+            self.assertAlmostEqual(h["limits"][0], 90.0 + h["deflection"][0])
+            self.assertTrue(0 <= h["limits"][0] <= 90 <= h["limits"][1] <= 180)
+            if h["role"] in ("aileron", "elevator", "rudder"):
+                self.assertEqual(sorted(h["limits"]), [65.0, 115.0])
+
     def test_controls_full_and_symmetric(self):
         roles = [(h["role"], h["side"]) for h in self.side["hinges"]]
         for r in ("aileron", "elevator", "rudder"):
@@ -367,6 +431,29 @@ class TestPipeline(unittest.TestCase):
         for e in self.side["engines"]:
             self.assertEqual(e["exhaust"], [0, 0, 1])
         self.assertEqual(len(self.side["engines"]), 2)
+
+
+class TestSmallGridFeatures(unittest.TestCase):
+    def test_cluster_nacelle_fairing_small_grid(self):
+        d = {"name": "smallplane", "fuselage": {"length": 14, "width": 2.2, "height": 2.2, "nose": 0.2, "tail": 0.3},
+             "surfaces": [{"id": "wing", "role": "wing", "span": 14, "root_chord": 2.4, "tip_chord": 1.2, "x": 5.2,
+                           "z": "low", "thickness": 0.15}],
+             "tail": "conventional",
+             "engines": [{"mount": "pod", "type": "atmospheric", "size": 100, "cluster": [2, 1], "span_frac": [0.4]}]}
+        m = build.build(d, CAT, log=lambda s: None)
+        dirn = tempfile.mkdtemp()
+        try:
+            sp = os.path.join(dirn, "s.txt")
+            blocks, side = specio.write(sp, m)
+            v = val.validate(sp, side, CAT)
+            self.assertTrue(v["ok"], json.dumps(v["checks"], indent=1))
+        finally:
+            shutil.rmtree(dirn)
+        self.assertEqual(side["grid"], "small")
+        self.assertEqual(sum(1 for b in blocks if b["kind"] == "engine"), 4)      # 2 per pod x 2 pods
+        self.assertTrue(all(e["nacelle_blocks"] > 0 for e in side["engines"]))
+        self.assertTrue(any(c.role == "fairing" for c in m.comps))
+        self.assertGreater(side["shaped_blocks"], 0)
 
 
 class TestMeshPipeline(unittest.TestCase):

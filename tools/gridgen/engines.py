@@ -10,7 +10,10 @@ Engine entry in the design:
    "x" / "x_frac", "y", "z", "z_off"   (stations in metres / fraction of fuselage length; offsets)
    "mirror": true               (side mounts default true)
    "clear": 6.0                 (exhaust clear length, metres; default CAL exhaust_clear_lengths x engine length)
-   "embedded": bool, "nudge": "up" | "down" | "out" | "aft"   (custom mounts)}
+   "embedded": bool, "nudge": "up" | "down" | "out" | "aft"   (custom mounts)
+   "cluster": [2, 1]            (n across x m stacked thrusters as one engine, when one block is too small)
+   "nacelle": true, "nacelle_lip": 1   (external engines: a round cowling one block thick, open intake and
+                                exhaust ducts reaching nacelle_lip blocks past the thruster)}
 
 Placement: the nominal spot from the mount; then the engine is nudged (one block at a time in the mount's nudge
 direction) until neither the engine nor its lanes hit the airframe - except embedded mounts (tail, wing_root),
@@ -155,7 +158,16 @@ def place_all(model, d, fus, surfs, cat):
             if side < 0:
                 ex[0] = -ex[0]
             orient = sb.orient_for_thruster(tuple(ex))
-            ext = cat.extent(name, orient)
+            unit = cat.extent(name, orient)
+            # a cluster: n x m thrusters side by side across the thrust axis, placed and cleared as one unit
+            cl = list(e.get("cluster", [1, 1]))
+            ax_e = int(np.nonzero(ex)[0][0])
+            cross = [i for i in range(3) if i != ax_e]
+            if ax_e != 1:
+                cross = [0, 1] if ax_e == 2 else [2, 1]          # first count across, second stacked vertically
+            ext = unit.copy()
+            ext[cross[0]] *= int(cl[0])
+            ext[cross[1]] *= int(cl[1])
             c = np.array([centre_m[1], centre_m[2], centre_m[0]]) / sb.CELL_M     # grid cells
             # anchor the nominal point: the engine sits beside / behind / below it, not centred on it
             if anchor == "front":
@@ -186,12 +198,20 @@ def place_all(model, d, fus, surfs, cat):
                 model.problems.append(f"engine {ei} ({e.get('mount')}) side {side}: no clear spot found")
                 continue
             lo, hi, lanes, carve_vox, step = res
-            pos = cat.pos_for(name, lo, orient)
-            rec = dict(index=ei, mount=e.get("mount"), side=side, name=name, type=kind, pos=pos, orient=orient,
-                       lo=lo, hi=hi, lanes=lanes, exhaust=tuple(int(v) for v in ex), nudged=step,
-                       embedded=embedded and step == 0)
+            units = []
+            for a_ in range(int(cl[0])):
+                for b_ in range(int(cl[1])):
+                    ulo = lo.copy()
+                    ulo[cross[0]] += a_ * unit[cross[0]]
+                    ulo[cross[1]] += b_ * unit[cross[1]]
+                    units.append((cat.pos_for(name, ulo, orient), ulo, ulo + unit))
+            rec = dict(index=ei, mount=e.get("mount"), side=side, name=name, type=kind, pos=units[0][0],
+                       orient=orient, lo=lo, hi=hi, units=units, lanes=lanes, exhaust=tuple(int(v) for v in ex),
+                       nudged=step, embedded=embedded and step == 0)
             model.add_engine(rec, carve_vox)
             if not rec["embedded"]:
                 model.add_pylon(rec, -np.array(nudge))
+                if e.get("nacelle", True):
+                    model.add_nacelle(rec, float(e.get("nacelle_lip", 1)))
             recs.append(rec)
     return recs

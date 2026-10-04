@@ -1,0 +1,47 @@
+{
+ "name": "airliner_large",
+ "title": "Airliner, large grid (x5.2 scale)",
+ "fuselage": {
+  "length": 48,
+  "width": 5.0,
+  "height": 5.4,
+  "nose": 0.14,
+  "tail": 0.3,
+  "nose_shape": 0.55,
+  "tail_width": 0.18,
+  "tail_height": 0.3,
+  "tail_upsweep": 0.55
+ },
+ "surfaces": [
+  {
+   "role": "wing",
+   "id": "wing",
+   "span": 44,
+   "root_chord": 8.5,
+   "tip_chord": 2.2,
+   "sweep": 28,
+   "dihedral": 5,
+   "x": 16,
+   "z": "low",
+   "thickness": 0.15,
+   "thickness_tip": 0.1
+  }
+ ],
+ "tail": {
+  "type": "conventional",
+  "sweep": 32,
+  "fin_sweep": 38
+ },
+ "engines": [
+  {
+   "mount": "pod",
+   "type": "atmospheric",
+   "size": 1000,
+   "span_frac": [
+    0.34
+   ]
+  }
+ ],
+ "grid": "large",
+ "scale": 5.2
+}

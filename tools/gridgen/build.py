@@ -7,6 +7,8 @@ count limit, the wing group slides fore/aft (secant on the CoM error) and everyt
 """
 from __future__ import annotations
 
+import itertools
+import math
 import os
 
 import numpy as np
@@ -21,7 +23,13 @@ import meshio
 import se2blocks as sb
 import voxel as vx
 
-FUSELAGE_LIKE = ("fuselage", "boom", "nacelle")
+FUSELAGE_LIKE = ("fuselage", "boom", "nacelle", "fairing")
+
+
+class Pseudo:
+    def __init__(self, cid, role):
+        self.id, self.role = cid, role
+        self.moves = False
 
 
 def _m(cells):
@@ -43,7 +51,10 @@ class Model:
             self._from_design(d)
         lat = self.lat
         shape = lat.shape
-        self.shell, self.cavity = vx.hollow(self.filled, int(self.d["solid_below"]))
+        self.comps.append(Pseudo("nacelle", "nacelle"))
+        self.nacelle_label = len(self.comps) - 1
+        body = np.isin(self.label, [i for i, c in enumerate(self.comps) if c.role in FUSELAGE_LIKE])
+        self.shell, self.cavity = vx.hollow(self.filled, int(self.d["solid_below"]), only=body)
         self.cavity0 = self.cavity.copy()
         self.solid = self.shell.copy()
         z = lambda: np.zeros(shape, bool)
@@ -68,8 +79,8 @@ class Model:
         for e in d.get("engines", []):
             name = e.get("prefab") or sb.thruster_name(e.get("type", "atmospheric"), e.get("size"), d["grid"])
             if name in self.cat:
-                m = max(m, int(np.ceil(self.cat[name].size.max() / u)))
-        return 4 + 3 * m
+                m = max(m, int(np.ceil(self.cat[name].size.max() / u)) * max(e.get("cluster", [1, 1])))
+        return 6 + 2 * m
 
     def _from_design(self, d):
         d, fus, comps = dz.components(d, self.dx)
@@ -206,8 +217,9 @@ class Model:
             r2 = self._region(l2, h2, clip=True)
             if r2 is not None:
                 self.lane_vox[r2] = True
-        self.extra.append(dict(name=rec["name"], kind="engine", pos=np.asarray(rec["pos"], int), orient=rec["orient"],
-                               lo=rec["lo"], hi=rec["hi"]))
+        for pos, ulo, uhi in rec.get("units", [(rec["pos"], rec["lo"], rec["hi"])]):
+            self.extra.append(dict(name=rec["name"], kind="engine", pos=np.asarray(pos, int), orient=rec["orient"],
+                                   lo=ulo, hi=uhi))
         rec["carved"] = len(carve)
         self.engines.append(rec)
 
@@ -290,6 +302,41 @@ class Model:
             dist = n
         rec["pylon"] = dist
 
+    def add_nacelle(self, rec, lip=1.0):
+        """A round cowling around an external engine: voxels within one block of the engine's face circle, outside
+        its footprint (the open duct), from `lip` blocks ahead of the intake to `lip` behind the nozzle."""
+        lat = self.lat
+        lo, hi = np.asarray(rec["lo"]), np.asarray(rec["hi"])
+        if not lat.covers_exactly(lo, hi):
+            return
+        a = int(np.nonzero(rec["exhaust"])[0][0])
+        p, q = [i for i in range(3) if i != a]
+        c = (lo + hi) / 2.0
+        r_in = math.hypot((hi[p] - lo[p]) / 2, (hi[q] - lo[q]) / 2)
+        r_out = r_in + lat.u
+        ia, ib = lat.index_range(lo, hi)
+        L = int(round(lip))
+        rng = [None, None, None]
+        rng[a] = range(max(ia[a] - L, 0), min(ib[a] + L, lat.shape[a]))
+        for k in (p, q):
+            m = int(math.ceil(r_out / lat.u)) + 1
+            ck = int(round(c[k] / lat.u)) - lat.i0[k]
+            rng[k] = range(max(ck - m, 0), min(ck + m + 1, lat.shape[k]))
+        lab = self.nacelle_label
+        n = 0
+        for v in itertools.product(*rng):
+            cc = lat.centre_cells(np.array(v))
+            if math.hypot(cc[p] - c[p], cc[q] - c[q]) > r_out:
+                continue
+            if lo[p] - lat.u / 2 < cc[p] < hi[p] + lat.u / 2 and lo[q] - lat.u / 2 < cc[q] < hi[q] + lat.u / 2:
+                continue                                        # the duct: the engine's own footprint stays open
+            if self.solid[v] or self.cavity[v] or self.engine_vox[v] or self.lane_vox[v] or self.swept_taken[v]:
+                continue
+            self.solid[v] = True
+            self.label[v] = lab
+            n += 1
+        rec["nacelle"] = n
+
     # --------------------------------------------------------------------------------------------------- cockpit
     def place_cockpit(self):
         d = self.d
@@ -321,7 +368,8 @@ class Model:
                 if s["count"] != 1 or not self.lat.covers_exactly(lo, hi):
                     continue
                 r = self._region(lo, hi)
-                if hull[r].mean() >= 0.5:
+                s["hull_frac"] = float(hull[r].mean())
+                if s["hull_frac"] >= 0.5:
                     slots.append(s)
             how = "in hull"
         if not slots:
@@ -332,6 +380,9 @@ class Model:
             c = s["centre"]
             zx = c[2] * sb.CELL_M
             return (abs(zx - target) if target is not None else zx, -c[1])
+        snug = [s for s in slots if s.get("hull_frac", 1.0) >= 0.75]   # hull fallback: mostly enclosed, then forward
+        if snug:
+            slots = snug
         s = min(slots, key=score)
         lo, hi, pos = s["boxes"][0]
         r = self._region(lo, hi)
@@ -352,14 +403,23 @@ class Model:
         for sg in self.segs:
             occ[sg["hinge_voxel"]] = True
         out = vx.outside(occ)
-        fus_ids = [i for i, c in enumerate(self.comps) if c.role in FUSELAGE_LIKE]
-        allowed = self.solid & np.isin(self.label, fus_ids) & ~self.pylon
-        shapes = vx.refine_skin(self.solid, self.cavity0 | self.cavity, out, self.cov, allowed, self.frozen)
+        allowed = self.solid & (self.label >= 0) & ~self.pylon      # hull, nacelles, fairings, wings and tails
+        shapes = vx.refine_skin(self.solid, self.cavity0 | self.cavity, out, self.cov, allowed,
+                                self.frozen | self.flapvox)
         ok = {}
         for idx, (shape, n) in shapes.items():
             if sb.orient_for_normal(shape, n) is not None:
                 ok[idx] = (shape, n)
         self.shapes = ok
+        cubes = self.solid & ~self.pylon & ~self.frozen
+        for idx in ok:
+            cubes[idx] = False
+        near = np.zeros_like(self.solid)
+        for dv in vx.N6:
+            near |= vx._shift(self.frozen | self.flapvox, dv)
+        forbid = self.cavity | self.engine_vox | self.lane_vox | self.swept_taken | self.flapvox | near
+        self.fills = {i: v for i, v in vx.halfslope_fill(self.solid, cubes, out, self.cov, forbid).items()
+                      if sb.orient_for_normal("halfslope", v[1]) is not None}
 
     # --------------------------------------------------------------------------------------------------- mass
     def main_blocks(self, include_batteries=True):
@@ -379,6 +439,13 @@ class Model:
             lab = int(self.label[t])
             kind = "pylon" if self.pylon[t] else ("surface" if lab in surf_ids else "shell")
             out.append(dict(name=name, kind=kind, pos=pos.astype(int), orient=orient, lo=lo, hi=hi, voxel=t,
+                            shape=shape))
+        for idx, (shape, n) in sorted(getattr(self, "fills", {}).items()):
+            name = sb.armor(shape, self.grid)
+            orient = sb.orient_for_normal(shape, n)
+            pos = lat.centre_cells(np.array(idx))
+            lo, hi = self.cat.box(name, pos, orient)
+            out.append(dict(name=name, kind="shell", pos=pos.astype(int), orient=orient, lo=lo, hi=hi, voxel=idx,
                             shape=shape))
         for e in self.extra:
             if e["kind"] == "battery" and not include_batteries:
@@ -420,7 +487,7 @@ class Model:
         bat = d.get("batteries") or {}
         names = bat.get("prefabs") or sb.DEFAULT_BATTERIES[self.grid]
         n_min = int(bat.get("min", 2))
-        n_max = int(bat.get("max", 24 if self.grid == "large" else 40))
+        n_max = int(bat.get("max", 24 if self.grid == "large" else 80))
         free = self.cavity & ~self.blocked
         slots = com.slot_candidates(self.lat, free, self.cat, names, sb.IDENTITY, self.equip_boxes)
         conf = com.conflicts_of(slots)
@@ -432,12 +499,13 @@ class Model:
         if not slots:
             self.problems.append("no room for batteries inside the hull")
             self.com_ok = abs(c0[0] - x_t) <= tol
-            self.com_residual = c0[0] - x_t
+            self.com_residual = self.com_nobatt = float(c0[0] - x_t)
             return
         masses = [s["mass"] for s in slots]
         xs = [s["centre"][2] * sb.CELL_M for s in slots]
         counts = [s["count"] for s in slots]
-        chosen, x, ok = com.solve(M0, c0[0], masses, xs, counts, conf, x_t, tol, n_min, n_max)
+        chosen, x, ok = com.solve(M0, c0[0], masses, xs, counts, conf, x_t, 0.9 * tol, n_min, n_max)
+        ok = abs(x - x_t) <= tol and sum(counts[k] for k in chosen) >= n_min     # aimed at 90%, judged at 100%
         self.batteries = []
         for k in chosen:
             for lo, hi, pos in slots[k]["boxes"]:

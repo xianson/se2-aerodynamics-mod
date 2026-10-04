@@ -146,13 +146,17 @@ def cmd_cal(args):
     cat = sb.Catalog()
     lines = ["# gridgen calibration: armor shapes on cubes, 7.5 m apart along +X (Right).  Each comment says where",
              "# the slanted face should point (grid axes: Forward = the camera's forward at spawn, Up = up).",
+             "# halfslope = ArmorHalfLongSlope: a half-height wedge lying on the cube, thick end away from the",
+             "# direction named second (its slanted face mostly up, tilted toward that direction).",
              "name CalShapes", "ahead 40", "up 5", "static 1"]
     cases = [("slope", (0, 1, -1)), ("slope", (0, 1, 1)), ("slope", (1, 1, 0)), ("corner", (1, 1, -1)),
-             ("invcorner", (1, 1, -1)), ("corner", (-1, 1, 1))]
+             ("invcorner", (1, 1, -1)), ("corner", (-1, 1, 1)), ("halfslope", (0, 2, -1)), ("halfslope", (0, 2, 1)),
+             ("halfslope", (2, 1, 0))]
     for i, (shape, n) in enumerate(cases):
         x = 30 * i
         o = sb.orient_for_normal(shape, n)
-        faces = "+".join(sb.dname(v) for v in np.diag(n) if np.any(v))
+        faces = "+".join(("mostly " if abs(c) == 2 else "") + sb.dname(v)
+                         for v, c in zip(np.diag(np.sign(n)), n) if c)
         lines.append(f"B {cat['ArmorCubeLight250'].guid} {x} 0 0 Forward Up")
         lines.append(f"B {cat[sb.armor(shape, 'large')].guid} {x} 10 0 {o[0]} {o[1]}   # {shape}: slanted face "
                      f"toward {faces}")

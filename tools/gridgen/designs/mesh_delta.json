@@ -1,7 +1,6 @@
 {
  "name": "mesh_delta",
- "title": "Mesh import: delta_jet.stl",
- "grid": "small",
+ "title": "Mesh import: delta_jet.stl (16 m)",
  "mesh": "../meshes/delta_jet.stl",
  "mesh_axes": "x y z",
  "mesh_length": 16,
@@ -11,5 +10,6 @@
    "type": "hydrogen",
    "size": 200
   }
- ]
+ ],
+ "grid": "small"
 }

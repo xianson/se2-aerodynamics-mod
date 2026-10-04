@@ -1,12 +1,11 @@
 {
  "name": "bomber",
- "title": "Four-engine bomber",
- "grid": "large",
+ "title": "Four-engine bomber (23 m)",
  "fuselage": {
-  "length": 82,
-  "width": 14,
-  "height": 15,
-  "nose": 0.15,
+  "length": 23,
+  "width": 2.6,
+  "height": 3.0,
+  "nose": 0.13,
   "tail": 0.35,
   "tail_width": 0.25,
   "tail_height": 0.35,
@@ -14,15 +13,17 @@
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 110,
-   "root_chord": 20,
-   "tip_chord": 8,
-   "sweep": 8,
-   "dihedral": 3,
-   "x": 34.0,
-   "z": "mid"
+   "id": "wing",
+   "span": 31,
+   "root_chord": 5.2,
+   "tip_chord": 2.0,
+   "sweep": 5,
+   "dihedral": 4,
+   "x": 7.0,
+   "z": "mid",
+   "thickness": 0.17,
+   "thickness_tip": 0.11
   }
  ],
  "tail": "conventional",
@@ -30,11 +31,12 @@
   {
    "mount": "pod",
    "type": "atmospheric",
-   "size": 500,
+   "size": 250,
    "span_frac": [
-    0.27,
-    0.52
+    0.25,
+    0.48
    ]
   }
- ]
+ ],
+ "grid": "small"
 }

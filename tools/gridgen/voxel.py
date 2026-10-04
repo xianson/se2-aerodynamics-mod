@@ -72,18 +72,41 @@ class Lattice:
         return axes
 
 
-def coverage_implicit(lat: Lattice, comps, s=3, symmetric=True):
-    """Per-component and union coverage fractions from implicit inside(x, y, z) functions."""
+def coverage_implicit(lat: Lattice, comps, s=3, symmetric=True, chunk=6):
+    """Per-component and union coverage fractions from implicit inside(x, y, z) functions.  Evaluated in slabs of
+    `chunk` voxels along Z, each component only inside its own bounding box (memory stays bounded at small grid)."""
     X, Y, Z = lat.sample_axes(s)
-    y, z, x = np.meshgrid(X, Y, Z, indexing="ij")
     nx, ny, nz = lat.shape
-    union = np.zeros(y.shape, bool)
-    covs = []
+    covs = [np.zeros(lat.shape, np.float32) for _ in comps]
+    cu = np.zeros(lat.shape, np.float32)
+    boxes = []
     for c in comps:
-        m = c.inside(x, y, z)
-        union |= m
-        covs.append(m.reshape(nx, s, ny, s, nz, s).mean(axis=(1, 3, 5)).astype(np.float32))
-    cu = union.reshape(nx, s, ny, s, nz, s).mean(axis=(1, 3, 5)).astype(np.float32)
+        lo, hi = c.bbox()
+        a = lat.index_of_m(lo) - 1
+        b = lat.index_of_m(hi) + 2
+        a = np.maximum(a, 0)
+        b = np.minimum(b, np.array(lat.shape))
+        boxes.append((a, b))
+    for k0 in range(0, nz, chunk):
+        k1 = min(nz, k0 + chunk)
+        act = [i for i, (a, b) in enumerate(boxes) if a[2] < k1 and b[2] > k0 and (a < b).all()]
+        if not act:
+            continue
+        ia = min(boxes[i][0][0] for i in act); ib = max(boxes[i][1][0] for i in act)
+        ja = min(boxes[i][0][1] for i in act); jb = max(boxes[i][1][1] for i in act)
+        union = np.zeros(((ib - ia) * s, (jb - ja) * s, (k1 - k0) * s), bool)
+        for i in act:
+            a, b = boxes[i]
+            i0, i1 = max(a[0], ia), min(b[0], ib)
+            j0, j1 = max(a[1], ja), min(b[1], jb)
+            kk0, kk1 = max(a[2], k0), min(b[2], k1)
+            if i0 >= i1 or j0 >= j1 or kk0 >= kk1:
+                continue
+            y, z, x = np.meshgrid(X[i0 * s:i1 * s], Y[j0 * s:j1 * s], Z[kk0 * s:kk1 * s], indexing="ij")
+            m = comps[i].inside(x, y, z)
+            union[(i0 - ia) * s:(i1 - ia) * s, (j0 - ja) * s:(j1 - ja) * s, (kk0 - k0) * s:(kk1 - k0) * s] |= m
+            covs[i][i0:i1, j0:j1, kk0:kk1] = m.reshape(i1 - i0, s, j1 - j0, s, kk1 - kk0, s).mean(axis=(1, 3, 5))
+        cu[ia:ib, ja:jb, k0:k1] = union.reshape(ib - ia, s, jb - ja, s, k1 - k0, s).mean(axis=(1, 3, 5))
     if symmetric:
         cu = (cu + cu[::-1]) / 2
         covs = [(c + c[::-1]) / 2 for c in covs]
@@ -202,12 +225,14 @@ def neighbours26_all(m):
     return r
 
 
-def hollow(filled, solid_below=3):
+def hollow(filled, solid_below=3, only=None):
     """Keep a 1-block shell; parts thinner than solid_below blocks stay solid.  A voxel is interior only when all
     26 neighbours are filled, so the shell stays FACE-connected where the surface steps diagonally (with the
     6-neighbour rule a keel row would hang on edges only).  Returns (shell, cavity)."""
     interior = filled & neighbours26_all(filled)
     remove = interior & (thickness(filled) >= solid_below)
+    if only is not None:
+        remove &= only                     # e.g. hollow the body and nacelles, keep wings and tails solid
     return filled & ~remove, remove
 
 
@@ -266,4 +291,34 @@ def refine_skin(shell, cavity, out, cov, allowed, frozen):
         else:
             if cosang > 0.75 and c < 0.95:
                 res[idx] = ("corner" if c < 0.6 else "invcorner", tuple(int(v) for v in n))
+    return res
+
+
+def halfslope_fill(solid, cubes, out, cov, forbid, lo=0.18, hi=0.5):
+    """Half-height wedges in the inside corners of the outer staircase: an exterior voxel with partial coverage
+    that rests on a cube below (direction -a) and leans on a cube riser (direction -b) gets a wedge whose outward
+    normal is 2a + b.  The blocks are new (they fill air), so the shell's seal is untouched."""
+    g = np.stack(np.gradient(cov.astype(np.float64)), -1)
+    res = {}
+    cand = out & ~forbid & (cov >= lo) & (cov < hi)
+    sup = {d: _shift(cubes, [-x for x in d]) for d in N6}     # sup[d][v] = cubes[v - d]
+    air = {d: _shift(out, list(d)) for d in N6}               # air[d][v] = out[v + d]
+    for idx in zip(*np.nonzero(cand)):
+        best = None
+        ge = -g[idx]
+        ng = np.linalg.norm(ge)
+        if ng < 1e-6:
+            continue
+        for a in N6:
+            if not sup[a][idx] or not air[a][idx]:
+                continue
+            for b in N6:
+                if np.dot(a, b) != 0 or not sup[b][idx] or not air[b][idx]:
+                    continue
+                n = 2 * np.array(a) + np.array(b)
+                cs = float(ge @ n) / (ng * np.linalg.norm(n))
+                if cs > 0.6 and (best is None or cs > best[0]):
+                    best = (cs, tuple(int(x) for x in n))
+        if best:
+            res[idx] = ("halfslope", best[1])
     return res

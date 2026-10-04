@@ -1,39 +1,41 @@
 {
  "name": "delta_jet",
- "title": "Tailless delta jet",
- "grid": "large",
+ "title": "Tailless delta fighter (15 m)",
  "fuselage": {
-  "length": 64,
-  "width": 12,
-  "height": 11,
-  "nose": 0.25,
+  "length": 15,
+  "width": 2.2,
+  "height": 2.1,
+  "nose": 0.3,
   "tail": 0.12,
-  "tail_width": 0.7,
-  "tail_height": 0.7,
+  "nose_shape": 0.6,
+  "tail_width": 0.75,
+  "tail_height": 0.75,
   "tail_upsweep": 0.0
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 48,
-   "root_chord": 36,
-   "tip_chord": 3,
-   "sweep": 52,
-   "x": 22,
+   "id": "wing",
+   "span": 9.5,
+   "root_chord": 9.0,
+   "tip_chord": 0.6,
+   "sweep": 58,
+   "x": 5.6,
    "z": "mid",
-   "thickness": 0.05
+   "thickness": 0.05,
+   "thickness_tip": 0.04
   },
   {
    "id": "fin",
    "role": "vtail",
-   "span": 12,
-   "root_chord": 14,
-   "tip_chord": 4,
-   "sweep": 50,
-   "x": 47,
-   "z": 5.0,
-   "mirror": false
+   "span": 3.4,
+   "root_chord": 4.2,
+   "tip_chord": 1.0,
+   "sweep": 52,
+   "x": 10.6,
+   "z": 1.0,
+   "mirror": false,
+   "thickness": 0.06
   }
  ],
  "tail": "none",
@@ -41,7 +43,8 @@
   {
    "mount": "tail",
    "type": "hydrogen",
-   "size": 250
+   "size": 200
   }
- ]
+ ],
+ "grid": "small"
 }

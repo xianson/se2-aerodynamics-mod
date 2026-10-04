@@ -108,7 +108,7 @@ def _axis_winding(tris, axes, ax):
     a1, a2 = [i for i in range(3) if i != ax]
     u, v, w = axes[a1], axes[a2], axes[ax]
     nu, nv, nw = len(u), len(v), len(w)
-    delta = np.zeros((nu, nv, nw + 1), np.int32)
+    delta = np.zeros((nu, nv, nw + 1), np.int16)
     P = tris
     nrm = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
     for t in range(len(P)):
@@ -177,5 +177,9 @@ class MeshSolid:
 
     def inside_on_axes(self, X, Y, Z):
         """X, Y, Z: grid-order sample axes (design y, z, x).  Returns mask indexed [X, Y, Z]."""
-        m = inside_grid(self.tris, Z, X, Y)          # mesh in design coords: (x, y, z)
-        return np.transpose(m, (1, 2, 0))
+        out = np.zeros((len(X), len(Y), len(Z)), bool)
+        step = max(1, int(4e6 // max(len(X) * len(Y), 1)))     # slabs along x keep the winding arrays small
+        for a in range(0, len(Z), step):
+            m = inside_grid(self.tris, Z[a:a + step], X, Y)     # mesh in design coords: (x, y, z)
+            out[:, :, a:a + step] = np.transpose(m, (1, 2, 0))
+        return out

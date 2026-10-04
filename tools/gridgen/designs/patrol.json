@@ -1,12 +1,11 @@
 {
  "name": "patrol",
- "title": "Cruciform-tail patrol (wingtip + side engines)",
- "grid": "large",
+ "title": "Patrol aircraft: cruciform tail, wingtip + side engines (30 m)",
  "fuselage": {
-  "length": 60,
-  "width": 13,
-  "height": 13,
-  "nose": 0.18,
+  "length": 30,
+  "width": 3.4,
+  "height": 3.6,
+  "nose": 0.15,
   "tail": 0.33,
   "tail_width": 0.3,
   "tail_height": 0.4,
@@ -14,15 +13,17 @@
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 66,
-   "root_chord": 12,
-   "tip_chord": 7,
+   "id": "wing",
+   "span": 30,
+   "root_chord": 5.2,
+   "tip_chord": 2.4,
    "sweep": 6,
-   "dihedral": 2,
-   "x": 27.5,
-   "z": "mid"
+   "dihedral": 3,
+   "x": 10.5,
+   "z": "mid",
+   "thickness": 0.16,
+   "thickness_tip": 0.12
   }
  ],
  "tail": "cruciform",
@@ -30,13 +31,18 @@
   {
    "mount": "wingtip",
    "type": "ion",
-   "size": 500
+   "size": 150,
+   "cluster": [
+    1,
+    2
+   ]
   },
   {
    "mount": "fuselage_side",
    "type": "hydrogen",
-   "size": 250,
+   "size": 200,
    "x_frac": 0.3
   }
- ]
+ ],
+ "grid": "small"
 }

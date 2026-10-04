@@ -1,18 +1,19 @@
 {
  "name": "mesh_plane",
- "title": "Mesh import: simple_plane.obj",
- "grid": "large",
+ "title": "Mesh import: simple_plane.obj (24 m)",
  "mesh": "../meshes/simple_plane.obj",
  "mesh_axes": "z x y",
- "mesh_length": 84,
+ "mesh_length": 24,
+ "batteries": {
+  "max": 120
+ },
  "engines": [
   {
    "mount": "tail",
-   "type": "atmospheric",
-   "size": 500
+   "type": "hydrogen",
+   "size": 200,
+   "nudge": "down"
   }
  ],
- "batteries": {
-  "max": 48
- }
+ "grid": "small"
 }

@@ -16,6 +16,7 @@ Every convention is in CAL below and marked MEASURED (in game) or ASSUMED (still
 """
 from __future__ import annotations
 
+import functools
 import itertools
 import os
 import re
@@ -51,9 +52,16 @@ CAL = {
     "flap_mount_local": (0, 1, 0),
     # MEASURED: a positive angle is a right-handed rotation about the hinge's local Forward vector (hinge_axis_local).
     "hinge_angle_sign": 1,
+    # MEASURED: the vanilla hinge turns 0..180 deg only (0 is an end stop), so a control surface's neutral (flap
+    # trailing aft) is at 90 deg: the hinge's Up is chosen so that +90 about Forward turns head +Y to aft
+    # (Up = aft x Forward), and limits are written 90 -+ the deflection.
+    "hinge_neutral_deg": 90.0,
+    "hinge_range_deg": (0.0, 180.0),
     # ASSUMED (unmeasured): outward normal of the slanted face for identity orientation, in local axes.
     #   slope: the cube cut by a plane through two opposite edges; corner: the 1/6 tetrahedron; invcorner: cube minus it.
-    "shape_normal": {"slope": (0, 1, -1), "corner": (1, 1, -1), "invcorner": (1, 1, -1)},
+    #   halfslope: the half-height wedge (ArmorHalfLongSlope): thin edge toward local Forward, thick (half a block)
+    #   at local Backward, sitting on local Down - outward normal (0, 2, -1).
+    "shape_normal": {"slope": (0, 1, -1), "corner": (1, 1, -1), "invcorner": (1, 1, -1), "halfslope": (0, 2, -1)},
     # ASSUMED: seats and cockpits face their local Forward with local Up up.
     "seat_fwd_up": ("Forward", "Up"),
     # MEASURED: extra mass per grid (none measured).
@@ -67,7 +75,7 @@ CAL = {
 STATUS = {   # for the report / sidecar
     "aabb_low_offset": "measured", "thruster_exhaust_local": "ASSUMED", "hinge_axis_local": "measured",
     "hinge_headgrid_origin_local": "measured", "hinge_headgrid_fwd_up": "measured", "hinge_pivot_local": "ASSUMED",
-    "flap_mount_local": "measured", "hinge_angle_sign": "measured", "shape_normal": "ASSUMED",
+    "flap_mount_local": "measured", "hinge_angle_sign": "measured", "hinge_neutral_deg": "measured", "shape_normal": "ASSUMED",
     "seat_fwd_up": "ASSUMED", "grid_overhead_kg": "measured",
 }
 
@@ -94,6 +102,11 @@ def dname(v) -> str:
 
 def orient_matrix(fwd: str, up: str) -> np.ndarray:
     """Columns: where the block's local +X, +Y, +Z go in the grid frame (local Forward is -Z)."""
+    return _orient_matrix(fwd, up).copy()
+
+
+@functools.lru_cache(maxsize=None)
+def _orient_matrix(fwd: str, up: str) -> np.ndarray:
     F, U = dvec(fwd), dvec(up)
     if int(F @ U) != 0:
         raise ValueError(f"forward {fwd} and up {up} not perpendicular")
@@ -244,15 +257,27 @@ GRID_UNIT = {"large": 10, "small": 2}      # cells per block
 SUFFIX = {"large": "250", "small": "50"}
 ARMOR = {"cube": "ArmorCubeLight", "slope": "ArmorSlopeLight", "corner": "ArmorCornerLight",
          "invcorner": "ArmorInvCornerLight", "half": "ArmorHalfLight"}
+# Shapes as the cube [-0.5, 0.5]^3 cut by the half-space n.p <= c (n = CAL shape_normal, local axes); for drawing,
+# volume (mass check) and the shell-closure face rules.
+SHAPE_CUT = {"cube": None, "slope": 0.0, "corner": -0.5, "invcorner": 0.5, "halfslope": -0.5}
 THRUSTER = {"atmospheric": "AtmosphericThruster", "hydrogen": "HydrogenThruster", "ion": "IonThruster"}
 DEFAULT_THRUSTER_SIZE = {"large": {"atmospheric": 500, "hydrogen": 250, "ion": 500},
-                         "small": {"atmospheric": 100, "hydrogen": 50, "ion": 100}}
+                         "small": {"atmospheric": 250, "hydrogen": 200, "ion": 150}}
 DEFAULT_COCKPIT = {"large": "ControlSeat250", "small": "Cockpit150"}
-DEFAULT_BATTERIES = {"large": ["Battery250", "Battery150"], "small": ["Battery150", "Battery50"]}
+DEFAULT_BATTERIES = {"large": ["Battery250", "Battery150"], "small": ["Battery250", "Battery150", "Battery50"]}
 
 
 def armor(shape: str, grid: str) -> str:
+    if shape == "halfslope":
+        return "ArmorHalfLongSlope" + SUFFIX[grid] + "Light"
     return ARMOR[shape] + SUFFIX[grid]
+
+
+def shape_of(name: str) -> str:
+    for shape in ("halfslope", "invcorner", "corner", "slope", "half", "cube"):
+        if armor(shape, "large") == name or armor(shape, "small") == name:
+            return shape
+    return "block"
 
 
 def hinge_names(grid: str) -> tuple[str, str]:
@@ -296,29 +321,53 @@ def thruster_exhaust(name, orient):
     return orient_matrix(*orient) @ np.array(CAL["thruster_exhaust_local"])
 
 
+def rot(axis, deg):
+    """Rotation matrix by deg about axis (right-handed); exact integers for multiples of 90."""
+    a = np.asarray(axis, float)
+    a = a / np.linalg.norm(a)
+    K = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+    t = np.radians(deg)
+    R = np.eye(3) + np.sin(t) * K + (1 - np.cos(t)) * K @ K
+    return np.round(R).astype(int) if abs(deg % 90) < 1e-9 else R
+
+
+def hinge_axis_vec(hinge_orient):
+    """Grid vector of positive rotation (the hinge's Forward times the angle sign)."""
+    return orient_matrix(*hinge_orient) @ np.array(CAL["hinge_axis_local"]) * CAL["hinge_angle_sign"]
+
+
 def orient_for_hinge(span_axis_vec, chord_dir=(0, 0, 1)):
-    """Hinge orientation: rotation axis along +span_axis_vec (or its reverse), flap mount side toward chord_dir."""
+    """Hinge orientation: rotation axis along +span_axis_vec (or its reverse) and, at the neutral angle (90), the
+    flap mount side (head +Y) toward chord_dir.  I.e. Forward = span, Up = aft x Forward."""
     ax = np.array(CAL["hinge_axis_local"])
     mount = np.array(CAL["flap_mount_local"])
     s = np.array(span_axis_vec)
     out = None
     for o in ALL_ORIENTS:
         M = orient_matrix(*o)
-        if not np.array_equal(M @ mount, np.array(chord_dir)):
-            continue
         a = M @ ax
+        if not (np.array_equal(a, s) or np.array_equal(a, -s)):
+            continue
+        if not np.array_equal(rot(hinge_axis_vec(o), CAL["hinge_neutral_deg"]) @ (M @ mount), np.array(chord_dir)):
+            continue
         if np.array_equal(a, s):
             return o
-        if np.array_equal(a, -s):
-            out = out or o
+        out = out or o
     return out
 
 
-def headgrid_frame(hinge_pos, hinge_orient):
-    """(origin, rotation) of the head grid in the main grid's frame at 0 degrees."""
+def headgrid_frame(hinge_pos, hinge_orient, angle=None):
+    """(origin, rotation) of the head grid in the main grid's frame with the hinge at `angle` degrees (default the
+    neutral, 90: the frame in which the generator lays the flap out trailing aft)."""
+    angle = CAL["hinge_neutral_deg"] if angle is None else angle
     M = orient_matrix(*hinge_orient)
-    origin = np.asarray(hinge_pos) + M @ np.array(CAL["hinge_headgrid_origin_local"])
-    Rh = M @ orient_matrix(*CAL["hinge_headgrid_fwd_up"])
+    R = rot(hinge_axis_vec(hinge_orient), angle)
+    _, pivot = hinge_axis_and_pivot(hinge_pos, hinge_orient)
+    origin0 = np.asarray(hinge_pos) + M @ np.array(CAL["hinge_headgrid_origin_local"])
+    origin = pivot + R @ (origin0 - pivot)
+    if np.allclose(origin, np.round(origin)):
+        origin = np.round(origin).astype(int)
+    Rh = R @ M @ orient_matrix(*CAL["hinge_headgrid_fwd_up"])
     return origin, Rh
 
 
@@ -341,7 +390,12 @@ def from_headgrid(pos_hg, orient_hg, origin, Rh):
 
 def orient_for_normal(shape: str, normal) -> tuple[str, str] | None:
     """Orientation that turns the shape's slanted-face normal (CAL) into `normal` (integer vector)."""
-    n0 = np.array(CAL["shape_normal"][shape])
+    return _orient_for_normal(shape, tuple(int(x) for x in normal), tuple(CAL["shape_normal"][shape]))
+
+
+@functools.lru_cache(maxsize=None)
+def _orient_for_normal(shape, normal, n0):
+    n0 = np.array(n0)
     want = np.array(normal)
     for o in ALL_ORIENTS:
         if np.array_equal(orient_matrix(*o) @ n0, want):
@@ -355,6 +409,6 @@ def full_faces(shape: str, orient) -> list[tuple[int, int, int]]:
     if shape == "cube":
         return faces
     n = orient_matrix(*orient) @ np.array(CAL["shape_normal"][shape])
-    if shape == "corner":
-        return []
+    if shape in ("corner", "halfslope"):
+        return [] if shape == "corner" else [f for f in faces if int(np.array(f) @ n) < 0 and abs(int(np.array(f) @ n)) == 2]
     return [f for f in faces if int(np.array(f) @ n) < 0]   # slope / invcorner: the faces facing away from the cut

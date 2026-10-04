@@ -65,7 +65,8 @@ def sidecar(m, blocks, hinge_rows):
     hinges = []
     for k, (i, sg) in enumerate(hinge_rows):
         hinges.append(dict(hinge=k, block=i, role=sg["role"], side=sg["side"], surface=sg["surface"],
-                           limits=list(sg["limits"]), positive_moves_te=sg["positive_moves_te"],
+                           limits=list(sg["limits"]), neutral_deg=sg["neutral_deg"],
+                           deflection=list(sg["deflection"]), positive_moves_te=sg["positive_moves_te"],
                            axis=list(sg["axis"]), span_axis="XYZ"[sg["span_axis"]],
                            hinge_pos=[int(v) for v in sg["hinge_pos"]], hinge_orient=list(sg["hinge_orient"]),
                            pivot_cells=list(sg["pivot_cells"]), flap_blocks=len(sg["flaps"]),
@@ -81,13 +82,18 @@ def sidecar(m, blocks, hinge_rows):
         fuselage_np_shift_m=_r(npr.get("dx_fuselage", 0.0)), downwash=_r(npr.get("downwash", 0.0)),
         np_surfaces=npr.get("surfaces", []),
         static_margin_target=d["static_margin"], static_margin=_r(margin, 4) if margin is not None else None,
-        com_target_m=_r(m.target["x"]) if m.target else None, com_tolerance_m=_r(m.target["tol"]) if m.target else None,
+        com_target_m=_r(m.target["x"], 6) if m.target else None,
+        com_tolerance_m=_r(m.target["tol"], 6) if m.target else None,
         com_ok=bool(m.com_ok), wing_shift_m=round(float(getattr(m, "wing_dx", 0.0)), 3),
         counts={k: v[0] for k, v in sorted(kinds.items())}, mass_by_kind={k: round(v[1], 1) for k, v in sorted(kinds.items())},
         main_blocks=len(blocks), flap_blocks=sum(len(sg["flaps"]) for _, sg in hinge_rows),
+        total_blocks=len(blocks) + sum(len(sg["flaps"]) for _, sg in hinge_rows),
+        shaped_blocks=sum(1 for b in blocks if b.get("shape", "cube") != "cube"),
+        size_m=_r(_extent(blocks, hinge_rows), 2),
         batteries=[dict(name=b["name"], pos=[int(v) for v in b["pos"]]) for b in m.batteries],
         cockpit=m.cockpit,
         engines=[dict(index=e["index"], mount=e["mount"], side=e["side"], prefab=e["name"], type=e["type"],
+                      count=len(e.get("units", [1])), nacelle_blocks=e.get("nacelle", 0),
                       pos=[int(v) for v in e["pos"]], orient=list(e["orient"]), exhaust=list(e["exhaust"]),
                       nudged_blocks=e["nudged"], embedded=e["embedded"], pylon_blocks=e.get("pylon", 0),
                       lanes=[[[int(v) for v in l], [int(v) for v in h], t] for l, h, t in e["lanes"]])
@@ -99,6 +105,16 @@ def sidecar(m, blocks, hinge_rows):
         cavity=[[int(v) for v in row] for row in cav],
         calibration={k: sb.STATUS.get(k, "?") for k in sb.STATUS},
         problems=list(m.problems))
+
+
+def _extent(blocks, hinge_rows):
+    lo = np.min([b["lo"] for b in blocks], 0).astype(float)
+    hi = np.max([b["hi"] for b in blocks], 0).astype(float)
+    for _, sg in hinge_rows:
+        for f in sg["flaps"]:
+            lo, hi = np.minimum(lo, f["lo"]), np.maximum(hi, f["hi"])
+    e = (hi - lo) * sb.CELL_M
+    return np.array([e[2], e[0], e[1]])
 
 
 def parse(path, cat):

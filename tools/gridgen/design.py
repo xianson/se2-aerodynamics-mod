@@ -7,7 +7,8 @@ Schema (all lengths in metres, angles in degrees; every key optional unless note
 {
   "name": "airliner",                 # required; also the spec file name
   "title": "Twin-jet airliner",
-  "grid": "large" | "small",          # 2.5 m or 0.5 m blocks
+  "grid": "small" | "large",          # 0.5 m (default) or 2.5 m blocks
+  "scale": 1.0,                       # multiplies every length (a large-grid variant of a small design)
   "skin": "slopes" | "cubes",         # refine the outer hull with slopes/corners, or cubes only
   "solid_below": 3,                   # parts thinner than this many blocks stay solid; thicker ones keep a 1-block shell
   "static_margin": 0.10,              # CoM target: neutral point - margin * MAC
@@ -31,7 +32,8 @@ Schema (all lengths in metres, angles in degrees; every key optional unless note
       "root_chord": 12, "tip_chord": 4, "sweep": 25 (leading edge), "dihedral": 5 (90 = vertical fin),
       "x": 22 | "x_frac": 0.38,       # root leading-edge station
       "z": "low" | "mid" | "high" | metres,  "y0": 0 (root offset from the centreline),
-      "thickness": 0.12 (t/c), "mirror": true,
+      "thickness": 0.12 (root t/c), "thickness_tip": 0.09, "min_root_blocks": 2, "mirror": true,
+      "fairing": true (wings: a wing-root fillet into the body),
       "moves_with_wing": true,        # (wings default true) slid together by auto_wing
       "controls": {"chord": 0.3, "aileron_from": 0.55, "per_hinge": 3, "mode": "auto" | "elevon" | "none",
                    "limits": {"aileron": [-25, 25], ...}}}
@@ -70,9 +72,34 @@ def load(path: str) -> dict:
     return d
 
 
+LEN_KEYS = {"length", "width", "height", "span", "root_chord", "tip_chord", "x", "y", "z", "y0", "z_off", "clear",
+            "x0", "x1", "radius", "x_end", "boom_y", "boom_z"}
+
+
+def _scale(o, k):
+    """Every length in the design multiplied by k (fractions, angles and ratios untouched)."""
+    if isinstance(o, dict):
+        for key, v in o.items():
+            if key in ("from", "to") and isinstance(v, list):
+                o[key] = [x * k for x in v]
+            elif key in LEN_KEYS and isinstance(v, (int, float)) and not isinstance(v, bool):
+                o[key] = v * k
+            else:
+                _scale(v, k)
+    elif isinstance(o, list):
+        for v in o:
+            _scale(v, k)
+
+
 def defaults(d: dict) -> dict:
     d = copy.deepcopy(d)
-    d.setdefault("grid", "large")
+    if d.get("scale") and not d.get("_scaled"):
+        k = float(d["scale"])
+        for key in ("fuselage", "surfaces", "canard", "tail", "booms", "struts", "engines", "cockpit"):
+            if key in d and isinstance(d[key], (dict, list)):
+                _scale(d[key], k)
+        d["_scaled"] = True
+    d.setdefault("grid", "small")
     d.setdefault("skin", "slopes")
     d.setdefault("solid_below", 3)
     d.setdefault("static_margin", 0.10)
@@ -177,6 +204,9 @@ def naca_half(u, tc):
     return 5 * tc * (0.2969 * np.sqrt(u) - 0.126 * u - 0.3516 * u ** 2 + 0.2843 * u ** 3 - 0.1015 * u ** 4)
 
 
+NACA_PEAK = float(naca_half(np.linspace(0, 1, 2001), 1.0).max())     # 0.5 at ~30% chord
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Lifting surface (one panel, optionally mirrored)
 # ---------------------------------------------------------------------------------------------------------------
@@ -195,6 +225,9 @@ class Surface:
         self.ct = float(s.get("tip_chord", self.cr))
         self.sweep = float(s.get("sweep", 0.0))
         self.tc = float(s.get("thickness", 0.12))
+        self.tc_tip = float(s.get("thickness_tip", self.tc * 0.75))
+        # a real wing is at least this many blocks thick at the root (peak, ~30% chord), tapering to 1 at the tip
+        self.min_root = float(s.get("min_root_blocks", 2.0 if self.role in ("wing", "vtail", "vee") else 1.5))
         self.y0 = float(s.get("y0", 0.0))
         self.block = block
         self.moves = bool(s.get("moves_with_wing", self.role == "wing"))
@@ -250,8 +283,16 @@ class Surface:
         t = ry * self.et[0] + rz * self.et[1]
         c = self.chord(s)
         u = (x - self.xle(s)) / c
-        half = np.maximum(naca_half(u, self.tc) * c, self.block * 0.5)
+        eta = np.clip(s / self.L, 0, 1)
+        tc = self.tc + (self.tc_tip - self.tc) * eta
+        peak = np.maximum(tc * c / 2, self.block * 0.5 * (self.min_root + (1.0 - self.min_root) * eta))
+        half = np.maximum(naca_half(u, 1.0) / NACA_PEAK * peak, self.block * 0.5)
         return (s >= -self.block * 0.25) & (s <= self.L) & (u >= 0) & (u <= 1) & (np.abs(t) <= half)
+
+    def thickness_at(self, s):
+        eta = min(max(s / self.L, 0), 1)
+        tc = self.tc + (self.tc_tip - self.tc) * eta
+        return max(tc * float(self.chord(s)), self.block * (self.min_root + (1.0 - self.min_root) * eta))
 
     def bbox(self):
         pts = []
@@ -270,6 +311,28 @@ class Surface:
         s = (np.arange(n) + 0.5) / n * self.L
         ds = self.L / n
         return s, ds, self.chord(s), self.xle(s)
+
+
+class Fairing:
+    """Wing-root fillet: a mirrored ellipsoid blending the wing into the body (labelled like the fuselage)."""
+    kind = "fairing"
+
+    def __init__(self, cid, c, ax, mirror=True):
+        self.id, self.role = cid, "fairing"
+        self.c, self.ax = np.array(c, float), np.array(ax, float)
+        self.mirror = mirror
+        self.moves = True
+
+    def inside(self, x, y, z):
+        yy = np.abs(y) if self.mirror else y
+        return ((x - self.c[0]) / self.ax[0]) ** 2 + ((yy - self.c[1]) / self.ax[1]) ** 2 +             ((z - self.c[2]) / self.ax[2]) ** 2 <= 1.0
+
+    def bbox(self):
+        lo, hi = self.c - self.ax, self.c + self.ax
+        if self.mirror:
+            m = max(abs(lo[1]), abs(hi[1]))
+            lo[1], hi[1] = -m, m
+        return lo, hi
 
 
 class Capsule:
@@ -426,6 +489,17 @@ def components(d: dict, dx: float = 0.0):
         comps.append(fus)
     for s in d["surfaces"]:
         comps.append(Surface(s, fus, block, dx))
+    if fus:
+        for w in [c for c in comps if isinstance(c, Surface) and c.role == "wing" and not c.vertical]:
+            if w.spec.get("fairing", True) is False or w.y0 > fus.W / 2:
+                continue
+            xm = w.x_le + 0.42 * w.cr
+            hw = fus.half_width(xm)
+            if hw <= 0:
+                continue
+            tr = w.thickness_at(hw)
+            comps.append(Fairing(f"fairing_{w.id}", (xm, hw * 0.85, w.z0 + 0.15 * tr),
+                                 (0.62 * w.cr, max(0.1 * w.cr, 2.2 * block, 0.3 * hw), max(0.9 * tr, 1.6 * block))))
     for i, bm in enumerate(d["booms"]):
         x0 = bm["x0"]
         if x0 == "wing_te" or x0 == "wing":

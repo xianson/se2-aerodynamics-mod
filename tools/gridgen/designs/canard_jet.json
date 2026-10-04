@@ -1,46 +1,48 @@
 {
  "name": "canard_jet",
- "title": "Canard delta fighter",
- "grid": "small",
+ "title": "Canard delta fighter (15 m)",
  "fuselage": {
-  "length": 16,
-  "width": 2.8,
-  "height": 2.6,
+  "length": 15,
+  "width": 2.4,
+  "height": 2.4,
   "nose": 0.3,
   "tail": 0.12,
+  "nose_shape": 0.6,
   "tail_width": 0.8,
   "tail_height": 0.8,
   "tail_upsweep": 0.0
  },
  "surfaces": [
   {
-   "id": "wing",
    "role": "wing",
-   "span": 10,
-   "root_chord": 6.5,
+   "id": "wing",
+   "span": 10.4,
+   "root_chord": 6.4,
    "tip_chord": 1.2,
-   "sweep": 45,
-   "x": 8.6,
+   "sweep": 48,
+   "x": 7.6,
    "z": "mid",
-   "thickness": 0.05
+   "thickness": 0.05,
+   "thickness_tip": 0.04
   },
   {
    "id": "fin",
    "role": "vtail",
-   "span": 3.0,
-   "root_chord": 3.5,
-   "tip_chord": 1.2,
+   "span": 3.2,
+   "root_chord": 3.6,
+   "tip_chord": 1.1,
    "sweep": 45,
-   "x": 12.0,
+   "x": 11.0,
    "z": 1.0,
-   "mirror": false
+   "mirror": false,
+   "thickness": 0.06
   }
  ],
  "canard": {
-  "span": 4.4,
-  "root_chord": 1.7,
+  "span": 4.6,
+  "root_chord": 1.8,
   "tip_chord": 0.8,
-  "sweep": 30,
+  "sweep": 35,
   "x": 3.6,
   "z": 0.5,
   "thickness": 0.05
@@ -52,7 +54,5 @@
    "size": 200
   }
  ],
- "batteries": {
-  "max": 60
- }
+ "grid": "small"
 }
