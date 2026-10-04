@@ -15,15 +15,16 @@ public static class OrphanChunks
     sealed class Post
     {
         public long Stamp; public Vector3D Pos; public Quaternion Rot; public int N; public float ChunkSize;
+        public bool Server;   // (the scene it was posted from: the client and server copies of a parent both post - a piece took both, doubled)
         public List<(long key, float[] share)> Shares = new();
     }
     static readonly List<Post> _posts = new();
     const double MaxAgeSeconds = 3.0, MaxDistance = 2.0;
 
-    public static void Add(Vector3D parentPos, Quaternion parentRot, int n, float chunkSize, List<(long key, float[] share)> shares)
+    public static void Add(Vector3D parentPos, Quaternion parentRot, int n, float chunkSize, List<(long key, float[] share)> shares, bool server)
     {
         if (shares.Count == 0) return;
-        var p = new Post { Stamp = System.Diagnostics.Stopwatch.GetTimestamp(), Pos = parentPos, Rot = parentRot, N = n, ChunkSize = chunkSize };
+        var p = new Post { Stamp = System.Diagnostics.Stopwatch.GetTimestamp(), Pos = parentPos, Rot = parentRot, N = n, ChunkSize = chunkSize, Server = server };
         p.Shares.AddRange(shares);
         lock (_posts)
         {
@@ -42,7 +43,7 @@ public static class OrphanChunks
 
     /// <summary>A table from the posted shares in `keys` (chunks this grid has blocks in), posted where this grid
     /// stands; the shares taken are removed. Null if none.</summary>
-    public static ForceTable Take(Vector3D gridPos, Quaternion gridRot, HashSet<long> keys, int n, int nj)
+    public static ForceTable Take(Vector3D gridPos, Quaternion gridRot, HashSet<long> keys, int n, int nj, bool server)
     {
         ForceTable table = null;
         lock (_posts)
@@ -50,7 +51,7 @@ public static class OrphanChunks
             Prune();
             foreach (var p in _posts)
             {
-                if (p.N != n || (p.Pos - gridPos).Length() > MaxDistance) continue;
+                if (p.N != n || p.Server != server || (p.Pos - gridPos).Length() > MaxDistance) continue;
                 if (MathF.Abs(Quaternion.Dot(p.Rot, gridRot)) < 0.999f) continue;
                 for (int i = p.Shares.Count - 1; i >= 0; i--)
                 {

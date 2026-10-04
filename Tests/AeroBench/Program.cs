@@ -663,10 +663,13 @@ static class Program
                 double dropMs = sw.Elapsed.TotalMilliseconds;
                 // the piece that broke off: seeded from what the parent dropped, against its own exact table
                 {
-                    OrphanChunks.Add(new Vector3D(0, 0, 0), Quaternion.Identity, chunks.N, chunks.ChunkSize, gone);
+                    OrphanChunks.Add(new Vector3D(0, 0, 0), Quaternion.Identity, chunks.N, chunks.ChunkSize, gone, server: true);
                     var childKeys = new HashSet<long>();
                     foreach (var (a, b) in removed) childKeys.Add(chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f));
-                    var seed = OrphanChunks.Take(new Vector3D(0, 0, 0), Quaternion.Identity, childKeys, chunks.N, 3);
+                    // (the other scene's copy of the piece takes nothing of this scene's post)
+                    if (OrphanChunks.Take(new Vector3D(0, 0, 0), Quaternion.Identity, childKeys, chunks.N, 3, server: false) != null)
+                    { Console.WriteLine("AeroBench: orphan shares FAIL: the client copy took the server's post"); Environment.ExitCode = 1; }
+                    var seed = OrphanChunks.Take(new Vector3D(0, 0, 0), Quaternion.Identity, childKeys, chunks.N, 3, server: true);
                     var child = Build(name + " piece", removed);
                     var cd = (DampedShadowedDragModel)child.Model.InnerModel;
                     var cexact = cd.BuildForceTable(child.Grid, child.Surface, child.Manifold, child.Com);

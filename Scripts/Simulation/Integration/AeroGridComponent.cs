@@ -497,7 +497,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             foreach (var g in block.GetTransformedOccupiedCellGroups())
                 keys.Add(keyer.KeyOf(new Vector3(g.Min.X + g.Max.X + 1, g.Min.Y + g.Max.Y + 1, g.Min.Z + g.Max.Z + 1) * 0.125f));
         }
-        var t = OrphanChunks.Take(wt.Position, wt.Orientation, keys, 8, 3);
+        var t = OrphanChunks.Take(wt.Position, wt.Orientation, keys, 8, 3, IsServerScene);
         if (t == null) return;
         _model.InstallForceTable(t);
         Seeded = true;
@@ -514,7 +514,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             var nt = _chunks.DropEmptied(_dropKeys, _model.Table, _localTask != null, out int dropped, _orphanBuf);
             if (!ReferenceEquals(nt, _model.Table)) _model.InstallForceTable(nt);
             // (what left may be a piece breaking off: posted for it)
-            if (_orphanBuf.Count > 0) { var pwt = Data.GetWorldTransform(); OrphanChunks.Add(pwt.Position, pwt.Orientation, _chunks.N, _chunks.ChunkSize, _orphanBuf); }
+            if (_orphanBuf.Count > 0) { var pwt = Data.GetWorldTransform(); OrphanChunks.Add(pwt.Position, pwt.Orientation, _chunks.N, _chunks.ChunkSize, _orphanBuf, IsServerScene); }
             ChunksDropped += dropped;
             _dropKeys.Clear();
         }
