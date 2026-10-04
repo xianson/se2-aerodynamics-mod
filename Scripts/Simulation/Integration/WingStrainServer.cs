@@ -67,7 +67,15 @@ public partial class AeroGridComponent
     {
         var model = _model;
         var wings = model?.Wings; var forces = model?.LastWingForces;
-        if (wings == null || forces == null || wings.Count == 0 || forces.Count != wings.Count || !HasResult) { MaxWingStrain = 0f; return; }
+        if (wings == null || forces == null || wings.Count == 0 || forces.Count != wings.Count || !HasResult)
+        {
+            // (no load without a result - parked, vacuum: the filter falls back to rest; it froze, the API kept a landed
+            //  ship's 0.9 and the next takeoff started from it)
+            MaxWingStrain = 0f;
+            float k = MathF.Min(1f, dt / StrainSmoothing);
+            for (int i = 0; i < _strainFilt.Length; i++) { _strainFilt[i] -= _strainFilt[i] * k; if (i < _strainRaw.Length) _strainRaw[i] = 0f; }
+            return;
+        }
         if (!ReferenceEquals(wings, _strainWings) || _strainRoots.Length != wings.Count) RebuildStrainRoots(wings);
         int n = wings.Count;
         if (_strainFilt.Length != n) return;   // (the rebuild failed: none this time)

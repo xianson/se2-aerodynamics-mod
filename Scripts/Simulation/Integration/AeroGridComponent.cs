@@ -149,6 +149,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     // ── Offset thrust (RCS) ──
     internal List<ThrusterInfo> _thrusterCache = new();
+    static readonly object HarnessTrackLock = new object();
     private bool _thrusterCacheDirty = true;
 
     // ── Gyroscope control ──
@@ -338,7 +339,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _dirty = true;
         _fullRebuildNeeded = true;
         _initialized = true;
-        AeroTestHarness.TrackGrid(this);
+        lock (HarnessTrackLock) AeroTestHarness.TrackGrid(this);   // (client and server grids are added on their own threads: the harness's sets are unlocked)
     }
 
     void IInSceneListener.OnBeforeRemovedFromScene()
@@ -348,7 +349,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // (the ground ray's ignore list: released when no ray is in flight - the engine reads it until the cast completes)
         if (Ground.HasIgnore && !Ground.InFlight) { try { Ground.Ignore.Dispose(); } catch { } Ground.HasIgnore = false; }
         _initialized = false;
-        AeroTestHarness.UntrackGrid(this);
+        lock (HarnessTrackLock) AeroTestHarness.UntrackGrid(this);
         AeroScheduler.Remove(this);
         ObservedWorldTransform.DetachFrom(Data, Data);
     }
