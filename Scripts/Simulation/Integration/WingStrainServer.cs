@@ -12,7 +12,9 @@ public static class WingStructure
     /// strain itself is computed either way (the API reports it).</summary>
     public static bool Enabled = false;
     /// <summary>The wings' strength, times this (2: twice the load before they wear).</summary>
-    public static float Strength = 1f;
+    /// (25 by default: calibrated so real ships - long, one-block-deep wings: the jetliner, 63 m - hold ~6 g; at 1 the
+    ///  jetliner snapped in level flight. Tests/AeroBench strain mode reports a ship's limits.)
+    public static float Strength = 25f;
 }
 
 /// <summary>

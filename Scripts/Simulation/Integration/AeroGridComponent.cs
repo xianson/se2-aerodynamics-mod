@@ -158,6 +158,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // ── Ground effect ──
     /// <summary>Height above ground in meters. -1 = unknown.</summary>
     internal float GroundHeight = -1f;
+    /// <summary>Away from the ground (against gravity), grid frame, unit; zero out of gravity (AeroSimJob).</summary>
+    internal Vector3 GroundUpLocal;
     internal readonly PhysicsHack.GroundProbe Ground = new PhysicsHack.GroundProbe();
 
     // ── Cached physics state (written by sim job @ 60Hz, read by draw job) ──
@@ -767,7 +769,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _blockSize,
             localAngVel,
             groundHeight,
-            _manifold);
+            _manifold,
+            GroundUpLocal);
 
         long dragStart = AeroStats.Timestamp();
         LastResult = _model.Compute(ctx);

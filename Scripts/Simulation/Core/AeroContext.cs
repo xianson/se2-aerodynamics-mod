@@ -43,11 +43,16 @@ public readonly struct AeroContext
     /// </summary>
     public readonly ManifoldClassifier Manifold;
 
+    /// <summary>"Up" away from the ground, in the grid's frame (unit; zero when unknown): with GroundHeight (measured at
+    /// the grid's origin) it gives each wing's own height - ground effect per wing.</summary>
+    public readonly Vector3 GroundUpLocal;
+
     public AeroContext(IGridAccessor gridAccessor, ISurfaceProvider surfaceCache, Vector3 velocity,
         AtmosphereState atmosphere, Vector3 centerOfMass, float blockSize = 2.5f,
         Vector3 angularVelocity = default, float groundHeight = -1f,
-        ManifoldClassifier manifold = null)
+        ManifoldClassifier manifold = null, Vector3 groundUpLocal = default)
     {
+        GroundUpLocal = groundUpLocal;
         GridAccessor = gridAccessor;
         SurfaceCache = surfaceCache;
         Velocity = velocity;

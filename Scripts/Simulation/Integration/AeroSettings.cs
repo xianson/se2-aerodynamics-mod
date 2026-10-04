@@ -85,8 +85,14 @@ public static class AeroSettings
             "Below this speed (m/s) a damaged or edited hull waits before updating its forces.");
         F("Perf.QuietBeforeFullRebuild", "world", 0.5, 120, false, () => AeroGridComponent.QuietBeforeFullRebuild, v => AeroGridComponent.QuietBeforeFullRebuild = v,
             "Seconds without block changes before a full rebuild cleans up after local updates.");
+        B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
+            "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.");
+        F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
+            "Wing strength, times this (1: a light-armour wing 4 blocks long snaps at 40 kPa wing loading; heavy armour 4x).");
 
         // ── CLIENT ──
+        B("Hud.Mach", "client", false, () => MachHud.On, v => MachHud.On = v,
+            "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying.");
         B("Fx.Effects", "client", false, () => AeroEntryFx.AllEffects, v => AeroEntryFx.AllEffects = v,
             "Every aero visual effect (plasma, vapour, tip trails, the plasma light). Off: none at all.");
         B("Fx.FlightField", "client", false, () => FlightField.On, v => FlightField.On = v,

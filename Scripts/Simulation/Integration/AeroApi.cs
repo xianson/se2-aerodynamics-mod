@@ -63,6 +63,17 @@ public static class AeroApi
         return true;
     }
 
+    /// <summary>Height above the ground under the grid (m, measured at its origin along gravity; the ship and what is
+    /// attached to it ignored), -1 when none within 2 km or out of gravity.</summary>
+    public static bool TryGetGroundHeight(Keen.VRage.DCS.Components.Entity grid, out float height)
+    {
+        height = -1f;
+        var aero = AeroOf(grid);
+        if (aero == null) return false;
+        height = aero.GroundHeight;
+        return true;
+    }
+
     // ── entry heating ──
 
     /// <summary>The grid's entry heating now, 0..1 (the plasma's strength), and whether an entry source owns it (another
@@ -158,6 +169,20 @@ public static class AeroApi
         return true;
     }
 
+    /// <summary>A wing's structural strain (last tick, smoothed over ~0.15 s): its root bending moment over the root's
+    /// capacity - 1 is the limit (past it the root wears, with Structure.WingStrain on), 1.5 breaks it off. Root moment and
+    /// capacity in N m (the worse side's, for a wing across the centre of mass). Computed whether or not the damage is on.
+    /// False: no such wing, or not computed yet (server copy, or the same-process client copy).</summary>
+    public static bool TryGetWingStrain(Keen.VRage.DCS.Components.Entity grid, int index, out float strain, out float rootMoment, out float capacity)
+    {
+        strain = rootMoment = capacity = 0f;
+        var aero = AeroOf(grid);
+        return aero != null && aero.TryGetWingStrain(index, out strain, out rootMoment, out capacity);
+    }
+
+    /// <summary>The grid's highest wing strain (as TryGetWingStrain), 0 with no wings.</summary>
+    public static float GetMaxWingStrain(Keen.VRage.DCS.Components.Entity grid) => AeroOf(grid)?.MaxWingStrain ?? 0f;
+
     /// <summary>PREDICT the hull's aerodynamic force for any flight state, from the grid's precomputed force table (the
     /// face model: shadowing, the subsonic-to-Newtonian blend, wave drag): the grid moving at velocityLocal (m/s, its own
     /// frame) through air of this density (kg/m3) and speed of sound (m/s). Force (N) and torque (N m, about the centre of
@@ -175,6 +200,18 @@ public static class AeroApi
         var r = table.Evaluate(ctx, d.SubsonicLimit, d.SupersonicLimit, d.Streamlining);
         forceLocal = r.Force; torqueLocal = r.Torque; frontalArea = r.FrontalArea;
         return true;
+    }
+
+    /// <summary>Ask for the grid's force table to be built even where aero would not build one yet - out of air and
+    /// gravity (a grid on rails in space: another mod predicting its drag). Built on the grid's next aero step (from the
+    /// shape cache when its shape is known). True: the table exists now (PredictHullForces / SampleForceTable answer).</summary>
+    public static bool RequestForceTable(Keen.VRage.DCS.Components.Entity grid)
+    {
+        var aero = AeroOf(grid);
+        if (aero == null) return false;
+        if (aero.FxModel?.Table != null) return true;
+        aero.EntryWantsTable = true;
+        return false;
     }
 
     /// <summary>The raw force table at a travel direction (local; normalised for you), for unit dynamic pressure, into 13

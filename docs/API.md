@@ -63,6 +63,8 @@ A grid can be passed as either its server copy or a client copy in the same proc
 | `bool TryGetFlight(Entity grid, out Vector3 travelLocal, out float airspeed, out float mach, out float density, out float dynamicPressure)` | The grid's air: travel (local, unit), airspeed (m/s), Mach, density (kg/m³), dynamic pressure (Pa). `false` when the grid is under 1 m/s or not in air. |
 | `bool TryGetForces(Entity grid, out Vector3 forceLocal, out Vector3 torqueLocal, out float drag, out float lift, out float frontalArea)` | The aerodynamic load (local), with wings and control surfaces included: force (N), torque (N·m), drag and lift (N), and frontal area (m²). |
 | `bool TryGetLift(Entity grid, out Vector3 liftLocal, out float liftCoefficient)` | Lift direction (local, unit) and its coefficient on the frontal area. |
+| `bool RequestForceTable(Entity grid)` | Build the grid's force table even out of air and gravity (a grid on rails); true once it exists (then `PredictHullForces` answers). |
+| `bool TryGetGroundHeight(Entity grid, out float height)` | Height above the ground under the grid (m, at its origin along gravity; the ship itself ignored); -1 when none within 2 km. |
 | `bool TryGetEntry(Entity grid, out float strength, out bool external)` | Entry heating now, 0..1, and whether an entry source owns it. |
 | `float EntryStrength(float mach, float density)` | Aero's heating law: onset at Mach 2, full at about Mach 2.5, scaled by density on a log scale. |
 | `int GetWingTips(Entity grid, List<Vector3> tipsLocal, List<Vector3> normalsLocal)` | The detected wing tips (local m, at the trailing edge) and each wing's lift normal. Returns the count. |
@@ -137,6 +139,15 @@ Commands (setting a control surface's deflection, an airbrake's deployment) will
 | AtmosphericScoop | `MassFlow` (kg/s), `CollectionRate`, `Collected`, `Drag` (N) |
 | HelicopterRotor | `Collective` (0..1), `Thrust` (N), `DensityScale`, `TranslationalLift`, `GroundEffect`, `Autorotation` (N) |
 
+### Wing strain
+
+| Member | What it gives |
+|---|---|
+| `bool TryGetWingStrain(Entity grid, int index, out float strain, out float rootMoment, out float capacity)` | A wing's structural strain (last tick, smoothed over ~0.15 s): its root bending moment over the root's capacity. 1 is the limit (past it the root wears, with `Structure.WingStrain` on); 1.5 breaks the wing off. Root moment and capacity in N·m (for a wing across the centre of mass, the worse side's). Computed whether or not the damage is on. `false`: no such wing, or not computed yet. |
+| `float GetMaxWingStrain(Entity grid)` | The grid's highest wing strain, as above; 0 with no wings. |
+
+The model (`Lift/WingStrain.cs`): a wing is a cantilever rooted at its span end nearest the centre of mass (a wing the centre of mass lies across, one wing through the fuselage, is two). Its load (lift and induced drag along its normal) spread evenly along it gives the bending moment at each span station; the blocks in that station's slab (within the wing's chord, and 2 blocks - at least 2.5 m - above and below it, so a fuselage counts) give its capacity, per chord column width × depth² (one block deep: a per-cell strength going as the block size cubed; heavy armour 4×). The worst station decides, and its blocks are the ones that wear and break: the root of a plain wing, where it leaves the fuselage for a wing through one. Calibrated so that a light-armour wing 4 blocks long and 1 block deep, large or small grid, snaps at 40 kPa wing loading (wear from 26.7 kPa); strain goes as the length squared (8 blocks: snaps at 10 kPa). Long slender wings are far weaker: on the bench ships (light armour assumed) the small-grid jetliner's main wing snaps at about 0.9 kPa, the pelican's at 10 kPa (`dotnet run -c Release -- strain` in `Tests/AeroBench`); raise `Structure.WingStrength` to suit.
+
 ### On / off and settings
 
 | Member | What it gives |
@@ -179,6 +190,8 @@ Both files are read again within ~2 s of an edit, so they can be changed while p
 | `Perf.ChunksPerUpdate` | world | int | 8 | 1..64 | Hull chunks updated per pass. |
 | `Perf.MinSpeedForUpdates` | world | float | 10 | 0..1000 | Below this speed (m/s) an edited hull waits before updating its forces. |
 | `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Seconds without block changes before a cleanup rebuild. |
+| `Structure.WingStrain` | world | bool | false | | Overloaded wings strain at the root, wear and break off (the game splits them off). Off by default: it destroys blocks. The strain is reported (`TryGetWingStrain`) either way. |
+| `Structure.WingStrength` | world | float | 1 | 0.1..100 | Wing strength, times this. |
 | `Fx.Effects` | client | bool | true | | Every aero visual effect. |
 | `Fx.FlightField` | client | bool | true | | The flight effects (plasma, vapour, tip trails); off: none. |
 | `Fx.Plasma` / `Fx.Vapour` / `Fx.Tips` / `Fx.SpotLight` | client | bool | true | | Each group of the flight effects. |

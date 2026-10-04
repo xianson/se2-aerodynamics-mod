@@ -79,7 +79,8 @@ public partial class AeroGridComponent
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
         aero.InGravity = gravity.LengthSquared() > 1e-4f;
-        aero.GroundHeight = PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity);
+        aero.GroundHeight = PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity);
+        aero.GroundUpLocal = aero.InGravity ? -Vector3.Normalize(WorldTransform.TransformDirectionInv(gravity, wt)) : Vector3.Zero;
 
         // ── Cache physics state for draw job ──
         aero.LastLinVel = linVel;
@@ -158,6 +159,7 @@ public partial class AeroGridComponent
         AeroCost.Compute.Stop(tco);
         AeroEntryFx.Flow(aero, wt, linVel, density);
         AeroEntryFx.Server(aero, wt, linVel, density, 1f / 60f);
+        if (aero.IsServerScene && !AeroEntryFx.TestForcesOn) aero.TickWingStrain(AeroPhysics.Dt);   // (wing strain: WingStrainServer.cs)
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
         {

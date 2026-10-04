@@ -81,6 +81,42 @@ static class Program
 
     /// <summary>Known answers: a solid block's face drag, flow straight onto one face, as a drag coefficient on its
     /// frontal area (a bluff block: about 1.0-1.2).</summary>
+    /// <summary>Ground effect (CompressibleWingModel.GroundPhi): a 10 m x 2 m wing at 8 deg, 80 m/s - near the ground
+    /// (2 m: h/b 0.2) more lift and less induced drag than far from it; at 40 m (h/b 4) none; the switch off, none; the
+    /// wing's own height (the grid's plus its offset along 'up'): mounted 10 m up it is 12 m up. Returns the failures.</summary>
+    static int GroundEffectCheck(AtmosphereState atmo)
+    {
+        int fails = 0;
+        void Check(bool ok, string what) { if (!ok) { fails++; Console.WriteLine("AeroBench: ground effect FAIL " + what); } }
+        static LiftingSurface Wing(float y) => new LiftingSurface(Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ, 20f, 10f, 0.1f, 0f,
+            new Vector3(0, y, 0), new Vector3(0, y, -0.5f), 40);
+        float a = 8f * MathF.PI / 180f;
+        var v = new Vector3(0, -MathF.Sin(a), -MathF.Cos(a)) * 80f;
+        (float lift, float cdi) Run(float height, float wingY = 0f)
+        {
+            var model = new CompressibleWingModel();
+            var wings = new[] { Wing(wingY) };
+            var ctx = new AeroContext(null, null, v, atmo, Vector3.Zero, 2.5f, Vector3.Zero, height, null, Vector3.UnitY);
+            var r = model.ComputeWingForces(wings, ctx)[0];
+            return (r.LiftForce.Length(), r.CDi);
+        }
+        var far = Run(-1f);
+        var near = Run(2f);
+        var high = Run(40f);
+        Check(near.lift > far.lift * 1.05f, $"near lift {near.lift:F0} vs far {far.lift:F0}");
+        Check(near.cdi < far.cdi * 0.8f, $"near CDi {near.cdi:F4} vs far {far.cdi:F4}");
+        Check(MathF.Abs(high.lift - far.lift) < far.lift * 0.005f, $"40 m lift {high.lift:F0} vs far {far.lift:F0}");
+        CompressibleWingModel.GroundEffect = false;
+        var off = Run(2f);
+        CompressibleWingModel.GroundEffect = true;
+        Check(MathF.Abs(off.lift - far.lift) < far.lift * 0.005f, $"switch off lift {off.lift:F0} vs far {far.lift:F0}");
+        var mounted = Run(2f, 10f);
+        var at12 = Run(12f);
+        Check(MathF.Abs(mounted.lift - at12.lift) < at12.lift * 0.005f, $"wing 10 m up at 2 m: lift {mounted.lift:F0} vs at 12 m {at12.lift:F0}");
+        Console.WriteLine($"AeroBench: ground effect lift x{near.lift / far.lift:F2}, CDi x{near.cdi / far.cdi:F2} at h/b 0.2 ({(fails == 0 ? "ok" : fails + " failed")})");
+        return fails;
+    }
+
     static int KnownShapes(AtmosphereState atmo)
     {
         int fails = 0;
@@ -441,7 +477,7 @@ static class Program
         if (names.Length == 0) { Console.WriteLine("AeroBench: no ship data (Tests/data/*.boxes) - skipped, 0/0 passed"); return 0; }
 
         var atmo = new AtmosphereState { Density = 1.0, Pressure = 90000, Temperature = 288, SpeedOfSound = 340 };
-        int known = KnownShapes(atmo);
+        int known = KnownShapes(atmo) + GroundEffectCheck(atmo);
         if (args.Length > 0 && args[0] == "gate")
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships

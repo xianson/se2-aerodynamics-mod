@@ -109,8 +109,27 @@ public class CompressibleWingModel : IWingLiftModel
         return claSub + (claSup - claSub) * t;
     }
 
+    /// <summary>Ground effect: switch (harness aeroset CompressibleWingModel.GroundEffect 0) and the height the
+    /// lift boost and drag cut fade out by (spans).</summary>
+    public static bool GroundEffect = true;
+    float[] _groundPhi = Array.Empty<float>();
+
+    /// <summary>The wing's ground factor phi = (h/b)^2 / (1 + (h/b)^2), floored at 0.1: h its own height above the ground
+    /// (the grid's, plus its aerodynamic centre's offset along 'up'), b its span; 1 far from the ground or unknown.</summary>
+    static float GroundPhi(in AeroContext ctx, in LiftingSurface w)
+    {
+        if (!GroundEffect || ctx.GroundHeight < 0f || w.Span <= 0.1f) return 1f;
+        float h = ctx.GroundHeight;
+        if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(w.AeroCenter, ctx.GroundUpLocal);
+        h = MathF.Max(0.05f, h);
+        float hb = h / w.Span;
+        if (hb > 3f) return 1f;
+        return MathF.Max(0.1f, hb * hb / (1f + hb * hb));
+    }
+
     public List<WingForceResult> ComputeWingForces(ReadOnlySpan<LiftingSurface> wings, in AeroContext ctx)
     {
+        if (_groundPhi.Length < wings.Length) _groundPhi = new float[wings.Length];
         int n = wings.Length;
         if (n == 0) return EmptyResults;
 
@@ -155,7 +174,11 @@ public class CompressibleWingModel : IWingLiftModel
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
             float machPerp = mach * MathF.Cos(w.SweepAngle);
             _machPerps[i] = machPerp;
-            _clAlphas[i] = ComputeCLAlpha(machPerp, w.AspectRatio, w.SweepAngle,
+            // (ground effect: near the ground the wing sees less downwash - as if its aspect ratio were AR / phi -
+            //  so its lift slope rises; phi from its own height over its span, capped at 4x)
+            float phiG = GroundPhi(ctx, w);
+            _groundPhi[i] = phiG;
+            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(w.AspectRatio / phiG, 4f * w.AspectRatio), w.SweepAngle,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
             // Runtime stall angle, floored at 3 degrees
@@ -312,14 +335,7 @@ public class CompressibleWingModel : IWingLiftModel
             // φ = (h / b)² / (1 + (h / b)²), where h = ground height, b = span
             // CDi_eff = CDi * φ  (approaches 0 at h→0, 1 at h→∞)
             // Also boosts effective CL slightly (reduced downwash = more effective AoA)
-            float groundFactor = 1f;
-            if (ctx.GroundHeight >= 0f && w.Span > 0.1f)
-            {
-                float hb = ctx.GroundHeight / w.Span;
-                groundFactor = hb * hb / (1f + hb * hb);
-                groundFactor = MathF.Max(0.1f, groundFactor); // never fully eliminate drag
-            }
-            cdi *= groundFactor;
+            cdi *= _groundPhi[i];   // (this wing's own height: GroundPhi)
 
             float totalCd = cdi + cd0 + cdSep;
             float dragMag = q * w.PlanformArea * totalCd;

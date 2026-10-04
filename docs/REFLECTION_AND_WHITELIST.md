@@ -120,3 +120,5 @@ The general picture (private and internal members, boxed-struct mutation, `Activ
 3. `((object)block.Definition) is Definition d` may avoid the CS0012 without reflection (§5.12, not compiled).
 
 *Items marked "not compiled" should be run through ModCheck before relying on them.*
+- **2026-10-03 Mach in the speed readout (`Integration/MachHud.cs`)**: the public `TextManager.AddFilter("Aero", ITextFilter)` (no reflection) registers `{Aero:Mach}`. Reflection: `TextManager._textSource` (private field: the loaded `LocalizationPackage`) and its `_baseLanguageStrings` / `_localizedStrings` (private `Dictionary<StringId, ContentText>`): the three speedometer templates (`SpeedometerMetersPerSecond` / `KilometersPerHour` / `MilesPerHour`) get the token appended. Re-checked every 3 s (a culture change reloads the tables); failures land in `MachHud.Status`, never thrown. Value from `ClientPlayersSessionComponent.LocalPlayerController.GetTopObservableEntity()` (public) and aero's own flow records.
+

@@ -388,6 +388,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     /// FlightMax to the camera; dropped a second after it stops.</summary>
     private static void FlightJob(AeroEntryFxComponent c, IObservers observers)
     {
+        MachHud.Tick(c.Entity);   // (Mach in the game's speed readout: every 0.1 s, whichever grid ticks first)
         if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
         var grid = c.Entity;
         if (grid == null || !PhysicsHack.Alive(c.Data)) return;

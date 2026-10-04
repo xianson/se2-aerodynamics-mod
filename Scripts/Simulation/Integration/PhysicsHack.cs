@@ -513,6 +513,8 @@ public static class PhysicsHack
         internal bool InFlight;
         internal float Last = -1f;
         internal int Cooldown;
+        internal Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity> Ignore;   // (kept alive while the ray is in flight)
+        internal bool HasIgnore;
     }
 
     private static Task<Buffer<SweepQueryHit>> _pendingFwd;
@@ -540,16 +542,27 @@ public static class PhysicsHack
     }
 
 
+    /// <summary>The ground ray ignores the grid itself and what is attached to it (harness: aeroset PhysicsHack.GroundIgnoreSelf 0).</summary>
+    public static bool GroundIgnoreSelf = true;
+    /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none, failed; the last reading.</summary>
+    public static int GroundCasts, GroundHits, GroundMisses, GroundFails;
+    public static float GroundLast = -1f;
+
     /// <summary>
     /// Distance to ground along gravity, via an async physics ray. Fires every few frames and
     /// returns the cached value in between. -1 means "no ground found".
     /// </summary>
-    public static float GetGroundDistance(GroundProbe probe, Vector3D worldPosition, Vector3 gravityDir)
+    public static float GetGroundDistance(GroundProbe probe, Vector3D worldPosition, Vector3 gravityDir, Entity grid = null)
     {
         if (_physics == null || probe == null) return -1f;
 
         if (TryHarvest(ref probe.Pending, ref probe.InFlight, GroundRayLength, out float d))
+        {
             probe.Last = d;
+            GroundLast = d;
+            if (d >= 0f) GroundHits++; else GroundMisses++;
+            if (probe.HasIgnore) { probe.Ignore.Dispose(); probe.HasIgnore = false; }
+        }
 
         if (!probe.InFlight && --probe.Cooldown <= 0)
         {
@@ -562,11 +575,23 @@ public static class PhysicsHack
             try
             {
                 var args = new RayCastArgs(in worldPosition, gravityDir / len * GroundRayLength);
+                // (the ray starts at the grid's origin, inside its hull: without this it hit the ship's own belly and
+                //  read a metre or two - ground effect on at any height. The grid and its attached parts are ignored)
+                if (grid != null && !probe.HasIgnore && GroundIgnoreSelf)
+                {
+                    probe.Ignore = new Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity>(Keen.VRage.Library.Memory.Allocator.Pool, "AeroGround");
+                    probe.HasIgnore = true;
+                    try { var phys = _physics; if (phys != null && phys.HasBody(grid.DEntity)) phys.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore); } catch { }
+                    probe.Ignore.Add(grid.DEntity);
+                    args.IgnoredEntities = probe.Ignore;
+                }
                 probe.Pending = _physics.CastRayAsync(in args, CollisionPreset.Closest);
                 probe.InFlight = true;
+                GroundCasts++;
             }
             catch (Exception ex)
             {
+                GroundFails++;
                 Log.Default?.Info($"[AERO] Ground ray failed: {ex.Message}");
             }
         }
