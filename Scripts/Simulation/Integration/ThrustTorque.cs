@@ -25,8 +25,10 @@ namespace AeroMod;
 public static class ThrustTorque
 {
     public static bool Enabled = true;
+    /// <summary>Apply the torque and force (off: computed, reported and shown as flames only - for A/B tests).</summary>
+    public static bool ApplyForces = true;
     /// <summary>rad/s of target rate per rad of error, and the most it asks for.</summary>
-    public const float Kp = 1.2f, MaxRate = 0.8f;
+    public static float Kp = 1.2f, MaxRate = 0.8f;
     /// <summary>The time it tries to reach the target rate in (s): shorter is stiffer.</summary>
     public const float ResponseTime = 0.3f;
     /// <summary>Below this error and rate the hold rests (no chatter).</summary>
@@ -149,6 +151,10 @@ public static class ThrustTorque
         }
         else aero._rcsWarm = false;
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
+        // (applied: 68bda99 replaced this call with the flame publishing below, and thrust stopped turning ships at all -
+        //  offset torque and the controller's steering were computed, reported and shown as flames, never applied)
+        if (ApplyForces && (torque.LengthSquared() > 0f || extraForce.LengthSquared() > 0f))
+            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, WorldTransform.TransformDirection(extraForce, wt), torque, dt);
         // The flames: published for the client copy (which runs no simulation) to show.
         Publish(aero, wt, rep.Mode == "pilot target" || rep.Mode == "hold");
         return rep;
