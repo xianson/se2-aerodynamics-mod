@@ -502,9 +502,9 @@ class Model:
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
         struct = self.solid | self.engine_vox
-        hinge_m = {tuple(int(x) for x in sg["hinge_voxel"]): sb.mount_dirs(sg["hinge_name"], sg["hinge_orient"])
+        hinge_m = {tuple(int(x) for x in sg["hinge_voxel"]): (sg["hinge_name"], tuple(sg["hinge_orient"]))
                    for sg in self.segs}
-        for _ in range(12):
+        for _ in range(40):
             idx = np.argwhere(struct)
             index = -np.ones(struct.shape, np.int64)
             index[tuple(idx.T)] = np.arange(len(idx))
@@ -512,12 +512,13 @@ class Model:
             for v in map(tuple, idx):
                 if v in self.shapes:
                     shape, n = self.shapes[v]
-                    mounts.append(sb.mount_dirs(sb.armor(shape, self.grid), sb.orient_for_normal(shape, n)))
+                    mounts.append((sb.armor(shape, self.grid), sb.orient_for_normal(shape, n)))
                 elif v in hinge_m:
-                    mounts.append(hinge_m[v])                     # a hinge base: not on its head side
+                    mounts.append(hinge_m[v])                     # (hinge name, orientation)
                 else:
-                    mounts.append(None)                           # cube / other functional: every face
+                    mounts.append(None)                           # cube / other functional: every face, full
             rows, cols = [], []
+            weak = set()
             for ax in range(3):
                 d = [0, 0, 0]
                 d[ax] = 1
@@ -528,14 +529,29 @@ class Model:
                 for a in np.nonzero(j >= 0)[0]:
                     b = j[a]
                     ma, mb = mounts[a], mounts[b]
-                    if (ma is None or tuple(d) in ma) and (mb is None or tuple(-x for x in d) in mb):
+                    na = ma if ma is not None else ("ArmorCubeLight50", sb.IDENTITY)
+                    nb_ = mb if mb is not None else ("ArmorCubeLight50", sb.IDENTITY)
+                    if sb.joins(na[0], na[1], nb_[0], nb_[1], tuple(d)):
                         rows.append(a)
                         cols.append(b)
+                        if ma is not None or mb is not None:
+                            weak.add((min(a, b), max(a, b)))
             n = len(idx)
             A = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
             nc, lab = connected_components(A, directed=False)
             if nc == 1:
-                return
+                # one piece: a joint that is the ONLY path to its side must be full-to-full, so shaped blocks on
+                # such a joint revert to cubes (cheap: the outline loses a few chamfers, nothing moves)
+                bad = set()
+                for u, w, _ in vx.bridges(n, rows, cols):
+                    if (min(u, w), max(u, w)) in weak:
+                        bad |= {tuple(int(x) for x in idx[k]) for k in (u, w)} & set(self.shapes)
+                if not bad:
+                    return
+                for v in bad:
+                    del self.shapes[v]
+                self.bridge_cubes = getattr(self, "bridge_cubes", 0) + len(bad)
+                continue
             big = np.argmax(np.bincount(lab))
             loose = [tuple(idx[i]) for i in np.nonzero(lab != big)[0]]
             bad = {v for v in loose if v in self.shapes}
@@ -582,6 +598,87 @@ class Model:
                     return None
                 out += col
         return out
+
+    def back_partial(self):
+        """Functional blocks without a FULL mount face (cockpit, hydrogen thrusters: their mount groups cover only part
+        of a face, at positions the measured table does not give) join only if the WHOLE face is backed by blocks that
+        mount fully there.  The 1-voxel slab in front of one mount face (engines: the face opposite the exhaust first;
+        cockpit: Down first) becomes plain frozen cubes, and so does every other mount face's slab that already
+        touches structure (a cockpit set into the hull carries the nose through its front face); slab voxels in the
+        hollow are tied to the structure by cube rays like the cockpit plinth."""
+        lat = self.lat
+        for blk in self.extra:
+            if blk["kind"] not in ("engine", "cockpit"):
+                continue
+            name, orient = blk["name"], tuple(blk["orient"])
+            if sb.mount_full_dirs(name, orient):
+                continue
+            dirs = sorted(sb.mount_dirs(name, orient))
+            pref = (0, -1, 0) if blk["kind"] == "cockpit" else \
+                tuple(int(-x) for x in sb.orient_matrix(*orient) @ np.array(sb.CAL["thruster_exhaust_local"]))
+            dirs.sort(key=lambda d: d != pref)
+            done = False
+            for d in dirs:
+                ax = int(np.nonzero(d)[0][0])
+                a, b = lat.index_range(blk["lo"], blk["hi"])
+                if not lat.covers_exactly(blk["lo"], blk["hi"]):
+                    continue
+                a, b = list(a), list(b)
+                if d[ax] > 0:
+                    a[ax], b[ax] = b[ax], b[ax] + 1
+                else:
+                    a[ax], b[ax] = a[ax] - 1, a[ax]
+                if min(a) < 0 or any(x > n for x, n in zip(b, lat.shape)):
+                    continue
+                r = tuple(slice(i, j) for i, j in zip(a, b))
+                ok_cells = (self.solid[r] | self.cavity[r]) & ~self.engine_vox[r] & ~self.flapvox[r] & \
+                    ~self.lane_vox[r] & ~self.blocked[r] & ~self.swept_taken[r]
+                if not ok_cells.all():
+                    continue
+                if done and not self.solid[r].any():
+                    continue        # extra faces: only where structure beyond may hang on this block
+                slab = [tuple(int(x) for x in v + np.array(a)) for v in np.argwhere(ok_cells)]
+                extra = []
+                for v in slab:                     # hollow slab cells: a cube ray to the nearest structure
+                    if self.solid[v]:
+                        continue
+                    best = None
+                    for dv in vx.N6:
+                        if dv == tuple(-x for x in d) or dv == d:
+                            continue
+                        ray, w = [], v
+                        for _ in range(12):
+                            w = tuple(p + q for p, q in zip(w, dv))
+                            if any(c < 0 or c >= n for c, n in zip(w, lat.shape)):
+                                ray = None
+                                break
+                            if self.solid[w] or w in slab:
+                                break
+                            if not self.cavity[w] or self.blocked[w] or self.engine_vox[w]:
+                                ray = None
+                                break
+                            ray.append(w)
+                        else:
+                            ray = None
+                        if ray is not None and (best is None or len(ray) < len(best)):
+                            best = ray
+                    if best is None:
+                        extra = None
+                        break
+                    extra += best
+                if extra is None:
+                    continue
+                for v in slab + extra:
+                    self.solid[v] = True
+                    self.cavity[v] = False
+                    self.frozen[v] = True
+                    self.shapes.pop(v, None)
+                    if self.label[v] < 0:
+                        self.label[v] = 0
+                self.backed_cells = getattr(self, "backed_cells", 0) + len(slab) + len(extra)
+                done = True
+            if not done:
+                self.problems.append(f"{blk['kind']} {name}: no mount face can be backed fully by cubes")
 
     def mounted(self, name, orient, lo, hi):
         return any(self.backed(lo, hi, d) for d in sb.mount_dirs(name, orient))
@@ -695,6 +792,7 @@ def build_once(d, cat, dx=0.0):
         for f in sg["flaps"]:
             m.flapvox[f["voxel"]] = True
     m.place_cockpit()
+    m.back_partial()
     m.refine_skin()
     m.np_res = m.neutral_point()
     if m.np_res is None:

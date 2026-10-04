@@ -428,9 +428,8 @@ def full_faces(shape: str, orient) -> list[tuple[int, int, int]]:
 # disconnected blocks at spawn - a block held only through non-mount faces is split off, and that split crashed).
 # MEASURED: data/mounts_measured.txt (harness 'gen mounts': ComplexTopologyAggregator.GetMountPointsGroupsPerDirection
 # per prefab, local axes at identity; counts in 0.25 m cells, a small block's full face is 4, a large one's 100).
-# A face is a mount face if it has ANY mount cells: CanConnectBlock tests each mount group's box, pushed one cell
-# out, against the neighbour's whole AABB - so a triangle (3 of 4) or half (2 of 4) group still meets a same-size
-# neighbour, as long as that neighbour mounts on its facing side too.  Only faces with no group cannot connect.
+# A face with ANY mount cells is a mount face; whether two faces actually join is decided by joins() below
+# (both mount, and at least one of the two is FULL - partial-to-partial pairings are not relied on).
 # Prefabs missing from the table fall back to the shape-derived rule (full faces of the cut cube) / role guesses.
 # Override any prefab with calibration.txt:   mount_faces NAME Forward Backward Left Right Up Down
 # ---------------------------------------------------------------------------------------------------------------
@@ -520,3 +519,53 @@ def mount_dirs(name, orient):
     """Grid-frame face directions with mount points for `name` placed with `orient`."""
     M = orient_matrix(*orient)
     return {tuple(int(x) for x in M @ np.array(d)) for d in mount_local(name)}
+
+
+# Which mount faces are FULL (the group covers the whole face).  Pairing rule used everywhere (validator, fix pass,
+# planner): two blocks join across a face only if both have mount cells there AND at least one of the two faces is
+# full.  Why a partial face may pair with a full one: BlockOctreeComponent.TryConnectNodes descends to single-cell
+# leaves and calls CanConnectBlock only where BOTH leaf cells across the face are occupied; a partial mount face
+# means the block's collider (hence its occupancy) reaches that face in at least one cell, and the full face beyond
+# occupies every cell, so some occupied leaf pair exists; CanConnectBlock then passes both ways (each group's box,
+# pushed one cell out, meets the other block's AABB).  Partial-to-partial (triangle to triangle, half to half) is
+# NOT relied on: their occupied cells need not line up.
+def mount_full_local(name):
+    """Local directions whose measured mount count equals the block's whole face area (in 0.25 m cells)."""
+    g = _guid_of(name)
+    b = None
+    for cat in _CATALOGS:
+        if name in cat.by_name:
+            b = cat.by_name[name]
+            break
+    if g is None or g not in MOUNT_MEASURED or b is None:
+        # fallback: the shape's full faces (cut cube) / every assumed face of a functional block
+        shape = shape_of(name)
+        if shape in ("slope", "invcorner", "corner", "halfslope"):
+            n = np.array(CAL["shape_normal"][shape])
+            if shape == "corner":
+                return set()
+            if shape == "halfslope":
+                return {(0, -1, 0)}
+            return {d for d in _LOCAL.values() if int(np.array(d) @ n) < 0}
+        return mount_local(name)
+    ext = (b.hi - b.lo)                          # continuous extent in cells (= inclusive count)
+    out = set()
+    for k, v in MOUNT_MEASURED[g].items():
+        d = _LOCAL[k]
+        ax = [i for i in range(3) if d[i] == 0]
+        if v >= int(ext[ax[0]] * ext[ax[1]]):
+            out.add(d)
+    return out
+
+
+def mount_full_dirs(name, orient):
+    M = orient_matrix(*orient)
+    return {tuple(int(x) for x in M @ np.array(d)) for d in mount_full_local(name)}
+
+
+def joins(name_a, orient_a, name_b, orient_b, d):
+    """True if block A and block B (B on A's side d) connect across their shared face."""
+    nd = tuple(-x for x in d)
+    if d not in mount_dirs(name_a, orient_a) or nd not in mount_dirs(name_b, orient_b):
+        return False
+    return d in mount_full_dirs(name_a, orient_a) or nd in mount_full_dirs(name_b, orient_b)

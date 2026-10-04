@@ -412,8 +412,9 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
     ok = False
     for d in sb.mount_dirs(hname, orient_h):
         nb = tuple(a + b for a, b in zip(hidx, d))
-        if all(0 <= a < s for a, s in zip(nb, lat.shape)) and struct0[nb] and nb not in fl and nb not in carve:
-            ok = True
+        if all(0 <= a < s for a, s in zip(nb, lat.shape)) and struct0[nb] and nb not in fl and nb not in carve \
+                and sb.joins(hname, orient_h, "ArmorCubeLight50", sb.IDENTITY, d):
+            ok = True                   # (the hinge's half faces pair with a cube's full face)
             break
     if not ok:
         return None
@@ -428,7 +429,7 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
         after[tuple(np.array(v) - a)] = False
     after[tuple(np.array(hidx) - a)] = True
     hm = dict(model.hinge_mounts)
-    hm[tuple(int(x) for x in hidx)] = sb.mount_dirs(hname, orient_h)
+    hm[tuple(int(x) for x in hidx)] = (hname, tuple(orient_h))
     if _pieces(after, hm, a) > _pieces(before, model.hinge_mounts, a):
         return None
     return swept, carve
@@ -454,10 +455,11 @@ def _pieces(mask, hinge_mounts, origin):
         j[ok] = index[tuple(nb[ok].T)]
         for i in np.nonzero(j >= 0)[0]:
             va, vb = tuple(int(x) for x in idx[i]), tuple(int(x) for x in idx[j[i]])
-            if va in local and tuple(d) not in local[va]:
-                continue
-            if vb in local and tuple(-x for x in d) not in local[vb]:
-                continue
+            if va in local or vb in local:
+                na = local.get(va, ("ArmorCubeLight50", sb.IDENTITY))
+                nb = local.get(vb, ("ArmorCubeLight50", sb.IDENTITY))
+                if not sb.joins(na[0], na[1], nb[0], nb[1], tuple(d)):
+                    continue
             rows.append(i)
             cols.append(j[i])
     n = len(idx)
@@ -478,7 +480,7 @@ def _commit(model, p):
             model.swept_taken[v] = True
     model.frozen[hidx] = True
     orient_h = p["orient_h"]
-    model.hinge_mounts[tuple(int(x) for x in hidx)] = sb.mount_dirs(p["hinge_name"], orient_h)
+    model.hinge_mounts[tuple(int(x) for x in hidx)] = (p["hinge_name"], tuple(orient_h))
     hpos = cat.pos_for(p["hinge_name"], lat.voxel_box(np.array(hidx))[0], orient_h)
     origin, Rh = sb.headgrid_frame(hpos, orient_h)
     block = p["flap_block"]
@@ -553,15 +555,15 @@ def _head_grid_mounted(fblocks, p, Rh, origin, lat):
     """True if head + flap blocks form one piece through mount faces (head mounts on its +Y only)."""
     from scipy.sparse.csgraph import connected_components
     cells = [tuple(int(x) for x in p["hidx"])] + [tuple(int(x) for x in f["voxel"]) for f in fblocks]
-    mounts = [sb.mount_dirs(p["head_name"], sb.orient_names(Rh))] +         [sb.mount_dirs(f["name"], tuple(f["orient"])) for f in fblocks]
+    names = [(p["head_name"], sb.orient_names(Rh))] + [(f["name"], tuple(f["orient"])) for f in fblocks]
     index = {c: i for i, c in enumerate(cells)}
     n = len(cells)
     A = np.zeros((n, n), bool)
     for i, c in enumerate(cells):
-        for d in mounts[i]:
-            j = index.get(tuple(a + b for a, b in zip(c, d)))
-            if j is not None and tuple(-x for x in d) in mounts[j]:
-                A[i, j] = A[j, i] = True
+        for d in sb.mount_dirs(*names[i]):
+            k = index.get(tuple(a + b for a, b in zip(c, d)))
+            if k is not None and sb.joins(names[i][0], names[i][1], names[k][0], names[k][1], tuple(d)):
+                A[i, k] = A[k, i] = True
     return connected_components(A, directed=False)[0] == 1
 
 

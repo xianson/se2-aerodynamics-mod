@@ -28,6 +28,7 @@ from scipy.sparse.csgraph import connected_components
 
 import se2blocks as sb
 import spec as specio
+import voxel as vx
 
 
 def _rot(axis, ang):
@@ -70,6 +71,29 @@ def _samples(lo, hi, n=7, shrink=0.998):
     g = (np.arange(n) + 0.5) / n * 2 - 1
     s = np.stack(np.meshgrid(g, g, g, indexing="ij"), -1).reshape(-1, 3)
     return c + s * h
+
+
+MARGIN_LAST = []
+
+
+def connection_margin(n, r, c, names, partial_edges=()):
+    """Bridges of the mount graph: faces whose loss would split the grid.  Short text: how many pieces of 2+ blocks
+    hang by a single mount face (the weakest listed by size and the block on the far side), and how many single blocks
+    hang by one face (a lone tip or LE block, a hinge on its one mount)."""
+    bridges = vx.bridges(n, r, c)
+    pieces = sorted(((min(s_, n - s_), u, v) for u, v, s_ in bridges), reverse=True)
+    via = sorted({names[k][0] for p, u, v in pieces if p > 1 and (min(u, v), max(u, v)) in partial_edges
+                  for k in (u, v)})
+    nvia = sum(1 for p, u, v in pieces if p > 1 and (min(u, v), max(u, v)) in partial_edges)
+    big = [p for p in pieces if p[0] > 1]
+    single = sum(1 for p in pieces if p[0] == 1)
+    ex = "; ".join(f"{p}@{names[v][0]}{list(int(x) for x in names[v][1])}" for p, u, v in big[:3])
+    MARGIN_LAST.clear()
+    MARGIN_LAST.extend(pieces)
+    return (f"margin: min 1 path for {len(big)} pieces of 2+ blocks (largest {big[0][0] if big else 0}"
+            f"{': ' + ex if ex else ''}; {nvia} of those joints through a partial face{' ' + str(via) if via else ''}),"
+            f" {single} single blocks hanging by one face"
+            if pieces else "margin: every piece has 2+ independent mount paths")
 
 
 def validate(spec_path, side, cat):
@@ -141,9 +165,9 @@ def validate(spec_path, side, cat):
         for lo, hi in pieces[1:]:
             taken[G.sl(lo, hi)] = True
         # connectivity among the head grid's pieces through mount faces (the head mounts flaps on its +Y only)
-        mounts = [sb.mount_dirs(h["head"], sb.orient_names(h["Rh"]))]
-        for fname, fpos, _ in h["flaps"]:
-            mounts.append(sb.mount_dirs(fname, sb.orient_names(h["Rh"] @ sb.orient_matrix(*h["forients"][len(mounts) - 1]))))
+        names = [(h["head"], sb.orient_names(h["Rh"]))]
+        for fi, (fname, fpos, _) in enumerate(h["flaps"]):
+            names.append((fname, sb.orient_names(h["Rh"] @ sb.orient_matrix(*h["forients"][fi]))))
         n = len(pieces)
         adj = np.zeros((n, n), bool)
         for a, b in itertools.combinations(range(n), 2):
@@ -153,7 +177,7 @@ def validate(spec_path, side, cat):
                 ax = int(np.nonzero(touch == 0)[0][0])
                 d = [0, 0, 0]
                 d[ax] = 1 if (np.asarray(l2)[ax] >= np.asarray(h1)[ax]) else -1
-                if tuple(d) in mounts[a] and tuple(-x for x in d) in mounts[b]:
+                if sb.joins(names[a][0], names[a][1], names[b][0], names[b][1], tuple(d)):
                     adj[a, b] = adj[b, a] = True
         ncomp, _ = connected_components(adj, directed=False)
         if ncomp != 1:
@@ -222,10 +246,37 @@ def validate(spec_path, side, cat):
     n = len(main)
     bits = {d: i for i, d in enumerate(sorted(sb.DIRS.values()))}
     mask = np.zeros(n, np.int32)
+    full = np.zeros(n, np.int32)
     for i, (name, pos, orient) in enumerate(main):
         for d in sb.mount_dirs(name, orient):
             mask[i] |= 1 << bits[d]
+        for d in sb.mount_full_dirs(name, orient):
+            full[i] |= 1 << bits[d]
+    full_cache = {}
+
+    def covered(i, d):
+        """True if every cell just beyond block i's face d belongs to blocks that mount FULLY on the opposite face."""
+        key = (i, d)
+        if key in full_cache:
+            return full_cache[key]
+        lo, hi = np.array(boxes[i][0]), np.array(boxes[i][1])
+        ax_ = int(np.nonzero(d)[0][0])
+        l2, h2 = lo.copy(), hi.copy()
+        if d[ax_] > 0:
+            l2[ax_], h2[ax_] = hi[ax_], hi[ax_] + 1
+        else:
+            l2[ax_], h2[ax_] = lo[ax_] - 1, lo[ax_]
+        sl = G.sl(l2, h2, clip=True)
+        ok_ = False
+        if sl is not None and np.prod([x.stop - x.start for x in sl]) == np.prod(h2 - l2):
+            owners = np.unique(G.own[sl])
+            nd = tuple(-x for x in d)
+            ok_ = bool((owners >= 0).all()) and all((full[o] >> bits[nd]) & 1 for o in owners)
+        full_cache[key] = ok_
+        return ok_
+
     rows, cols = [], []
+    partial_edges = set()
     plain_r, plain_c = [], []
     for ax in range(3):
         a = np.moveaxis(own, ax, 0)
@@ -238,9 +289,19 @@ def validate(spec_path, side, cat):
         up[ax] = 1
         dn = [0, 0, 0]
         dn[ax] = -1
-        ok = ((mask[pr[:, 0]] >> bits[tuple(up)]) & 1).astype(bool) & ((mask[pr[:, 1]] >> bits[tuple(dn)]) & 1).astype(bool)
+        ma = ((mask[pr[:, 0]] >> bits[tuple(up)]) & 1).astype(bool)
+        mb = ((mask[pr[:, 1]] >> bits[tuple(dn)]) & 1).astype(bool)
+        fa = ((full[pr[:, 0]] >> bits[tuple(up)]) & 1).astype(bool)
+        fb = ((full[pr[:, 1]] >> bits[tuple(dn)]) & 1).astype(bool)
+        # both full; or one partial whose WHOLE face is covered by blocks mounting fully there (wherever its group
+        # sits, it meets a full face).  Partial-to-partial never.
+        ca = np.array([covered(int(a), tuple(up)) for a in pr[:, 0]]) if len(pr) else np.zeros(0, bool)
+        cb = np.array([covered(int(b), tuple(dn)) for b in pr[:, 1]]) if len(pr) else np.zeros(0, bool)
+        ok = ma & mb & ((fa & fb) | (fa & ~fb & cb) | (fb & ~fa & ca))
         rows.append(pr[ok, 0])
         cols.append(pr[ok, 1])
+        for a_, b_ in pr[ok & ~(fa & fb)]:
+            partial_edges.add((min(int(a_), int(b_)), max(int(a_), int(b_))))
         plain_r.append(pr[:, 0])
         plain_c.append(pr[:, 1])
     r = np.concatenate(rows) if rows else np.zeros(0, int)
@@ -249,8 +310,9 @@ def validate(spec_path, side, cat):
     ncomp, labels = connected_components(A, directed=False)
     big = np.argmax(np.bincount(labels))
     loose = [f"{main[i][0]}@{list(main[i][1])}" for i in np.nonzero(labels != big)[0][:5]]
+    margin = connection_margin(n, r, c, main, partial_edges)
     rec("connected", ncomp == 1, f"{ncomp} pieces through mount faces; detached e.g. {loose}" if ncomp != 1 else
-        "one piece through mount faces")
+        f"one piece through mount faces; {margin}")
 
     # ---- shell closure on the voxel lattice
     lat = side["lattice"]

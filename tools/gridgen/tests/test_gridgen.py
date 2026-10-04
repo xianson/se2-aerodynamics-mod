@@ -141,6 +141,31 @@ class TestMounts(unittest.TestCase):
         self.assertEqual(sb.mount_local("HydrogenThruster50"), {(0, 0, -1)})
         self.assertNotIn((0, 1, 0), sb.mount_local("Cockpit150"))
 
+    def test_full_faces_and_pairing_rule(self):
+        """Joins need mount cells on both faces and at least one FULL face (partial-to-partial is not relied on)."""
+        I = sb.IDENTITY
+        self.assertEqual(sb.mount_full_local("Hinge50"), {(0, -1, 0)})               # sides are 2 of 4
+        self.assertEqual(sb.mount_full_local("Cockpit150"), set())                    # no face is whole
+        self.assertEqual(sb.mount_full_local("HydrogenThruster200"), set())
+        self.assertEqual(sb.mount_full_local("Battery250"), {(0, 1, 0), (0, -1, 0)})
+        self.assertEqual(len(sb.mount_full_local("ArmorCubeLight50")), 6)
+        # slope beside slope (triangle to triangle): no; slope triangle against a cube: yes; slope front to cube: yes
+        self.assertFalse(sb.joins("ArmorSlopeLight50", I, "ArmorSlopeLight50", I, (1, 0, 0)))
+        self.assertTrue(sb.joins("ArmorSlopeLight50", I, "ArmorCubeLight50", I, (1, 0, 0)))
+        self.assertTrue(sb.joins("ArmorCubeLight50", I, "ArmorSlopeLight50", I, (0, 0, 1)))
+        self.assertFalse(sb.joins("ArmorCubeLight50", I, "ArmorSlopeLight50", I, (0, -1, 0)))   # slanted face
+        self.assertTrue(sb.joins("Hinge50", I, "ArmorCubeLight50", I, (1, 0, 0)))
+        self.assertFalse(sb.joins("Hinge50", I, "ArmorSlopeLight50", I, (1, 0, 0)))
+
+    def test_bridges(self):
+        # two triangles joined by one edge (2-3): that edge is the only bridge
+        r = [0, 1, 2, 2, 3, 4]
+        c = [1, 2, 0, 3, 4, 5]
+        b = vx.bridges(6, r + [5], c + [3])
+        self.assertEqual({(min(u, v), max(u, v)) for u, v, _ in b}, {(2, 3)})
+        self.assertEqual(b[0][2], 3)
+        self.assertEqual(vx.bridges(3, [0, 1, 2], [1, 2, 0]), [])
+
     def test_shape_normals_agree_with_measured_full_faces(self):
         """The cut-cube model's full faces must be exactly the faces the game reports as full (4 of 4)."""
         names = {"slope": "ArmorSlopeLight50", "invcorner": "ArmorInvCornerLight50", "corner": "ArmorCornerLight50",
@@ -546,6 +571,13 @@ class TestCleanStyle(unittest.TestCase):
     def test_validates(self):
         v = val.validate(self.spec, self.side, CAT)
         self.assertTrue(v["ok"], json.dumps(v["checks"], indent=1))
+        # a joint that is the only path to its side never rests on a shaped block's partial face (those revert to
+        # cubes); only a hinge's half side against a cube may remain
+        det = v["checks"]["connected"]["detail"]
+        self.assertIn("margin:", det)
+        via = det.split("joints through a partial face")[-1].split(")")[0]
+        for shaped in ("Slope", "Corner"):
+            self.assertNotIn(shaped, via)
 
     def test_constant_section_and_flat_wing(self):
         m = self.m

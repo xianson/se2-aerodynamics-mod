@@ -386,3 +386,48 @@ def refine_clean(shell, cavity, out, allowed, frozen, span_axis, tip=None):
                     res[idx] = ("slope", cand_n)
                     break
     return res
+
+
+def bridges(n, rows, cols):
+    """Bridges of an undirected graph (n nodes, edge lists): [(u, v, size of v's side)], iterative Tarjan."""
+    adj = [[] for _ in range(n)]
+    seen = set()
+    for a, b in zip(list(rows), list(cols)):
+        a, b = int(a), int(b)
+        if a == b or (min(a, b), max(a, b)) in seen:
+            continue
+        seen.add((min(a, b), max(a, b)))
+        adj[a].append(b)
+        adj[b].append(a)
+    disc = [-1] * n
+    low = [0] * n
+    size = [1] * n
+    t = 0
+    out = []
+    for root in range(n):
+        if disc[root] >= 0:
+            continue
+        disc[root] = low[root] = t
+        t += 1
+        stack = [(root, -1, iter(adj[root]))]
+        while stack:
+            u, parent, it = stack[-1]
+            w = next(it, None)
+            if w is None:
+                stack.pop()
+                if stack:
+                    p = stack[-1][0]
+                    low[p] = min(low[p], low[u])
+                    size[p] += size[u]
+                    if low[u] > disc[p]:
+                        out.append((p, u, size[u]))
+                continue
+            if w == parent:
+                continue
+            if disc[w] >= 0:
+                low[u] = min(low[u], disc[w])
+            else:
+                disc[w] = low[w] = t
+                t += 1
+                stack.append((w, u, iter(adj[w])))
+    return out
