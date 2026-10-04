@@ -12,7 +12,7 @@ Schema (all lengths in metres, angles in degrees; every key optional unless note
   "skin": "slopes" | "cubes",         # refine the outer hull with slopes/corners, or cubes only
   "solid_below": 3,                   # parts thinner than this many blocks stay solid; thicker ones keep a 1-block shell
   "static_margin": 0.08,              # CoM target: neutral point - margin * MAC (trimmed on the aero probe's
-                                      # TestForces view, ~5% MAC more pessimistic than the game's readout)
+                                      # true-flow view, which matches the game's TestForces readout)
   "com_tolerance": 0.02,              # |margin error| allowed, fraction of MAC
   "auto_wing": true,                  # may slide the wing group fore/aft when batteries alone cannot reach the target
   "fuselage": {                       # omit / null for a pure flying wing

@@ -66,23 +66,25 @@ def run_design(d, cat, out, do_preview=True, log=print, probe_trim=True):
         want = float(side["static_margin_target"]) * float(m.np_res["mac"])
         shift0 = float(d.get("np_shift", 0.0))
         best = None
+        tried = []
 
         def judge(shift, m, blocks, side):
             nonlocal best
-            # judged as the in-game TestForces readout measures it (each grid along its own axes, the main grid's
-            # torque about its own CoM): the most pessimistic of the views (real flight, with the flaps in the true
-            # airflow, is more stable), and the one the harness shows
-            r = probe_spec(spath, cat, testforces=True, com_ref="main")
+            # judged in true flow (one airflow direction for every grid, flap head grids included; moments about the
+            # whole plane's CoM): what the in-game TestForces readout measures since aero 3ea3f9e (sketch_plane: NP
+            # 0.74 m in game, 0.70 m here)
+            r = probe_spec(spath, cat)
             off = r.get("NP_aft_of_CoM")
             if off is None:
                 return None
-            side["aero_probe"] = dict(view="testforces, main-grid CoM", np_aft_of_com_m=round(off, 3),
+            side["aero_probe"] = dict(view="true flow, plane CoM", np_aft_of_com_m=round(off, 3),
                                       want_m=round(want, 3), np_shift_m=round(shift, 3), dM_dAoA_kNm=r.get("dMdAoA_kNm"),
                                       CL4=r.get("CL4"), CL8=r.get("CL8"), CD0=r.get("CD0"))
             # passing first; then a real margin (NP at least half the wanted margin behind the CoM); then closest
             key = (not side["validation"]["ok"], off < 0.5 * want, abs(off - want))
             if best is None or key < best[0]:
                 best = (key, m, blocks, side, open(spath, encoding="utf-8").read())
+            tried.append((shift, off, side["validation"]["ok"]))
             return off
 
         def build_at(shift):
@@ -105,6 +107,23 @@ def run_design(d, cat, out, do_preview=True, log=print, probe_trim=True):
                 off = judge(s, m2, b2, s2)
                 if off is not None and abs(off - want) <= max(0.25 * want, 0.03) and s2["validation"]["ok"]:
                     break
+            # then bisect between the nearest passing builds either side of the target (NP - CoM falls as the shift
+            # grows), while the best is still outside a quarter of the wanted margin
+            for _ in range(4):
+                if abs(best[0][2]) <= max(0.25 * want, 0.03) and not best[0][0]:
+                    break
+                above = [t for t in tried if t[2] and t[1] > want]
+                below = [t for t in tried if t[2] and t[1] < want]
+                if not above or not below:
+                    break
+                a = min(above, key=lambda t: t[1] - want)
+                b = min(below, key=lambda t: want - t[1])
+                s = a[0] + (b[0] - a[0]) * (a[1] - want) / (a[1] - b[1])   # (linear between them)
+                if any(abs(s - t[0]) < 0.02 for t in tried):
+                    s = 0.5 * (a[0] + b[0])
+                    if any(abs(s - t[0]) < 0.02 for t in tried):
+                        break
+                judge(s, *build_at(s))
         if best is not None:
             _, m, blocks, side, txt = best
             with open(spath, "w", encoding="utf-8") as fh:
@@ -329,16 +348,14 @@ def probe_spec(spec_path, cat, work=None, speed=220.0, intake=True, testforces=F
 
 
 def cmd_probe(args):
-    """The aero probe over designs, two views: as the in-game TestForces readout measures (each grid blown along its
-    own axes, the main grid's torque about its own CoM) and real flight (true airflow on every grid, the whole plane's
-    CoM).  The mod's intakes (atmospheric thrusters, 0.25 x width^2) in both.  NP + = behind the CoM (stable);
-    dM/dAoA - = stable (+X torque is nose up).  CL / CD on the readout's reference area (see aero_probe)."""
+    """The aero probe over designs in true flow (one airflow direction for every grid, flap head grids included; the
+    whole plane's CoM): what the in-game TestForces readout measures.  The mod's intakes (atmospheric thrusters,
+    0.25 x width^2) included.  NP + = behind the CoM (stable); dM/dAoA - = stable (+X torque is nose up).  CL / CD on
+    the readout's reference area (see aero_probe).  --old-view adds the earlier per-grid-axes view."""
     cat = sb.Catalog()
     names = args.names or [os.path.splitext(f)[0] for f in sorted(os.listdir(os.path.join(HERE, "designs")))
                            if f.endswith(".json")]
-    print(f"{'':16s} {'---------- TestForces view (harness) ----------':48s} {'------ real flight ------':26s}")
-    print(f"{'design':16s} {'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'dM/da':>7s} {'NP m':>6s} {'NP%MAC':>7s}   "
-          f"{'dM/da':>7s} {'NP m':>6s} {'NP%MAC':>7s}  flags")
+    print(f"{'design':16s} {'CL4':>6s} {'CL8':>6s} {'CD0':>6s} {'dM/da':>8s} {'NP m':>6s} {'NP%MAC':>7s} {'target':>7s}  flags")
     for n in names:
         src = n if n.endswith(".txt") else os.path.join(args.out, n + ".txt")
         side = {}
@@ -347,20 +364,17 @@ def cmd_probe(args):
         except (OSError, ValueError):
             pass
         mac = side.get("mac_m") or float("nan")
-        a = probe_spec(src, cat, testforces=True, com_ref="main")
-        b = probe_spec(src, cat)
+        tgt = side.get("static_margin_target")
+        r = probe_spec(src, cat)
         if args.verbose:
-            print(a["text"])
-            print(b["text"])
-        flags = [x for x, bad in (("CD0>0.6", a.get("CD0", 9) > 0.6), ("CL8<0.3", a.get("CL8", 0) < 0.3),
-                                  ("UNSTABLE", (a.get("NP_aft_of_CoM") or -1) <= 0)) if bad]
-
-        def npv(r):
-            v = r.get("NP_aft_of_CoM")
-            return float("nan") if v is None else v
-        print(f"{os.path.basename(n):16s} {a.get('CL4', 0):6.3f} {a.get('CL8', 0):6.3f} {a.get('CD0', 0):6.3f} "
-              f"{a.get('dMdAoA_kNm', float('nan')):7.1f} {npv(a):6.2f} {100 * npv(a) / mac:6.1f}%   "
-              f"{b.get('dMdAoA_kNm', float('nan')):7.1f} {npv(b):6.2f} {100 * npv(b) / mac:6.1f}%  {' '.join(flags)}")
+            print(r["text"])
+        v = r.get("NP_aft_of_CoM")
+        v = float("nan") if v is None else v
+        flags = [x for x, bad in (("CD0>0.6", r.get("CD0", 9) > 0.6), ("CL8<0.3", r.get("CL8", 0) < 0.3),
+                                  ("UNSTABLE", not v > 0)) if bad]
+        print(f"{os.path.basename(n):16s} {r.get('CL4', 0):6.3f} {r.get('CL8', 0):6.3f} {r.get('CD0', 0):6.3f} "
+              f"{r.get('dMdAoA_kNm', float('nan')):8.1f} {v:6.2f} {100 * v / mac:6.1f}% "
+              f"{(100 * tgt if tgt else float('nan')):6.1f}%  {' '.join(flags)}")
     return 0
 
 
