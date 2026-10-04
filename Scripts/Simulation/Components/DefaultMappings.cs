@@ -74,11 +74,25 @@ public static class DefaultMappings
                 spinSign: -1f));                // CW from above
 
         // ── Vanilla: atmospheric thrusters → AirIntake ──
-        factory.RegisterByComponent<ThrusterComponent>((info, thrusterComp) =>
-            new AirIntake(
-                info.Position,
-                info.BlockPosition,
-                facingDirection: -info.Forward, // intake faces opposite to thrust direction
-                captureArea: info.FaceArea));
+        // Only the air-breathing ones (the same definitions OffsetThrustJob gives the turbofan profile): this used to
+        // be every ThrusterComponent - hydrogen and ion too - each with BlockInfo.FaceArea, a constant 30 m2 meant
+        // for control surfaces: ~1.8 MN of ram drag per thruster at 220 m/s on every ship. The capture area now is a
+        // quarter of the thruster's own face (its width: 0.5 / 1.25 / 2.5 / 7.5 m).
+        foreach (var (guid, width) in new[]
+        {
+            (new Guid("8dfddd91-eb3a-4979-8b16-2fdf43061486"), 0.5f),   // Atmo 100
+            (new Guid("272859d7-957d-41ba-9f9c-8f84cddb5cb3"), 1.25f),  // Atmo 250
+            (new Guid("8a005c16-0a05-444d-ab26-786653199b52"), 2.5f),   // Atmo 500
+            (new Guid("bfbbff3e-7396-428a-a12c-3f32ec14c712"), 7.5f),   // Atmo 1000
+        })
+        {
+            float area = 0.25f * width * width;
+            factory.RegisterByGuid(guid, info =>
+                new AirIntake(
+                    info.Position,
+                    info.BlockPosition,
+                    facingDirection: -info.Forward, // intake faces opposite to thrust direction
+                    captureArea: area));
+        }
     }
 }
