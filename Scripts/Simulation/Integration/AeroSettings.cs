@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 #pragma warning disable
 using System;
 using System.Globalization;
@@ -204,6 +205,9 @@ public static class AeroSettings
     {
         if (string.IsNullOrEmpty(text)) return 0;
         int n = 0;
+        // (a value refused against its partner's CURRENT value - OnsetMach under FullMach - is tried again after the
+        //  others: loading 6/8 over defaults refused 6, as the saved full 8 was not in yet)
+        List<(string name, double v, string val)> retry = null;
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
@@ -214,8 +218,14 @@ public static class AeroSettings
             if (!_by.TryGetValue(name, out var s) || s.Scope != scope) continue;
             if (!Parse(val, out double v)) { Log.Default?.Info($"[AERO] setting {name}: '{val}' is not a value"); continue; }
             if (Set(name, v, out string why, fromStorage: true)) n++;
-            else Log.Default?.Info($"[AERO] setting {name} = {val} refused: {why}");
+            else (retry ??= new List<(string, double, string)>()).Add((name, v, val));
         }
+        if (retry != null)
+            foreach (var (name, v, val) in retry)
+            {
+                if (Set(name, v, out string why, fromStorage: true)) n++;
+                else Log.Default?.Info($"[AERO] setting {name} = {val} refused: {why}");
+            }
         return n;
     }
 
@@ -232,7 +242,9 @@ public static class AeroSettings
     /// <summary>Every setting of a scope back to its default (a new world).</summary>
     internal static void ResetScope(string scope)
     {
-        foreach (var s in _all) if (s.Scope == scope && s.Get() != s.Default) Set(s.Name, s.Default, out _, fromStorage: true);
+        // (twice: a default refused against a partner not yet reset - Onset 2 over a world's Full 1 - goes in on the second)
+        for (int pass = 0; pass < 2; pass++)
+            foreach (var s in _all) if (s.Scope == scope && s.Get() != s.Default) Set(s.Name, s.Default, out _, fromStorage: true);
     }
 
     // ── the world save (AeroWorldSettingsComponent) ──
