@@ -15,6 +15,10 @@ public static class WingStructure
     /// (25 by default: calibrated so real ships - long, one-block-deep wings: the jetliner, 63 m - hold ~6 g; at 1 the
     ///  jetliner snapped in level flight. Tests/AeroBench strain mode reports a ship's limits.)
     public static float Strength = 25f;
+    /// <summary>Diagnostics (harness aeroget): the highest wing strain any grid reported on its last step, and the root
+    /// wear / break events so far.</summary>
+    public static float SeenMax;
+    public static int Wears, Breaks;
 }
 
 /// <summary>
@@ -91,6 +95,7 @@ public partial class AeroGridComponent
             if (f > max) max = f;
         }
         MaxWingStrain = max;
+        if (max > WingStructure.SeenMax || WingStructure.SeenMax > 0f && max < WingStructure.SeenMax * 0.5f) WingStructure.SeenMax = max;
 
         _strainClock += dt;
         if (_strainClock < StrainDamageInterval) return;
@@ -105,6 +110,7 @@ public partial class AeroGridComponent
             var blocks = _strainBlocks[i * 2 + _strainSide[i]];
             if (blocks == null || blocks.Count == 0) continue;
             DamageRoot(blocks, snap, WingStrain.Wear(over));
+            if (snap) WingStructure.Breaks++; else WingStructure.Wears++;
             if (snap)
             {
                 _strainBroken[i] = true;   // (until the wings are re-detected: what is left is another wing)

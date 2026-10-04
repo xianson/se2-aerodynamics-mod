@@ -48,6 +48,9 @@ public static class MachHud
         // (the Mach of what the local player is in)
         var players = anyGrid?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
         var top = players?.LocalPlayerController?.GetTopObservableEntity();
+        // (seated, that is the cockpit block: its grid is up the hierarchy)
+        for (int up = 0; top != null && up < 4 && top.TryGet<AeroGridComponent>() == null; up++)
+            top = top.TryGet<Keen.VRage.Core.Game.Components.HierarchyComponent>()?.Parent;
         // (a grid aero simulates - you are seated in it; on foot nothing: a character near a flying grid is not flying)
         var p = top != null && top.TryGet<AeroGridComponent>() != null ? AeroEntryFx.FindFlow(top.Data.GetWorldTransform().Position) : null;
         Suffix = p != null && p.Mach >= 0.05f ? $" · M {p.Mach:0.00}" : "";
