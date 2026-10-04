@@ -68,11 +68,8 @@ internal sealed partial class FlightField
 
     // PBRTransparent, two-sided (as MapRingMesh)
     private static readonly Guid LitState = new Guid("5c12f1bd-f4c8-4626-86b5-0778e0613762");
-    // the same state on the UNLIT transparent pass (the aero mod's Assets/Plasma/PlasmaTransparentUnlit_State.def):
-    // lit, the plasma was dull glass at night; unlit, the atlas (alpha 1: "metal") is added as light / exposure
-    private static readonly Guid UnlitState = new Guid("6f24f63f-f546-5f0d-b602-8529fdf7561c");
-    public static bool Unlit = false;   // (unlit drew flat grey: the lit state + the plasma's own light instead)
-    private Guid TransparentState => Unlit ? UnlitState : LitState;
+    // (an unlit variant - its state in the deleted Assets/Plasma - drew flat grey: the lit state + the plasma's own light)
+    private Guid TransparentState => LitState;
     // the meteor fire's main emitter (V3): an 8x8 animated flame atlas
     private Guid _emitter = new Guid("7ad5b453-1c7e-41a6-b0be-43727eee6b3f");
     // the atlas as the emitter plays it: its grid (columns x rows), the frames it uses (from First, Count of them) and
