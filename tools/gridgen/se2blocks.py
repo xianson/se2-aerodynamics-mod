@@ -178,6 +178,8 @@ def load_calibration(path: str | None):
         k, v = line[0], line[1:]
         if k == "shape_normal":
             CAL["shape_normal"][v[0]] = tuple(int(x) for x in v[1:4])
+        elif k == "mount_faces":
+            MOUNT_OVERRIDE[v[0]] = tuple(v[1:])
         elif k == "hinge_headgrid_fwd_up" or k == "seat_fwd_up":
             CAL[k] = (v[0], v[1])
         elif k in CAL and isinstance(CAL[k], tuple):
@@ -412,3 +414,63 @@ def full_faces(shape: str, orient) -> list[tuple[int, int, int]]:
     if shape in ("corner", "halfslope"):
         return [] if shape == "corner" else [f for f in faces if int(np.array(f) @ n) < 0 and abs(int(np.array(f) @ n)) == 2]
     return [f for f in faces if int(np.array(f) @ n) < 0]   # slope / invcorner: the faces facing away from the cut
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Mount faces.  SE2 generates mount points from each block's collider (GeneratedBlockDataLoader /
+# BlockMountPointsGenerator); two blocks connect across a face only if BOTH have a mount group there
+# (CubeBlockComponent.CanConnectBlock, used by BlockOctreeComponent when it splits disconnected blocks at spawn).
+# A block held only through non-mount faces is split off - and that split crashed the game on spawn.
+# Armor: derived from the shape (DERIVED, conservative: only FULL faces count - a slope's two back faces, an
+# inverted corner's three; triangular half faces and slanted faces are not relied on).
+# Functional blocks: ASSUMED from their shape and role until measured; override with calibration.txt lines
+#   mount_faces NAME Forward Backward Left Right Up Down
+# ---------------------------------------------------------------------------------------------------------------
+MOUNT_ASSUMED = {
+    "Battery": "all", "Hinge": "all-but-up", "HingeHead": ("Up",),
+    "Cockpit": ("Down", "Backward"), "ControlSeat": ("Down",), "Seat": ("Down",),
+}
+MOUNT_OVERRIDE = {}
+STATUS["mount_faces"] = "armor derived (full faces only); functional ASSUMED"
+_LOCAL = {"Forward": (0, 0, -1), "Backward": (0, 0, 1), "Left": (-1, 0, 0), "Right": (1, 0, 0), "Up": (0, 1, 0),
+          "Down": (0, -1, 0)}
+
+
+def mount_local(name):
+    """Local-frame face directions (identity orientation) on which `name` has mount points."""
+    if name in MOUNT_OVERRIDE:
+        return {_LOCAL[d] for d in MOUNT_OVERRIDE[name]}
+    shape = shape_of(name)
+    all6 = set(_LOCAL.values())
+    if shape == "cube":
+        return all6
+    if shape in ("slope", "invcorner", "halfslope", "corner"):
+        n = np.array(CAL["shape_normal"][shape])
+        if shape == "corner":
+            return set()
+        if shape == "halfslope":
+            return {(0, -1, 0)}
+        return {d for d in all6 if int(np.array(d) @ n) < 0}
+    if shape == "half":
+        return {(0, 0, -1), (0, 0, 1)} if False else {(0, 0, -1)}     # the half plate's full face (unverified)
+    if is_thruster(name):
+        exh = tuple(int(v) for v in CAL["thruster_exhaust_local"])
+        out = all6 - {exh}
+        if thruster_type(name) == "atmospheric":
+            out -= {tuple(-v for v in exh)}
+        return out
+    for key in sorted(MOUNT_ASSUMED, key=len, reverse=True):
+        if name.startswith(key):
+            v = MOUNT_ASSUMED[key]
+            if v == "all":
+                return all6
+            if v == "all-but-up":
+                return all6 - {(0, 1, 0)}
+            return {_LOCAL[d] for d in v}
+    return all6
+
+
+def mount_dirs(name, orient):
+    """Grid-frame face directions with mount points for `name` placed with `orient`."""
+    M = orient_matrix(*orient)
+    return {tuple(int(x) for x in M @ np.array(d)) for d in mount_local(name)}

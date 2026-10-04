@@ -9,7 +9,8 @@
   sweep        rotated through its limits (about the 90 deg neutral), no flap/head point enters a main-grid block (other than its own hinge)
                or another hinge's swept cells
   engines      exhaust lanes (and atmospheric intakes) free of blocks and of flap sweeps
-  connected    the main grid is one face-connected piece
+  connected    the main grid is one piece through MOUNT faces (both blocks mount on the shared face); each
+               hinge's head grid likewise (in "attached")
   shell        the hollow is sealed: no cavity voxel reachable from outside; no slope/corner exposes an open face
                to the cavity
   com          CoM recomputed from the spec equals the sidecar's, is within tolerance of the target, centred
@@ -100,13 +101,15 @@ def validate(spec_path, side, cat):
         origin, Rh = sb.headgrid_frame(hpos, horient)
         head_box = cat.box(head, origin, sb.orient_names(Rh))
         flaps = []
+        forients = []
         for fname, fpos, forient in sp["flaps"].get(k, []):
             p, o = sb.from_headgrid(fpos, forient, origin, Rh)
             flaps.append((fname, fpos, cat.box(fname, p, o)))
+            forients.append(forient)
         axis, pivot = sb.hinge_axis_and_pivot(hpos, horient)
         neu = sb.CAL["hinge_neutral_deg"]
         hinges.append(dict(k=k, bi=bi, head=head, head_box=head_box, flaps=flaps, axis=axis, pivot=pivot,
-                           lim=(mn - neu, mx - neu), abs_lim=(mn, mx), origin=origin, Rh=Rh))
+                           lim=(mn - neu, mx - neu), abs_lim=(mn, mx), origin=origin, Rh=Rh, forients=forients))
         allboxes += [head_box] + [f[2] for f in flaps]
 
     # ---- main-grid overlaps
@@ -137,14 +140,21 @@ def validate(spec_path, side, cat):
                 fover.append(h["k"])
         for lo, hi in pieces[1:]:
             taken[G.sl(lo, hi)] = True
-        # face connectivity among the head grid's pieces
+        # connectivity among the head grid's pieces through mount faces (the head mounts flaps on its +Y only)
+        mounts = [sb.mount_dirs(h["head"], sb.orient_names(h["Rh"]))]
+        for fname, fpos, _ in h["flaps"]:
+            mounts.append(sb.mount_dirs(fname, sb.orient_names(h["Rh"] @ sb.orient_matrix(*h["forients"][len(mounts) - 1]))))
         n = len(pieces)
         adj = np.zeros((n, n), bool)
         for a, b in itertools.combinations(range(n), 2):
             (l1, h1), (l2, h2) = pieces[a], pieces[b]
             touch = np.minimum(h1, h2) - np.maximum(l1, l2)
             if (touch >= 0).all() and (touch == 0).sum() == 1:
-                adj[a, b] = adj[b, a] = True
+                ax = int(np.nonzero(touch == 0)[0][0])
+                d = [0, 0, 0]
+                d[ax] = 1 if (np.asarray(l2)[ax] >= np.asarray(h1)[ax]) else -1
+                if tuple(d) in mounts[a] and tuple(-x for x in d) in mounts[b]:
+                    adj[a, b] = adj[b, a] = True
         ncomp, _ = connected_components(adj, directed=False)
         if ncomp != 1:
             detached.append(h["k"])
@@ -204,21 +214,41 @@ def validate(spec_path, side, cat):
         if cells:
             swept_all[tuple(np.array(list(cells)).T)] = True
 
-    # ---- main grid connectivity (face adjacency through the owner grid)
+    # ---- main grid connectivity: blocks join only across faces where BOTH have mount points (the game splits off
+    # anything else at spawn - and that split crashed it)
     own = G.own
+    n = len(main)
+    bits = {d: i for i, d in enumerate(sorted(sb.DIRS.values()))}
+    mask = np.zeros(n, np.int32)
+    for i, (name, pos, orient) in enumerate(main):
+        for d in sb.mount_dirs(name, orient):
+            mask[i] |= 1 << bits[d]
     rows, cols = [], []
+    plain_r, plain_c = [], []
     for ax in range(3):
         a = np.moveaxis(own, ax, 0)
         x, y = a[:-1], a[1:]
         m = (x >= 0) & (y >= 0) & (x != y)
-        rows.append(x[m])
-        cols.append(y[m])
-    r = np.concatenate(rows)
-    c = np.concatenate(cols)
-    n = len(main)
+        pr = np.unique(np.stack([x[m], y[m]], 1), axis=0)
+        if len(pr) == 0:
+            continue
+        up = [0, 0, 0]
+        up[ax] = 1
+        dn = [0, 0, 0]
+        dn[ax] = -1
+        ok = ((mask[pr[:, 0]] >> bits[tuple(up)]) & 1).astype(bool) & ((mask[pr[:, 1]] >> bits[tuple(dn)]) & 1).astype(bool)
+        rows.append(pr[ok, 0])
+        cols.append(pr[ok, 1])
+        plain_r.append(pr[:, 0])
+        plain_c.append(pr[:, 1])
+    r = np.concatenate(rows) if rows else np.zeros(0, int)
+    c = np.concatenate(cols) if cols else np.zeros(0, int)
     A = coo_matrix((np.ones(len(r)), (r, c)), shape=(n, n))
     ncomp, labels = connected_components(A, directed=False)
-    rec("connected", ncomp == 1, f"{ncomp} pieces, sizes {np.bincount(labels).tolist()[:6]}" if ncomp != 1 else "")
+    big = np.argmax(np.bincount(labels))
+    loose = [f"{main[i][0]}@{list(main[i][1])}" for i in np.nonzero(labels != big)[0][:5]]
+    rec("connected", ncomp == 1, f"{ncomp} pieces through mount faces; detached e.g. {loose}" if ncomp != 1 else
+        "one piece through mount faces")
 
     # ---- shell closure on the voxel lattice
     lat = side["lattice"]

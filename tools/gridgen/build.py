@@ -374,7 +374,8 @@ class Model:
         elif "x_frac" in ck and self.fus is not None:
             target = float(ck["x_frac"]) * self.fus.L
         slots = [s for s in com.slot_candidates(self.lat, free, self.cat, [name], orient, self.equip_boxes,
-                                                step=self.lat.u) if s["count"] == 1]
+                                                step=self.lat.u) if s["count"] == 1
+                 and self.mounted(name, orient, *s["boxes"][0][:2])]       # floor / back flush on the shell
         how = "inside"
         if not slots:
             # fall back: the cockpit becomes part of the hull - it replaces the hull blocks it covers (exactly, so the
@@ -388,7 +389,7 @@ class Model:
             for s in com.slot_candidates(self.lat, allow, self.cat, [name], orient, self.equip_boxes,
                                          step=self.lat.u):
                 lo, hi, pos = s["boxes"][0]
-                if s["count"] != 1 or not self.lat.covers_exactly(lo, hi):
+                if s["count"] != 1 or not self.lat.covers_exactly(lo, hi) or not self.mounted(name, orient, lo, hi):
                     continue
                 r = self._region(lo, hi)
                 s["hull_frac"] = float(hull[r].mean())
@@ -454,14 +455,17 @@ class Model:
                                      self.frozen | self.flapvox, span_axis, tip)
             self.shapes = {i: v for i, v in shapes.items() if sb.orient_for_normal(v[0], v[1]) is not None}
             self.fills = {}
+            self.mount_fix()
             return
         shapes = vx.refine_skin(self.solid, self.cavity0 | self.cavity, out, self.cov, allowed,
                                 self.frozen | self.flapvox)
         ok = {}
         for idx, (shape, n) in shapes.items():
-            if sb.orient_for_normal(shape, n) is not None:
+            # a corner piece has no full face to mount on: never used
+            if shape != "corner" and sb.orient_for_normal(shape, n) is not None:
                 ok[idx] = (shape, n)
         self.shapes = ok
+        self.mount_fix()
         cubes = self.solid & ~self.pylon & ~self.frozen
         for idx in ok:
             cubes[idx] = False
@@ -469,8 +473,80 @@ class Model:
         for dv in vx.N6:
             near |= vx._shift(self.frozen | self.flapvox, dv)
         forbid = self.cavity | self.engine_vox | self.lane_vox | self.swept_taken | self.flapvox | near
-        self.fills = {i: v for i, v in vx.halfslope_fill(self.solid, cubes, out, self.cov, forbid).items()
-                      if sb.orient_for_normal("halfslope", v[1]) is not None}
+        # half-slope fills are off: the measured large half wedge sits mid-cell (its AABB is centred), so it would
+        # not rest on its support's mount face; re-enable once its geometry is measured
+        self.fills = {}
+
+    def mount_fix(self):
+        """Every shaped skin block must hang on the structure through MOUNT faces (the game splits off - and on spawn
+        crashes on - anything else).  Shaped voxels outside the main mount-connected piece revert to cubes, until
+        stable.  Structure that is not armor (engines, hinges, cockpit) counts as mounting on every face here; the
+        validator checks those with their own mount faces."""
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        struct = self.solid | self.engine_vox
+        hinge_m = {tuple(int(x) for x in sg["hinge_voxel"]): sb.mount_dirs(sg["hinge_name"], sg["hinge_orient"])
+                   for sg in self.segs}
+        for _ in range(12):
+            idx = np.argwhere(struct)
+            index = -np.ones(struct.shape, np.int64)
+            index[tuple(idx.T)] = np.arange(len(idx))
+            mounts = []
+            for v in map(tuple, idx):
+                if v in self.shapes:
+                    shape, n = self.shapes[v]
+                    mounts.append(sb.mount_dirs(sb.armor(shape, self.grid), sb.orient_for_normal(shape, n)))
+                elif v in hinge_m:
+                    mounts.append(hinge_m[v])                     # a hinge base: not on its head side
+                else:
+                    mounts.append(None)                           # cube / other functional: every face
+            rows, cols = [], []
+            for ax in range(3):
+                d = [0, 0, 0]
+                d[ax] = 1
+                nb = idx + d
+                okb = (nb[:, ax] < struct.shape[ax])
+                j = np.full(len(idx), -1)
+                j[okb] = index[tuple(nb[okb].T)]
+                for a in np.nonzero(j >= 0)[0]:
+                    b = j[a]
+                    ma, mb = mounts[a], mounts[b]
+                    if (ma is None or tuple(d) in ma) and (mb is None or tuple(-x for x in d) in mb):
+                        rows.append(a)
+                        cols.append(b)
+            n = len(idx)
+            A = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+            nc, lab = connected_components(A, directed=False)
+            if nc == 1:
+                return
+            big = np.argmax(np.bincount(lab))
+            loose = [tuple(idx[i]) for i in np.nonzero(lab != big)[0]]
+            bad = {v for v in loose if v in self.shapes}
+            # a loose cube is boxed in by shaped neighbours showing it non-mount faces: those revert too
+            for v in loose:
+                for d in vx.N6:
+                    nb = tuple(a + b for a, b in zip(v, d))
+                    if nb in self.shapes:
+                        bad.add(nb)
+            if not bad:
+                return
+            for v in bad:
+                del self.shapes[v]
+
+    def backed(self, lo, hi, d):
+        """True if every voxel just beyond face d of the box is solid structure (a full mount contact)."""
+        lo, hi = np.array(lo), np.array(hi)
+        ax = int(np.nonzero(d)[0][0])
+        l2, h2 = lo.copy(), hi.copy()
+        if d[ax] > 0:
+            l2[ax], h2[ax] = hi[ax], hi[ax] + 1
+        else:
+            l2[ax], h2[ax] = lo[ax] - 1, lo[ax]
+        r = self._region(l2, h2)
+        return r is not None and bool((self.solid | self.engine_vox)[r].all())
+
+    def mounted(self, name, orient, lo, hi):
+        return any(self.backed(lo, hi, d) for d in sb.mount_dirs(name, orient))
 
     # --------------------------------------------------------------------------------------------------- mass
     def main_blocks(self, include_batteries=True):
@@ -541,6 +617,7 @@ class Model:
         n_max = int(bat.get("max", 16 if self.clean else (24 if self.grid == "large" else 80)))
         free = self.cavity & ~self.blocked
         slots = com.slot_candidates(self.lat, free, self.cat, names, sb.IDENTITY, self.equip_boxes)
+        slots = [s for s in slots if all(self.mounted(s["name"], sb.IDENTITY, lo, hi) for lo, hi, _ in s["boxes"])]
         conf = com.conflicts_of(slots)
         M0, c0 = self.com(include_batteries=False)
         mac = np_res["mac"]

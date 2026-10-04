@@ -108,7 +108,7 @@ def place_controls(model, d, surfs, cat):
         mode = ctl.get("mode", "auto")
         if mode == "none":
             continue
-        flap_block = ctl.get("flap_block", d.get("flap_block", "cube" if clean_style_of(d) else "half"))
+        flap_block = ctl.get("flap_block", d.get("flap_block", "cube"))   # half plates mount on one face only
         vertical = bool(getattr(comp, "vertical", False))
         span_ax = 1 if vertical else 0
         t_ax = 0 if vertical else 1
@@ -397,6 +397,16 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
                 return None
         elif model.cavity[v]:
             return None
+    # the hinge must still touch the structure through one of its own mount faces (not the head side)
+    hname = sb.hinge_names(model.grid)[0]
+    ok = False
+    for d in sb.mount_dirs(hname, orient_h):
+        nb = tuple(a + b for a, b in zip(hidx, d))
+        if all(0 <= a < s for a, s in zip(nb, lat.shape)) and struct0[nb] and nb not in fl and nb not in carve:
+            ok = True
+            break
+    if not ok:
+        return None
     # the main grid must stay one piece: compare the pieces in a box around the segment before and after
     allv = np.array(sorted(fl | carve))
     a = np.maximum(allv.min(0) - 3, 0)
@@ -458,6 +468,14 @@ def _commit(model, p):
         lo, hi = cat.box(name_v, p_main, orient_v)
         fblocks.append(dict(name=name_v, pos=p_main, orient=orient_v, hg_pos=np.round(p_hg).astype(int),
                             hg_orient=o_hg, lo=lo, hi=hi, voxel=v))
+    if any(f["name"] != fname for f in fblocks) and not _head_grid_mounted(fblocks, p, Rh, origin, lat):
+        # a trailing-edge slope was the only bridge between columns (its triangular sides do not mount): cubes
+        for f in fblocks:
+            if f["name"] != fname:
+                f["name"], f["orient"] = fname, forient
+                p_hg, o_hg = sb.to_headgrid(f["pos"], forient, origin, Rh)
+                f["hg_pos"], f["hg_orient"] = np.round(p_hg).astype(int), o_hg
+                f["lo"], f["hi"] = cat.box(fname, f["pos"], forient)
     axis, pivot_cells = sb.hinge_axis_and_pivot(hpos, orient_h)
     hlo, hhi = cat.box(p["hinge_name"], hpos, orient_h)
     headlo, headhi = cat.box(p["head_name"], origin, sb.orient_names(Rh))
@@ -486,6 +504,22 @@ def _inplane_connected(cells, t_ax):
         c2[t_ax] += dv
         st[tuple(c2)] = False
     return ndimage.label(g, structure=st)[1] == 1
+
+
+def _head_grid_mounted(fblocks, p, Rh, origin, lat):
+    """True if head + flap blocks form one piece through mount faces (head mounts on its +Y only)."""
+    from scipy.sparse.csgraph import connected_components
+    cells = [tuple(int(x) for x in p["hidx"])] + [tuple(int(x) for x in f["voxel"]) for f in fblocks]
+    mounts = [sb.mount_dirs(p["head_name"], sb.orient_names(Rh))] +         [sb.mount_dirs(f["name"], tuple(f["orient"])) for f in fblocks]
+    index = {c: i for i, c in enumerate(cells)}
+    n = len(cells)
+    A = np.zeros((n, n), bool)
+    for i, c in enumerate(cells):
+        for d in mounts[i]:
+            j = index.get(tuple(a + b for a, b in zip(c, d)))
+            if j is not None and tuple(-x for x in d) in mounts[j]:
+                A[i, j] = A[j, i] = True
+    return connected_components(A, directed=False)[0] == 1
 
 
 def clean_style_of(d):

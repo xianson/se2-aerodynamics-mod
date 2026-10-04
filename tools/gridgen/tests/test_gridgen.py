@@ -126,6 +126,51 @@ class TestAdapter(unittest.TestCase):
                 np.testing.assert_array_equal(sb.orient_matrix(*o2) @ n0, n)
 
 
+class TestMounts(unittest.TestCase):
+    def test_mount_faces(self):
+        self.assertEqual(len(sb.mount_local("ArmorCubeLight50")), 6)
+        self.assertEqual(sb.mount_local("ArmorSlopeLight50"), {(0, -1, 0), (0, 0, 1)})       # the two full faces
+        self.assertEqual(len(sb.mount_local("ArmorInvCornerLight50")), 3)
+        self.assertNotIn((0, 1, 0), sb.mount_local("Hinge50"))                              # not the head side
+        self.assertEqual(sb.mount_local("HingeHead50"), {(0, 1, 0)})                        # flaps on +Y only
+        self.assertNotIn(tuple(sb.CAL["thruster_exhaust_local"]), sb.mount_local("HydrogenThruster200"))
+        o = ("Right", "Up")
+        self.assertEqual(sb.mount_dirs("ArmorSlopeLight50", o),
+                         {tuple(int(x) for x in sb.orient_matrix(*o) @ np.array(v)) for v in [(0, -1, 0), (0, 0, 1)]})
+
+    def test_validator_rejects_slope_held_by_its_slanted_face(self):
+        d = tempfile.mkdtemp()
+        try:
+            cube, slope = CAT["ArmorCubeLight50"].guid, CAT["ArmorSlopeLight50"].guid
+            # a cube, and a slope ahead of it turned round: its full faces point Down and Forward, away from the cube
+            lines = ["name t", f"B {cube} 0 0 0 Forward Up", f"B {slope} 0 0 -2 Backward Up"]
+            p1 = os.path.join(d, "bad.txt")
+            open(p1, "w").write("\n".join(lines) + "\n")
+            side = {"grid": "small", "block_m": 0.5, "hinges": [], "lattice": {"unit_cells": 2, "i0": [-3, -3, -3],
+                    "shape": [7, 7, 7]}, "cavity": [], "com_m": [0, 0, 0], "com_target_m": None,
+                    "com_tolerance_m": None}
+            v = val.validate(p1, side, CAT)
+            self.assertFalse(v["checks"]["connected"]["ok"])
+        finally:
+            shutil.rmtree(d)
+
+    def test_validator_accepts_slope_on_its_full_face(self):
+        d = tempfile.mkdtemp()
+        try:
+            cube, slope = CAT["ArmorCubeLight50"].guid, CAT["ArmorSlopeLight50"].guid
+            # slope above the cube: its full Down face rests on the cube's top
+            lines = ["name t", f"B {cube} 0 0 0 Forward Up", f"B {slope} 0 2 0 Forward Up"]
+            p1 = os.path.join(d, "ok.txt")
+            open(p1, "w").write("\n".join(lines) + "\n")
+            side = {"grid": "small", "block_m": 0.5, "hinges": [], "lattice": {"unit_cells": 2, "i0": [-3, -3, -3],
+                    "shape": [7, 7, 7]}, "cavity": [], "com_m": [0, 0, 0], "com_target_m": None,
+                    "com_tolerance_m": None}
+            v = val.validate(p1, side, CAT)
+            self.assertTrue(v["checks"]["connected"]["ok"], v["checks"]["connected"])
+        finally:
+            shutil.rmtree(d)
+
+
 class TestVoxeliser(unittest.TestCase):
     def test_implicit_sphere_volume(self):
         class Ball:
@@ -504,7 +549,7 @@ class TestCleanStyle(unittest.TestCase):
 class TestMeshPipeline(unittest.TestCase):
     def test_box_plane_mesh(self):
         """A crude plane made of boxes (fuselage + wing + tailplane + fin) goes through the mesh pipeline."""
-        parts = [box_tris((0, -5, -5), (40, 5, 5)), box_tris((19, -24, -1.2), (29, 24, 1.2)),
+        parts = [box_tris((0, -5, -5), (40, 5, 5)), box_tris((21, -24, -1.2), (31, 24, 1.2)),
                  box_tris((33, -13, -1.0), (39, 13, 1.0)), box_tris((33, -1.0, 4), (39, 1.0, 12))]
         d = tempfile.mkdtemp()
         try:
