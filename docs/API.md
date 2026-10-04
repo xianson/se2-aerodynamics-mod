@@ -165,6 +165,8 @@ Both files are read again within ~2 s of an edit, so they can be changed while p
 | `Aero.DragMultiplier` | world | float | 1 | 0..10 | The force along the motion, times this. |
 | `Aero.LiftMultiplier` | world | float | 1 | 0..10 | The force across the motion (wings, control surfaces, the hull's own lift), times this. Torque is scaled by both, weighted by the drag and lift magnitudes. |
 | `Aero.ThrustTorque` | world | bool | true | | Thrusters off the centre of mass turn the ship. Off: the older phantom attitude hold. |
+| `Control.HingeSurfaces` | world | int | 0 | 0..1 | Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input. 0 none, 1 every hinge on a piloted grid. |
+| `Control.HingeMaxDeflection` | world | float | 20 | 1..60 | Hinge control surfaces: degrees at full command. |
 | `Model.LargeGridCellScale` | world | int | 2 | 1..4 | Large-grid surface resolution (1 = 0.25 m cells). **Rebuilds every grid.** |
 | `Entry.OnsetMach` | world | float | 2 | 0.5..25 | Entry heating starts here. Must stay under `Entry.FullMach`; changing it keeps the full point where it is. |
 | `Entry.FullMach` | world | float | 2.5 | 0.6..30 | Entry heating is full here. |

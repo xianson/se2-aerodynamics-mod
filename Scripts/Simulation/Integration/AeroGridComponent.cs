@@ -930,7 +930,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ══════════════════════════════════════════════════════════════════════
         // SAS: runs regardless of control surface count (Bug 1 fix)
         // ══════════════════════════════════════════════════════════════════════
-        if (_components.Count == 0) return;
+        if (_components.Count == 0 && !HingeSurfaces.Wanted(this)) return;   // (hinge surfaces: native subgrid flaps)
 
         // ══════════════════════════════════════════════════════════════════════
         // STEP 0: Determine logging trigger
@@ -1107,6 +1107,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ══════════════════════════════════════════════════════════════════════
         const float QRef = 5000f;
         float gainScale = QRef / MathF.Max(QRef, dynamicPressure);
+        HingeSurfaces.Drive(this, centerOfMass, targetAngVel, localAngVel, gainScale);
 
         if (shouldLog)
         {
