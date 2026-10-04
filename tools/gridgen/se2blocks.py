@@ -59,9 +59,12 @@ CAL = {
     "hinge_range_deg": (0.0, 180.0),
     # ASSUMED (unmeasured): outward normal of the slanted face for identity orientation, in local axes.
     #   slope: the cube cut by a plane through two opposite edges; corner: the 1/6 tetrahedron; invcorner: cube minus it.
-    #   halfslope: the half-height wedge (ArmorHalfLongSlope): thin edge toward local Forward, thick (half a block)
-    #   at local Backward, sitting on local Down - outward normal (0, 2, -1).
-    "shape_normal": {"slope": (0, 1, -1), "corner": (1, 1, -1), "invcorner": (1, 1, -1), "halfslope": (0, 2, -1)},
+    # MEASURED (data/mounts_measured.txt, the game's own mount points per face):
+    #   slope       full Forward + Down, triangles Left/Right        -> slanted face toward Up+Backward  (0, 1, 1)
+    #   corner      triangles Forward/Left/Down                      -> solid at (-,-,-), face toward    (1, 1, 1)
+    #   invcorner   full Forward/Right/Down, triangles Back/Left/Up  -> cut corner at Left+Up+Back     (-1, 1, 1)
+    #   halfslope   (ArmorHalfLongSlope) full Down, half Backward    -> half wedge, thick at Backward   (0, 2, -1)
+    "shape_normal": {"slope": (0, 1, 1), "corner": (1, 1, 1), "invcorner": (-1, 1, 1), "halfslope": (0, 2, -1)},
     # ASSUMED: seats and cockpits face their local Forward with local Up up.
     "seat_fwd_up": ("Forward", "Up"),
     # MEASURED: extra mass per grid (none measured).
@@ -75,7 +78,8 @@ CAL = {
 STATUS = {   # for the report / sidecar
     "aabb_low_offset": "measured", "thruster_exhaust_local": "ASSUMED", "hinge_axis_local": "measured",
     "hinge_headgrid_origin_local": "measured", "hinge_headgrid_fwd_up": "measured", "hinge_pivot_local": "ASSUMED",
-    "flap_mount_local": "measured", "hinge_angle_sign": "measured", "hinge_neutral_deg": "measured", "shape_normal": "ASSUMED",
+    "flap_mount_local": "measured", "hinge_angle_sign": "measured", "hinge_neutral_deg": "measured",
+    "shape_normal": "measured (from the mount table)",
     "seat_fwd_up": "ASSUMED", "grid_overhead_kg": "measured",
 }
 
@@ -214,6 +218,8 @@ class Catalog:
                 self.by_name[name] = BlockDef(name, t[0], float(t[1]), mn - off, mx, True)
         if not snapshot:
             load_calibration(_find("calibration.txt", gd) if gd or os.path.exists(GEN_DIR) else None)
+        _CATALOGS.insert(0, self)
+        load_mounts(os.path.join(HERE, "data", "mounts_measured.txt") if snapshot else None)
 
     def __getitem__(self, name: str) -> BlockDef:
         return self.by_name[name]
@@ -417,29 +423,69 @@ def full_faces(shape: str, orient) -> list[tuple[int, int, int]]:
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Mount faces.  SE2 generates mount points from each block's collider (GeneratedBlockDataLoader /
-# BlockMountPointsGenerator); two blocks connect across a face only if BOTH have a mount group there
-# (CubeBlockComponent.CanConnectBlock, used by BlockOctreeComponent when it splits disconnected blocks at spawn).
-# A block held only through non-mount faces is split off - and that split crashed the game on spawn.
-# Armor: derived from the shape (DERIVED, conservative: only FULL faces count - a slope's two back faces, an
-# inverted corner's three; triangular half faces and slanted faces are not relied on).
-# Functional blocks: ASSUMED from their shape and role until measured; override with calibration.txt lines
-#   mount_faces NAME Forward Backward Left Right Up Down
+# Mount faces.  SE2 generates mount points from each block's collider; two blocks connect across a face only if
+# BOTH have a mount group there (CubeBlockComponent.CanConnectBlock, used by BlockOctreeComponent when it splits
+# disconnected blocks at spawn - a block held only through non-mount faces is split off, and that split crashed).
+# MEASURED: data/mounts_measured.txt (harness 'gen mounts': ComplexTopologyAggregator.GetMountPointsGroupsPerDirection
+# per prefab, local axes at identity; counts in 0.25 m cells, a small block's full face is 4, a large one's 100).
+# A face is a mount face if it has ANY mount cells: CanConnectBlock tests each mount group's box, pushed one cell
+# out, against the neighbour's whole AABB - so a triangle (3 of 4) or half (2 of 4) group still meets a same-size
+# neighbour, as long as that neighbour mounts on its facing side too.  Only faces with no group cannot connect.
+# Prefabs missing from the table fall back to the shape-derived rule (full faces of the cut cube) / role guesses.
+# Override any prefab with calibration.txt:   mount_faces NAME Forward Backward Left Right Up Down
 # ---------------------------------------------------------------------------------------------------------------
 MOUNT_ASSUMED = {
     "Battery": "all", "Hinge": "all-but-up", "HingeHead": ("Up",),
     "Cockpit": ("Down", "Backward"), "ControlSeat": ("Down",), "Seat": ("Down",),
 }
 MOUNT_OVERRIDE = {}
-STATUS["mount_faces"] = "armor derived (full faces only); functional ASSUMED"
+MOUNT_MEASURED = {}            # guid -> {direction name: mount cells}
+STATUS["mount_faces"] = "MEASURED table (data/mounts_measured.txt); shape/role fallback only for unlisted prefabs"
 _LOCAL = {"Forward": (0, 0, -1), "Backward": (0, 0, 1), "Left": (-1, 0, 0), "Right": (1, 0, 0), "Up": (0, 1, 0),
           "Down": (0, -1, 0)}
+
+
+def load_mounts(path=None):
+    """Reads the measured mount table (guid ... : Face=cells ...)."""
+    path = path or _find("mounts_measured.txt", None)
+    MOUNT_MEASURED.clear()
+    if not path or not os.path.exists(path):
+        STATUS["mount_faces"] = "NO measured table found: shape/role fallback (unsafe for spawning)"
+        return
+    for raw in open(path, encoding="utf-8"):
+        if raw.startswith("#") or ":" not in raw:
+            continue
+        guid = raw.split()[0].lower()
+        faces = {}
+        for tok in raw.rsplit(":", 1)[1].split():
+            if "=" in tok:
+                k, v = tok.split("=")
+                faces[k] = int(v)
+        MOUNT_MEASURED[guid] = faces
+
+
+def _guid_of(name):
+    for cat in _CATALOGS:
+        if name in cat.by_name:
+            return cat.by_name[name].guid.lower()
+    return None
+
+
+_CATALOGS = []
 
 
 def mount_local(name):
     """Local-frame face directions (identity orientation) on which `name` has mount points."""
     if name in MOUNT_OVERRIDE:
         return {_LOCAL[d] for d in MOUNT_OVERRIDE[name]}
+    g = _guid_of(name)
+    if g is not None and g in MOUNT_MEASURED:
+        return {_LOCAL[k] for k, v in MOUNT_MEASURED[g].items() if v > 0}
+    return mount_fallback(name)
+
+
+def mount_fallback(name):
+    """Shape/role rule for prefabs missing from the measured table (full faces of the cut cube)."""
     shape = shape_of(name)
     all6 = set(_LOCAL.values())
     if shape == "cube":
@@ -452,7 +498,7 @@ def mount_local(name):
             return {(0, -1, 0)}
         return {d for d in all6 if int(np.array(d) @ n) < 0}
     if shape == "half":
-        return {(0, 0, -1), (0, 0, 1)} if False else {(0, 0, -1)}     # the half plate's full face (unverified)
+        return {(0, 0, -1)}
     if is_thruster(name):
         exh = tuple(int(v) for v in CAL["thruster_exhaust_local"])
         out = all6 - {exh}

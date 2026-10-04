@@ -72,6 +72,7 @@ class Model:
         self.extra = []
         self.engines = []
         self.segs = []
+        self.hinge_mounts = {}          # hinge voxel -> grid directions it mounts on (measured)
         self.equip_boxes = []
         self.shapes = {}
         self.batteries = []

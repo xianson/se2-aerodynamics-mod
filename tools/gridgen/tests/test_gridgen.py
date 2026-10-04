@@ -126,47 +126,72 @@ class TestAdapter(unittest.TestCase):
                 np.testing.assert_array_equal(sb.orient_matrix(*o2) @ n0, n)
 
 
+MEASURED = os.path.exists(os.path.join(HERE, "data", "mounts_measured.txt"))
+
+
+@unittest.skipUnless(MEASURED, "data/mounts_measured.txt (measured in game) not present")
 class TestMounts(unittest.TestCase):
-    def test_mount_faces(self):
-        self.assertEqual(len(sb.mount_local("ArmorCubeLight50")), 6)
-        self.assertEqual(sb.mount_local("ArmorSlopeLight50"), {(0, -1, 0), (0, 0, 1)})       # the two full faces
-        self.assertEqual(len(sb.mount_local("ArmorInvCornerLight50")), 3)
-        self.assertNotIn((0, 1, 0), sb.mount_local("Hinge50"))                              # not the head side
-        self.assertEqual(sb.mount_local("HingeHead50"), {(0, 1, 0)})                        # flaps on +Y only
-        self.assertNotIn(tuple(sb.CAL["thruster_exhaust_local"]), sb.mount_local("HydrogenThruster200"))
-        o = ("Right", "Up")
-        self.assertEqual(sb.mount_dirs("ArmorSlopeLight50", o),
-                         {tuple(int(x) for x in sb.orient_matrix(*o) @ np.array(v)) for v in [(0, -1, 0), (0, 0, 1)]})
+    def test_measured_table_loaded(self):
+        self.assertGreaterEqual(len(sb.MOUNT_MEASURED), 60)
+        self.assertEqual(sb.mount_local("ArmorSlopeLight50"),
+                         {(0, 0, -1), (0, -1, 0), (-1, 0, 0), (1, 0, 0)})        # Forward, Down + triangles
+        self.assertEqual(sb.mount_local("Hinge50"), {(-1, 0, 0), (1, 0, 0), (0, -1, 0)})
+        self.assertEqual(sb.mount_local("HingeHead50"), {(0, 1, 0)})
+        self.assertNotIn((0, 0, -1), sb.mount_local("Battery50"))
+        self.assertEqual(sb.mount_local("HydrogenThruster50"), {(0, 0, -1)})
+        self.assertNotIn((0, 1, 0), sb.mount_local("Cockpit150"))
+
+    def test_shape_normals_agree_with_measured_full_faces(self):
+        """The cut-cube model's full faces must be exactly the faces the game reports as full (4 of 4)."""
+        names = {"slope": "ArmorSlopeLight50", "invcorner": "ArmorInvCornerLight50", "corner": "ArmorCornerLight50",
+                 "halfslope": "ArmorHalfLongSlope50Light"}
+        for shape, name in names.items():
+            faces = sb.MOUNT_MEASURED[CAT[name].guid.lower()]
+            full = {sb._LOCAL[k] for k, v in faces.items() if v == 4}
+            touched = {sb._LOCAL[k] for k, v in faces.items() if v > 0}
+            n = np.array(sb.CAL["shape_normal"][shape])
+            cut = sb.SHAPE_CUT[shape]
+            model_full = set(sb.full_faces(shape, ("Forward", "Up"))) if shape != "halfslope" else {(0, -1, 0)}
+            self.assertEqual(model_full, full, shape)
+            # every touched face lies on the solid side of the cut: no measured mount on a face the cut removes
+            for d in touched:
+                self.assertLessEqual(np.dot(d, n) * 0.5, cut + 0.5 * np.abs(n).sum(), shape)
+            # and the slanted face (toward +n) carries no full mount
+            for d in sb.DIRS.values():
+                if np.dot(d, n) > 0:
+                    self.assertNotIn(tuple(d), full, shape)
 
     def test_validator_rejects_slope_held_by_its_slanted_face(self):
         d = tempfile.mkdtemp()
         try:
             cube, slope = CAT["ArmorCubeLight50"].guid, CAT["ArmorSlopeLight50"].guid
-            # a cube, and a slope ahead of it turned round: its full faces point Down and Forward, away from the cube
-            lines = ["name t", f"B {cube} 0 0 0 Forward Up", f"B {slope} 0 0 -2 Backward Up"]
+            # a slope ahead of the cube showing it its Backward face - the slanted side, no mount points
+            lines = ["name t", f"B {cube} 0 0 0 Forward Up", f"B {slope} 0 0 -2 Forward Up"]
             p1 = os.path.join(d, "bad.txt")
             open(p1, "w").write("\n".join(lines) + "\n")
             side = {"grid": "small", "block_m": 0.5, "hinges": [], "lattice": {"unit_cells": 2, "i0": [-3, -3, -3],
                     "shape": [7, 7, 7]}, "cavity": [], "com_m": [0, 0, 0], "com_target_m": None,
                     "com_tolerance_m": None}
-            v = val.validate(p1, side, CAT)
-            self.assertFalse(v["checks"]["connected"]["ok"])
+            self.assertFalse(val.validate(p1, side, CAT)["checks"]["connected"]["ok"])
+            lines[2] = f"B {slope} 0 0 -2 Backward Up"         # turned round: its full Forward face meets the cube
+            open(p1, "w").write("\n".join(lines) + "\n")
+            self.assertTrue(val.validate(p1, side, CAT)["checks"]["connected"]["ok"])
         finally:
             shutil.rmtree(d)
 
-    def test_validator_accepts_slope_on_its_full_face(self):
+    def test_hinge_needs_its_own_mount_faces(self):
         d = tempfile.mkdtemp()
         try:
-            cube, slope = CAT["ArmorCubeLight50"].guid, CAT["ArmorSlopeLight50"].guid
-            # slope above the cube: its full Down face rests on the cube's top
-            lines = ["name t", f"B {cube} 0 0 0 Forward Up", f"B {slope} 0 2 0 Forward Up"]
-            p1 = os.path.join(d, "ok.txt")
-            open(p1, "w").write("\n".join(lines) + "\n")
+            cube, hinge = CAT["ArmorCubeLight50"].guid, CAT["Hinge50"].guid
             side = {"grid": "small", "block_m": 0.5, "hinges": [], "lattice": {"unit_cells": 2, "i0": [-3, -3, -3],
                     "shape": [7, 7, 7]}, "cavity": [], "com_m": [0, 0, 0], "com_target_m": None,
                     "com_tolerance_m": None}
-            v = val.validate(p1, side, CAT)
-            self.assertTrue(v["checks"]["connected"]["ok"], v["checks"]["connected"])
+            p1 = os.path.join(d, "h.txt")
+            # a cube in front of the hinge (its Forward face: no mount) -> loose; below it (Down: mount) -> held
+            open(p1, "w").write(f"name t\nB {cube} 0 0 -2 Forward Up\nB {hinge} 0 0 0 Forward Up\n")
+            self.assertFalse(val.validate(p1, side, CAT)["checks"]["connected"]["ok"])
+            open(p1, "w").write(f"name t\nB {cube} 0 -2 0 Forward Up\nB {hinge} 0 0 0 Forward Up\n")
+            self.assertTrue(val.validate(p1, side, CAT)["checks"]["connected"]["ok"])
         finally:
             shutil.rmtree(d)
 

@@ -156,12 +156,17 @@ def place_controls(model, d, surfs, cat):
 
 
 def _snapshot(model):
-    return {k: getattr(model, k).copy() for k in ("solid", "engine_vox", "swept_taken", "frozen")}
+    snap = {k: getattr(model, k).copy() for k in ("solid", "engine_vox", "swept_taken", "frozen")}
+    snap["hinge_mounts"] = dict(model.hinge_mounts)
+    return snap
 
 
 def _restore(model, snap):
     for k, v in snap.items():
-        getattr(model, k)[...] = v
+        if k == "hinge_mounts":
+            model.hinge_mounts = dict(v)
+        else:
+            getattr(model, k)[...] = v
 
 
 def _mirror_plan(model, p, ci):
@@ -417,9 +422,41 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
     for v in fl | carve:
         after[tuple(np.array(v) - a)] = False
     after[tuple(np.array(hidx) - a)] = True
-    if ndimage.label(after)[1] > ndimage.label(before)[1]:
+    hm = dict(model.hinge_mounts)
+    hm[tuple(int(x) for x in hidx)] = sb.mount_dirs(hname, orient_h)
+    if _pieces(after, hm, a) > _pieces(before, model.hinge_mounts, a):
         return None
     return swept, carve
+
+
+def _pieces(mask, hinge_mounts, origin):
+    """Connected pieces of a voxel crop where hinge voxels join their neighbours only across their mount faces."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    idx = np.argwhere(mask)
+    if len(idx) == 0:
+        return 0
+    index = -np.ones(mask.shape, np.int64)
+    index[tuple(idx.T)] = np.arange(len(idx))
+    local = {tuple(int(x) for x in np.array(v) - origin): m for v, m in hinge_mounts.items()}
+    rows, cols = [], []
+    for ax in range(3):
+        d = [0, 0, 0]
+        d[ax] = 1
+        nb = idx + d
+        ok = nb[:, ax] < mask.shape[ax]
+        j = np.full(len(idx), -1)
+        j[ok] = index[tuple(nb[ok].T)]
+        for i in np.nonzero(j >= 0)[0]:
+            va, vb = tuple(int(x) for x in idx[i]), tuple(int(x) for x in idx[j[i]])
+            if va in local and tuple(d) not in local[va]:
+                continue
+            if vb in local and tuple(-x for x in d) not in local[vb]:
+                continue
+            rows.append(i)
+            cols.append(j[i])
+    n = len(idx)
+    return connected_components(coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n)), directed=False)[0]
 
 
 def _commit(model, p):
@@ -436,6 +473,7 @@ def _commit(model, p):
             model.swept_taken[v] = True
     model.frozen[hidx] = True
     orient_h = p["orient_h"]
+    model.hinge_mounts[tuple(int(x) for x in hidx)] = sb.mount_dirs(p["hinge_name"], orient_h)
     hpos = cat.pos_for(p["hinge_name"], lat.voxel_box(np.array(hidx))[0], orient_h)
     origin, Rh = sb.headgrid_frame(hpos, orient_h)
     block = p["flap_block"]
