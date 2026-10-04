@@ -1,0 +1,27 @@
+{
+ "name": "delta",
+ "title": "Tailless delta (elevons, fin only)",
+ "fuselage": {
+  "length": 18,
+  "width": 3.0,
+  "height": 3.0
+ },
+ "wing": {
+  "span": 10,
+  "root_chord": 9.0,
+  "tip_chord": 1.0,
+  "sweep": 55,
+  "x": 7.5
+ },
+ "tail": "fin",
+ "fin_sweep": 50,
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "grid": "small",
+ "style": "clean"
+}

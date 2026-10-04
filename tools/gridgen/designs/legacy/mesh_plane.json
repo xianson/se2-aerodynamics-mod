@@ -1,7 +1,7 @@
 {
  "name": "mesh_plane",
  "title": "Mesh import: simple_plane.obj (24 m)",
- "mesh": "../meshes/simple_plane.obj",
+ "mesh": "../../meshes/simple_plane.obj",
  "mesh_axes": "z x y",
  "mesh_length": 24,
  "batteries": {
@@ -15,5 +15,6 @@
    "nudge": "down"
   }
  ],
- "grid": "small"
+ "grid": "small",
+ "style": "smooth"
 }

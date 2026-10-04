@@ -1,0 +1,27 @@
+{
+ "name": "swept_jet_short",
+ "title": "Swept-wing jet, short body (15 m)",
+ "fuselage": {
+  "length": 15,
+  "width": 3.5,
+  "height": 3.5
+ },
+ "wing": {
+  "span": 15,
+  "root_chord": 4.0,
+  "tip_chord": 1.5,
+  "sweep": 30,
+  "x": 7.0
+ },
+ "tail": true,
+ "tail_sweep": 30,
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "grid": "small",
+ "style": "clean"
+}

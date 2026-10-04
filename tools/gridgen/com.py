@@ -49,7 +49,7 @@ def boxes_overlap(lo1, hi1, lo2, hi2):
     return bool(np.all(lo1 < hi2) and np.all(lo2 < hi1))
 
 
-def slot_candidates(lat, free, cat, names, orient, taken_boxes):
+def slot_candidates(lat, free, cat, names, orient, taken_boxes, step=None):
     """Battery slots inside the free voxels: each prefab tiled on its own lattice (aligned to the small-block
     lattice, centred on the plane's centreline where its width allows), paired left/right.
     Returns list of dict(name, boxes=[(lo, hi, pos)], mass, centre (cells))."""
@@ -72,15 +72,15 @@ def slot_candidates(lat, free, cat, names, orient, taken_boxes):
                 off.append(None)
         ranges = []
         for a in range(3):
-            step = int(ext[a])
+            st = int(ext[a]) if step is None or a == 0 else int(step)   # tiling (batteries) or every position
             if a == 0:
                 base = off[0]
             else:
                 base = int(lo_v[a])
                 if base % 2 == 0:
                     base += 1
-            start = base + int(np.floor((lo_v[a] - base) / step)) * step
-            ranges.append(range(start, int(hi_v[a]) - step + 1, step))
+            start = base + int(np.floor((lo_v[a] - base) / st)) * st
+            ranges.append(range(start, int(hi_v[a]) - int(ext[a]) + 1, st))
         pos_by_lo = {}
         for los in itertools.product(*ranges):
             lo = np.array(los)

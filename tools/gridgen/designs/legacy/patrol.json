@@ -44,5 +44,6 @@
    "x_frac": 0.3
   }
  ],
- "grid": "small"
+ "grid": "small",
+ "style": "smooth"
 }

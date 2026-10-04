@@ -39,5 +39,6 @@
    "x_frac": 0.68
   }
  ],
- "grid": "small"
+ "grid": "small",
+ "style": "smooth"
 }

@@ -1,6 +1,6 @@
 {
- "name": "airliner",
- "title": "Twin-jet airliner (48 m)",
+ "name": "airliner_large",
+ "title": "Airliner, large grid (x5.2 scale)",
  "fuselage": {
   "length": 48,
   "width": 5.0,
@@ -36,11 +36,13 @@
   {
    "mount": "pod",
    "type": "atmospheric",
-   "size": 500,
+   "size": 1000,
    "span_frac": [
     0.34
    ]
   }
  ],
- "grid": "small"
+ "grid": "large",
+ "scale": 5.2,
+ "style": "smooth"
 }

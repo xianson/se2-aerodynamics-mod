@@ -107,7 +107,7 @@ def place_controls(model, d, surfs, cat):
         mode = ctl.get("mode", "auto")
         if mode == "none":
             continue
-        flap_block = ctl.get("flap_block", d.get("flap_block", "half"))
+        flap_block = ctl.get("flap_block", d.get("flap_block", "cube" if clean_style_of(d) else "half"))
         vertical = bool(getattr(comp, "vertical", False))
         span_ax = 1 if vertical else 0
         t_ax = 0 if vertical else 1
@@ -230,8 +230,17 @@ def _panel(model, d, comp, ci, cells, side, span_ax, t_ax, ctl, mode, pitch_othe
     # segment length: about five hinges per wing half (two or three on a tail), at least 2 (large) / 3 (small)
     # blocks each, so a hinge carries a sensible share of the span
     n_target = 5 if comp.role == "wing" else 2
-    per = int(ctl.get("per_hinge", max(2 if d["grid"] == "large" else 3, int(math.ceil(len(keys) / n_target)))))
-    cf = float(ctl.get("chord", 0.3))
+    clean_style = clean_style_of(d)
+    cf = float(ctl.get("chord", 0.45 if clean_style else 0.3))
+    if ctl.get("square", clean_style):
+        # square-ish segments: span (columns per hinge) ~ the flap's chord (rows)
+        mid = keys[len(keys) // 2]
+        zs = [z for t, z in cols[mid]]
+        n_rows = max(zs) - min(zs) + 1
+        per = int(ctl.get("per_hinge", max(2, int(round(cf * n_rows)))))
+    else:
+        per = int(ctl.get("per_hinge", max(2 if d["grid"] == "large" else 3, int(math.ceil(len(keys) / n_target)))))
+    coverage = ctl.get("coverage", d.get("coverage", "full"))
     runs = []
     for k in keys:
         zs = [z for t, z in cols[k]]
@@ -247,10 +256,14 @@ def _panel(model, d, comp, ci, cells, side, span_ax, t_ax, ctl, mode, pitch_othe
     for role, ks in runs:
         if role is None:
             continue
+        if coverage == "sketch":
+            # one square segment per role and side: flaps at the root, ailerons at the tip, the rest at the root
+            ks = ks[-per:] if role == "aileron" else ks[:per]
+            ks = ks if len(ks) else ks
         i = 0
         while i < len(ks):
             rem = len(ks) - i
-            target = rem if rem <= per + per // 2 else per
+            target = rem if rem <= per + per // 2 and coverage != "sketch" else min(per, rem)
             done = False
             for n in range(target, 0, -1):
                 plan = _plan(model, d, comp, ci, cols, ks[i:i + n], span_ax, t_ax, cf, role, side, hinge_name,
@@ -337,7 +350,7 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
                     continue
                 swept, carve = res
                 return dict(comp=comp, chunk=chunk, span_ax=span_ax, t_ax=t_ax, x_h=x_h, hidx=hidx, flap=flap,
-                            extended=len(ext), row=row,
+                            extended=len(ext), row=row, te_slope=clean_style_of(d),
                             carve=carve, swept=swept, orient_h=orient_h, lim=lim, pos_sense=pos_sense, role=role,
                             side=side, hinge_name=hinge_name, head_name=head_name, flap_block=flap_block, cat=cat,
                             grid=d["grid"])
@@ -412,11 +425,27 @@ def _commit(model, p):
     t_vec[p["t_ax"]] = 1
     forient = _orient_thin(t_vec) if block == "half" else sb.IDENTITY
     fblocks = []
+    fset = set(p["flap"])
+    taper = p.get("te_slope", False)
     for v in sorted(p["flap"]):
         p_main = lat.centre_cells(np.array(v))
-        p_hg, o_hg = sb.to_headgrid(p_main, forient, origin, Rh)
-        lo, hi = cat.box(fname, p_main, forient)
-        fblocks.append(dict(name=fname, pos=p_main, orient=forient, hg_pos=np.round(p_hg).astype(int),
+        name_v, orient_v = fname, forient
+        if taper and block == "cube":
+            # a clean, thinner trailing edge: the last row's top and bottom layers are slopes facing aft
+            aft = (v[0], v[1], v[2] + 1)
+            up = list(v)
+            up[p["t_ax"]] += 1
+            dn = list(v)
+            dn[p["t_ax"]] -= 1
+            if aft not in fset and (tuple(up) in fset) != (tuple(dn) in fset):
+                n = [0, 0, 1]
+                n[p["t_ax"]] = 1 if tuple(dn) in fset else -1
+                o = sb.orient_for_normal("slope", n)
+                if o is not None:
+                    name_v, orient_v = sb.armor("slope", p["grid"]), o
+        p_hg, o_hg = sb.to_headgrid(p_main, orient_v, origin, Rh)
+        lo, hi = cat.box(name_v, p_main, orient_v)
+        fblocks.append(dict(name=name_v, pos=p_main, orient=orient_v, hg_pos=np.round(p_hg).astype(int),
                             hg_orient=o_hg, lo=lo, hi=hi, voxel=v))
     axis, pivot_cells = sb.hinge_axis_and_pivot(hpos, orient_h)
     hlo, hhi = cat.box(p["hinge_name"], hpos, orient_h)
@@ -446,6 +475,10 @@ def _inplane_connected(cells, t_ax):
         c2[t_ax] += dv
         st[tuple(c2)] = False
     return ndimage.label(g, structure=st)[1] == 1
+
+
+def clean_style_of(d):
+    return d.get("style", "clean" if "wing" in d else "smooth") == "clean" and not d.get("mesh")
 
 
 def _orient_thin(t_vec):

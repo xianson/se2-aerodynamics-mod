@@ -1,0 +1,44 @@
+{
+ "name": "fighter",
+ "title": "Fighter (16 m)",
+ "fuselage": {
+  "length": 16,
+  "width": 2.6,
+  "height": 2.4,
+  "nose": 0.28,
+  "tail": 0.18,
+  "nose_shape": 0.65,
+  "tail_width": 0.7,
+  "tail_height": 0.7,
+  "tail_upsweep": 0.0
+ },
+ "surfaces": [
+  {
+   "role": "wing",
+   "id": "wing",
+   "span": 10,
+   "root_chord": 4.8,
+   "tip_chord": 1.4,
+   "sweep": 38,
+   "dihedral": -2,
+   "x": 6.6,
+   "z": "mid",
+   "thickness": 0.05,
+   "thickness_tip": 0.04
+  }
+ ],
+ "tail": {
+  "type": "conventional",
+  "sweep": 40,
+  "fin_sweep": 45
+ },
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "grid": "small",
+ "style": "smooth"
+}

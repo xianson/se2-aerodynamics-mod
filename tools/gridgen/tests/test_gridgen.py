@@ -456,6 +456,51 @@ class TestSmallGridFeatures(unittest.TestCase):
         self.assertGreater(side["shaped_blocks"], 0)
 
 
+SKETCH = {"name": "unit_sketch", "fuselage": {"length": 19, "width": 3.5, "height": 3.5},
+          "wing": {"span": 14, "root_chord": 3.0, "tip_chord": 3.0, "x": 11.4}, "tail": True, "tail_taper": 1.0,
+          "coverage": "sketch", "engines": [{"mount": "tail", "type": "hydrogen", "size": 200}]}
+
+
+class TestCleanStyle(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = build.build(dict(SKETCH), CAT, log=lambda s: None)
+        cls.dir = tempfile.mkdtemp()
+        cls.spec = os.path.join(cls.dir, "unit_sketch.txt")
+        cls.blocks, cls.side = specio.write(cls.spec, cls.m)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir)
+
+    def test_validates(self):
+        v = val.validate(self.spec, self.side, CAT)
+        self.assertTrue(v["ok"], json.dumps(v["checks"], indent=1))
+
+    def test_constant_section_and_flat_wing(self):
+        m = self.m
+        f = m.filled & (m.label == 0)
+        ks = np.nonzero(f.any(axis=(0, 1)))[0]
+        mid = ks[len(ks) // 3: len(ks) // 2]                      # body rows ahead of the wing
+        for k in mid[1:]:
+            np.testing.assert_array_equal(f[:, :, k], f[:, :, mid[0]])   # the same ring repeated
+        wi = [i for i, c in enumerate(m.comps) if c.id == "wing"][0]
+        js = np.nonzero((m.filled & (m.label == wi)).any(axis=(0, 2)))[0]
+        self.assertEqual(len(js), 2)                              # one flat 2-block slab, no dihedral steps
+
+    def test_square_flaps_sketch_coverage(self):
+        wing = [s for s in self.m.segs if s["surface"] == "wing"]
+        self.assertEqual(sorted(s["role"] for s in wing), ["aileron", "aileron", "flap", "flap"])
+        for s in wing:
+            rows = {f["voxel"][2] for f in s["flaps"]}
+            self.assertLessEqual(abs(len(s["columns"]) - len(rows)), 1)   # span ~ chord: square-ish
+        self.assertTrue(all(h["limits"][0] < 90 < h["limits"][1] or h["limits"][0] == 90 for h in self.side["hinges"]))
+
+    def test_skin_is_slopes_only(self):
+        shapes = {b["shape"] for b in self.blocks if b.get("shape")}
+        self.assertTrue(shapes <= {"cube", "slope"}, shapes)
+
+
 class TestMeshPipeline(unittest.TestCase):
     def test_box_plane_mesh(self):
         """A crude plane made of boxes (fuselage + wing + tailplane + fin) goes through the mesh pipeline."""

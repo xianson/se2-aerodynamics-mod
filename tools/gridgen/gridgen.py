@@ -9,8 +9,10 @@
 
 Outputs (default %TEMP%\\OrbitalMod\\gen): NAME.txt (spec: in game 'gen spawn NAME.txt'), NAME.json (sidecar:
 mass, CoM, neutral point, margin, hinge roles, block counts, validation), preview\\NAME.png.
-Design schema: see design.py (engines: engines.py, control surfaces: controls.py).  Block conventions and their
-calibration status: se2blocks.py.
+The library (designs/*.json, sketch_plane first) uses the clean style (clean.py): a constant-section body with
+45-degree nose/tail cones, flat constant-thickness wing and tail plates, square-ish flaps, optional nacelle pods.
+designs/legacy/ keeps the earlier smooth-style designs (design.py schema with "surfaces"; build them one by one).
+Engines: engines.py; control surfaces: controls.py; block conventions and calibration status: se2blocks.py.
 """
 from __future__ import annotations
 
@@ -68,7 +70,8 @@ def cmd_all(args):
     out = args.out
     os.makedirs(out, exist_ok=True)
     subprocess.run([sys.executable, os.path.join(HERE, "meshes", "make_meshes.py")], check=True)
-    files = sorted(glob.glob(os.path.join(HERE, "designs", "*.json")))
+    files = sorted(glob.glob(os.path.join(HERE, "designs", "*.json")),
+                   key=lambda f: (os.path.basename(f) != "sketch_plane.json", f))     # the user's sketch first
     if args.only:
         files = [f for f in files if os.path.splitext(os.path.basename(f))[0] in args.only.split(",")]
     rows, ok = [], True

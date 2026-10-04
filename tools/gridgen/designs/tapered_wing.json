@@ -1,0 +1,25 @@
+{
+ "name": "tapered_wing",
+ "title": "Tapered straight wing",
+ "fuselage": {
+  "length": 16,
+  "width": 3.5,
+  "height": 3.5
+ },
+ "wing": {
+  "span": 15,
+  "root_chord": 3.5,
+  "tip_chord": 1.5,
+  "x": 8.5
+ },
+ "tail": true,
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "grid": "small",
+ "style": "clean"
+}

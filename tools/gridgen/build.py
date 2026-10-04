@@ -15,6 +15,7 @@ import numpy as np
 
 import aero
 import classify
+import clean
 import com
 import controls
 import design as dz
@@ -24,6 +25,11 @@ import se2blocks as sb
 import voxel as vx
 
 FUSELAGE_LIKE = ("fuselage", "boom", "nacelle", "fairing")
+
+
+def clean_style(d):
+    """The clean style (clean.py) for designs written with a "wing"; "surfaces" designs use the smooth builder."""
+    return d.get("style", "clean" if "wing" in d else "smooth") == "clean" and not d.get("mesh")
 
 
 class Pseudo:
@@ -45,8 +51,11 @@ class Model:
         self.problems = []
         d = dz.defaults(d)
         self.grid = d["grid"]
+        self.clean = clean_style(d)
         if d.get("mesh"):
             self._from_mesh(d)
+        elif self.clean:
+            self._from_clean(d)
         else:
             self._from_design(d)
         lat = self.lat
@@ -99,6 +108,14 @@ class Model:
         self.cov, self.filled = cov, filled
         self.label = vx.labels_from(covs, filled)
         self.np_surfs, self.np_fus = self.surfs, fus
+
+    def _from_clean(self, d):
+        r = clean.build(d, self.dx, self.cat)
+        self.d = d
+        self.lat, self.filled, self.label = r["lat"], r["filled"], r["label"]
+        self.comps, self.surfs, self.fus = r["comps"], r["surfs"], r["fus"]
+        self.cov = self.filled.astype(np.float32)
+        self.np_surfs, self.np_fus = self.surfs, self.fus
 
     def _from_mesh(self, d):
         self.d = d
@@ -326,7 +343,12 @@ class Model:
         n = 0
         for v in itertools.product(*rng):
             cc = lat.centre_cells(np.array(v))
-            if math.hypot(cc[p] - c[p], cc[q] - c[q]) > r_out:
+            if self.clean:     # a clean octagon: one block round the engine face, corners cut at 45 degrees
+                hp, hq = (hi[p] - lo[p]) / 2 + lat.u / 2, (hi[q] - lo[q]) / 2 + lat.u / 2
+                dp, dq = abs(cc[p] - c[p]), abs(cc[q] - c[q])
+                if dp > hp + 1e-6 or dq > hq + 1e-6 or dp + dq > hp + hq - lat.u + 1e-6:
+                    continue
+            elif math.hypot(cc[p] - c[p], cc[q] - c[q]) > r_out:
                 continue
             if lo[p] - lat.u / 2 < cc[p] < hi[p] + lat.u / 2 and lo[q] - lat.u / 2 < cc[q] < hi[q] + lat.u / 2:
                 continue                                        # the duct: the engine's own footprint stays open
@@ -351,8 +373,8 @@ class Model:
             target = float(ck["x"])
         elif "x_frac" in ck and self.fus is not None:
             target = float(ck["x_frac"]) * self.fus.L
-        slots = [s for s in com.slot_candidates(self.lat, free, self.cat, [name], orient, self.equip_boxes)
-                 if s["count"] == 1]
+        slots = [s for s in com.slot_candidates(self.lat, free, self.cat, [name], orient, self.equip_boxes,
+                                                step=self.lat.u) if s["count"] == 1]
         how = "inside"
         if not slots:
             # fall back: the cockpit becomes part of the hull - it replaces the hull blocks it covers (exactly, so the
@@ -363,7 +385,8 @@ class Model:
             air = vx.outside(occ)
             allow = (hull | air) & ~self.blocked & ~self.frozen & ~self.swept_taken
             slots = []
-            for s in com.slot_candidates(self.lat, allow, self.cat, [name], orient, self.equip_boxes):
+            for s in com.slot_candidates(self.lat, allow, self.cat, [name], orient, self.equip_boxes,
+                                         step=self.lat.u):
                 lo, hi, pos = s["boxes"][0]
                 if s["count"] != 1 or not self.lat.covers_exactly(lo, hi):
                     continue
@@ -388,7 +411,8 @@ class Model:
         r = self._region(lo, hi)
         self.solid[r] = False
         self.cavity[r] = self.cavity[r] & ~self.lat.covers_exactly(lo, hi)
-        self.frozen[r] = True
+        if how == "in hull":
+            self.frozen[r] = True              # (inside the hollow it touches no skin: the shell may still be shaped)
         self.engine_vox[r] |= self.lat.covers_exactly(lo, hi)
         self.equip_boxes.append((lo, hi))
         blk = dict(name=name, kind="cockpit", pos=np.asarray(pos, int), orient=orient, lo=lo, hi=hi)
@@ -404,6 +428,16 @@ class Model:
             occ[sg["hinge_voxel"]] = True
         out = vx.outside(occ)
         allowed = self.solid & (self.label >= 0) & ~self.pylon      # hull, nacelles, fairings, wings and tails
+        if self.clean:
+            span_axis = np.full(self.solid.shape, -1, np.int8)
+            for i, c in enumerate(self.comps):
+                if c.role in ("wing", "htail", "vtail", "canard", "vee"):
+                    span_axis[self.label == i] = 1 if getattr(c, "vertical", False) else 0
+            shapes = vx.refine_clean(self.solid, self.cavity0 | self.cavity, out, allowed,
+                                     self.frozen | self.flapvox, span_axis)
+            self.shapes = {i: v for i, v in shapes.items() if sb.orient_for_normal(v[0], v[1]) is not None}
+            self.fills = {}
+            return
         shapes = vx.refine_skin(self.solid, self.cavity0 | self.cavity, out, self.cov, allowed,
                                 self.frozen | self.flapvox)
         ok = {}
@@ -487,7 +521,7 @@ class Model:
         bat = d.get("batteries") or {}
         names = bat.get("prefabs") or sb.DEFAULT_BATTERIES[self.grid]
         n_min = int(bat.get("min", 2))
-        n_max = int(bat.get("max", 24 if self.grid == "large" else 80))
+        n_max = int(bat.get("max", 16 if self.clean else (24 if self.grid == "large" else 80)))
         free = self.cavity & ~self.blocked
         slots = com.slot_candidates(self.lat, free, self.cat, names, sb.IDENTITY, self.equip_boxes)
         conf = com.conflicts_of(slots)

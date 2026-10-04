@@ -72,5 +72,6 @@
    "size": 250
   }
  ],
- "grid": "small"
+ "grid": "small",
+ "style": "smooth"
 }

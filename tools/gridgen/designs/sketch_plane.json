@@ -1,0 +1,42 @@
+{
+ "name": "sketch_plane",
+ "title": "Sketch plane: straight wing, conventional tail",
+ "fuselage": {
+  "length": 19,
+  "width": 3.5,
+  "height": 3.5,
+  "chamfer": 0.6
+ },
+ "wing": {
+  "span": 14,
+  "root_chord": 3.0,
+  "tip_chord": 3.0,
+  "sweep": 0,
+  "x": 11.4,
+  "z": "mid",
+  "thickness_blocks": 2,
+  "controls": {
+   "aileron_from": 0.5
+  }
+ },
+ "tail": true,
+ "tail_size": 0.9,
+ "tail_sweep": 0,
+ "fin": {
+  "sweep": 25
+ },
+ "controls_note": "sketch coverage: one square flap inboard + one square aileron outboard per side; 'full' covers the whole trailing edge",
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "tail_taper": 1.0,
+ "fin_taper": 0.7,
+ "coverage": "sketch",
+ "batteries": {
+  "max": 16
+ }
+}

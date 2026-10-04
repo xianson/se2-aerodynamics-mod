@@ -1,0 +1,43 @@
+{
+ "name": "glider",
+ "title": "Sailplane (cubes only)",
+ "skin": "cubes",
+ "fuselage": {
+  "length": 8.4,
+  "width": 2.0,
+  "height": 2.0,
+  "nose": 0.2,
+  "tail": 0.6,
+  "tail_width": 0.35,
+  "tail_height": 0.4,
+  "tail_upsweep": 0.25
+ },
+ "surfaces": [
+  {
+   "role": "wing",
+   "id": "wing",
+   "span": 18,
+   "root_chord": 1.6,
+   "tip_chord": 0.7,
+   "sweep": 1,
+   "dihedral": 3,
+   "x": 4.1,
+   "z": "high",
+   "thickness": 0.15,
+   "thickness_tip": 0.12
+  }
+ ],
+ "tail": {
+  "type": "t",
+  "size": 1.0,
+  "vv": 0.025,
+  "vh": 0.5
+ },
+ "engines": [],
+ "batteries": {
+  "min": 1
+ },
+ "com_tolerance": 0.04,
+ "grid": "small",
+ "style": "smooth"
+}

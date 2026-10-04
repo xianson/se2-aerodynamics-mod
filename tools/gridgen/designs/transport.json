@@ -1,0 +1,32 @@
+{
+ "name": "transport",
+ "title": "Large transport with nacelle pods (36 m)",
+ "fuselage": {
+  "length": 36,
+  "width": 5.5,
+  "height": 5.5
+ },
+ "wing": {
+  "span": 40,
+  "root_chord": 6.0,
+  "tip_chord": 2.5,
+  "sweep": 25,
+  "x": 15.0,
+  "z": "high"
+ },
+ "tail": true,
+ "tail_sweep": 30,
+ "engines": [
+  {
+   "mount": "pod",
+   "type": "atmospheric",
+   "size": 250,
+   "span_frac": [
+    0.3,
+    0.55
+   ]
+  }
+ ],
+ "grid": "small",
+ "style": "clean"
+}

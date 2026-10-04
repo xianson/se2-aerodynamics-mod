@@ -1,6 +1,6 @@
 {
- "name": "flying_wing_large",
- "title": "Flying wing, large grid (x2.2 scale)",
+ "name": "flying_wing",
+ "title": "Blended flying wing (52 m span)",
  "fuselage": {
   "length": 21,
   "width": 12,
@@ -32,13 +32,13 @@
   {
    "mount": "wing_root",
    "type": "atmospheric",
-   "size": 500,
+   "size": 250,
    "cluster": [
     2,
     1
    ]
   }
  ],
- "grid": "large",
- "scale": 2.2
+ "grid": "small",
+ "style": "smooth"
 }

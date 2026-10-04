@@ -183,8 +183,7 @@ def _shaded(ax, items, u_cells):
     for k, name, o, lo, hi in items:
         shape = sb.shape_of(name)
         base = np.array(matplotlib.colors.to_rgb(COLORS[k]))
-        if shape in ("cube", "slope", "corner", "invcorner", "halfslope") and (hi - lo).max() <= u_cells + 1e-6 \
-                and k not in ("flap",):
+        if shape in ("cube", "slope", "corner", "invcorner", "halfslope") and (hi - lo).max() <= u_cells + 1e-6:
             c = (lo + hi) / 2
             if shape == "halfslope":
                 c = None

@@ -1,0 +1,26 @@
+{
+ "name": "straight_wing",
+ "title": "Straight wing, full trailing-edge coverage",
+ "fuselage": {
+  "length": 16,
+  "width": 3.5,
+  "height": 3.5
+ },
+ "wing": {
+  "span": 14,
+  "root_chord": 3.0,
+  "tip_chord": 3.0,
+  "x": 8.5
+ },
+ "tail": true,
+ "tail_taper": 1.0,
+ "engines": [
+  {
+   "mount": "tail",
+   "type": "hydrogen",
+   "size": 200
+  }
+ ],
+ "grid": "small",
+ "style": "clean"
+}
