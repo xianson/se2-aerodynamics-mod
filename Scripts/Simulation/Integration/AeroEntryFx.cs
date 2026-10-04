@@ -51,7 +51,15 @@ public static class AeroEntryFx
     /// them: a held grid measured as if flying (angle-of-attack sweeps of generated planes).</summary>
     public static bool TestForces;
     internal static bool TestForcesOn => TestForces && TestSpeed > 0f;
-    internal static Vector3 TestVelocityWorld(in WorldTransform wt) => WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed;
+    /// <summary>TEST: a WORLD direction ("x,y,z") for the test airflow, the same for every grid - a plane's hinged
+    /// flaps are grids of their own, and along each grid's own axis they got spanwise air (Orbital's `gen air N dir`
+    /// sets it from the plane's frame). Empty: TestAxis, per grid.</summary>
+    public static string TestWorld = "";
+    internal static Vector3 TestVelocityWorld(in WorldTransform wt)
+    {
+        if (!string.IsNullOrEmpty(TestWorld)) return ParseAxis(TestWorld) * TestSpeed;
+        return WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed;
+    }
     static Vector3 TestDir() => TestAxis switch
     { "+z" => Vector3.UnitZ, "-x" => -Vector3.UnitX, "+x" => Vector3.UnitX, "-y" => -Vector3.UnitY, "+y" => Vector3.UnitY, "-z" => -Vector3.UnitZ, _ => ParseAxis(TestAxis) };
     static Vector3 ParseAxis(string s)
@@ -132,7 +140,7 @@ public static class AeroEntryFx
     internal static void Server(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, float dt)
     {
         if (!Enabled || !aero.IsServerScene) return;   // (the sim job runs on client copies too: they only draw)
-        if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
+        if (TestSpeed > 0f) { vel = TestVelocityWorld(wt); density = MathF.Max(density, 1.2f); }
         float extStrength = 0f;
         if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extStrength = es; }
         float speed = vel.Length();
@@ -171,7 +179,7 @@ public static class AeroEntryFx
     {
         if (!aero.IsServerScene) return;
         Vector3 moving = vel;   // (the grid's real motion: what carries its published position forward for a client's match)
-        if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
+        if (TestSpeed > 0f) { vel = TestVelocityWorld(wt); density = MathF.Max(density, 1.2f); }
         float extS = -1f;
         if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extS = es; }
         // (a railed grid braking through another mod's band is in vacuum as far as the game is concerned: density 0 - it
