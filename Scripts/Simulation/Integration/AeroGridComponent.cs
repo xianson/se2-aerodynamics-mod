@@ -1574,19 +1574,25 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_cachedBlockSize >= 0)
             return _cachedBlockSize;
 
+        // The SMALLEST block decides (each block's largest extent, in 0.25 m cells): a large grid's every block spans
+        // >= 10 cells (2.5 m) somewhere, a small grid always has ~2-cell (0.5 m) blocks. It used the FIRST block the octree
+        // returned: on a small grid a thruster, battery or cockpit (6-10 cells) read it as large - coarse cells, most of
+        // its wings lost.
+        int smallest = int.MaxValue;
         var blocks = _octree.GetAllCubeBlocks();
         foreach (var block in blocks)
         {
             if (block == null) continue;
+            int blockMax = 0;
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var extent = cellGroup.Max - cellGroup.Min + Vector3I.One;
-                int maxExtent = Math.Max(extent.X, Math.Max(extent.Y, extent.Z));
-                _cachedBlockSize = maxExtent >= 5 ? AeroConfig.LargeBlockSize : AeroConfig.SmallBlockSize;
-                return _cachedBlockSize;
+                blockMax = Math.Max(blockMax, Math.Max(extent.X, Math.Max(extent.Y, extent.Z)));
             }
+            if (blockMax > 0 && blockMax < smallest) { smallest = blockMax; if (smallest < 5) break; }   // (small: settled)
         }
-        _cachedBlockSize = AeroConfig.LargeBlockSize;
+        if (smallest == int.MaxValue) return AeroConfig.LargeBlockSize;   // (no blocks yet: not cached - asked again)
+        _cachedBlockSize = smallest >= 5 ? AeroConfig.LargeBlockSize : AeroConfig.SmallBlockSize;
         return _cachedBlockSize;
     }
 }
