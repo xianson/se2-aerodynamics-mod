@@ -298,6 +298,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnAddedToScene()
     {
         Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
+        // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
+        _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
 
         _gridAccessor = new Se2GridAccessor(_octree);
         _surface = new SmoothSurfaceProvider();
@@ -618,7 +620,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // it used to wait until the grid moved in air, which then flew without aero for the length of a build.
         if (_chunks != null && LocalUpdates) TickLocal();
         if (_quickTable != null) { var qt = _quickTable; _quickTable = null; if (_model.Table == null) _model.InstallForceTable(qt); }
-        if (_model?.Table == null && _seedTries < 120 && OrphanChunks.Any) TrySeed(wt);
+        // (only a grid that could use a table now: a static grid, or one in neither air nor gravity, built a HashSet and
+        //  scanned every block each frame while any debris was young)
+        if (_model?.Table == null && _seedTries < 120 && OrphanChunks.Any && !IsStatic && (density > 0f || InGravity)) TrySeed(wt);
 
         if (_dirty && !_staggeredBuildActive && _surface.FaceCount == 0 && _model?.Table == null && (density > 0f || InGravity || EntryWantsTable) && !IsStatic)
         {
