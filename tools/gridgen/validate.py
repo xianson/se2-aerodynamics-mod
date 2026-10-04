@@ -6,7 +6,7 @@
   hinge_line   hinge axis along the segment's span axis; a flap block directly aft of the head at the 90 deg
                neutral (leading edge on the hinge line); limits inside 0..180 around the neutral; the hinge block
                touches the main grid
-  sweep        rotated through its limits (about the 90 deg neutral), no flap/head point enters a main-grid block (other than its own hinge)
+  sweep        rotated from its spawn pose (hinge angle 0) through the 90 deg neutral to its far limit, no flap point enters a main-grid block (other than its own hinge)
                or another hinge's swept cells
   engines      exhaust lanes (and atmospheric intakes) free of blocks and of flap sweeps
   connected    the main grid is one piece through MOUNT faces (both blocks mount on the shared face); each
@@ -192,6 +192,8 @@ def validate(spec_path, side, cat):
         pts = np.concatenate([_samples(lo, hi) for lo, hi in [f[2] for f in h["flaps"]]])
         cells = set()
         mn, mx = h["lim"]
+        # from the spawn pose (hinge angle 0, i.e. -neutral relative) through neutral to the far limit
+        mn = min(mn, -sb.CAL["hinge_neutral_deg"])
         for ang in np.radians(np.arange(mn, mx + 1e-6, 1.0) if mx > mn else [mn]):
             q = (pts - h["pivot"]) @ _rot(h["axis"] * sb.CAL["hinge_angle_sign"], ang).T + h["pivot"]
             own, c = G.lookup(q)

@@ -27,6 +27,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import numpy as np  # noqa: E402
 import build as bd  # noqa: E402
 import design as dz  # noqa: E402
 import preview  # noqa: E402
@@ -141,6 +142,41 @@ def cmd_validate(args):
     return 0 if v["ok"] else 1
 
 
+def export_boxes(spec_path, out_path, cat, flaps=False):
+    """A spec as AeroBench/aero_probe .boxes: each main-grid block's occupied cells, inclusive, in the GAME's cell
+    indexing (the catalog's AABB: continuous [lo, hi) is cells lo+1..hi), flaps optional (in
+    game they are separate head grids, so the main grid's own aero sees the wing without them)."""
+    sp = specio.parse(spec_path, cat)
+    grid = "small"
+    lines = []
+    for name, pos, orient in sp["main"]:
+        lo, hi = cat.box(name, pos, orient)
+        lines.append(" ".join(str(int(v)) for v in list(np.asarray(lo) + sb.CAL["aabb_low_offset"]) + list(hi)))
+        if name.endswith("250") or "250" in name:
+            grid = "large"
+    if flaps:
+        for k, (bi, mn, mx) in enumerate(sp["hinges"]):
+            hname, hpos, horient = sp["main"][bi]
+            origin, Rh = sb.headgrid_frame(hpos, horient)
+            for fname, fpos, forient in sp["flaps"].get(k, []):
+                p, o = sb.from_headgrid(fpos, forient, origin, Rh)
+                lo, hi = cat.box(fname, p, o)
+                lines.append(" ".join(str(int(v)) for v in list(np.asarray(lo) + sb.CAL["aabb_low_offset"]) + list(hi)))
+    with open(out_path, "w", encoding="utf-8") as fh:
+        fh.write(f"# blockSize {2.5 if grid == 'large' else 0.5}\n" + "\n".join(lines) + "\n")
+
+
+def cmd_boxes(args):
+    cat = sb.Catalog()
+    src = args.spec if os.path.isabs(args.spec) or os.path.exists(args.spec) else os.path.join(args.out, args.spec)
+    if not src.endswith(".txt"):
+        src += ".txt"
+    dst = args.to or os.path.splitext(src)[0] + (".flaps" if args.flaps else "") + ".boxes"
+    export_boxes(src, dst, cat, args.flaps)
+    print("wrote", dst)
+    return 0
+
+
 def cmd_cal(args):
     """A row of large cubes, each with one slope / corner / inverted corner on top, oriented by the CAL
     shape_normal convention.  Each B line's comment says which way the slanted face should look in game; if it
@@ -193,8 +229,13 @@ def main(argv=None):
     v = sub.add_parser("validate")
     v.add_argument("name")
     sub.add_parser("cal")
+    bx = sub.add_parser("boxes")
+    bx.add_argument("spec")
+    bx.add_argument("--to")
+    bx.add_argument("--flaps", action="store_true")
     args = p.parse_args(argv)
-    return {"all": cmd_all, "build": cmd_build, "mesh": cmd_mesh, "validate": cmd_validate, "cal": cmd_cal}[args.cmd](args)
+    return {"all": cmd_all, "build": cmd_build, "mesh": cmd_mesh, "validate": cmd_validate, "cal": cmd_cal,
+            "boxes": cmd_boxes}[args.cmd](args)
 
 
 if __name__ == "__main__":

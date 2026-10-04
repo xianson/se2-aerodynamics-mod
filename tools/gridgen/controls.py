@@ -387,7 +387,12 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
     axis, pivot_cells = sb.hinge_axis_and_pivot(pos_h, orient_h)
     pivot = pivot_cells / lat.u - lat.i0
     # the flap blocks swing; the head turns inside its own hinge block (the two overlap by design), so it is not swept
-    swept = swept_voxels(sorted(fl - {hidx}), pivot, axis * sb.CAL["hinge_angle_sign"], lim[0], lim[1])
+    # the head spawns at hinge angle 0 and the controller swings it to the neutral (90): the flap must clear the
+    # whole arc from 0 through neutral to the far deflection, not just the pose around neutral
+    neu = sb.CAL["hinge_neutral_deg"]
+    # (0 is the hinge's end stop: no safety margin beyond it - swept_voxels widens lo by its 3 deg margin)
+    lo_rel = lim[0] if lim[0] < -neu else -neu + 3.0
+    swept = swept_voxels(sorted(fl - {hidx}), pivot, axis * sb.CAL["hinge_angle_sign"], min(lim[0], lo_rel), lim[1])
     swept.discard(hidx)
     carve = set()                         # only the hinge-row (and other) cells the swing actually reaches
     for v in swept:

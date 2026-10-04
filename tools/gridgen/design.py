@@ -245,7 +245,7 @@ class Surface:
             else:
                 xm = self.x_le + self.cr / 2
                 zc, top, bot = fus.centre_z(xm), fus.top(xm), fus.bottom(xm)
-                z0 = {"low": bot + 0.75 * block, "mid": zc, "high": top - 0.75 * block,
+                z0 = {"low": bot + 0.75 * block, "mid": zc, "mid+1": zc + block, "high": top - 0.75 * block,
                       "top": top, "bottom": bot}[zz]
         else:
             z0 = float(zz)

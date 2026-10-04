@@ -556,7 +556,37 @@ class TestCleanStyle(unittest.TestCase):
             np.testing.assert_array_equal(f[:, :, k], f[:, :, mid[0]])   # the same ring repeated
         wi = [i for i, c in enumerate(m.comps) if c.id == "wing"][0]
         js = np.nonzero((m.filled & (m.label == wi)).any(axis=(0, 2)))[0]
-        self.assertEqual(len(js), 2)                              # one flat 2-block slab, no dihedral steps
+        self.assertEqual(len(js), 1)                              # one flat 1-block plate, no dihedral steps
+
+    def test_wing_thin_enough_for_aero(self):
+        """aero's wing detector rejects t/c > 0.5; the main grid keeps only the chord ahead of the hinges."""
+        m = self.m
+        wi = [i for i, c in enumerate(m.comps) if c.id == "wing"][0]
+        cells = np.argwhere(m.solid & (m.label == wi))
+        cols = {}
+        for i, j, k in cells:
+            cols.setdefault(i, []).append(k)
+        chords = [max(v) - min(v) + 1 for v in cols.values()]
+        self.assertLessEqual(1.0 / np.mean(chords), 0.5)         # 1 block thick over the mean remaining chord
+
+    def test_cockpit_at_the_nose(self):
+        self.assertLess(self.side["cockpit"]["x_m"], 0.25 * SKETCH["fuselage"]["length"])
+        self.assertEqual(self.side["cockpit"]["how"], "inside")
+
+    def test_sweep_checked_from_the_spawn_pose(self):
+        """A block where a wing flap stands at hinge angle 0 (straight up, before the controller swings it to the
+        90 deg neutral) must fail the sweep check, though nothing overlaps at neutral."""
+        h = next(x for x in self.side["hinges"] if x["role"] == "flap")
+        hp = np.array(h["hinge_pos"])
+        lines = open(self.spec).read().splitlines()
+        cube = CAT["ArmorCubeLight50"].guid
+        above = hp + np.array([0, 4, 0])                           # two blocks above the hinge: the raised flap
+        i = max(k for k, l in enumerate(lines) if l.startswith("B "))
+        lines.insert(i + 1, f"B {cube} {above[0]} {above[1]} {above[2]} Forward Up")
+        bad = os.path.join(self.dir, "spawnpose.txt")
+        open(bad, "w").write("\n".join(lines) + "\n")
+        v = val.validate(bad, self.side, CAT)
+        self.assertFalse(v["checks"]["sweep"]["ok"], v["checks"]["sweep"])
 
     def test_square_flaps_sketch_coverage(self):
         wing = [s for s in self.m.segs if s["surface"] == "wing"]

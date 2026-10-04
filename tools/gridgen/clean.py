@@ -15,7 +15,7 @@ Design keys (blocks are the grid's block size; lengths in metres):
   "fuselage": {"length", "width", "height", "chamfer": 0.6 (fraction of the half-size cut at 45 deg),
                "tail_end": [w, h] (blocks; default: fits the engine cluster), "z": 0},
   "wing": {"span", "root_chord", "tip_chord", "sweep" (leading edge, deg), "x" | "x_frac", "z": "low"|"mid"|"high",
-           "thickness_blocks": 2|3, "controls": {...}},
+           "thickness_blocks": 1 (default; thicker plates fail aero's t/c <= 0.5 once flaps leave), "controls": {...}},
   "tail": true | false | "fin"  (plain horizontal + vertical stabiliser, default on; "fin": only the fin),
   "tail_size": 1.0, "tail_taper": 0.6, "fin_taper": 0.6, "tail_sweep", "fin_sweep",
   "htail": {...}, "fin": {...}  (optional overrides of the auto-sized tail surfaces).
@@ -69,7 +69,9 @@ def tail_specs(d, fus_L, B):
         crh = 2 * Sh / (bh * 1.6)
         tap = float(d.get("tail_taper", 0.6))
         h = dict(id="htail", role="htail", span=bh, root_chord=crh, tip_chord=crh * tap,
-                 sweep=float(d.get("tail_sweep", 25.0 if w.get("sweep", 0) else 15.0)), z="mid", thickness_blocks=2)
+                 sweep=float(d.get("tail_sweep", 25.0 if w.get("sweep", 0) else 15.0)), z="mid+1")
+        # (one block above the wing's plane: aero merges coplanar surfaces, and a tail in the wing's plane got
+        # lumped with the wing)
         h.update(d.get("htail", {}))
         h.setdefault("x", fus_L - h["root_chord"] - B)
         out.append(h)
@@ -159,7 +161,9 @@ def build(d, dx, cat):
     # --- flat slabs: wing, horizontal tail, fin
     for si, (spec, srf) in enumerate(zip([w] + tails, surfs), start=1):
         vertical = spec.get("role") == "vtail"
-        t = int(spec.get("thickness_blocks", 2 if not vertical else 1))
+        # flat plates one block thick: aero's wing detector (ConnectedComponentWingDetector) rejects t/c > 0.5, and
+        # with the flaps on their own head grids the main grid keeps only the chord ahead of the hinge
+        t = int(spec.get("thickness_blocks", 1))
         cr, ct = float(spec["root_chord"]), float(spec.get("tip_chord", spec["root_chord"]))
         k_le0 = int(round(srf.x_le / B)) + k0
         sweep = math.tan(math.radians(float(spec.get("sweep", 0.0))))
@@ -172,6 +176,8 @@ def build(d, dx, cat):
                 jl = jc - b
             elif zz == "high":
                 jl = jc + b - t + 1
+            elif zz == "mid+1":
+                jl = jc - (t - 1) // 2 + 1
             elif isinstance(zz, (int, float)):
                 jl = int(round(float(zz) / B)) - lat.i0[1] - (t - 1) // 2
             else:

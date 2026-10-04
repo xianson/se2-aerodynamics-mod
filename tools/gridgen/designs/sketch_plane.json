@@ -14,7 +14,6 @@
   "sweep": 0,
   "x": 11.4,
   "z": "mid",
-  "thickness_blocks": 2,
   "controls": {
    "aileron_from": 0.5
   }

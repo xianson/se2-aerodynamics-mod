@@ -374,9 +374,21 @@ class Model:
             target = float(ck["x"])
         elif "x_frac" in ck and self.fus is not None:
             target = float(ck["x_frac"]) * self.fus.L
-        slots = [s for s in com.slot_candidates(self.lat, free, self.cat, [name], orient, self.equip_boxes,
-                                                step=self.lat.u) if s["count"] == 1
-                 and self.mounted(name, orient, *s["boxes"][0][:2])]       # floor / back flush on the shell
+        # inside the hollow the cockpit stands on a plinth: the hollow cells under its footprint, down to the shell,
+        # become cubes, so its Down mount face rests fully on blocks wherever it sits (an octagon's hollow floor is
+        # narrower than the cockpit)
+        slots = []
+        for s in com.slot_candidates(self.lat, free, self.cat, [name], orient, self.equip_boxes, step=self.lat.u):
+            if s["count"] != 1:
+                continue
+            lo, hi, _ = s["boxes"][0]
+            if (0, -1, 0) in sb.mount_dirs(name, orient):
+                pl = self.plinth(lo, hi)
+                if pl is not None:
+                    s["plinth"] = pl
+                    slots.append(s)
+            elif self.mounted(name, orient, lo, hi):
+                slots.append(s)
         how = "inside"
         if not slots:
             # fall back: the cockpit becomes part of the hull - it replaces the hull blocks it covers (exactly, so the
@@ -410,6 +422,10 @@ class Model:
             slots = snug
         s = min(slots, key=score)
         lo, hi, pos = s["boxes"][0]
+        for v in s.get("plinth", []):
+            self.solid[v] = True
+            self.cavity[v] = False
+            self.label[v] = 0
         r = self._region(lo, hi)
         self.solid[r] = False
         self.cavity[r] = self.cavity[r] & ~self.lat.covers_exactly(lo, hi)
@@ -545,6 +561,27 @@ class Model:
             l2[ax], h2[ax] = lo[ax] - 1, lo[ax]
         r = self._region(l2, h2)
         return r is not None and bool((self.solid | self.engine_vox)[r].all())
+
+    def plinth(self, lo, hi, depth=4):
+        """Hollow voxels under a box's footprint down to solid structure (None if a column finds none within depth)."""
+        a, b = self.lat.index_range(lo, hi)
+        out = []
+        for i in range(a[0], b[0]):
+            for k in range(a[2], b[2]):
+                j = a[1] - 1
+                col = []
+                while j >= 0 and len(col) <= depth:
+                    v = (i, j, k)
+                    if self.solid[v] or self.engine_vox[v]:
+                        break
+                    if not self.cavity[v] or self.blocked[v]:
+                        return None
+                    col.append(v)
+                    j -= 1
+                else:
+                    return None
+                out += col
+        return out
 
     def mounted(self, name, orient, lo, hi):
         return any(self.backed(lo, hi, d) for d in sb.mount_dirs(name, orient))

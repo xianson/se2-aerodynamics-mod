@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- gridgen's offline aero probe: the aero mod's LITERAL Scripts/Simulation sources (as Tests/AeroBench compiles
+       them) run on a generated plane exported as .boxes - which wings the detector finds, and lift / drag / pitch
+       torque over an angle-of-attack sweep.  Lives under tools/gridgen (not Tests/) so the fast gate does not run it.
+       Run: dotnet run -c Release, then the .boxes path and an optional speed -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS0162;CS0168;CS0219;CS0414;CS0649;CS8632;CS1998;CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn>
+    <Game2>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
+    <Mod>$(MSBuildThisFileDirectory)..\..\..</Mod>
+    <Sim>$(Mod)\Scripts\Simulation</Sim>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(Game2)\VRage.Library.dll" />
+    <Compile Include="$(Mod)\Tests\TestUsings.cs" />
+    <Compile Include="$(Mod)\Tests\AeroBench\Shims.cs" />
+    <Compile Include="$(Sim)\Core\*.cs" Exclude="$(Sim)\Core\Se2GridAccessor.cs" />
+    <Compile Include="$(Sim)\Atmosphere\*.cs" />
+    <Compile Include="$(Sim)\Drag\*.cs" />
+    <Compile Include="$(Sim)\Lift\*.cs" />
+    <Compile Include="$(Sim)\Shadow\*.cs" />
+    <Compile Include="$(Sim)\Surface\*.cs" />
+    <Compile Include="$(Sim)\Components\IAeroBlockComponent.cs" />
+    <Compile Include="$(Sim)\Components\IFaceOverride.cs" />
+    <Compile Include="$(Sim)\Components\ComponentForceResult.cs" />
+    <Compile Include="$(Sim)\Components\LocalAeroConditions.cs" />
+  </ItemGroup>
+</Project>

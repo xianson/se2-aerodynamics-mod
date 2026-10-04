@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+aero_probe/bin/
+aero_probe/obj/
