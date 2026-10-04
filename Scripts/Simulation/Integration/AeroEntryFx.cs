@@ -55,9 +55,15 @@ public static class AeroEntryFx
     /// flaps are grids of their own, and along each grid's own axis they got spanwise air (Orbital's `gen air N dir`
     /// sets it from the plane's frame). Empty: TestAxis, per grid.</summary>
     public static string TestWorld = "";
+    static string _testWorldParsed; static Vector3 _testWorldDir;
     internal static Vector3 TestVelocityWorld(in WorldTransform wt)
     {
-        if (!string.IsNullOrEmpty(TestWorld)) return ParseAxis(TestWorld) * TestSpeed;
+        string tw = TestWorld;
+        if (!string.IsNullOrEmpty(tw))
+        {
+            if (!ReferenceEquals(tw, _testWorldParsed)) { _testWorldDir = ParseAxis(tw); _testWorldParsed = tw; }   // (parsed once per value)
+            return _testWorldDir * TestSpeed;
+        }
         return WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed;
     }
     static Vector3 TestDir() => TestAxis switch
@@ -399,7 +405,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     /// FlightMax to the camera; dropped a second after it stops.</summary>
     private static void FlightJob(AeroEntryFxComponent c, IObservers observers)
     {
-        MachHud.Tick(c.Entity);   // (Mach in the game's speed readout: every 0.1 s, whichever grid ticks first)
         if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
         var grid = c.Entity;
         if (grid == null || !PhysicsHack.Alive(c.Data)) return;
@@ -445,6 +450,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
         if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
         AeroSettings.Poll();   // (the settings files, every ~2 s)
+        MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
             if (c.Flight != null) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }

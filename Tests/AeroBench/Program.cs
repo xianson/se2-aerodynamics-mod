@@ -101,19 +101,23 @@ static class Program
             return (r.LiftForce.Length(), r.CDi);
         }
         var far = Run(-1f);
-        var near = Run(2f);
+        var near = Run(0.5f);    // (h/b 0.05: McCormick phi 0.39)
         var high = Run(40f);
         Check(near.lift > far.lift * 1.05f, $"near lift {near.lift:F0} vs far {far.lift:F0}");
         Check(near.cdi < far.cdi * 0.8f, $"near CDi {near.cdi:F4} vs far {far.cdi:F4}");
         Check(MathF.Abs(high.lift - far.lift) < far.lift * 0.005f, $"40 m lift {high.lift:F0} vs far {far.lift:F0}");
         CompressibleWingModel.GroundEffect = false;
-        var off = Run(2f);
+        var off = Run(0.5f);
         CompressibleWingModel.GroundEffect = true;
         Check(MathF.Abs(off.lift - far.lift) < far.lift * 0.005f, $"switch off lift {off.lift:F0} vs far {far.lift:F0}");
-        var mounted = Run(2f, 10f);
-        var at12 = Run(12f);
-        Check(MathF.Abs(mounted.lift - at12.lift) < at12.lift * 0.005f, $"wing 10 m up at 2 m: lift {mounted.lift:F0} vs at 12 m {at12.lift:F0}");
-        Console.WriteLine($"AeroBench: ground effect lift x{near.lift / far.lift:F2}, CDi x{near.cdi / far.cdi:F2} at h/b 0.2 ({(fails == 0 ? "ok" : fails + " failed")})");
+        var mounted = Run(0.5f, 1f);
+        var at15 = Run(1.5f);
+        Check(MathF.Abs(mounted.lift - at15.lift) < at15.lift * 0.005f, $"wing 1 m up at 0.5 m: lift {mounted.lift:F0} vs at 1.5 m {at15.lift:F0}");
+        var justBelow = Run(10f * 60f / 16f - 0.01f); var justAbove = Run(10f * 60f / 16f + 0.01f);
+        Check(MathF.Abs(justBelow.lift - justAbove.lift) < far.lift * 0.001f, "no step where phi is cut to 1");
+        var oneSpan = Run(10f);
+        Check(MathF.Abs(oneSpan.lift - far.lift) < far.lift * 0.02f, $"one span up: within 2 % ({oneSpan.lift:F0} vs {far.lift:F0})");
+        Console.WriteLine($"AeroBench: ground effect lift x{near.lift / far.lift:F2}, CDi x{near.cdi / far.cdi:F2} at h/b 0.05 ({(fails == 0 ? "ok" : fails + " failed")})");
         return fails;
     }
 

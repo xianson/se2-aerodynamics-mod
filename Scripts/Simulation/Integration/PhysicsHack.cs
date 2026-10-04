@@ -481,14 +481,19 @@ public static class PhysicsHack
     /// public GameEntityExtensions helpers, so this no longer walks Scene.UserObject ->
     /// Session.EntitySerializer.TryResolveSessionService by reflection.
     /// </summary>
+    static object _physicsSession;
+    /// <summary>The ray probes' physics: the SERVER scene's (forces are computed there; a client grid's DEntity is not that
+    /// world's), re-resolved when the session changes (a world reload kept the old one).</summary>
     public static void InitGroundSystem(Entity entity)
     {
-        if (_groundSystemInitialized) return;
+        var session = entity?.GetSession();
+        if (session == null || (_groundSystemInitialized && ReferenceEquals(session, _physicsSession))) return;
         _groundSystemInitialized = true;
+        _physicsSession = session;
 
         try
         {
-            _physics = entity?.GetSession()?.TryGet<IPhysics>();
+            _physics = session.TryGet<IPhysics>();
             Log.Default?.Info(_physics != null
                 ? "[AERO] Physics: IPhysics resolved for ray probes"
                 : "[AERO] Physics: IPhysics not available in session");
@@ -591,6 +596,8 @@ public static class PhysicsHack
             }
             catch (Exception ex)
             {
+                // (nothing in flight to harvest: release the ignore list now, or the next cast skips the self-ignore)
+                if (probe.HasIgnore) { try { probe.Ignore.Dispose(); } catch { } probe.HasIgnore = false; }
                 GroundFails++;
                 Log.Default?.Info($"[AERO] Ground ray failed: {ex.Message}");
             }

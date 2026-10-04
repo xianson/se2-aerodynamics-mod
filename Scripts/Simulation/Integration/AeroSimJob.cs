@@ -74,12 +74,12 @@ public partial class AeroGridComponent
         }
 
         // ── Ground height (async raycast) ──
-        if (!PhysicsHack.GroundSystemReady)
-            PhysicsHack.InitGroundSystem(aero.Entity);
+        if (aero.IsServerScene)
+            PhysicsHack.InitGroundSystem(aero.Entity);   // (cheap when unchanged: the server session's physics)
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
         aero.InGravity = gravity.LengthSquared() > 1e-4f;
-        aero.GroundHeight = PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity);
+        aero.GroundHeight = aero.IsServerScene ? PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity) : -1f;   // (rays in the server's world only)
         aero.GroundUpLocal = aero.InGravity ? -Vector3.Normalize(WorldTransform.TransformDirectionInv(gravity, wt)) : Vector3.Zero;
 
         // ── Cache physics state for draw job ──

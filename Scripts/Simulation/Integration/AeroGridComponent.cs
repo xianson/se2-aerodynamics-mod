@@ -338,6 +338,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         AeroEntryFx.Forget(this);
+        // (the ground ray's ignore list: released when no ray is in flight - the engine reads it until the cast completes)
+        if (Ground.HasIgnore && !Ground.InFlight) { try { Ground.Ignore.Dispose(); } catch { } Ground.HasIgnore = false; }
         _initialized = false;
         AeroTestHarness.UntrackGrid(this);
         AeroScheduler.Remove(this);

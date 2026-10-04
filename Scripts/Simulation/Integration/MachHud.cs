@@ -41,8 +41,9 @@ public static class MachHud
     internal static void Tick(Keen.VRage.DCS.Components.Entity anyGrid)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
-        if (now < _nextValue) return;
-        _nextValue = now + f / 10;
+        // (the effects jobs run in parallel: one of them claims the tick - Install once, never twice at a time)
+        long due = System.Threading.Interlocked.Read(ref _nextValue);
+        if (now < due || System.Threading.Interlocked.CompareExchange(ref _nextValue, now + f / 10, due) != due) return;
         if (!On) { Suffix = ""; return; }
         if (now >= _nextPatch) { _nextPatch = now + 3 * f; Install(); }
         // (the Mach of what the local player is in)

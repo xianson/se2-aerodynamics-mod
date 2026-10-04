@@ -114,17 +114,18 @@ public class CompressibleWingModel : IWingLiftModel
     public static bool GroundEffect = true;
     float[] _groundPhi = Array.Empty<float>();
 
-    /// <summary>The wing's ground factor phi = (h/b)^2 / (1 + (h/b)^2), floored at 0.1: h its own height above the ground
-    /// (the grid's, plus its aerodynamic centre's offset along 'up'), b its span; 1 far from the ground or unknown.</summary>
+    /// <summary>The wing's ground factor (McCormick): phi = (16 h/b)^2 / (1 + (16 h/b)^2), floored at 0.1 - h its own height
+    /// above the ground (the grid's, plus its aerodynamic centre's offset along 'up'), b its span; 1 far from the ground or
+    /// unknown. (Without the 16 it halved induced drag a whole span up; it now fades smoothly - ~1 % left at h = b.)</summary>
     static float GroundPhi(in AeroContext ctx, in LiftingSurface w)
     {
         if (!GroundEffect || ctx.GroundHeight < 0f || w.Span <= 0.1f) return 1f;
         float h = ctx.GroundHeight;
         if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(w.AeroCenter, ctx.GroundUpLocal);
         h = MathF.Max(0.05f, h);
-        float hb = h / w.Span;
-        if (hb > 3f) return 1f;
-        return MathF.Max(0.1f, hb * hb / (1f + hb * hb));
+        float x = 16f * h / w.Span;
+        if (x > 60f) return 1f;   // (phi within 0.03 % of 1)
+        return MathF.Max(0.1f, x * x / (1f + x * x));
     }
 
     public List<WingForceResult> ComputeWingForces(ReadOnlySpan<LiftingSurface> wings, in AeroContext ctx)
