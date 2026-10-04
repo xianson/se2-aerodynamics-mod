@@ -55,7 +55,8 @@ def _cell_sweep(rel_p, rel_q, frac, a, sign, lo_deg, hi_deg, margin, n_sub):
     pts[:, q] = rel_q + V.ravel() - frac[1]
     axis = np.zeros(3)
     axis[a] = sign
-    lo, hi = math.radians(lo_deg - margin), math.radians(hi_deg + margin)
+    lo = math.radians(lo_deg - (margin if lo_deg < 0 else 0))
+    hi = math.radians(hi_deg + (margin if hi_deg > 0 else 0))
     out = set()
     for ang in np.linspace(lo, hi, max(2, int(round(math.degrees(hi - lo))) + 1)):
         r = pts @ _rot(axis, ang).T
@@ -335,7 +336,8 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
         for k in order[:3]:
             ts = sorted({t for t, z in cols[k] if z == x_h and _idx(span_ax, t_ax, k, t, x_h + 1) in fset},
                         key=lambda t: abs(t - np.median([tt for tt, zz in cols[k]])))
-            for t in ts[:2]:
+            best = None
+            for t in sorted(ts, reverse=True)[:3]:
                 hidx = _idx(span_ax, t_ax, k, t, x_h)
                 attached = False
                 for dv in ((0, 0, -1), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0)):
@@ -349,11 +351,19 @@ def _plan(model, d, comp, ci, cols, chunk, span_ax, t_ax, cf, role, side, hinge_
                 if res is None:
                     continue
                 swept, carve = res
-                return dict(comp=comp, chunk=chunk, span_ax=span_ax, t_ax=t_ax, x_h=x_h, hidx=hidx, flap=flap,
+                plan = dict(comp=comp, chunk=chunk, span_ax=span_ax, t_ax=t_ax, x_h=x_h, hidx=hidx, flap=flap,
                             extended=len(ext), row=row, te_slope=clean_style_of(d),
                             carve=carve, swept=swept, orient_h=orient_h, lim=lim, pos_sense=pos_sense, role=role,
                             side=side, hinge_name=hinge_name, head_name=head_name, flap_block=flap_block, cat=cat,
                             grid=d["grid"])
+                # least visible first: on a horizontal plate nothing cut from the top layer (the slot stays
+                # hidden underneath), then the fewest blocks cut
+                top = max(t_ for kk in chunk for t_, z_ in cols[kk]) if span_ax == 0 else None
+                plan["_cost"] = (sum(1 for v in carve if top is not None and v[t_ax] == top), len(carve))
+                if best is None or plan["_cost"] < best["_cost"]:
+                    best = plan
+            if best is not None:
+                return best
     return None
 
 
@@ -371,9 +381,10 @@ def _try(model, ci, chunk, span_ax, x_h, hidx, flap, row, orient_h, lim, struct0
     pos_h = lat.centre_cells(np.array(hidx))
     axis, pivot_cells = sb.hinge_axis_and_pivot(pos_h, orient_h)
     pivot = pivot_cells / lat.u - lat.i0
-    swept = swept_voxels(sorted(fl), pivot, axis * sb.CAL["hinge_angle_sign"], lim[0], lim[1])
+    # the flap blocks swing; the head turns inside its own hinge block (the two overlap by design), so it is not swept
+    swept = swept_voxels(sorted(fl - {hidx}), pivot, axis * sb.CAL["hinge_angle_sign"], lim[0], lim[1])
     swept.discard(hidx)
-    carve = set(v for v in row if v != hidx)
+    carve = set()                         # only the hinge-row (and other) cells the swing actually reaches
     for v in swept:
         if v in fl or any(a < 0 or a >= s for a, s in zip(v, lat.shape)):
             continue

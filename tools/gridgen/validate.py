@@ -178,7 +178,8 @@ def validate(spec_path, side, cat):
     swept_by = {}
     clash = []
     for h in hinges:
-        pts = np.concatenate([_samples(lo, hi) for lo, hi in [h["head_box"]] + [f[2] for f in h["flaps"]]])
+        # flap blocks only: the head turns inside its own hinge block (they overlap by design)
+        pts = np.concatenate([_samples(lo, hi) for lo, hi in [f[2] for f in h["flaps"]]])
         cells = set()
         mn, mx = h["lim"]
         for ang in np.radians(np.arange(mn, mx + 1e-6, 1.0) if mx > mn else [mn]):

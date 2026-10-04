@@ -430,11 +430,28 @@ class Model:
         allowed = self.solid & (self.label >= 0) & ~self.pylon      # hull, nacelles, fairings, wings and tails
         if self.clean:
             span_axis = np.full(self.solid.shape, -1, np.int8)
+            tip = np.zeros(self.solid.shape, bool)
             for i, c in enumerate(self.comps):
                 if c.role in ("wing", "htail", "vtail", "canard", "vee"):
-                    span_axis[self.label == i] = 1 if getattr(c, "vertical", False) else 0
+                    m = self.label == i
+                    ax = 1 if getattr(c, "vertical", False) else 0
+                    span_axis[m] = ax
+                    idx = np.argwhere(m & self.solid)
+                    if len(idx):
+                        if ax == 0:      # the outermost column on each side
+                            X = idx[:, 0] - (-self.lat.i0[0])
+                            for sgn in (1, -1):
+                                sel = idx[X * sgn > 0]
+                                if len(sel):
+                                    ext = np.abs(sel[:, 0] - (-self.lat.i0[0])).max()
+                                    for v in sel[np.abs(sel[:, 0] - (-self.lat.i0[0])) == ext]:
+                                        tip[tuple(v)] = True
+                        else:
+                            top = idx[:, 1].max()
+                            for v in idx[idx[:, 1] == top]:
+                                tip[tuple(v)] = True
             shapes = vx.refine_clean(self.solid, self.cavity0 | self.cavity, out, allowed,
-                                     self.frozen | self.flapvox, span_axis)
+                                     self.frozen | self.flapvox, span_axis, tip)
             self.shapes = {i: v for i, v in shapes.items() if sb.orient_for_normal(v[0], v[1]) is not None}
             self.fills = {}
             return

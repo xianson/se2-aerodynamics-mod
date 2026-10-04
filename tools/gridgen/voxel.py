@@ -324,11 +324,13 @@ def halfslope_fill(solid, cubes, out, cov, forbid, lo=0.18, hi=0.5):
     return res
 
 
-def refine_clean(shell, cavity, out, allowed, frozen, span_axis):
-    """Pattern-only skin for the clean style: an outer voxel with two exposed perpendicular faces becomes a slope
-    (normal = their sum; with the slope plane through the voxel centre a 45-degree staircase reads as one flat face),
-    three-way corners stay cubes.  On plates (span_axis >= 0) exposure along the span is ignored,
-    so every leading-edge voxel gets the same slope and sweep steps stay regular."""
+def refine_clean(shell, cavity, out, allowed, frozen, span_axis, tip=None):
+    """Pattern-only skin for the clean style.
+    Body: a voxel with two exposed perpendicular faces becomes a slope (normal = their sum, plane through the voxel
+    centre: a 45-degree staircase reads as one flat face); in the cones every ring voxel faces forward (or aft) with
+    one consistent slope, so each step is a ring of slopes.
+    Plates (span_axis >= 0): only the leading edge (exposed forward) and the tips are sloped - the top, bottom and
+    trailing edge stay flat."""
     res = {}
     near_frozen = np.zeros_like(shell)
     for d in N6:
@@ -337,45 +339,50 @@ def refine_clean(shell, cavity, out, allowed, frozen, span_axis):
     ext = {d: _shift(out, d) for d in N6}
     sol = {d: _shift(shell | ~out, d) for d in N6}       # anything but exterior air: shell, equipment, the hollow
     cav = {d: _shift(cavity, d) for d in N6}
+    tip = np.zeros_like(shell) if tip is None else tip
     for idx in zip(*np.nonzero(cand)):
         sa = int(span_axis[idx])
+        E = [d for d in N6 if ext[d][idx]]
         if sa >= 0:
-            # a plate voxel exposed along the span (a sweep step, a tip) and along the chord: slope it in the plate's
-            # plane, so swept edges read as one clean diagonal from above
-            es = [d for d in N6 if ext[d][idx] and d[sa] != 0]
-            ec = [d for d in N6 if ext[d][idx] and d[2] != 0]
-            if len(es) == 1 and len(ec) == 1:
-                back = [tuple(-x for x in es[0]), tuple(-x for x in ec[0])]
-                if all(sol[d][idx] for d in back):
-                    res[idx] = ("slope", tuple(int(a + b) for a, b in zip(es[0], ec[0])))
-                    continue
-        E = [d for d in N6 if ext[d][idx] and (sa < 0 or d[sa] == 0)]
+            es = [d for d in E if d[sa] != 0]
+            fwd = (0, 0, -1) in E
+            vert = [d for d in E if d[sa] == 0 and d[2] == 0]
+            if fwd and len(es) == 1:
+                n = tuple(a + b for a, b in zip(es[0], (0, 0, -1)))      # swept edge / tip corner: in the plane
+            elif fwd and len(vert) == 1:
+                n = tuple(a + b for a, b in zip(vert[0], (0, 0, -1)))    # leading-edge wedge
+            elif tip[idx] and len(es) == 1 and len(vert) == 1 and (0, 0, 1) not in E:
+                n = tuple(a + b for a, b in zip(es[0], vert[0]))         # rounded tip edge
+            else:
+                continue
+            nb = [tuple(-int(np.sign(v)) if k == j else 0 for k in range(3)) for j, v in enumerate(n) if v]
+            if all(sol[d][idx] for d in nb):
+                res[idx] = ("slope", tuple(int(v) for v in n))
+            continue
         if len(E) not in (2, 3):
             continue
         n = np.sum(np.array(E), 0)
         if np.count_nonzero(n) != len(E):
             continue
         back = [tuple(-x for x in d) for d in E]
-        # the faces opposite the open ones are a slope's FULL faces: shell or the sealed hollow behind them is fine
-        if any(not (sol[d][idx] or (sa < 0 and cav[d][idx])) for d in back):
-            continue
         if len(E) == 2:
-            if sa < 0:
-                free_ax = int(np.nonzero(n == 0)[0][0])
-                ok = True
-                for s_ in (1, -1):
-                    d = [0, 0, 0]
-                    d[free_ax] = s_
-                    if not sol[tuple(d)][idx] or cav[tuple(d)][idx]:
-                        ok = False                  # a slope's triangular sides must not open onto the hollow
-                if not ok:
-                    continue
-            res[idx] = ("slope", tuple(int(v) for v in n))
-        elif sa < 0 and n[2] != 0:
-            # a cone's chamfer edge (exposed X, Y and along the body): no piece matches that cut and inverted corners
-            # read as teeth, so the body's chamfer slope continues into the cone (a regular row of the same slope)
-            n2 = (int(n[0]), int(n[1]), 0)
-            ok = all(sol[d][idx] or cav[d][idx] for d in ((-n2[0], 0, 0), (0, -n2[1], 0)))
+            if any(not sol[d][idx] for d in back):
+                continue
+            free_ax = int(np.nonzero(n == 0)[0][0])
+            ok = True
+            for s_ in (1, -1):
+                d = [0, 0, 0]
+                d[free_ax] = s_
+                if not sol[tuple(d)][idx] or cav[tuple(d)][idx]:
+                    ok = False                  # a slope's triangular sides must not open onto the hollow
             if ok:
-                res[idx] = ("slope", n2)
+                res[idx] = ("slope", tuple(int(v) for v in n))
+        elif n[2] != 0:
+            # a cone ring's chamfer voxel: the same forward/aft-facing slope as its ring neighbours, toward whichever
+            # side (X or Y) the ring is wider on, so each step of the cone is one ring of slopes
+            for cand_n in ((int(n[0]), 0, int(n[2])), (0, int(n[1]), int(n[2]))):
+                nb = [tuple(-int(np.sign(v)) if k == j else 0 for k in range(3)) for j, v in enumerate(cand_n) if v]
+                if all(sol[d][idx] and not cav[d][idx] for d in nb):
+                    res[idx] = ("slope", cand_n)
+                    break
     return res
