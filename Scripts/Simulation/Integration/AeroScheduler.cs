@@ -52,33 +52,35 @@ public static class AeroScheduler
 
     private static void TickLocked()
     {
-        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        // Promote queued grids into active slots
+        // GRANTS ONLY. It used to run every queued grid's Begin / Tick / Finalize itself - on whichever grid's job
+        // thread got here first, while those grids' own jobs (in parallel) read and swapped the same surfaces, wing lists
+        // and component lists. Now each grid does its own build steps in its own job (RunMine), with the slot and the
+        // cell budget granted here.
         while (_activeRebuilds.Count < AeroConfig.MaxConcurrentRebuilds && _rebuildQueue.Count > 0)
         {
             int best = 0; float bp = float.MinValue;
-            for (int q = 0; q < _rebuildQueue.Count; q++) { float p = _rebuildQueue[q].BuildPriority; if (p > bp) { bp = p; best = q; } }
+            for (int q = 0; q < _rebuildQueue.Count; q++) { float p = _rebuildQueue[q].CachedPriority; if (p > bp) { bp = p; best = q; } }   // (its own job's cached value: never another grid's entity)
             var grid = _rebuildQueue[best];
             _rebuildQueue.RemoveAt(best);
-            grid.BeginStaggeredBuild();
+            grid.SchedBegin = true;
             _activeRebuilds.Add(grid);
         }
-
         if (_activeRebuilds.Count == 0) return;
-
-        // Distribute budget evenly across active rebuilds
         int perGrid = AeroConfig.GlobalCellBudget / _activeRebuilds.Count;
+        foreach (var grid in _activeRebuilds) System.Threading.Interlocked.Exchange(ref grid.SchedGrant, perGrid);
+    }
 
-        for (int i = _activeRebuilds.Count - 1; i >= 0; i--)
+    /// <summary>A grid's own build steps, in its own job: begin when granted a slot, then its granted cells this frame,
+    /// then finalize. (Each grid's job calls this; the work is that grid's only.)</summary>
+    internal static void RunMine(AeroGridComponent grid)
+    {
+        if (grid.SchedBegin) { grid.SchedBegin = false; grid.BeginStaggeredBuild(); }
+        int cells = System.Threading.Interlocked.Exchange(ref grid.SchedGrant, 0);
+        if (cells <= 0) return;
+        if (grid.TickStaggeredBuild(cells))
         {
-            if ((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > FrameBudgetMs) break;
-            var grid = _activeRebuilds[i];
-            bool done = grid.TickStaggeredBuild(perGrid);
-            if (done)
-            {
-                grid.FinalizeStaggeredBuild();
-                _activeRebuilds.RemoveAt(i);
-            }
+            grid.FinalizeStaggeredBuild();
+            lock (_lock) _activeRebuilds.Remove(grid);
         }
     }
 

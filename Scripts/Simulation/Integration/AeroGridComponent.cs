@@ -258,6 +258,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>BuildPriority as of this grid's last frame (the work queue reads it from its own threads).</summary>
     internal volatile float CachedPriority;
+    /// <summary>The scheduler's grants (AeroScheduler): a build slot to begin, and this frame's cell budget.</summary>
+    internal volatile bool SchedBegin;
+    internal int SchedGrant;
     /// <summary>Frames in a row this grid's recompute waited for the frame budget (AeroFrameBudget).</summary>
     internal int BudgetSkips;
 
@@ -274,6 +277,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_chunks != null && LocalUpdates) TickLocal();   // (a finished local update goes in at once, not on the next recompute)
         if (_quickTable != null) { var qt = _quickTable; _quickTable = null; if (_model.Table == null) _model.InstallForceTable(qt); }
         AeroScheduler.EnsureTicked();
+        AeroScheduler.RunMine(this);
     }
     internal string ShadowNote => _model?.InnerModel is DampedShadowedDragModel d ? $"shadow visible={d.ShadowMap.VisibleCount} shadowed={d.ShadowMap.ShadowedCount}" : "";
     internal bool HasResult;
@@ -607,6 +611,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ── Global scheduler tick (first grid each frame drives all rebuilds) ──
         long tsc = AeroCost.Start();
         AeroScheduler.EnsureTicked();
+        AeroScheduler.RunMine(this);   // (this grid's own rebuild steps, in its own job)
         AeroCost.Sched.Stop(tsc);
 
         // A grid's first build is queued even parked or out of the air (behind those that fly - BuildPriority):
