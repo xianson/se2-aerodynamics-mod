@@ -1,0 +1,69 @@
+# prefab name: face=mount cells (local axes; identity orientation)
+b71b659d-b27f-46ef-b1d0-33ef52f32981 b71b659d-b27f-46ef-b1d0-33ef52f32981_:_Vanilla\Blocks\Thrusters\Atmospheric\100\AtmosphericThruster100_Server.def: Left=4 Right=4 Up=4 Down=4
+a61fc89b-7d1f-4ec6-9897-c91640617658 a61fc89b-7d1f-4ec6-9897-c91640617658_:_Vanilla\Blocks\Thrusters\Atmospheric\1000\AtmosphericThruster1000_Server.def: Left=196 Right=196 Up=196 Down=196
+90c41d51-8ec6-4409-8c15-7faab87d804c 90c41d51-8ec6-4409-8c15-7faab87d804c_:_Vanilla\Blocks\Thrusters\Atmospheric\250\AtmosphericThruster250_Server.def: Left=16 Right=16 Up=16 Down=16
+73106bc0-a7a4-453b-bcca-528760528318 73106bc0-a7a4-453b-bcca-528760528318_:_Vanilla\Blocks\Thrusters\Atmospheric\500\AtmosphericThruster500_Server.def: Left=40 Right=40 Up=40 Down=40
+7046873e-c9fe-408c-96c8-53a7f0e62bcd 7046873e-c9fe-408c-96c8-53a7f0e62bcd_:_Vanilla\Blocks\Batteries\Battery\150\Battery150_Server.def: Backward=24 Left=24 Right=24 Up=36 Down=36
+b22450b6-ad1d-4902-a768-f54adb49516f b22450b6-ad1d-4902-a768-f54adb49516f_:_Vanilla\Blocks\Batteries\Battery\250\Battery250_Server.def: Backward=94 Left=87 Right=88 Up=100 Down=100
+3dbc1840-4e08-4829-b921-1d6c87e57848 3dbc1840-4e08-4829-b921-1d6c87e57848_:_Vanilla\Blocks\Batteries\Battery\50\Battery50_Server.def: Backward=4 Left=4 Right=4 Up=4 Down=4
+e3b5f8ef-2446-4504-83ad-8c4091ffdf2f e3b5f8ef-2446-4504-83ad-8c4091ffdf2f_:_Vanilla\Blocks\Cockpit\Cockpit\150\Cockpit150_Server.def: Forward=12 Backward=20 Left=16 Right=16 Down=20
+a029b001-36b5-4508-b05b-0223662d91a5 a029b001-36b5-4508-b05b-0223662d91a5_:_Vanilla\Blocks\ControlSeat\ControlSeat\250\ControlSeat250_Server.def: Forward=4 Left=3 Right=3 Down=28
+8342bb99-8e28-4f14-a2c1-22620b8d3e4f 8342bb99-8e28-4f14-a2c1-22620b8d3e4f_:_Vanilla\Blocks\Hinge\250\Hinge250_Server.def: Forward=36 Backward=36 Left=2 Right=2 Down=64
+0ef0218a-59f2-4aa4-9a5d-14765153176f 0ef0218a-59f2-4aa4-9a5d-14765153176f_:_Vanilla\Blocks\Hinge\50\Hinge50_Server.def: Left=2 Right=2 Down=4
+3dce6578-f7b4-4404-80b4-861fcb73602c 3dce6578-f7b4-4404-80b4-861fcb73602c_:_Vanilla\Blocks\Hinge\250\HingeHead250_Server.def: Up=16
+9edaed00-7e81-4790-b772-c5af387644c3 9edaed00-7e81-4790-b772-c5af387644c3_:_Vanilla\Blocks\Hinge\50\HingeHead50_Server.def: Up=4
+923e8dfb-95f8-45ee-aa9e-052b1e1b786a 923e8dfb-95f8-45ee-aa9e-052b1e1b786a_:_Vanilla\Blocks\Thrusters\Hydrogen\200\HydrogenThruster200_Server.def: Forward=20 Left=4 Right=4 Up=4 Down=4
+4d47a582-7afb-42c6-b79b-84fa3c143340 4d47a582-7afb-42c6-b79b-84fa3c143340_:_Vanilla\Blocks\Thrusters\Hydrogen\250\HydrogenThruster250_Server.def: Forward=84 Left=12 Right=12 Up=20 Down=20
+608317a0-81ed-4ae3-8eab-88bf6e6e0b62 608317a0-81ed-4ae3-8eab-88bf6e6e0b62_:_Vanilla\Blocks\Thrusters\Hydrogen\50\HydrogenThruster50_Server.def: Forward=4
+7088ddfe-40a8-4276-883a-54bf4bf17e85 7088ddfe-40a8-4276-883a-54bf4bf17e85_:_Vanilla\Blocks\Thrusters\Hydrogen\750\HydrogenThruster750_Server.def: Forward=756 Left=112 Right=112 Up=112 Down=112
+25f62d6e-e80f-4a28-8b92-2be2c79f117d 25f62d6e-e80f-4a28-8b92-2be2c79f117d_:_Vanilla\Blocks\Thrusters\Ion\100\IonThruster100_Server.def: Forward=4 Left=4 Right=4 Up=4 Down=4
+48b44f16-45b5-443f-9b96-3b8d87df6ed0 48b44f16-45b5-443f-9b96-3b8d87df6ed0_:_Vanilla\Blocks\Thrusters\Ion\150\IonThruster150_Server.def: Forward=24 Left=12 Right=12 Up=24 Down=24
+0da92154-43e7-4fc8-94b9-6f024a425a14 0da92154-43e7-4fc8-94b9-6f024a425a14_:_Vanilla\Blocks\Thrusters\Ion\500\IonThruster500_Server.def: Forward=100 Left=92 Right=92 Up=92 Down=92
+7e2a1bfd-1e17-4762-945d-fbac8de794b5 7e2a1bfd-1e17-4762-945d-fbac8de794b5_:_Vanilla\Blocks\Thrusters\Ion\750\IonThruster750_Server.def: Forward=600 Left=280 Right=280 Up=514 Down=514
+1df65476-693e-4cfe-87cf-563cab9bad2b 1df65476-693e-4cfe-87cf-563cab9bad2b_:_Vanilla\Blocks\Seat\Seat150_Server.def: Down=8
+d4f0ddcf-cc82-4584-8def-4097bef9a387 d4f0ddcf-cc82-4584-8def-4097bef9a387_:_Vanilla\Armors\Corner\250\Light\ArmorCornerLight250_Server.def: Forward=55 Left=55 Down=55
+c3ab4417-9428-435a-aba8-a7fde43648c0 c3ab4417-9428-435a-aba8-a7fde43648c0_:_Vanilla\Armors\Corner\50\Light\ArmorCornerLight50_Server.def: Forward=3 Left=3 Down=3
+2eacbbf2-d8fb-4a78-91dc-7b492517ef97 2eacbbf2-d8fb-4a78-91dc-7b492517ef97_:_Vanilla\Armors\Cube\250\Light\ArmorCubeLight250_Server.def: Forward=100 Backward=100 Left=100 Right=100 Up=100 Down=100
+632d7385-12b9-47a6-802a-a610d0cbd1e0 632d7385-12b9-47a6-802a-a610d0cbd1e0_:_Vanilla\Armors\Cube\50\Light\ArmorCubeLight50_Server.def: Forward=4 Backward=4 Left=4 Right=4 Up=4 Down=4
+39bdf4c8-0bf4-4f8f-8ff4-b5941767fe3e 39bdf4c8-0bf4-4f8f-8ff4-b5941767fe3e_:_Vanilla\Armors\HalfCorner\250\Light\ArmorHalfCornerLight250_Server.def: Backward=15 Right=15 Down=15
+a64f9241-ed64-4e01-af49-5f6c3b318b85 a64f9241-ed64-4e01-af49-5f6c3b318b85_:_Vanilla\Armors\HalfCorner\50\Light\ArmorHalfCornerLight50_Server.def: Backward=1 Right=1 Down=1
+5c7fa61c-6eac-490b-83b8-87b1c3124856 5c7fa61c-6eac-490b-83b8-87b1c3124856_:_Vanilla\Armors\Half\250\Light\ArmorHalfLight250_Server.def: Forward=100 Backward=100 Left=50 Right=50 Up=50 Down=50
+2394b1b6-0c49-4f44-93cd-97e9a10208a8 2394b1b6-0c49-4f44-93cd-97e9a10208a8_:_Vanilla\Armors\Half\50\Light\ArmorHalfLight50_Server.def: Forward=4 Backward=4 Left=2 Right=2 Up=2 Down=2
+5a4b7509-5a9f-4f96-a28f-41e2ff457e52 5a4b7509-5a9f-4f96-a28f-41e2ff457e52_:_Vanilla\Armors\Half_Long_Slope\250\Light\ArmorHalfLongSlope250Light_Server.def: Backward=50 Left=25 Right=25 Down=100
+4caebafa-4e5c-44a8-a579-eeec80b72028 4caebafa-4e5c-44a8-a579-eeec80b72028_:_Vanilla\Armors\Half_Long_Slope\50\Light\ArmorHalfLongSlope50Light_Server.def: Backward=2 Left=1 Right=1 Down=4
+7337a6ee-26d8-4ba1-9449-016ff3e084b1 7337a6ee-26d8-4ba1-9449-016ff3e084b1_:_Vanilla\Armors\HalfSlopeCornerInv\250\Light\ArmorHalfSlopeCornerInvertedLight250_Server.def: Forward=90 Backward=100 Left=90 Right=100 Up=90 Down=100
+d5e0c4d1-a924-40a9-ad9c-1af21fb844bb d5e0c4d1-a924-40a9-ad9c-1af21fb844bb_:_Vanilla\Armors\HalfSlopeCornerInv\50\Light\ArmorHalfSlopeCornerInvertedLight50_Server.def: Forward=4 Backward=4 Left=4 Right=4 Up=4 Down=4
+d92bf137-bc5e-454e-8742-6d4fd963550b d92bf137-bc5e-454e-8742-6d4fd963550b_:_Vanilla\Armors\HalfSlopeInv\250\Light\ArmorHalfSlopeInvertedLight250_Server.def: Forward=50 Backward=100 Left=90 Right=90 Up=50 Down=100
+df77023a-d91e-441c-8cd2-664f00baef49 df77023a-d91e-441c-8cd2-664f00baef49_:_Vanilla\Armors\HalfSlopeInv\50\Light\ArmorHalfSlopeInvertedLight50_Server.def: Forward=2 Backward=4 Left=4 Right=4 Up=2 Down=4
+b899851f-0586-4303-bcc3-ac69ced57a58 b899851f-0586-4303-bcc3-ac69ced57a58_:_Vanilla\Armors\HalfTallSlope\250\Light\ArmorHalfTallSlopeLight250_Server.def: Backward=50 Right=50 Up=55 Down=55
+f2b9cf59-186a-48e2-9a72-3792d3a14f83 f2b9cf59-186a-48e2-9a72-3792d3a14f83_:_Vanilla\Armors\HalfTallSlope\50\Light\ArmorHalfTallSlopeLight50_Server.def: Backward=2 Right=2 Up=3 Down=3
+dc5f2b7f-b9e3-433e-811b-5f0e18349c03 dc5f2b7f-b9e3-433e-811b-5f0e18349c03_:_Vanilla\Armors\Inverted_Corner\250\Light\ArmorInvCornerLight250_Server.def: Forward=100 Backward=55 Left=55 Right=100 Up=55 Down=100
+7b65e2ed-9c32-423b-9704-e2bb30351de9 7b65e2ed-9c32-423b-9704-e2bb30351de9_:_Vanilla\Armors\Inverted_Corner\50\Light\ArmorInvCornerLight50_Server.def: Forward=4 Backward=3 Left=3 Right=4 Up=3 Down=4
+eb291167-c852-4074-9b80-9f2962ec23f6 eb291167-c852-4074-9b80-9f2962ec23f6_:_Vanilla\Armors\Long_Slope_Corner_Base\250\Light\ArmorLongSlopeCornerBaseLight250_Server.def: Backward=75 Left=15 Right=55 Down=75
+c22c076d-87c1-4734-be89-7ba24d93214d c22c076d-87c1-4734-be89-7ba24d93214d_:_Vanilla\Armors\Long_Slope_Corner_Base\50\Light\ArmorLongSlopeCornerBaseLight50_Server.def: Backward=3 Left=1 Right=3 Down=3
+b8f9a980-a2a2-43c3-b8ef-2b8a164740fa b8f9a980-a2a2-43c3-b8ef-2b8a164740fa_:_Vanilla\Armors\LongSlopeCornerTip\250\Light\ArmorLongSlopeCornerTipLight250_Server.def: Backward=25 Right=15 Down=25
+409a227c-b8c9-48d5-a0d4-4067cf072c75 409a227c-b8c9-48d5-a0d4-4067cf072c75_:_Vanilla\Armors\LongSlopeCornerTip\50\Light\ArmorLongSlopeCornerTipLight50_Server.def: Backward=1 Right=1 Down=1
+5507f73d-7a63-4189-844a-f9e99d6e7102 5507f73d-7a63-4189-844a-f9e99d6e7102_:_Vanilla\Armors\LongSlopeInvertedCornerBase\250\Light\ArmorLongSlopeInvertedCornerBaseLight250_Server.def: Forward=75 Backward=100 Left=90 Right=100 Up=75 Down=100
+95303773-f404-40ad-a0eb-fb0bbb5c5c72 95303773-f404-40ad-a0eb-fb0bbb5c5c72_:_Vanilla\Armors\LongSlopeInvertedCornerBase\50\Light\ArmorLongSlopeInvertedCornerBaseLight50_Server.def: Forward=3 Backward=4 Left=4 Right=4 Up=3 Down=4
+30b734f8-b5df-497e-9b08-3da9858f5984 30b734f8-b5df-497e-9b08-3da9858f5984_:_Vanilla\Armors\LongSlopeInvertedCornerTip\250\Light\ArmorLongSlopeInvertedCornerTipLight250_Server.def: Forward=90 Backward=55 Left=25 Right=100 Up=25 Down=100
+7adc3266-0c1d-4d04-96c2-f366a5d13601 7adc3266-0c1d-4d04-96c2-f366a5d13601_:_Vanilla\Armors\LongSlopeInvertedCornerTip\50\Light\ArmorLongSlopeInvertedCornerTipLight50_Server.def: Forward=4 Backward=3 Left=1 Right=4 Up=1 Down=4
+f9efcc6c-6c76-4762-bbf0-6013ec969539 f9efcc6c-6c76-4762-bbf0-6013ec969539_:_Vanilla\Armors\Slope\250\Light\ArmorSlopeLight250_Server.def: Forward=100 Left=55 Right=55 Down=100
+69902790-3e2d-43d2-81e4-1c0b42bc7461 69902790-3e2d-43d2-81e4-1c0b42bc7461_:_Vanilla\Armors\Slope\50\Light\ArmorSlopeLight50_Server.def: Forward=4 Left=3 Right=3 Down=4
+2d05d456-856c-42ac-b1a7-a700516e9970 2d05d456-856c-42ac-b1a7-a700516e9970_:_Vanilla\Armors\SlopeTransitionBase\250\Light\ArmorSlopeTransitionBaseLight250_Server.def: Forward=55 Backward=75 Left=100 Right=25 Down=100
+e5f76e79-8058-43cb-b7ad-59b749d42780 e5f76e79-8058-43cb-b7ad-59b749d42780_:_Vanilla\Armors\SlopeTransitionBase\50\Light\ArmorSlopeTransitionBaseLight50_Server.def: Forward=3 Backward=3 Left=4 Right=1 Down=4
+3e35be30-8600-4279-903a-d41c7eceb23f 3e35be30-8600-4279-903a-d41c7eceb23f_:_Vanilla\Armors\SlopeTransitionBaseMirrored\250\Light\ArmorSlopeTransitionBaseMirroredLight250_Server.def: Forward=75 Backward=55 Left=100 Right=25 Down=100
+cbd634fc-d2b4-4b66-8d4e-32a3691a0dc6 cbd634fc-d2b4-4b66-8d4e-32a3691a0dc6_:_Vanilla\Armors\SlopeTransitionBaseMirrored\50\Light\ArmorSlopeTransitionBaseMirroredLight50_Server.def: Forward=3 Backward=3 Left=4 Right=1 Down=4
+2c89ac7d-d441-4608-9b5c-7803d9947596 2c89ac7d-d441-4608-9b5c-7803d9947596_:_Vanilla\Armors\SlopeTransition\250\Light\ArmorSlopeTransitionLight250_Server.def: Backward=75 Left=25 Right=55 Down=100
+637e2545-530c-4128-9f0f-c6945af04b79 637e2545-530c-4128-9f0f-c6945af04b79_:_Vanilla\Armors\SlopeTransition\50\Light\ArmorSlopeTransitionLight50_Server.def: Backward=3 Left=1 Right=3 Down=4
+f5264d83-66c6-4c42-b3f3-ef362d031d92 f5264d83-66c6-4c42-b3f3-ef362d031d92_:_Vanilla\Armors\SlopeTransitionMirrored\250\Light\ArmorSlopeTransitionMirroredLight250_Server.def: Backward=75 Left=55 Right=25 Down=100
+bf4f6b33-271e-41cc-9d66-60359e957590 bf4f6b33-271e-41cc-9d66-60359e957590_:_Vanilla\Armors\SlopeTransitionMirrored\50\Light\ArmorSlopeTransitionMirroredLight50_Server.def: Backward=3 Left=3 Right=1 Down=4
+d1267746-227e-4c6a-9444-25f0c54e935b d1267746-227e-4c6a-9444-25f0c54e935b_:_Vanilla\Armors\SlopeTransitionTip\250\Light\ArmorSlopeTransitionTipLight250_Server.def: Backward=50 Left=15 Right=25 Down=75
+2d47c876-61aa-4d10-8b33-b3f70a3e8a7c 2d47c876-61aa-4d10-8b33-b3f70a3e8a7c_:_Vanilla\Armors\SlopeTransitionTip\50\Light\ArmorSlopeTransitionTipLight50_Server.def: Backward=2 Left=1 Right=1 Down=3
+2923d0bb-7dbb-49fe-9698-ca2645dfb3d8 2923d0bb-7dbb-49fe-9698-ca2645dfb3d8_:_Vanilla\Armors\SlopeTransitionTipMirrored_New\250\Light\ArmorSlopeTransitionTipMirroredLight250_Server.def: Backward=50 Left=25 Right=15 Down=75
+50bc7988-1eab-4940-93e9-cb5ea25f4789 50bc7988-1eab-4940-93e9-cb5ea25f4789_:_Vanilla\Armors\SlopeTransitionTipMirrored_New\50\Light\ArmorSlopeTransitionTipMirroredLight50_Server.def: Backward=2 Left=1 Right=1 Down=3
+581656a1-3a5d-4ea2-b037-937c101f8dee 581656a1-3a5d-4ea2-b037-937c101f8dee_:_Vanilla\Armors\WideHalfCornerBase\250\Light\ArmorWideHalfCornerBaseLight250_Server.def: Forward=50 Backward=25 Left=25 Right=50 Up=55 Down=100
+0c05f434-93f5-416c-a3af-d7d3466ef452 0c05f434-93f5-416c-a3af-d7d3466ef452_:_Vanilla\Armors\WideHalfCornerBase\50\Light\ArmorWideHalfCornerBaseLight50_Server.def: Forward=2 Backward=1 Left=1 Right=2 Up=3 Down=4
+49c0abe8-bd20-4e1c-9ce6-74aa494433a8 49c0abe8-bd20-4e1c-9ce6-74aa494433a8_:_Vanilla\Armors\WideHalfCornerTip\250\Light\ArmorWideHalfCornerTipLight250_Server.def: Backward=25 Right=25 Down=55
+a99b9a31-b6e6-4404-b041-c98454a61682 a99b9a31-b6e6-4404-b041-c98454a61682_:_Vanilla\Armors\WideHalfCornerTip\50\Light\ArmorWideHalfCornerTipLight50_Server.def: Backward=1 Right=1 Down=3
+7aa9500f-f6b9-43c9-b6ea-8a7d8221b821 7aa9500f-f6b9-43c9-b6ea-8a7d8221b821_:_Vanilla\Armors\WideHalfSlope\250\Light\ArmorWideHalfSlopeLight250_Server.def: Backward=50 Left=15 Right=15 Down=50
+0c13bfc8-6484-4862-9ebf-faa6953dea07 0c13bfc8-6484-4862-9ebf-faa6953dea07_:_Vanilla\Armors\WideHalfSlope\50\Light\ArmorWideHalfSlopeLight50_Server.def: Backward=2 Left=1 Right=1 Down=2

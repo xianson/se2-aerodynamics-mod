@@ -174,6 +174,9 @@ public static class AeroEntryFx
         if (TestSpeed > 0f) { vel = WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed; density = MathF.Max(density, 1.2f); }
         float extS = -1f;
         if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extS = es; }
+        // (a railed grid braking through another mod's band is in vacuum as far as the game is concerned: density 0 - it
+        //  published nothing and drew no plasma. The source's strength stands for the air: published regardless)
+        if (extS > 0f) density = MathF.Max(density, 0.01f);
         float speed = vel.Length();
         if (speed < 1f || density <= 0f)
         {
