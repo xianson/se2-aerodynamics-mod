@@ -122,7 +122,9 @@ public partial class AeroGridComponent
         }
 
         // ── Clear stale override values on first frame (persisted from save) ──
-        if (aero._simFrameCount == 1)
+        // Only for the legacy offset-thrust path (ThrustTorque off), which writes overrides itself: with the default
+        // ThrustTorque nothing of ours is in them, and this wiped the PLAYER's terminal overrides on every load.
+        if (aero._simFrameCount == 1 && !ThrustTorque.Enabled)
         {
             // Clear per-thruster ThrusterOverrideData
             for (int i = 0; i < aero._thrusterCache.Count; i++)
