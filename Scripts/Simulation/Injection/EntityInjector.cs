@@ -7,6 +7,10 @@ namespace AeroMod;
 [DefinitionPostProcessor(ForceInstantiation = true)]
 public class EntityInjector : SimpleDefinitionPostProcessor<PrefabDefinition>
 {
+    /// <summary>Inject AeroFlameComponent into client thrusters (off: testing whether its presence alone darkens the game's
+    /// thruster glow - reported 2026-10-04 with the flame override already off).</summary>
+    public static bool InjectFlames = false;
+
     public override void PostProcess(PrefabDefinition definition)
     {
         InjectAeroComponents.Please(definition);
@@ -75,7 +79,7 @@ public class InjectAeroComponents : Injections
             _thrusterCount++;
         }
 
-        if (hasFlame)
+        if (hasFlame && EntityInjector.InjectFlames)
         {
             Add(entity, typeof(AeroFlameComponent));
             if (_flameCount < 3)

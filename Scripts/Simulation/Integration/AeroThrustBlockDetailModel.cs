@@ -19,7 +19,10 @@ namespace AeroMod;
 /// <summary>
 /// Terminal slider for per-thruster attitude authority.
 /// </summary>
-[BlockDetailProvider]
+// NOT a [BlockDetailProvider] any more: the control panel's streamed UI translates every detail model through the
+// replication mapping (ObservableObjectReplicationSessionComponent.TranslateLocalToRemote), which a mod's model is never
+// in ([Replicate] is not whitelisted) - selecting a thruster in the control panel crashed the game (KeyNotFoundException
+// 'AeroMod.AeroThrustBlockDetailModel', 2026-10-04). Kept for when mods can replicate; the slider tuned the old system.
 public class AeroThrustBlockDetailModel : BlockDetailModel
 {
     [Keen.VRage.DCS.Annotations.Component]
