@@ -66,6 +66,8 @@ public partial class AeroGridComponent
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
             density = air.Density;
+        // (above the game's air - it stops dead at the generator's affect distance - aero's thin upper tail: AtmosphereTail)
+        density = AtmosphereProbe.WithTail(aero.Data.GetWorldTransform().Position, density);
         if (aero.IsServerScene)
         {
             if (!AeroSettings.SawServer) AeroSettings.SawServer = true;

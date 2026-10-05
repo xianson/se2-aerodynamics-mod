@@ -239,14 +239,16 @@ public static class AeroApi
         return true;
     }
 
-    /// <summary>The air an entity is in, exactly as the game gave it this tick (its AirData: grids, characters - any
-    /// simulated entity in an atmosphere), with aero's pressure, temperature and speed of sound. False: the entity
-    /// carries no air data (not simulated here, or never in an atmosphere).</summary>
+    /// <summary>The air an entity is in as aero flies it: the game's (its AirData, this tick: grids, characters - any
+    /// simulated entity in an atmosphere) or, above where the game's air stops, aero's thin upper tail (AtmosphereTail),
+    /// with aero's pressure, temperature and speed of sound. False: no air data and no tail here.</summary>
     public static bool TryGetAtmosphere(Keen.VRage.DCS.Components.Entity entity, out float density, out float pressure, out float temperature, out float speedOfSound)
     {
         density = pressure = temperature = speedOfSound = 0f;
-        if (entity == null || !PhysicsHack.Alive(entity.Data) || !entity.Data.TryGet<AirData>(out var air)) return false;
-        density = air.Density;
+        if (entity == null || !PhysicsHack.Alive(entity.Data)) return false;
+        bool has = entity.Data.TryGet<AirData>(out var air);
+        density = AtmosphereProbe.WithTail(entity.Data.GetWorldTransform().Position, has ? air.Density : 0f);
+        if (!has && density <= 0f) return false;
         AtmosphereAtDensity(density, out pressure, out temperature, out speedOfSound);
         return true;
     }

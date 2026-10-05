@@ -76,7 +76,8 @@ internal static class AtmosphereProbe
         return _ok;
     }
 
-    /// <summary>The density at a world point (the engine's sum over generators). False: no generator list (Why).</summary>
+    /// <summary>The density at a world point (the engine's sum over generators, with the upper tail: AtmosphereTail).
+    /// False: no generator list (Why).</summary>
     internal static bool DensityAt(in Vector3D p, out float density)
     {
         density = 0f;
@@ -86,10 +87,18 @@ internal static class AtmosphereProbe
         {
             var g = gens[i];
             double d = Vector3D.Distance(p, g.at);
-            if (d >= g.affect) continue;
-            density += d <= g.constant ? g.density : (float)(g.density / (g.affect - g.constant) * (g.affect - d));
+            if (d >= AtmosphereTail.Reach(g.constant, g.affect)) continue;
+            density += AtmosphereTail.Density(d, g.constant, g.affect, g.density);   // (the game's law, with aero's upper tail)
         }
         return true;
+    }
+
+    /// <summary>The air aero flies a grid through: the game's density (AirData) or, where the generators' upper tails
+    /// reach farther (AtmosphereTail), theirs - never less than the game's. Any thread.</summary>
+    internal static float WithTail(in Vector3D p, float gameDensity)
+    {
+        if (!AtmosphereTail.Enabled || _gens.Length == 0) return gameDensity;
+        return DensityAt(p, out float d) ? MathF.Max(gameDensity, d) : gameDensity;
     }
 
     /// <summary>The full state at a density (aero's own model: SE2 gives density only).</summary>

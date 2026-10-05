@@ -191,6 +191,35 @@ static partial class Program
             TCheck(diff < 1e-5f, $"a table builder reused after a ship with the same face count ({alongZ.Surface.FaceCount} / {alongX.Surface.FaceCount}): the same table as a fresh one (difference {diff * 100f:F3}%; head-on force {a.Force.Length():F0} vs {b.Force.Length():F0} N)");
         }
 
+        // 7. the air's upper tail (AtmosphereTail): a Verdure-like generator - full density to 60 km, the game's linear fade
+        //    to zero at 66 km (0.11 kg/m3 per km, as measured in game)
+        {
+            float c = 60000f, a = 66000f, rho = 0.67f;
+            float k = rho / (a - c), h = AtmosphereTail.ScaleFraction * (a - c), d1 = a - h;
+            bool was = AtmosphereTail.Enabled;
+            AtmosphereTail.Enabled = false;
+            float off6 = AtmosphereTail.Density(a - 1000, c, a, rho), offTop = AtmosphereTail.Density(a + 100, c, a, rho);
+            AtmosphereTail.Enabled = true;
+            TCheck(MathF.Abs(off6 - k * 1000) < 1e-4f && offTop == 0f, $"air tail off: the game's linear fade exactly ({off6:F4} kg/m3 1 km inside, none past it)");
+            bool inside = true, never = true, down = true; float prev = float.MaxValue;
+            for (double d = c - 1000; d < a + 20000; d += 50)
+            {
+                float lin = d <= c ? rho : d < a ? (float)(k * (a - d)) : 0f, t = AtmosphereTail.Density(d, c, a, rho);
+                if (d <= d1 && MathF.Abs(t - lin) > 1e-5f) inside = false;
+                if (t < lin - 1e-6f) never = false;
+                if (d > c && t > prev + 1e-7f) down = false;
+                prev = t;
+            }
+            TCheck(inside, "air tail: the game's density unchanged inside its tangent point");
+            TCheck(never, "air tail: never less air than the game's");
+            TCheck(down, "air tail: thinner every step outward");
+            float e = 1f, lo = AtmosphereTail.Density(d1 - e, c, a, rho), hi = AtmosphereTail.Density(d1 + e, c, a, rho), at = AtmosphereTail.Density(d1, c, a, rho);
+            TCheck(MathF.Abs(at - k * h) < 1e-4f && MathF.Abs((hi - lo) / (2 * e) + k) < 0.01f * k, $"air tail: joins the fade without a kink (value {at:F4} = {k * h:F4}, slope {(hi - lo) / (2 * e) * 1000:F4} per km = {-k * 1000:F4})");
+            TCheck(AtmosphereTail.Density(AtmosphereTail.Reach(c, a) + 1, c, a, rho) == 0f, "air tail: none past its reach");
+            Console.WriteLine($"      air tail, Verdure-like (game air ends 6 km up): {AtmosphereTail.Density(a, c, a, rho):F4} kg/m3 at 6 km, {AtmosphereTail.Density(a + 3450, c, a, rho):F4} at 9.45 km (the planet frame's border), {AtmosphereTail.Density(a + 6000, c, a, rho):F5} at 12 km; reach {(AtmosphereTail.Reach(c, a) - c) / 1000:F1} km up");
+            AtmosphereTail.Enabled = was;
+        }
+
         // 3. the centre of pressure inside the hull, real ships, random directions
         foreach (var name in realShips ? Directory.GetFiles(dataDir, "*.boxes").Select(Path.GetFileNameWithoutExtension).ToArray() : new[] { "bluefighter", "pelican" })
         {
