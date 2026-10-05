@@ -5,7 +5,7 @@ using AeroMod;
 // one block's occupied-cell box per line, 0.25 m cells), offline. Per ship: the background build, stage by stage, as
 // the game runs it; then the per-frame force computation, timed over many flow directions - the number that decides
 // how many big grids fit in a frame. Run: dotnet run -c Release [ship ...]
-static class Program
+static partial class Program
 {
     static string dataDir;
     static int? ForceScale;
@@ -489,6 +489,7 @@ static class Program
     static int Main(string[] args)
     {
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
+        if (Environment.GetEnvironmentVariable("OLDLOOP") != null) DampedShadowedDragModel.FaceLoopMatchesTable = false;   // (A/B: the older per-frame loop)
         var names = args.Length > 0 ? args : Directory.Exists(dataDir) ? Directory.GetFiles(dataDir, "*.boxes").Select(Path.GetFileNameWithoutExtension).ToArray() : Array.Empty<string>();
         if (names.Length == 0) { Console.WriteLine("AeroBench: no ship data (Tests/data/*.boxes) - skipped, 0/0 passed"); return 0; }
 
@@ -497,7 +498,7 @@ static class Program
         if (args.Length > 0 && args[0] == "gate")
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships
-            int fails = known;
+            int fails = known + TorqueChecks(atmo, false);
             foreach (var name in new[] { "bluefighter", "pelican" })
             {
                 var path = Path.Combine(dataDir, name + ".boxes");
@@ -546,6 +547,102 @@ static class Program
             }
             Console.WriteLine($"AeroBench: {(fails == 0 ? "1/1 passed" : fails + " FAILED")}");
             return fails == 0 ? 0 : 1;
+        }
+        if (args.Length > 0 && args[0] == "gamecache")
+        {
+            // gamecache NAME: the force table the GAME saved for this shape (%TEMP%\AeroMod\tables, its key from the blocks)
+            // against one built here from the same blocks - a hull dumped from the game (flightdump: NAME_game.boxes)
+            string comArg = args.Length > 2 && args[2].Contains(',') ? args[2] : null;
+            foreach (var name in args.Skip(1).Where(x => !x.Contains(',')).ToList())
+            {
+                var boxes = LoadBoxes(Path.Combine(dataDir, name + ".boxes"));
+                var ship = Build(name, boxes);
+                var dsm = (DampedShadowedDragModel)ship.Model.InnerModel;
+                var phys = new FacePhysics(dsm);
+                string key = AeroTableCache.Key(boxes, BlockSize, SnapshotGridAccessor.CellScale(BlockSize), phys);
+                if (Environment.GetEnvironmentVariable("WANTKEY") is string wk)
+                    foreach (float bs in new[] { 2.5f, 0.5f, 0.25f, 1f, 5f })
+                        for (int cs = 1; cs <= 8; cs++)
+                            if (AeroTableCache.Key(boxes, bs, cs, phys) == wk) Console.WriteLine($"   the game's key: block size {bs}, cell scale {cs} (here: {BlockSize}, {SnapshotGridAccessor.CellScale(BlockSize)})");
+                bool found = AeroTableCache.TryLoad(key, phys, out var saved, out _, out _);
+                if (!found && comArg != null)
+                {
+                    // the game's key differs (its settings): the saved table built about this centre of mass (gamecache NAME x,y,z)
+                    var c = comArg.Split(',').Select(float.Parse).ToArray(); var want = new Vector3(c[0], c[1], c[2]);
+                    foreach (var f in Directory.GetFiles(Path.Combine(Path.GetTempPath(), "AeroMod", "tables"), "*.bin").OrderByDescending(File.GetLastWriteTime).Take(200))
+                    {
+                        var k = Path.GetFileNameWithoutExtension(f);
+                        if (AeroTableCache.TryLoad(k, phys, out var t, out _, out _) && (t.BuildCom - want).Length() < 0.01f) { saved = t; found = true; key = k + " (by centre of mass, " + File.GetLastWriteTime(f) + ")"; break; }
+                    }
+                }
+                Console.WriteLine($"{name}: key {key}, saved table {(found ? "found" : "NOT found")}{(found ? $", built about {saved.BuildCom}" : "")}");
+                var fresh = dsm.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, found ? saved.BuildCom : ship.Com);
+                {
+                    // as the GAME builds it: one pooled builder (RentTableBuilder) that first built another ship's table
+                    // (POOL=other ship), then this one - the same steps as AeroGridComponent's build
+                    var builder = new DampedShadowedDragModel();
+                    void GameSteps(Ship sh, Vector3 com, out ForceTable quick, out ForceTable full, out int nChunks)
+                    {
+                        var tmp = new LiftingSurfaceModel(builder, liftModel: new CompressibleWingModel());
+                        tmp.InstallWings(sh.Model.Wings?.ToList() ?? new List<LiftingSurface>());
+                        tmp.BuildFaceOverrideIndex(sh.Surface, new List<IAeroBlockComponent>());
+                        tmp.ExcludeWingFaces(builder, sh.Surface.Version);
+                        quick = builder.BuildForceTable(sh.Grid, sh.Surface, sh.Manifold, com, n: 4, nj: 2);
+                        var ch = new ChunkedTable(8, 8f, new FacePhysics(builder));
+                        full = builder.BuildForceTable(sh.Grid, sh.Surface, sh.Manifold, com, chunks: ch);
+                        nChunks = ch.ChunkCount;
+                    }
+                    if (Environment.GetEnvironmentVariable("POOL") is string other)
+                    {
+                        float bs0 = BlockSize;
+                        var ob = LoadBoxes(Path.Combine(dataDir, other + ".boxes")); var os = Build(other, ob);
+                        GameSteps(os, os.Com, out _, out _, out int oc);
+                        Console.WriteLine($"   pooled builder first built {other} ({os.Surface.FaceCount} faces, version {os.Surface.Version}, {oc} chunks); this ship: {ship.Surface.FaceCount} faces, version {ship.Surface.Version}");
+                        BlockSize = bs0;
+                    }
+                    GameSteps(ship, found ? saved.BuildCom : ship.Com, out var gq, out var gf, out int gc);
+                    var gx = new AeroContext(ship.Grid, ship.Surface, -Vector3.UnitZ * 100f, atmo, found ? saved.BuildCom : ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold);
+                    Console.WriteLine($"   the game's steps, pooled builder: {gc} chunks, forward F {gf.Evaluate(gx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining).Force / 1000f} kN (quick table {gq.Evaluate(gx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining).Force / 1000f} kN)");
+                }
+                {
+                    // built as the game builds it (with chunks): the same table?
+                    var ch = new ChunkedTable(8, 8f, phys);
+                    var withChunks = dsm.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, found ? saved.BuildCom : ship.Com, chunks: ch);
+                    var cx = new AeroContext(ship.Grid, ship.Surface, -Vector3.UnitZ * 100f, atmo, found ? saved.BuildCom : ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold);
+                    Console.WriteLine($"   built with chunks ({ch.ChunkCount}): forward F {withChunks.Evaluate(cx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining).Force / 1000f} kN");
+                }
+                if (found && AeroTableCache.TryLoad(key.Split(' ')[0], phys, out var st, out var sc, out _) && sc != null)
+                {
+                    // the saved table against the sum of its own chunks' shares (local updates keep the two equal), and that sum
+                    // against the fresh table - which drifted?
+                    int slots = sc.Slots, nn = sc.N; double worstSelf = 0, worstFresh = 0; int worstSlot = -1;
+                    for (int sl = 0; sl < slots; sl++)
+                    {
+                        int face = sl / ((nn + 1) * (nn + 1)), rr = sl % ((nn + 1) * (nn + 1));
+                        var e = st.At(face, rr / (nn + 1), rr % (nn + 1)); var fr = fresh.At(face, rr / (nn + 1), rr % (nn + 1));
+                        double sum0 = 0, tab0 = e[2], fre0 = fr[2];
+                        for (int c = 0; c < sc.ChunkCount; c++) if (sc.HasShare(c)) sum0 += sc.GetShare(c)[sl * ForceTable.Stride + 2];
+                        double scale = Math.Max(1e-3, Math.Abs(fre0));
+                        if (Math.Abs(tab0 - sum0) / scale > worstSelf) { worstSelf = Math.Abs(tab0 - sum0) / scale; worstSlot = sl; }
+                        worstFresh = Math.Max(worstFresh, Math.Abs(sum0 - fre0) / scale);
+                    }
+                    Console.WriteLine($"   saved: {sc.ChunkCount} chunks; its Fz vs the sum of its chunks: worst {worstSelf * 100:F0}% (slot {worstSlot}); the chunks' sum vs fresh: worst {worstFresh * 100:F0}%");
+                }
+                foreach (var d in new[] { -Vector3.UnitZ, Vector3.UnitZ, -Vector3.UnitY, Vector3.UnitY, Vector3.UnitX, -Vector3.UnitX })
+                {
+                    var ctx = new AeroContext(ship.Grid, ship.Surface, d * 100f, atmo, found ? saved.BuildCom : ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold);
+                    var b = fresh.Evaluate(ctx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining);
+                    string s = found ? $" | saved: F {saved.Evaluate(ctx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining).Force / 1000f} kN T {saved.Evaluate(ctx, dsm.SubsonicLimit, dsm.SupersonicLimit, dsm.Streamlining).Torque / 1000f} kN m" : "";
+                    Console.WriteLine($"   travel {d}: fresh F {b.Force / 1000f} kN T {b.Torque / 1000f} kN m{s}");
+                }
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "torque")
+        {
+            int tf = TorqueChecks(atmo, true);
+            Console.WriteLine($"AeroBench torque: {(tf == 0 ? "all passed" : tf + " FAILED")}");
+            return tf == 0 ? 0 : 1;
         }
         if (args.Length > 0 && args[0] == "strain")
         {

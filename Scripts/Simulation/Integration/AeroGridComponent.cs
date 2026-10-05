@@ -1375,7 +1375,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
         var manifold = _buildManifold;
         var detector = _model.Detector;
         float blockSize = _blockSize;
-        var tableCom = _lastComLocal;
+        // The centre of mass the table's rotation map (and PredictHullForces' torque) is taken about: the grid's own, now.
+        // (It was the last one seen in air - (0,0,0) for every table built before the grid met air: in space, or on
+        //  entering gravity. Turning was then modelled about the grid's origin - 72 m from the Hercules' centre of mass - and
+        //  the air's response to rotation was nonsense. Tests/ThrustTests on dumped ships)
+        var tableCom = PhysicsHack.TryGetMassProperties(Data, out _, out var massCom) ? massCom : _lastComLocal;
         int cellScale = SnapshotGridAccessor.CellScale(blockSize);
         var cellGeo = SnapshotGridAccessor.CellGeometry(cellScale);
         _cellScale = cellScale;

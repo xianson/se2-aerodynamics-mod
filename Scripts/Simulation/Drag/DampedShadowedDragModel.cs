@@ -25,7 +25,7 @@ public class DampedShadowedDragModel : IAeroDragModel
         if (map == null) return null;
         var old = _shadowMap;
         _shadowMap = map;
-        _lastShadowVersion = -1;   // bake visibility from it on the next compute
+        _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;   // bake visibility from it on the next compute
         return old;
     }
 
@@ -155,7 +155,7 @@ public class DampedShadowedDragModel : IAeroDragModel
             for (int i = 0; i < n; i++)
                 if (!manifold.IsHull(i)) _cpOut[i] = 0f;
 
-        _lastShadowVersion = -1;
+        _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;
     }
 
     private List<bool> _excluded;
@@ -166,7 +166,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     {
         _excluded = excluded;
         _excludedVersion = surfaceVersion;
-        _lastShadowVersion = -1;   // re-bake with it
+        _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;   // re-bake with it
     }
 
     /// <summary>One table worker's buffers: its faces' reached areas and its depth buffer.</summary>
@@ -179,6 +179,9 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// pass over the faces per direction - the force table bakes every one of its directions this way (blending the
     /// shadow map's 26 directions made the force swing 3x across 10 degrees at the blend's kinks).
     /// </summary>
+    /// <summary>Faces more nearly parallel to the flow than this (|cos|) are never shadowed (BakeOcclusion).</summary>
+    public const float GrazingCos = 0.05f;
+
     private void BakeOcclusion(Vector3 v, TableWork work)
     {
         var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
@@ -215,15 +218,23 @@ public class DampedShadowedDragModel : IAeroDragModel
             ref float z = ref zb[iw * W + iu];
             if (d > z) z = d;
         }
+        var NX = CollectionsMarshal.AsSpan(_nx); var NY = CollectionsMarshal.AsSpan(_ny); var NZ = CollectionsMarshal.AsSpan(_nz);
         for (int gi = 0; gi < total; gi++)
         {
             int oi = OI[gi];
             if (oi < 0) { VA[gi] = 0f; continue; }
             if (oi < exLen && excl[oi]) { VA[gi] = 0f; continue; }
             float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            // A face's own surface cannot shadow it: across one pixel its plane's depth changes by Pix tan(theta) (theta: from
+            // facing the flow), so that much more tolerance. A grazing face (nearly parallel to the flow) is never shadowed.
+            // (With the flat 0.4 m only the first 0.4 m of a side or a fin along the flow was visible - the rest hidden by
+            //  its own faces: almost no side force at small angles, no rotation damping. Tests/AeroBench: torque)
+            float c = MathF.Abs(NX[gi] * v.X + NY[gi] * v.Y + NZ[gi] * v.Z);
+            if (c < GrazingCos) { VA[gi] = AR[gi]; continue; }
             int iu = (int)((px * e1.X + py * e1.Y + pz * e1.Z - umin) * inv), iw = (int)((px * e2.X + py * e2.Y + pz * e2.Z - wmin) * inv);
             float d = px * v.X + py * v.Y + pz * v.Z;
-            VA[gi] = d >= zb[iw * W + iu] - Tol ? AR[gi] : 0f;
+            float tol = Tol + Pix * MathF.Sqrt(MathF.Max(0f, 1f - c * c)) / c;
+            VA[gi] = d >= zb[iw * W + iu] - tol ? AR[gi] : 0f;
         }
     }
 
@@ -268,7 +279,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     {
         foreach (var l in new List<List<float>> { _px, _py, _pz, _nx, _ny, _nz, _area, _visArea, _cpGrouped, _cpOut }) { l.Clear(); l.TrimExcess(); }
         _origIndex.Clear(); _origIndex.TrimExcess();
-        _faceCount = 0; _lastSurfaceVersion = -1; _lastShadowVersion = -1;
+        _faceCount = 0; _lastSurfaceVersion = -1; _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;
         _work0.Vis = System.Array.Empty<float>(); _work0.Z = System.Array.Empty<float>();
     }
 
@@ -361,7 +372,7 @@ public class DampedShadowedDragModel : IAeroDragModel
                         e[0 * 3 + axis] = dt.X; e[1 * 3 + axis] = dt.Y; e[2 * 3 + axis] = dt.Z;
                     }
                 }
-        _lastShadowVersion = -1;
+        _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;
         chunks?.Seal();
         table.BuildMs = sw.Elapsed.TotalMilliseconds;
         return table;
@@ -451,13 +462,13 @@ public class DampedShadowedDragModel : IAeroDragModel
 
 
     /// <summary>The exact face forces at this flight state by SumFaces, rotation included: what the table approximates.</summary>
-    public AeroResult ExactTableValue(in AeroContext ctx, ForceTable shape)
+    public AeroResult ExactTableValue(in AeroContext ctx, ForceTable shape, bool bake = true, TableWork work = null)
     {
         if (ctx.Speed < 0.01f) return default;
-        var one = new ForceTable(1, 1);
+        var one = _oneEntry ??= new ForceTable(1, 1);
         var vHat = ctx.Velocity / ctx.Speed;
         Span<float> e = stackalloc float[ForceTable.Stride];
-        SumFaces(ctx.GridAccessor, ctx.SurfaceCache, vHat, e, ctx.AngularVelocity / ctx.Speed, ctx.CenterOfMass);
+        SumFaces(ctx.GridAccessor, ctx.SurfaceCache, vHat, e, ctx.AngularVelocity / ctx.Speed, ctx.CenterOfMass, bake, work);
         for (int f = 0; f < 6; f++) for (int i = 0; i <= 1; i++) for (int j = 0; j <= 1; j++) e.CopyTo(one.At(f, i, j));
         _lastShadowVersion = -1;
         var c = new AeroContext(ctx.GridAccessor, ctx.SurfaceCache, ctx.Velocity, ctx.Atmosphere, ctx.CenterOfMass, ctx.BlockSize, Vector3.Zero, ctx.GroundHeight, ctx.Manifold);
@@ -466,8 +477,27 @@ public class DampedShadowedDragModel : IAeroDragModel
 
     // ─── Compute ────────────────────────────────────────────────────
 
+    /// <summary>The face loop (a grid without its force table yet) computes exactly what the table would - SumFaces, its
+    /// rotation included (ExactTableValue). Off: the older per-frame loop (its own rules: full base suction on every face
+    /// facing away, sides classed by the travel alone - no rotation damping in straight flight, and forces that jumped when
+    /// the table arrived). Tests/AeroBench: torque.</summary>
+    public static bool FaceLoopMatchesTable = true;
+    private Vector3 _loopBakeDir; private int _loopBakeVersion = int.MinValue; private ForceTable _oneEntry; private readonly TableWork _loopWork = new TableWork();
+
     public AeroResult Compute(in AeroContext ctx)
     {
+        if (FaceLoopMatchesTable)
+        {
+            if (ctx.Speed < 0.01f || ctx.Atmosphere.Density < 1e-8) return default;
+            EnsureSoA(ctx.SurfaceCache.Faces, ctx.SurfaceCache.Version, ctx.Manifold);
+            _shadowMap.Manifold = ctx.Manifold;
+            // (what the air reaches, baked again only when the travel has turned 0.5 deg or the surface changed: the bake
+            //  was half the frame on Red Ship - 7.0 ms against the older loop's 3.7)
+            var vHat0 = ctx.Velocity / ctx.Speed;
+            bool bake = _loopBakeVersion != _lastSurfaceVersion || Vector3.Dot(vHat0, _loopBakeDir) < 0.99996f;
+            if (bake) { _loopBakeDir = vHat0; _loopBakeVersion = _lastSurfaceVersion; }
+            return ExactTableValue(ctx, null, bake, _loopWork);   // (its own buffers: a table building in the background bakes into _work0)
+        }
         float speed = ctx.Speed;
         if (speed < 0.01f || ctx.Atmosphere.Density < 1e-8)
             return default;
@@ -976,13 +1006,19 @@ public class DampedShadowedDragModel : IAeroDragModel
         return est * (1.5f - 0.5f * x * est * est);
     }
 
+    // Exactly `size` long: the face loops run to the lists' Count. (They only grew: a model that had held a bigger grid's
+    // faces kept them past the new grid's end - live, _origIndex >= 0 - and every table it built afterwards summed the
+    // old ship's faces too. The table builders are pooled across grids: the Hercules flew on part of a jetliner, eight
+    // times its drag, its centre of pressure 50 m outside it. Tests/AeroBench: gamecache, POOL=)
     private static void EnsureListSize(List<float> list, int size)
     {
+        if (list.Count > size) list.RemoveRange(size, list.Count - size);
         while (list.Count < size) list.Add(0f);
     }
 
     private static void EnsureListSizeI(List<int> list, int size)
     {
+        if (list.Count > size) list.RemoveRange(size, list.Count - size);
         while (list.Count < size) list.Add(0);
     }
 }
