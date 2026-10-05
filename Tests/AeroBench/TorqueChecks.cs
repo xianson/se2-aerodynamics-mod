@@ -175,6 +175,22 @@ static partial class Program
             TCheck(worst < 1e-5f, $"a table builder reused after a bigger ship: the same table as a fresh one (worst difference {worst * 100f:F3}%)");
         }
 
+        // 6b. ... and after a ship with the SAME face count (a brick along Z, then the same brick along X: one face count,
+        //     both surfaces at version 1) - the builder took "same count, same version" for "same surface" and kept the
+        //     first brick's faces
+        {
+            var alongZ = Build("brickZ", new List<(Vector3I, Vector3I)> { (Vector3I.Zero, new Vector3I(15, 15, 39)) });
+            var alongX = Build("brickX", new List<(Vector3I, Vector3I)> { (Vector3I.Zero, new Vector3I(39, 15, 15)) });
+            var shared = new DampedShadowedDragModel();
+            shared.BuildForceTable(alongZ.Grid, alongZ.Surface, alongZ.Manifold, alongZ.Com, n: 4, nj: 2);
+            var reused = shared.BuildForceTable(alongX.Grid, alongX.Surface, alongX.Manifold, alongX.Com, n: 4, nj: 2);
+            var fresh = new DampedShadowedDragModel().BuildForceTable(alongX.Grid, alongX.Surface, alongX.Manifold, alongX.Com, n: 4, nj: 2);
+            var c = new AeroContext(alongX.Grid, alongX.Surface, -Vector3.UnitZ * 100f, atmo, alongX.Com, BlockSize, Vector3.Zero, -1f, alongX.Manifold);
+            var a = reused.Evaluate(c, 0.8f, 1.2f, 0f); var b = fresh.Evaluate(c, 0.8f, 1.2f, 0f);
+            float diff = ((a.Force - b.Force).Length() + (a.Torque - b.Torque).Length()) / MathF.Max(1f, b.Force.Length());
+            TCheck(diff < 1e-5f, $"a table builder reused after a ship with the same face count ({alongZ.Surface.FaceCount} / {alongX.Surface.FaceCount}): the same table as a fresh one (difference {diff * 100f:F3}%; head-on force {a.Force.Length():F0} vs {b.Force.Length():F0} N)");
+        }
+
         // 3. the centre of pressure inside the hull, real ships, random directions
         foreach (var name in realShips ? Directory.GetFiles(dataDir, "*.boxes").Select(Path.GetFileNameWithoutExtension).ToArray() : new[] { "bluefighter", "pelican" })
         {

@@ -66,6 +66,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     private int _lastShadowVersion = -1;
     private int _lastSurfaceVersion = -1;
     private ManifoldClassifier _manifold;
+    private IReadOnlyList<SurfaceFace> _lastFaces;
 
     // Direction normals
     private static readonly List<Vector3> DirNormals = new()
@@ -86,12 +87,16 @@ public class DampedShadowedDragModel : IAeroDragModel
 
     private void EnsureSoA(IReadOnlyList<SurfaceFace> faces, int surfaceVersion, ManifoldClassifier manifold = null)
     {
-        _manifold = manifold;
         int n = faces.Count;
 
-        if (_faceCount == n && _lastSurfaceVersion == surfaceVersion)
+        // (the same surface - not just the same count and version: versions are per surface, so two ships with as many
+        //  faces both read "version 1", and a pooled builder kept the first one's faces - a brick turned 90 deg got the
+        //  other's drag. Tests/AeroBench: torque)
+        if (_faceCount == n && _lastSurfaceVersion == surfaceVersion && ReferenceEquals(faces, _lastFaces) && ReferenceEquals(manifold, _manifold))
             return;
 
+        _manifold = manifold;
+        _lastFaces = faces;
         _lastSurfaceVersion = surfaceVersion;
         _faceCount = n;
         bool hasManifold = manifold != null && manifold.IsClassified;
