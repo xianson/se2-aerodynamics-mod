@@ -347,7 +347,7 @@ internal sealed partial class FlightField
     /// mask, smoothed LineSmooth passes, cut into SegLen metre segments): each a spawn box along its segment, spraying
     /// downwind - continuous along the outline. Sparks LineScale big; within FrontDepth x R of the front the short
     /// spray, behind it the long one.</summary>
-    public static float SegLen = 1.5f, LineScale = 20f;   // (SegLen: the spacing of the emitters along the outline)
+    public static float SegLen = 1.5f, LineScale = 3f;   // (SegLen: the spacing of the emitters along the outline; LineScale 20 -> 3: very tiny sparks - the user, 2026-10-09)
     public static int LineSmooth = 2;
     private static readonly Guid LineShockViolet = new Guid("ccbf284f-50ca-59f8-8898-c870b3122f31"), LineTailViolet = new Guid("3b24bc6d-83a9-5468-87ef-df83ce644f98");
     private static readonly Guid LineShockOrange = new Guid("a4274abe-a27c-5279-ad54-c6ae558dee2a"), LineTailOrange = new Guid("3c4c31a7-66f0-5222-9cbf-c107360be119");
@@ -375,7 +375,7 @@ internal sealed partial class FlightField
     /// <summary>What each point spews: 0 fire puffs, 1 sparks (a streaking spray downwind), 2 both.</summary>
     public static int Sparks = 1;
     /// <summary>The sparks' speed x (on top of the spacing the effects are authored per metre of).</summary>
-    public static float SparkSpeed = 0.05f;   // (the user: shorter than 0.4x)
+    public static float SparkSpeed = 16f;   // (~96 m/s off the hull, a quarter of the life: crazy fast and tight - the user, 2026-10-09; was 0.05)
     /// <summary>TEST: one spark effect at the nose only - 1 scale 9 turned downwind, 2 scale 1 turned, 3 scale 1 unturned.</summary>
     public static int PuffTest;
     private static readonly Guid ShockSparksOrange = new Guid("88d92e33-42d6-57d6-92e5-6c1b6e145b75"), TailSparksOrange = new Guid("a5dffd10-c970-5b4b-b93c-60fb8b1eb3fe");
@@ -636,7 +636,7 @@ internal sealed partial class FlightField
         {
             (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
-            if (held > 0f) (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
+            if (held > 0f) { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         }
         catch (Exception ex) { _puffWhy = "set: " + Inner(ex); }
     }
@@ -703,7 +703,7 @@ internal sealed partial class FlightField
     /// <summary>The sparks' length : width (ParticleAspectRatio: the streak's length x it, ParticleRenderingVertex.hlsl).
     /// A streak is (size x 0.5 x speed x StreakMultiplier) long but a whole size wide: short, slow sparks came out as
     /// wide as long - flecks across their motion.</summary>
-    public static float SparkAspect = 1f;
+    public static float SparkAspect = 0.15f;   // (fast sparks drawn compact: at 1 their speed stretched them into long whiskers - the user, 2026-10-09)
     /// <summary>The weighted sparks' texture: 0 FireSparks' (soft: splotches), 1 Thorn (the rain streaks': a point
     /// with a soft falloff - a long tapered diamond), 2 ThrusterFlame_Dot (a firmer dot).</summary>
     public static int SparkTex = 5;
@@ -855,7 +855,7 @@ internal sealed partial class FlightField
     /// ConeScale: the cone ring x the grid's widest radius; VapourEdgeScale: the edge sprays' size; ChordShift: how far
     /// back along the chord the edge emitters sit (0.5 = mid-chord).</summary>
     public static float[] ConeBand = { 0.90f, 0.97f, 1.02f, 1.08f }, EdgeBand = { 0.80f, 0.90f, 1.02f, 1.10f };
-    public static float VapourRho = 1.0f, AxisTol = 5f, ConeScale = 1.0f, VapourEdgeScale = 1.5f, ChordShift = 0.5f, VapourSpeed = 2.5f;
+    public static float VapourRho = 1.0f, AxisTol = 5f, ConeScale = 1.0f, VapourEdgeScale = 1.5f, ChordShift = 0.5f, VapourSpeed = 10f;   // (VapourSpeed 2.5 -> 10 with a quarter of the life: fast and tight - the user, 2026-10-09)
     /// <summary>TEST: a fixed Mach (0: the real one) - the shape at any speed.</summary>
     public static float MachOverride;
     /// <summary>DIAGNOSTIC: 0 the cone as built, 1 without collisions, 2 without collisions or the inner-cone ring;
@@ -889,8 +889,8 @@ internal sealed partial class FlightField
     private float _entryS, _spotMul = 1f, _spotUsed = -1f;
     private readonly List<(object h, float w)> _plasma = new List<(object, float)>();
     private MethodInfo _entryStrength; private bool _entryLooked;
-    public static float TipMinSpeed = 15f, TipBase = 0.35f, TipLiftGain = 0.8f, TipMachBoost = 0.5f;
-    public static float TipLenBase = 20f, TipLenPerMs = 0.25f, TipLenMax = 150f, TipRespawn = 0.25f;
+    public static float TipMinSpeed = 60f, TipBase = 0.3f, TipLiftGain = 0.8f, TipMachBoost = 0.5f;   // (a floor: at 0 the trails came out sparse and dotted - read as separate pieces)   // (from lift only, and from 60 m/s: a ship cruising at 44 m/s drew three fat trails)
+    public static float TipLenBase = 20f, TipLenPerMs = 0.25f, TipLenMax = 150f, TipRespawn = 1.0f;   // (respawned only when the speed doubles or halves: at 25 % the trails vanished and regrew every few seconds)
     private float _speed, _tipSpeedUsed = -1f;
     /// <summary>The Tip effect's own trail length at VelocityMultiplier 1: 4 m/s x TipScale (EmitterScaleMultiplier scales
     /// local speeds) x 5 s life.</summary>
@@ -1065,7 +1065,7 @@ internal sealed partial class FlightField
         for (int i = _vapour.Count - 1; i >= 0; i--)
         {
             if (_vapour[i].kind != 2) continue;
-            var h = _vapour[i].h; _vapour.RemoveAt(i); _puffs.Remove(h); DisposeEffect(h);
+            var h = _vapour[i].h; _vapour.RemoveAt(i); _puffs.Remove(h); Park(h);
         }
         if (_P3 != null) WingtipLines(_lastF, _P3.GetLength(0) - 1, Vector3.Zero);
     }
@@ -1074,13 +1074,13 @@ internal sealed partial class FlightField
     /// +-6 neighbours) and at least TipMinFrac of the farthest; each at its cell's rearmost hull point (the trailing edge).</summary>
     private int WingtipLines(Vector3 f, int N, Vector3 axis)
     {
-        // the aero mod's own wings (AeroEntryFx.WingTips, by reflection): their span ends at the trailing edge
-        int fromWings = AeroWingTips(f);
-        if (fromWings >= 0) return fromWings;
+        // the jutting points of the outline we already have (the user, 2026-10-07: not the literal wings) - one set per ship,
+        // from its main grid (the largest frontal area of its joined grids; the others draw none)
+        if (_server != null && !_server.FxTipOwner) { TipWhy = "not the ship's main grid"; return 0; }
         var chains = Outline(_P3, f, N);
         float rFar = 0f;
         foreach (var c in chains) foreach (var v in c) rFar = Math.Max(rFar, (v - f * Vector3.Dot(v, f) - axis).Length());
-        int n = 0;
+        var tips = new List<Vector3>();   // (every jutting point first; only the extremes are spawned - Extremes)
         foreach (var c in chains)
         {
             int cnt = c.Count;
@@ -1101,11 +1101,19 @@ internal sealed partial class FlightField
                 int ci = Math.Clamp((int)MathF.Round((Vector3.Dot(c[i], _ga) - _gx0) / _gdx), 0, N);
                 int cj = Math.Clamp((int)MathF.Round((Vector3.Dot(c[i], _gb) - _gy0) / _gdy), 0, N);
                 float back = _hullBack[ci, cj] < float.MaxValue ? _hullBack[ci, cj] : Vector3.Dot(c[i], f);
-                VapourEffect(VapourTip, pi + f * back, Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f), TipScale, 1f, false, TipSpeed, true);
-                n++;
+                tips.Add(pi + f * back);
                 i += 6;   // (one per tip)
             }
         }
+        var idx = new List<int>(); for (int k = 0; k < tips.Count; k++) idx.Add(k);
+        int n = 0;
+        foreach (int k in Extremes(idx, j => tips[j], f))
+        {
+            // (world-space particles: the trail is laid in the air by the ship's own motion, no push backwards)
+            VapourEffect(VapourTip, tips[k], Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f), TipScale, 1f, false, 0.01f, true);
+            n++;
+        }
+        TipWhy = $"{n} of {tips.Count} jutting outline points (the extremes)";
         return n;
     }
 
@@ -1130,8 +1138,9 @@ internal sealed partial class FlightField
         _puffs.Add(h);
         int kind = tip ? 2 : cone ? 1 : 0;
         _vapour.Add((h, weight, kind));
+        if (tip && prm != null) _tipPrm[h] = (prm, spawn);   // (its spawn line's length kept live: TipLine)
         float held = Math.Clamp((kind == 1 ? _coneI : kind == 2 ? _tipI : _edgeI) * weight, 0.001f, 0.999f);
-        try { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); }
+        try { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         catch (Exception e) { _puffWhy = "vapour time: " + Inner(e); }
     }
 
@@ -1142,7 +1151,7 @@ internal sealed partial class FlightField
         _vapour.Clear();
         _rng = new Random(1);
         _spawnQueue.Clear(); _fieldUp = false; _weightSkipped = 0;
-        foreach (var h in _puffs) DisposeEffect(h);
+        foreach (var h in _puffs) Park(h);   // (parked for reuse, not disposed)
         _puffs.Clear(); _puffWhy = null;
         foreach (var h in _gridLights) DisposeEffect(h);
         _gridLights.Clear(); _gridLightWhy = null;
@@ -1231,7 +1240,7 @@ internal sealed partial class FlightField
     }
 
     private readonly Queue<Action> _spawnQueue = new Queue<Action>();
-    public static int SpawnPerTick = 12;
+    public static int SpawnPerTick = 48;   // (was 12: a rebuild filled in over 20-40 frames - the gap showed)
 
     /// <summary>The emitter's held time: heat x its local weight (normalised, ^WeightGamma) / density; -1 unweighted.</summary>
     private float WeightTime(Vector3 at, float density)
@@ -1272,7 +1281,7 @@ internal sealed partial class FlightField
         {
             (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
-            if (held > 0f) (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) });
+            if (held > 0f) { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         }
         catch (Exception e) { _puffWhy = "set: " + Inner(e); }
     }

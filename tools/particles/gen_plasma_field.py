@@ -25,8 +25,18 @@ def meta(guid):
             "$Type": "VRage:Keen.VRage.ContentPipeline.Metafiles.MetaData",
             "$Value": {"AssetID": guid, "InternalItems": []}}
 
+# FAST (the user, 2026-10-09: "look really fast... shorten lifespan, keep it tight, make them crazy fast"): every emitter
+# this writes lives LIFE_K as long and emits PPS_K as many (the same density); the code drives their speed up
+LIFE_K, PPS_K = 0.125, 8.0   # (the entry tighter again - the user, 2026-10-09)
+def _fast(obj):
+    t = obj.get("$Value", {}).get("TimeLines")
+    if not t or "ParticleLifeSpan" not in t: return
+    for k in t["ParticleLifeSpan"]["KeyFrames"]["_data"]: k["Value"]["Value"] = round(k["Value"]["Value"] * LIFE_K, 4)
+    for k in t["ParticlesPerSecond"]["KeyFrames"]["_data"]: k["Value"]["Value"] = round(k["Value"]["Value"] * PPS_K, 3)
+
 def write(name, obj, guid):
     p = os.path.join(OUT, name)
+    if name.endswith("_ParticleEmitter.def") and "Recipe" not in name: _fast(obj)   # (the recipes set their own life and rate)
     with open(p, "w", encoding="utf-8", newline="\n") as f: json.dump(obj, f, indent=2)
     if not os.path.exists(p + ".meta"):
         with open(p + ".meta", "w", encoding="utf-8", newline="\n") as f: json.dump(meta(guid), f, indent=2)
@@ -267,7 +277,7 @@ print("texture variants:", rate_guid(7, 4, 30))
 # (held effect time x 600 / s at full heat). Effect Guids 5d0c7a3e-000K-4000-8000-000000000001: K 11/12 grinder,
 # 13/14 welder, 15/16 explosion sparks, 17/18 directional (shock / tail).
 LONG_ORANGE = {"X": 1.0, "Y": 0.42, "Z": 0.07, "W": 1}   # (the recipes hold orange to 55 % of life, then magenta, violet)
-RECIPE_ACCEL = 40   # speed gained per second along each spark's direction (downwind), local units
+RECIPE_ACCEL = 0   # (was 40: unscaled by anything, it only lengthened the spray - the user wants it tight, 2026-10-09)
 RECIPES = ((11, "Grinder", r"Blocks\Grinder\400\ParticleEmitter_Grinder400_MainSpark_A.def"),
            (13, "Welder", r"Tools and Weapons\Welder\WelderContact\ParticleEmitter_Welder_Sparks.def"),
            (15, "Explosion", r"Generic\Explosion\Massive\ParticleEmitter_MassiveExplosion_Sparks.def"),
@@ -289,10 +299,11 @@ def recipe(kind, rname, rel, tail):
     t["LinearVelocityVariance"] = const(vel * 0.25)
     t["AccelerationFactor"] = over_life([(0, RECIPE_ACCEL), (1, RECIPE_ACCEL)])
     t["Color"] = over_life([(0, DEEP), (0.55, LONG_ORANGE), (0.8, MAGENTA), (1, VIOLET)])   # (orange for longer: the user's pick)
-    if tail:   # (twice the life)
-        life = t["ParticleLifeSpan"]["KeyFrames"]["_data"][0]["Value"]["Value"]
-        t["ParticleLifeSpan"] = const(life * 2)
-    v["EmissionParameters"].update({"ParticleBurst": 0, "Direction": v3(0, 0, 1)})
+    # TIGHT (2026-10-09): a fixed short life - 0.02 s at the shock, 0.03 s on the tail - and a near-zero life variance (the
+    # vanilla 0.1 s, absolute and unscaled, made every spray ~0.1 s longer whatever the life); 4x the rate for the density
+    t["ParticleLifeSpan"] = const(0.03 if tail else 0.02)
+    t["ParticlesPerSecond"] = by_time(2400)
+    v["EmissionParameters"].update({"ParticleBurst": 0, "Direction": v3(0, 0, 1), "ParticleLifeSpanVariance": 0.005})
     v["EmitterFlags"].update({"EnableCollisions": False, "EnableLocalSpaceSimulation": True, "EnableStreaks": True})
     v["RenderingParameters"]["DistanceScalingFactor"] = 0
     v["SimulationParameters"].update({"EmitterMotionInheritance": 0, "CollisionCountToKill": 0, "Bounciness": 0})

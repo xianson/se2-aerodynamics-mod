@@ -26,8 +26,18 @@ def meta(guid):
             "$Type": "VRage:Keen.VRage.ContentPipeline.Metafiles.MetaData",
             "$Value": {"AssetID": guid, "InternalItems": []}}
 
+# FAST (the user, 2026-10-09: "look really fast... shorten lifespan, keep it tight, make them crazy fast"): every emitter
+# this writes lives LIFE_K as long and emits PPS_K as many (the same density); the code drives their speed up
+LIFE_K, PPS_K = 0.125, 8.0   # (the vapour tighter again - the user, 2026-10-09)
+def _fast(obj):
+    t = obj.get("$Value", {}).get("TimeLines")
+    if not t or "ParticleLifeSpan" not in t: return
+    for k in t["ParticleLifeSpan"]["KeyFrames"]["_data"]: k["Value"]["Value"] = round(k["Value"]["Value"] * LIFE_K, 4)
+    for k in t["ParticlesPerSecond"]["KeyFrames"]["_data"]: k["Value"]["Value"] = round(k["Value"]["Value"] * PPS_K, 3)
+
 def write(name, obj, guid):
     p = os.path.join(OUT, name)
+    if name.endswith("_ParticleEmitter.def") and "Vapour_Tip" not in name: _fast(obj)
     with open(p, "w", encoding="utf-8", newline="\n") as f: json.dump(obj, f, indent=2)
     if not os.path.exists(p + ".meta"):
         with open(p + ".meta", "w", encoding="utf-8", newline="\n") as f: json.dump(meta(guid), f, indent=2)
@@ -75,11 +85,11 @@ def vapour(name, *, pps, life, velocity, size, emitter, shell, cone, inner=0, co
     # (the smoke atlas is a puff GROWING over 64 frames at 12/s: a 0.4 s particle only ever showed the first ~5 - nearly
     #  empty specks. The dense middle of the animation, played over the particle's life)
     v["AnimationParameters"].update({"FirstFrameIndex": 16, "NumFramesInAnimation": 32, "AnimationFramerate": round(32 / life, 1)})
-    v["EmitterFlags"].update({"EnableCollisions": collide, "EnableLocalSpaceSimulation": True, "EnableStreaks": False})
+    v["EmitterFlags"].update({"EnableCollisions": collide, "EnableLocalSpaceSimulation": not name.endswith("Tip"), "EnableStreaks": False})   # (the supersonic cone and sheets bound to the grid - the user, 2026-10-08; the tip trails laid in the air)
     # (the meteor smoke's ParticleSizeVariance 10 made puffs up to 10x their size - a fog bank; its particle shadows
     #  (ShadowParticleAlphaMultiplier 3) darkened what is under them grey)
     v["RenderingParameters"].update({"DistanceScalingFactor": 0, "ParticleSizeVariance": 0.3, "ShadowParticleAlphaMultiplier": 0})
-    v["SimulationParameters"].update({"EmitterMotionInheritance": 0, "CollisionCountToKill": 1, "Bounciness": 0})
+    v["SimulationParameters"].update({"EmitterMotionInheritance": 0.9 if name.endswith("Tip") else 0, "CollisionCountToKill": 1, "Bounciness": 0})
     write(f"Vapour_{name}_ParticleEmitter.def", d, g)
     return g
 
@@ -135,9 +145,9 @@ MIST = _mist
 # (thin, sharp, long, very transparent: the user - tiny tight puffs barely growing, many of them, living 3 s: a fine
 #  pencil line; ~12 % at most, faded in and out)
 # (longer, thinner, fainter again: the user - 5 s, ~3-5 cm, ~6 %; the length set per airspeed by the code)
-MIST_TIP = [(0, c4(1, 1, 1, 0)), (0.1, c4(1, 1, 1, 0.06)), (0.6, c4(1, 1, 1, 0.04)), (1, c4(0.97, 0.98, 1, 0))]
+MIST_TIP = [(0, c4(1, 1, 1, 0.06)), (0.1, c4(1, 1, 1, 0.06)), (0.6, c4(1, 1, 1, 0.04)), (1, c4(0.97, 0.98, 1, 0))]
 _mist = MIST
 MIST = MIST_TIP
-effect("Tip", vapour("Tip", pps=2000, life=5.0, velocity=4, size=[(0, 0.01), (0.5, 0.013), (1, 0.018)],
-                     emitter=(0.01, 0.01, 0.01), shell=0, cone=0.3, life_var=0.05, collide=False), "5d0c7a3e-0107-4000-8000-000000000001")
+effect("Tip", vapour("Tip", pps=2000, life=2.0, velocity=4, size=[(0, 0.01), (0.5, 0.013), (1, 0.018)],
+                     emitter=(0.01, 0.01, 1.0), shell=0, cone=0.3, life_var=0.05, collide=False), "5d0c7a3e-0107-4000-8000-000000000001")
 MIST = _mist

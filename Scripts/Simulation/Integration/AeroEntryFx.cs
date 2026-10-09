@@ -1,6 +1,7 @@
 #pragma warning disable
 using System;
 using Keen.VRage.Core;
+using Keen.VRage.Core.Game.Data;
 using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Systems;
 using Keen.VRage.DCS.Annotations;
@@ -167,6 +168,8 @@ public static class AeroEntryFx
     internal sealed class FlowPub
     {
         public Vector3D Pos, Vel;
+        public Quaternion Orient;   // (the server grid's attitude: a client grid turned otherwise is not this one)
+        public Vector3 BoxMin, BoxMax; public bool HasBox;   // (its local bounds: a client grid's own copy has the same - a sub-grid does not)
         public Vector3 TravelLocal, LiftLocal;
         public float Mach, Density, Speed, LiftCoef;
         internal object MemberwiseCloneFlow() => MemberwiseClone();
@@ -197,6 +200,7 @@ public static class AeroEntryFx
             if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; }
             return;
         }
+        aero.RefreshFxGroup();   // (the ship it is part of: one set of tip trails per ship)
         double m0 = aero.LastResult.Mach;
         float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
         lock (_flow)
@@ -204,7 +208,9 @@ public static class AeroEntryFx
             if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; }
             // (Vel is the real motion, not the air: a held test grid's or a railed grid's air speed carried its position
             //  hundreds of metres off, and a client matched its subgrid's record - the wrong hull)
-            p.Pos = wt.Position; p.Vel = moving; p.TravelLocal = WorldTransform.TransformDirectionInv(vel / speed, wt);
+            p.Pos = wt.Position; p.Orient = wt.Orientation; p.Vel = moving;
+            if (aero.Entity != null && aero.Entity.Data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out var lb))
+            { p.BoxMin = lb.BoundingBox.Min; p.BoxMax = lb.BoundingBox.Max; p.HasBox = true; } p.TravelLocal = WorldTransform.TransformDirectionInv(vel / speed, wt);
             p.Speed = speed; p.Mach = speed / MathF.Max(1f, a); p.Density = density; p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
             p.ExtStrength = extS; p.Aero = aero;
             // the lift: the aero result's force (grid frame, components included) across the travel; its strength per
@@ -293,20 +299,55 @@ public static class AeroEntryFx
 
     /// <summary>Client: the published flow of the grid at pos (the nearest within 20 m, carried forward by its velocity,
     /// under 0.5 s old), or null. The record is the publisher's own (read, never written).</summary>
-    internal static FlowPub FindFlow(Vector3D pos)
+    internal static FlowPub FindFlow(Vector3D pos) => FindFlow(pos, null, null);
+    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last) => FindFlow(pos, last, null);
+    /// <summary>The client grid's local bounds (set per call by the flight job; none: orientation only).</summary>
+    [ThreadStatic] static Vector3 _cMin, _cMax; [ThreadStatic] static bool _cBox;
+    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient, Keen.VRage.DCS.Components.Entity client)
+    {
+        _cBox = client != null && client.Data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out var cb);
+        if (_cBox) { var b = client.Data.Get<Keen.VRage.Core.Game.Data.BoundingBoxData>().BoundingBox; _cMin = b.Min; _cMax = b.Max; }
+        try { return FindFlow(pos, last, orient); } finally { _cBox = false; }
+    }
+    /// <summary>Another grid (a pod, a rotor - turned the same way or not): its local bounds differ from the client's.</summary>
+    static bool OtherGrid(FlowPub p) => _cBox && p.HasBox && ((p.BoxMin - _cMin).Length() > 0.5f || (p.BoxMax - _cMax).Length() > 0.5f);
+    /// <summary>A record turned more than 3 deg from the client grid is another grid (a pod, a rotor) - never this one.</summary>
+    static bool Turned(FlowPub p, Quaternion? q, double deg = 3.0)
+    {
+        if (q == null) return false;
+        var d = Quaternion.Normalize(Quaternion.Inverse(p.Orient) * q.Value);
+        return 2.0 * Math.Acos(Math.Min(1.0, Math.Abs((double)d.W))) > deg * Math.PI / 180.0;
+    }
+    /// <summary>
+    /// CONSISTENCY: the grid matched last time is kept while it is still published and within reach - reach grows with speed
+    /// (20 m + 0.1 s of travel: at 2000 m/s a 10 ms mismatch between the server's step and the client's drawn position is
+    /// 20 m, and the field froze or dropped). A sub-grid's nearer record no longer steals a ship's field. A copy, taken under
+    /// the lock (the record is written by the sim thread).
+    /// </summary>
+    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
         lock (_flow)
         {
-            FlowPub best = null; double bestD = 20.0;
-            foreach (var p in _flow.Values)
+            FlowPub Reach(FlowPub p, double extra)
             {
                 double age = (now - p.Stamp) / freq;
-                if (age > 0.5) continue;
+                if (age > 0.5) return null;
                 double d = (p.Pos + p.Vel * age - pos).Length();
+                return d <= 20.0 + 0.1 * p.Vel.Length() + extra ? p : null;
+            }
+            // (the grid already matched: kept within 20 deg - the record is a step old while the ship turns; at 3 deg a turning
+            //  ship lost its own record, its field was dropped and made again, and its trails re-placed five times in 8 s)
+            if (last != null && _flow.TryGetValue(last, out var kept) && !OtherGrid(kept) && !Turned(kept, orient, 20.0) && Reach(kept, 20.0) != null)
+                return (FlowPub)kept.MemberwiseCloneFlow();
+            FlowPub best = null; double bestD = double.MaxValue;
+            foreach (var p in _flow.Values)
+            {
+                if (Reach(p, 0.0) == null || OtherGrid(p) || Turned(p, orient)) continue;
+                double d = (p.Pos + p.Vel * ((now - p.Stamp) / freq) - pos).Length();
                 if (d < bestD) { bestD = d; best = p; }
             }
-            return best;
+            return best == null ? null : (FlowPub)best.MemberwiseCloneFlow();
         }
     }
     public static bool AnyFlow { get { lock (_flow) return _flow.Count > 0; } }
@@ -349,7 +390,9 @@ public static class AeroEntryFx
     static long _flightCutAt;
 
     /// <summary>Client: whether this grid, at distance d from the camera, is among the nearest FlightMax flying.</summary>
-    internal static bool NearFlight(AeroEntryFxComponent c, double d)
+    internal static bool NearFlight(AeroEntryFxComponent c, double d) => NearFlight(c, d, false);
+    /// <summary>held: the grid already has a field - kept to 1.25x the cut (no swapping fields as the camera moves).</summary>
+    internal static bool NearFlight(AeroEntryFxComponent c, double d, bool held)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         lock (_flightDist)
@@ -368,7 +411,7 @@ public static class AeroEntryFx
                 if (ds.Count <= max) _flightCut = double.MaxValue;
                 else { ds.Sort(); _flightCut = ds[max - 1]; }
             }
-            return d <= _flightCut;
+            return d <= (held ? 1.25 * _flightCut : _flightCut);
         }
     }
 
@@ -389,12 +432,14 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     internal bool NoRender;
     internal int RetryIn;
     internal FlightField Flight;
+    internal AeroGridComponent FlowOf;
+    internal long LostSince;   // (dropped after 1 s lost, and 60 frames: not 60 frames - half a second at 120 fps, two at 30)   // (the server grid matched last frame: kept while in reach)
     internal int FlightLost;
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
-        if (Flight != null) { Flight.DropAll(); Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); }
+        if (Flight != null) { Flight.Destroy(); Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); }
         lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(this);
     }
 
@@ -409,23 +454,33 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         var grid = c.Entity;
         if (grid == null || !PhysicsHack.Alive(c.Data)) return;
         var wt = c.Data.GetWorldTransform();
-        var p = AeroEntryFx.FindFlow(wt.Position);
+        var p = AeroEntryFx.FindFlow(wt.Position, c.FlowOf, wt.Orientation, grid);
+        if (p != null) c.FlowOf = p.Aero;   // (one miss kept the remembered grid: it was cleared, and the next match was not sticky)
         bool keep = p != null && p.Aero != null && !AeroApi.Suppressed(grid, wt.Position);
         double d = -1;
         if (keep && AeroEntryFx.CameraAt(observers, out var cam))
         {
             d = (wt.Position - cam).Length();
-            keep = d < FlightField.FlightRange && AeroEntryFx.NearFlight(c, d);
+            // (a ship's trail owner is always kept: with more grids than FlightMax near the camera - the Hercules has 7 - the
+            //  owner was cut and the ship drew no trails at all)
+            bool owner = p.Aero.FxTipOwner;
+            keep = d < FlightField.FlightRange && (AeroEntryFx.NearFlight(c, d, c.Flight != null) || owner);
         }
         if (!keep)
         {
-            if (c.Flight != null && ++c.FlightLost > 60) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
+            if (c.Flight != null) FlightField.RecLostFrame();
+            // (lost or culled: it FADES out - eased to 0, still written, the spot following - and goes once faded, or after
+            //  4 s; it froze, then was cut at full strength after 60 frames and 1 s)
+            long nowL = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (c.Flight != null && c.LostSince == 0) c.LostSince = nowL;
+            bool faded = c.Flight != null && c.Flight.FadeOut(wt);
+            if (c.Flight != null && (faded || nowL - c.LostSince > 4 * System.Diagnostics.Stopwatch.Frequency)) { c.LostSince = 0; c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
             return;
         }
-        c.FlightLost = 0;
+        c.FlightLost = 0; c.LostSince = 0;
         if (c.Flight == null)
         {
-            if (AeroEntryFx.FlightActive >= FlightField.FlightMax + 1) return;
+            if (AeroEntryFx.FlightActive >= FlightField.FlightMax + 1 && !p.Aero.FxTipOwner) return;
             if (c.RenderParent == null)
             {
                 // (a client grid just streamed in or moved may not have its render component yet: try again later -
@@ -439,7 +494,31 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         }
         c.Flight.Update(p, wt);
         AeroEntryFx.FlightStatus = c.Flight.Status;
+        // (your ship's own: the trail owner's field within 150 m of the camera - the cockpit's grid is often a sub-grid)
+        if (d >= 0 && d < 150 && (p.Aero?.FxTipOwner ?? false))
+        {
+            // (client copy vs the server grid it draws for: the same grid should sit on top of itself)
+            string pair = "";
+            var se = p.Aero.Entity;
+            if (se != null && PhysicsHack.Alive(se.Data))
+            {
+                var sw = se.Data.GetWorldTransform();
+                var dq = Quaternion.Normalize(Quaternion.Inverse(sw.Orientation) * wt.Orientation);
+                double ang = 2.0 * Math.Acos(Math.Min(1.0, Math.Abs((double)dq.W))) * 180.0 / Math.PI;
+                var cb = BoundingBoxData.Get(grid.Data); var sb = BoundingBoxData.Get(se.Data);
+                pair = $" | client-server {(wt.Position - sw.Position).Length():F1} m {ang:F1} deg, box client {cb.Min}..{cb.Max} server {sb.Min}..{sb.Max}";
+            }
+            FlightField.NearTipWhy = $"{c.Flight.TipWhyHere} (cam {d:F0} m){pair} | {c.Flight.Status}";
+        }
         lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines[c] = $"[{wt.Position.X:F0} {wt.Position.Y:F0} {wt.Position.Z:F0} cam {d:F0} m] {c.Flight.Status}";
+    }
+
+    /// <summary>The trail tracker's overlay (FlightField.TrailDebug): its own job - one job context each.</summary>
+    [OnAeroEntryFx]
+    [MustHave(typeof(AeroEntryFxComponent))]
+    private static void TrailDrawJob(AeroEntryFxComponent c, Keen.VRage.Core.Game.RuntimeSystems.DebugDraw.IDebugDrawProvider ddp)
+    {
+        if (FlightField.TrailDebug && c.Flight != null) c.Flight.DrawTrails(c.Data.GetWorldTransform(), ddp);
     }
 
     [OnAeroEntryFx]
@@ -453,9 +532,10 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
-            if (c.Flight != null) { c.Flight.DropAll(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
+            if (c.Flight != null) { c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
             return;
         }
         FlightJob(c, observers);
+        if (c.Flight != null) c.Flight.TrackTips(c.Data.GetWorldTransform());   // (the trail tracker)
     }
 }

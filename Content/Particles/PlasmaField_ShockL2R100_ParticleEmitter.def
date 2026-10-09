@@ -45,7 +45,7 @@
             {
               "Key": "117b0ad6-e8aa-5e63-b019-0670851f1ebb",
               "Value": {
-                "Value": 250,
+                "Value": 2000.0,
                 "Key": 0
               }
             }
@@ -58,7 +58,7 @@
             {
               "Key": "556070ca-8f84-5206-bf6a-6b9cadcc00cc",
               "Value": {
-                "Value": 0.4,
+                "Value": 0.05,
                 "Key": 0
               }
             }

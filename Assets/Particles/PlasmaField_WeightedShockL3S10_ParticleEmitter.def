@@ -45,21 +45,21 @@
             {
               "Key": "79421e7d-0b4c-50ad-8649-eefc46928092",
               "Value": {
-                "Value": 0,
+                "Value": 0.0,
                 "Key": 0
               }
             },
             {
               "Key": "bf812d7b-c9d4-5e76-a2b4-69e1a67813fa",
               "Value": {
-                "Value": 250,
+                "Value": 2000.0,
                 "Key": 0.5
               }
             },
             {
               "Key": "e6cc5148-2efa-577c-8b17-44380067410f",
               "Value": {
-                "Value": 250,
+                "Value": 2000.0,
                 "Key": 1
               }
             }
@@ -72,7 +72,7 @@
             {
               "Key": "4b15697d-018f-5f3a-9657-52324de27119",
               "Value": {
-                "Value": 0.4,
+                "Value": 0.05,
                 "Key": 0
               }
             }

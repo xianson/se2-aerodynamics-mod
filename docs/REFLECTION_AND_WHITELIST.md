@@ -74,7 +74,8 @@ The combined assembly ask (VRage.Render first, then VRage.Game.Client, VRage.Gam
 ### 5.5 Particle effects (shipped re-entry plasma in Aero; dev plasma in Orbital)
 - **(R) VRage.Game.Client + VRage.Render.** The minimal set:
   - `ParticleEffectsSessionComponent.TrySpawnEffect(RelativeTransform, ParticleEffectBaseDefinition, ParticleEffectUserParameters, IRenderParent, …)` (`ParticleEffectsSessionComponent.cs:703`), or the `IParticleEffects` interface (`VRage.Game.Client/.../IParticleEffects.cs`);
-  - `ParticleEffectHandle`: `SetParameters(in …)`, `FixEffectTime(bool, TimeSpan)`, `UpdateTransform(RelativeTransform)`, `StopEmitting(bool)`, `DisposeAfterParticlesDie()`, `Dispose(bool)` (`ParticleEffectHandle.cs:130-257`);
+  - `ParticleEffectHandle`: `SetParameters(in …)`, `FixEffectTime(bool, TimeSpan)`, `UpdateTransform(RelativeTransform)`, `StopEmitting(bool)`, `ResumeEmitting()`, `DisposeAfterParticlesDie()`, `Dispose(bool)` (`ParticleEffectHandle.cs:130-257`);
+  - 2026-10-09 the EMITTER POOL (`FlightFieldHost.Park` / `SpawnEffect`): a dropped emitter is parked (`StopEmitting(false)`, effect time at the floor) and reused - `SetParameters`, `UpdateTransform(RelativeTransform)`, `ResumeEmitting()` - instead of disposed and spawned again; `DisposeAfterParticlesDie` only when the field ends (`Destroy`). Same handle type, looked up once.
   - `ParticleEffectUserParameters` (VRage.Render) and its public fields;
   - `RootEntityRenderComponent` as the `IRenderParent` of a grid;
   - (dev) `ParticleEmitterDefinition.AnimationParameters` / `ParticleAnimationParameters`.

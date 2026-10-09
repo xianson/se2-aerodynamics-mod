@@ -72,7 +72,7 @@
             {
               "Key": "c8166a2e-11dc-5a8c-9c63-83e169750ad6",
               "Value": {
-                "Value": 5,
+                "Value": 2,
                 "Key": 0
               }
             }
@@ -88,7 +88,7 @@
                 "Value": {
                   "X": 0.01,
                   "Y": 0.01,
-                  "Z": 0.01
+                  "Z": 1.0
                 },
                 "Key": 0
               }
@@ -177,7 +177,7 @@
                             "X": 1,
                             "Y": 1,
                             "Z": 1,
-                            "W": 0
+                            "W": 0.06
                           },
                           "Key": 0
                         }
@@ -413,7 +413,7 @@
       "EnableConstantEmitterSize": false,
       "EnableConstantScaleMultiplier": false,
       "AlwaysVisibleInFirstPersonView": false,
-      "EnableLocalSpaceSimulation": true,
+      "EnableLocalSpaceSimulation": false,
       "EnableExposureCompensation": true,
       "SingleFrameParticles": false,
       "EnhanceVisibility": false
@@ -443,7 +443,7 @@
       "Bounciness": 0,
       "AngularVelocityCollisionMultiplier": 1,
       "CollisionCountToKill": 1,
-      "EmitterMotionInheritance": 0
+      "EmitterMotionInheritance": 0.9
     },
     "RenderingParameters": {
       "AmbientMultiplier": 1,

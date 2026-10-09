@@ -19,14 +19,14 @@
                       {
                         "Key": "670d49ec-6ba5-5c28-9863-ae57591cddc4",
                         "Value": {
-                          "Value": 40,
+                          "Value": 0,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "e9104704-1122-5977-951b-d148815ba40a",
                         "Value": {
-                          "Value": 40,
+                          "Value": 0,
                           "Key": 1
                         }
                       }
@@ -45,21 +45,21 @@
             {
               "Key": "d13c5b08-039c-5342-ad4a-fc982551102e",
               "Value": {
-                "Value": 0,
+                "Value": 0.0,
                 "Key": 0
               }
             },
             {
               "Key": "041235cc-b46c-5de7-95d4-2d8363648090",
               "Value": {
-                "Value": 600,
+                "Value": 19200.0,
                 "Key": 0.5
               }
             },
             {
               "Key": "c87655da-15b0-5dcc-8236-eedf3527cf7c",
               "Value": {
-                "Value": 600,
+                "Value": 19200.0,
                 "Key": 1
               }
             }
@@ -72,7 +72,7 @@
             {
               "Key": "011bdc2c-84c5-457b-922a-96a88f0ff38d",
               "Value": {
-                "Value": 0.7,
+                "Value": 0.02,
                 "Key": 0
               }
             }
@@ -427,7 +427,7 @@
     },
     "EmissionParameters": {
       "ParticleBurst": 0,
-      "ParticleLifeSpanVariance": 0.1,
+      "ParticleLifeSpanVariance": 0.005,
       "Direction": {
         "X": 0,
         "Y": 0,

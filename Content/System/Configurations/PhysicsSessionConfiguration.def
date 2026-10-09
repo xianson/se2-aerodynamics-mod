@@ -12,7 +12,7 @@
     "MaximumCharacterSpeedLinear": 310,
     "LinearDamping": 0,
     "AngularDamping": 0.025,
-    "GravityMultiplier": 1,
+    "GravityMultiplier": 2,
     "LayersToExcludeFromQueries": [
       {
         "Key": "d984768b-8fff-4998-9089-84ad5ed40aad",

@@ -87,6 +87,16 @@ public static class AeroApi
         return true;
     }
 
+    /// <summary>The effects' consistency since the last reset (every drawn frame of every flight field): frames, pops (the drawn
+    /// strength stepping over 0.05 in a frame), rebuilds while lit, frames lost, group toggles, the largest step, the peak.
+    /// reset: start counting again. For tests.</summary>
+    public static string GetFxConsistency(bool reset)
+    {
+        string r = FlightField.RecReport() + " | " + FlightField.TrkReport();
+        if (reset) { FlightField.RecReset(); FlightField.TrkReset(); }
+        return r;
+    }
+
     /// <summary>Aero's entry heating law: strength 0..1 at a Mach number and air density (kg/m3).</summary>
     public static float EntryStrength(float mach, float density) => AeroEntryFx.EntryStrength(mach, density);
 
