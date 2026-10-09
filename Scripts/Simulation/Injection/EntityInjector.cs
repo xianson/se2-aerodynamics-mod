@@ -7,9 +7,10 @@ namespace AeroMod;
 [DefinitionPostProcessor(ForceInstantiation = true)]
 public class EntityInjector : SimpleDefinitionPostProcessor<PrefabDefinition>
 {
-    /// <summary>Inject AeroFlameComponent into client thrusters (off: testing whether its presence alone darkens the game's
-    /// thruster glow - reported 2026-10-04 with the flame override already off).</summary>
-    public static bool InjectFlames = false;
+    /// <summary>Inject AeroFlameComponent into client thrusters: each thruster's flame shows its share of the thrust,
+    /// attitude included (ThrustTorque.FlamesEnabled). (Off 2026-10-04 while the shares darkened the game's flames: those
+    /// were x efficiency twice - capacities are now x efficiency - and dropped whenever the controller stopped steering.)</summary>
+    public static bool InjectFlames = true;
 
     public override void PostProcess(PrefabDefinition definition)
     {

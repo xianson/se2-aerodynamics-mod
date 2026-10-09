@@ -66,7 +66,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _seedTries;
     private readonly HashSet<Keen.VRage.DCS.Components.Entity> _thrusterSet = new();
     private int _thrusterSetCount = -1;
-    internal void ThrustersRebuilt() => _thrusterSetCount = -1;
+    internal void ThrustersRebuilt() { _thrusterSetCount = -1; _thrusterGen++; }
+    /// <summary>Counts thruster cache rebuilds (ThrustTorque re-keys its published flame shares on a change).</summary>
+    internal int _thrusterGen;
+    /// <summary>This grid's published flame shares (ThrustTorque.Publish; server copy only).</summary>
+    internal ThrustTorque.Published _flamePub;
     internal bool Seeded;
     private ChunkedTable.LocalResult _localRes;
     internal int LocalUpdatesDone;
@@ -77,6 +81,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal int _rcsGeomCount = -1;
     internal Vector3 _rcsGeomCom;
     internal float _rcsArmSq;
+    // ... and each thruster's efficiency in the air it is in (its thrust class: the game's GetThrustEfficiency)
+    internal float[] _rcsNom = Array.Empty<float>();
+    internal Keen.Game2.Simulation.GameSystems.Movement.ThrustClassData[] _rcsClass = Array.Empty<Keen.Game2.Simulation.GameSystems.Movement.ThrustClassData>();
+    internal bool[] _rcsHasClass = Array.Empty<bool>();
+    internal float _rcsGeomAir = -1f;
     private static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();

@@ -23,6 +23,9 @@ public struct ThrusterInfo
     public Vector3 IntakeDirection;    // unit vector pointing into intake (opposite ThrustDirection for air-breathers)
     public float AttitudeFraction;     // 0..1: fraction of capacity reserved for attitude (from terminal slider)
     public AeroThrustSettingsComponent Settings; // live reference for reading slider changes
+    /// <summary>The block's place in its grid (its cell box's Min + Max, 0.25 m cells): the same in the server and client
+    /// copies of a grid, at any speed - the key its flame share is published under (ThrustTorque.Publish).</summary>
+    public Vector3I Cell;
 }
 
 /// <summary>
@@ -742,6 +745,7 @@ public static class OffsetThrustJob
                         IntakeDirection = thrustDir, // intake faces into airflow = same direction as thrust
                         AttitudeFraction = attFrac,
                         Settings = aeroSettings,
+                        Cell = aabb.Min + aabb.Max,
                     });
                 }
             }

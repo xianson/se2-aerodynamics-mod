@@ -37,12 +37,15 @@ internal sealed partial class FlightField
     public static float RiseTau = 0.3f, FallTau = 1.5f, AxisTau = 0.3f;
     private long _easeAt; private Vector3 _axisSm;
     private float _coneSm, _edgeSm, _tipSm, _spotAt;
-    static float Ease(float cur, float target, float dt)
+    static float Ease(float cur, float target, float dt, float fall = -1f)
     {
         if (dt <= 0f) return target;
-        float tau = target > cur ? RiseTau : FallTau;
+        float tau = target > cur ? RiseTau : (fall > 0f ? fall : FallTau);
         return cur + (target - cur) * (1f - MathF.Exp(-dt / tau));
     }
+    /// <summary>The vapour's own fall (s): condensation clears fast - on the plasma's 1.5 s it hung on ~9 s after leaving the
+    /// band, then was switched off late (and on again at once when the next pass began).</summary>
+    public static float VapourFallTau = 0.5f;
 
     // ── the consistency recorder: every frame of every field, judged on numbers, not screenshots ──
     /// <summary>Totals since the last Reset: frames seen; pops (the drawn plasma strength stepping more than PopStep in one
@@ -150,7 +153,7 @@ internal sealed partial class FlightField
             bool wantPlasma = PlasmaOn && (_entryS > 0.001f || _mach > AeroEntryFx.OnsetMach - PlasmaLead);
             bool dropPlasma = !PlasmaOn || (_entryS <= 0.001f && _mach < AeroEntryFx.OnsetMach - PlasmaLead - 0.1f);
             bool wantEdges = VapourOn && _mach > EdgeBand[0] - VapourLead && _mach < EdgeBand[3] + VapourLead && _rho > 0f;
-            bool dropEdges = !VapourOn || ((_mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f) && _edgeSm < 0.003f);   // (faded out first: a hard brake cut them at ~20 %)
+            bool dropEdges = !VapourOn || ((_mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f) && _edgeSm < 0.02f);   // (faded out first - a hard brake cut them at ~20 % - and under 2 %, invisible: dropped then)
             bool owner = _server == null || _server.FxTipOwner;
             if (!owner) TipWhyHere = "not the ship's main grid";
             bool wantTips = TipsOn && owner && _speed > TipMinSpeed;
@@ -228,8 +231,8 @@ internal sealed partial class FlightField
     {
         float m = MachOverride > 0f ? MachOverride : _mach;
         float dens = MathF.Min(1f, MathF.Sqrt(Math.Max(0f, _rho) / Math.Max(0.01f, VapourRho)));
-        _coneI = _coneSm = Ease(_coneSm, ConeOn ? Band(ConeBand, m) * dens : 0f, fdt);
-        _edgeI = _edgeSm = Ease(_edgeSm, Band(EdgeBand, m) * dens, fdt);
+        _coneI = _coneSm = Ease(_coneSm, ConeOn ? Band(ConeBand, m) * dens : 0f, fdt, VapourFallTau);
+        _edgeI = _edgeSm = Ease(_edgeSm, Band(EdgeBand, m) * dens, fdt, VapourFallTau);
         float on = Math.Clamp((_speed - TipMinSpeed) / (2f * TipMinSpeed), 0f, 1f); on = on * on * (3f - 2f * on);
         float coef = LiftTest > 0f ? LiftTest : _liftCoef;
         _tipI = _tipSm = Ease(_tipSm, Math.Min(1f, on * Math.Clamp(TipBase + TipLiftGain * coef, 0f, 1f) * (1f + TipMachBoost * Band(EdgeBand, m)) * dens), fdt);
@@ -263,12 +266,12 @@ internal sealed partial class FlightField
         {
             bool want = SpotOn && _plasmaUp && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
             if (!want) { if (_spotUsed > 0f) StopSpot(); _spotUsed = -1f; }
-            else if (_spotUsed < 0f || (MathF.Abs(_entryS - _spotUsed) > 0.25f * _spotUsed && (float)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency) - _spotAt > 2f))
+            else if (_spotUsed < 0f || _spot == null)
             {
-                _spotAt = (float)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency);   // (a light re-made at most every 2 s: it popped at every 25 %)
-                StopSpot(); _spotMul = _entryS; _spotUsed = _entryS;
+                StopSpot(); _spotMul = _entryS; _spotUsed = _entryS;   // (made ONCE per plasma group)
                 SpawnSpot(_axis, _shapeR, _P3.GetLength(0) - 1);
             }
+            else if (MathF.Abs(_entryS - _spotSetS) > 0.02f * MathF.Max(_spotSetS, 0.05f)) SpotIntensity(_entryS);   // (dimmed in place, 10 Hz: it was destroyed and re-made in 25 % steps)
         }
     }
 
@@ -924,12 +927,39 @@ internal sealed partial class FlightField
                 }
             _spot = _createSpot.Invoke(_contracts, args);
             _spotWhy = null;
+            _spotCone = cone; _spotRgb = new Vector3(lr, lg, lb); _spotSetS = _spotMul;   // (its brightness changed in place from here: SpotIntensity)
         }
         catch (Exception e) { _spotWhy = "spot: " + Inner(e); StopSpot(); }
     }
 
+    // ── the spot light's brightness, changed IN PLACE (ISpotLightEntity.SetParameters: intensity, cone, cookie, flare) ──
+    private float _spotCone; private Vector3 _spotRgb; private float _spotSetS = -1f;
+    private static MethodInfo _spotSetParams;
+    private void SpotIntensity(float strength)
+    {
+        if (_spot == null) return;
+        try
+        {
+            if (_spotSetParams == null)
+                foreach (var m in _spot.GetType().GetMethods(AnyInst))
+                    if (m.Name.EndsWith("SetParameters") && m.GetParameters().Length == 4) { _spotSetParams = m; break; }
+            if (_spotSetParams == null) { _spotWhy = "no SetParameters"; return; }
+            var ps = _spotSetParams.GetParameters();
+            float sc = Spot * strength;
+            var args = new object[]
+            {
+                new ColorLinear(_spotRgb.X * sc, _spotRgb.Y * sc, _spotRgb.Z * sc, 1f), _spotCone,
+                Activator.CreateInstance(ps[2].ParameterType), null,
+            };
+            _spotSetParams.Invoke(_spot, args);
+            _spotSetS = strength; _spotUsed = strength;
+        }
+        catch (Exception e) { _spotWhy = "spot set: " + Inner(e); }
+    }
+
     private void StopSpot()
     {
+        _spotSetS = -1f;
         try { (_spot as IDisposable)?.Dispose(); } catch (Exception) { }
         DisposeRender(_spotRoot);
         _spot = null; _spotRoot = null;
