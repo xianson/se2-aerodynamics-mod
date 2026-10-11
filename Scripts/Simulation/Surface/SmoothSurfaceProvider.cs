@@ -707,7 +707,12 @@ public class SmoothSurfaceProvider : ISurfaceProvider
             finalNormal = Vector3.Normalize(
                 originalNormal * (1f - Smoothing) + smoothNormal * Smoothing);
 
-        return new SurfaceFace(pos, finalNormal, faceArea);
+        // (the face's share of the SMOOTHED surface: a staircase's cell faces - its fronts and its treads - each pushed along the
+        //  smoothed slope's normal with its whole square-on area counted the slope about 1.4 times over at 45 deg, and a
+        //  sloped nose dragged like a flat wall (AeroBench noses: 45 deg wedge Cd 0.96 against the box's 1.10). Projected onto
+        //  the smoothed normal they sum to the slope's true area; an unsmoothed face (a box's side) keeps all of it.)
+        float share = Vector3.Dot(originalNormal, finalNormal);
+        return new SurfaceFace(pos, finalNormal, faceArea * (share > 0.05f ? share : 0.05f), originalNormal);
     }
 
     private float ApplyWeight(float w)

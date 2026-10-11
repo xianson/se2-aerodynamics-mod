@@ -14,7 +14,7 @@ namespace AeroMod;
 public static class AeroTableCache
 {
     /// <summary>Bump on any change to how a table, its chunks or its wings are built.</summary>
-    public const int Version = 6;   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
+    public const int Version = 7;   // (7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
     public static bool Enabled = true;
     /// <summary>The folder's cap: past it, the least recently used files go.</summary>
     public static long MaxBytes = 256L << 20;

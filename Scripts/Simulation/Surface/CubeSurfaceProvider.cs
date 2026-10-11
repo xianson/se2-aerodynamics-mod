@@ -62,7 +62,7 @@ public class CubeSurfaceProvider : ISurfaceProvider
                     continue;
 
                 var pos = CellFaceCenter(cell, DirOffsets[d], blockSize);
-                _faces.Add(new SurfaceFace(pos, DirNormals[d], faceArea));
+                _faces.Add(new SurfaceFace(pos, DirNormals[d], faceArea, DirNormals[d]));
 
                 accum[d] += faceArea;
                 weighted[d] += pos * faceArea;

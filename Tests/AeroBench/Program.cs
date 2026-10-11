@@ -14,15 +14,21 @@ static partial class Program
     static List<(Vector3I, Vector3I)> LoadBoxes(string path)
     {
         var boxes = new List<(Vector3I, Vector3I)>();
+        LastThrusters = new();
         foreach (var line in File.ReadLines(path))
         {
             var p = line.Split(' ');
             if (line.StartsWith("#")) { int i = Array.IndexOf(p, "blockSize"); if (i >= 0) BlockSize = float.Parse(p[i + 1], System.Globalization.CultureInfo.InvariantCulture); continue; }
             if (p.Length < 6) continue;
             boxes.Add((new Vector3I(int.Parse(p[0]), int.Parse(p[1]), int.Parse(p[2])), new Vector3I(int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]))));
+            if (p.Length >= 10 && p[6] == "thr") LastThrusters.Add((boxes[^1].Item1, boxes[^1].Item2, new Vector3(int.Parse(p[7]), int.Parse(p[8]), int.Parse(p[9]))));
         }
         return boxes;
     }
+
+    /// <summary>The air-breathing engines of the last LoadBoxes (bp2boxes' 'thr' tags): cell box and axis - Build makes their
+    /// intake and exhaust faces flow-through when DampedShadowedDragModel.FlowThroughEngines.</summary>
+    static List<(Vector3I lo, Vector3I hi, Vector3 axis)> LastThrusters = new();
 
     sealed class Ship
     {
@@ -66,6 +72,25 @@ static partial class Program
         inner.InstallShadowMap(shadow);
         model.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
         model.ExcludeWingFaces(inner, surface.Version);
+        if (DampedShadowedDragModel.FlowThroughEngines && LastThrusters.Count > 0)
+        {
+            // a face is an engine's intake or exhaust: its cell inside an engine's box, facing along the engine's axis
+            var through = new List<bool>(surface.FaceCount); int nThrough = 0;
+            for (int i = 0; i < surface.FaceCount; i++)
+            {
+                var f = surface.Faces[i]; bool t = false;
+                var c = f.Position - f.RawNormal * (cs * 0.5f);   // (the cell's centre behind the face)
+                foreach (var (lo, hi, ax) in LastThrusters)
+                {
+                    if (MathF.Abs(Vector3.Dot(f.RawNormal, ax)) < 0.9f) continue;
+                    if (c.X < lo.X * 0.25f || c.Y < lo.Y * 0.25f || c.Z < lo.Z * 0.25f || c.X > (hi.X + 1) * 0.25f || c.Y > (hi.Y + 1) * 0.25f || c.Z > (hi.Z + 1) * 0.25f) continue;
+                    t = true; break;
+                }
+                through.Add(t); if (t) nThrough++;
+            }
+            inner.SetThroughFaces(through, surface.Version);
+            Console.WriteLine($"   ({name}: {LastThrusters.Count} engine boxes, {nThrough} flow-through faces)");
+        }
 
         // centre of mass: the cells' centroid (uniform density)
         double cx = 0, cy = 0, cz = 0; long n = 0;
@@ -233,6 +258,12 @@ static partial class Program
         foreach (var wline in worst) Console.WriteLine("      worst: " + wline);
         Console.WriteLine($"   TABLE vs exact: force median {errI[errI.Count / 2] * 100:F1}% p95 {errI[(int)(errI.Count * 0.95)] * 100:F1}% max {errI[^1] * 100:F1}%, torque median {errIT[errIT.Count / 2] * 100:F1}% p95 {errIT[(int)(errIT.Count * 0.95)] * 100:F1}% | face loop vs exact sum (the loop's own quirks): median {errL[errL.Count / 2] * 100:F1}% p95 {errL[(int)(errL.Count * 0.95)] * 100:F1}%");
         double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        if (DampedShadowedDragModel.RecBakes > 0)
+        {
+            double fq = 1000.0 / System.Diagnostics.Stopwatch.Frequency / DampedShadowedDragModel.RecBakes;
+            Console.WriteLine($"   recovery bake: {DampedShadowedDragModel.RecBakes} bakes, per bake: faces {DampedShadowedDragModel.RecTicksPre * fq:F3} ms, passes {(DampedShadowedDragModel.RecTicksPasses - DampedShadowedDragModel.RecTicksColumns) * fq:F3} ms + columns {DampedShadowedDragModel.RecTicksColumns * fq:F3} ms ({DampedShadowedDragModel.RecPixels / DampedShadowedDragModel.RecBakes} pixels)");
+            DampedShadowedDragModel.RecTicksPre = DampedShadowedDragModel.RecTicksPasses = DampedShadowedDragModel.RecTicksColumns = DampedShadowedDragModel.RecBakes = DampedShadowedDragModel.RecPixels = 0;
+        }
         Console.WriteLine($"   TABLE: built in {table.BuildMs:F0} ms ({6 * (table.N + 1) * (table.N + 1)} directions) | force error median {errF[errF.Count / 2] * 100:F1}% p95 {errF[(int)(errF.Count * 0.95)] * 100:F1}% max {errF[^1] * 100:F1}% | torque error median {errT[errT.Count / 2] * 100:F1}% p95 {errT[(int)(errT.Count * 0.95)] * 100:F1}% | per frame: face loop {tLoop * f / n:F3} ms, table {tTable * f / n * 1000:F1} us");
         return (errI[errI.Count / 2], errI[(int)(errI.Count * 0.95)]);
     }
@@ -488,6 +519,20 @@ static partial class Program
 
     static int Main(string[] args)
     {
+        if (Environment.GetEnvironmentVariable("AERO_SQUARE") == "1") DampedShadowedDragModel.SubsonicSquareLaw = true;
+        if (Environment.GetEnvironmentVariable("AERO_RECOVERY") == "1") DampedShadowedDragModel.PressureRecovery = true;   // (the A/B: lee-side pressure recovery)
+        if (Environment.GetEnvironmentVariable("AERO_RESKIN") == "1") DampedShadowedDragModel.ReynoldsSkin = true;
+        if (Environment.GetEnvironmentVariable("AERO_THROUGH") == "1") DampedShadowedDragModel.FlowThroughEngines = true;
+        if (Environment.GetEnvironmentVariable("AERO_WINGSYS") == "1") CompressibleWingModel.WingSystems = true;
+        if (Environment.GetEnvironmentVariable("AERO_CAMBER") == "1") CompressibleWingModel.GeometricCamber = true;
+        if (float.TryParse(Environment.GetEnvironmentVariable("AERO_ALPHA0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a0)) CompressibleWingModel.TestAlpha0 = a0 / 57.3f;
+        if (Environment.GetEnvironmentVariable("AERO_STEPWING") == "1") ConnectedComponentWingDetector.StepConnect = true;
+        if (Environment.GetEnvironmentVariable("AERO_COLWING") == "1") ConnectedComponentWingDetector.ColumnMode = true;
+        if (int.TryParse(Environment.GetEnvironmentVariable("AERO_RECPASSES"), out var rp)) DampedShadowedDragModel.RecoveryPasses = rp;
+        if (float.TryParse(Environment.GetEnvironmentVariable("AERO_RECFRAC"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var recFrac)) DampedShadowedDragModel.RecoveryFrac = recFrac;
+        if (Environment.GetEnvironmentVariable("AERO_COLRUN") == "0") DampedShadowedDragModel.ColumnRun = false;
+        if (float.TryParse(Environment.GetEnvironmentVariable("AERO_SEP"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sepDeg)) DampedShadowedDragModel.SepDeg = sepDeg;
+        if (float.TryParse(Environment.GetEnvironmentVariable("AERO_SEPFADE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sepFade)) DampedShadowedDragModel.SepFadeDeg = sepFade;   // (the A/B: the square subsonic law)
         dataDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
         if (Environment.GetEnvironmentVariable("OLDLOOP") != null) DampedShadowedDragModel.FaceLoopMatchesTable = false;   // (A/B: the older per-frame loop)
         var names = args.Length > 0 ? args : Directory.Exists(dataDir) ? Directory.GetFiles(dataDir, "*.boxes").Select(Path.GetFileNameWithoutExtension).ToArray() : Array.Empty<string>();
@@ -717,6 +762,164 @@ static partial class Program
                 var ship = Build(name, boxes);
                 bool ok = CacheRoundTrip(ship, boxes, atmo, out string note);
                 Console.WriteLine($"   {(ok ? "ok  " : "FAIL")} {name}: table cache {note}");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "gamewings")
+        {
+            // CAN WINGS BE GAMED: one plate against stacks of the same plate (a "venetian blind"), and a solid block of the
+            // stack's outline, at 10 deg angle of attack, 100 m/s, sea level: lift, drag, wings detected. A fair model gives a
+            // stack much less than N x one plate (each in the others' downwash), and the solid block little lift at all.
+            BlockSize = 2.5f;
+            var cases = new List<(string, List<(Vector3I, Vector3I)>)>();
+            // a plate: 16 m span (X) x 8 m chord (Z) x 0.5 m (2 cells of 0.25 m) - cells are 0.25 m (10 per 2.5 m block)
+            (Vector3I, Vector3I) Plate(int y) => (new Vector3I(0, y, 0), new Vector3I(63, y + 1, 31));
+            cases.Add(("1 plate", new() { Plate(0) }));
+            foreach (int n in new[] { 3, 6 })
+                foreach (int gap in new[] { 10, 4 })
+                {
+                    var l = new List<(Vector3I, Vector3I)>();
+                    for (int k = 0; k < n; k++) l.Add(Plate(k * gap));
+                    l.Add((new Vector3I(0, 0, 28), new Vector3I(3, (n - 1) * gap + 1, 31)));   // (joined: a post at the trailing corner)
+                    cases.Add(($"{n} plates, {gap * 0.25f:0.#} m apart", l));
+                }
+            cases.Add(("solid block (3-plate outline)", new() { (new Vector3I(0, 0, 0), new Vector3I(63, 21, 31)) }));
+            float aoa = 10f * MathF.PI / 180f;
+            var vel = new Vector3(0, -MathF.Sin(aoa), -MathF.Cos(aoa)) * 100f;   // (travelling -Z, nose up: the air from below)
+            Console.WriteLine("   case                           wings   lift kN   drag kN    L/D   lift / one plate");
+            float one = 0f;
+            foreach (var (nm, boxes) in cases)
+            {
+                var ship = Build(nm, boxes);
+                AeroResult r = default;
+                for (int i = 0; i < 3; i++) r = ship.Model.Compute(new AeroContext(ship.Grid, ship.Surface, vel, atmo, ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold));
+                var vh = Vector3.Normalize(vel);
+                float drag = -Vector3.Dot(r.Force, vh), lift = (r.Force + drag * vh).Length();
+                if (one == 0f) one = lift;
+                Console.WriteLine($"   {nm,-30} {ship.Model.Wings?.Count ?? 0,5}  {lift / 1000f,8:F1}  {drag / 1000f,8:F1}  {lift / Math.Max(1f, drag),5:F1}   {lift / Math.Max(1f, one),6:F2}x");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "wings" && args.Length > 1)
+        {
+            // one fixture's detected wings in full (and its streamlining / lift check): wings NAME
+            var path = Path.Combine(dataDir, args[1] + ".boxes");
+            var ship = Build(args[1], LoadBoxes(path));
+            Console.WriteLine($"   {args[1]}: {ship.BuildNote}");
+            var wings = ship.Model.Wings;
+            if (wings != null)
+                foreach (var w in wings)
+                    Console.WriteLine($"   wing: area {w.PlanformArea,6:F1} m2  span {w.Span,5:F1} m  AR {w.AspectRatio,4:F1}  sweep {w.SweepAngle * 57.3f,5:F1} deg  CLmax {w.CLMax:F2}  normal {w.Normal}  centre {w.AeroCenter}");
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "blend") return Blend(dataDir, atmo);
+        if (args.Length > 0 && args[0] == "bodies") return Bodies(atmo);
+        if (args.Length > 1 && args[0] == "columns") return Columns(dataDir, atmo, args[1]);
+        if (args.Length > 1 && args[0] == "polar") return Polar(dataDir, atmo, args[1]);
+        if (args.Length > 0 && args[0] == "cleanplane") return CleanPlane(atmo);
+        if (args.Length > 1 && args[0] == "detecttime") return DetectTime(dataDir, args.Skip(1).ToArray());
+        if (args.Length > 0 && args[0] == "dragsplit") return DragSplit(dataDir, atmo, args.Skip(1).ToArray());
+        if (args.Length > 0 && args[0] == "noses")
+        {
+            // nose shapes on the same 4 x 4 m body, 8 m long: zero-lift drag coefficient on the 16 m2 front, at 100 m/s.
+            // A 45 deg wedge and a 2:1 wedge as fine 0.25 m staircases (as slope blocks become), and coarse 1 m steps.
+            BlockSize = 0.5f;
+            var cases = new List<(string, List<(Vector3I, Vector3I)>)>();
+            cases.Add(("flat front (box)", new() { (new Vector3I(0, 0, 0), new Vector3I(15, 15, 31)) }));
+            foreach (var (nm, rise, run, step) in new[] { ("45 deg wedge, 0.25 m steps", 1, 1, 1), ("2:1 wedge, 0.25 m steps", 1, 2, 1), ("45 deg wedge, 1 m steps", 1, 1, 4), ("4:1 wedge, 0.25 m steps", 1, 4, 1) })
+            {
+                var l = new List<(Vector3I, Vector3I)> { (new Vector3I(0, 0, 0), new Vector3I(15, 15, 31)) };   // body z 0..31
+                // the wedge in front (-z): its height falls from 16 cells to 0 over 16 x run/rise cells, in steps
+                int len = 16 * run / rise;
+                for (int z = 0; z < len; z += step)
+                {
+                    int h = 16 - (z / step * step + step) * rise / run; if (h <= 0) break;
+                    l.Add((new Vector3I(0, 0, -z - step), new Vector3I(15, h - 1, -z - 1)));
+                }
+                cases.Add((nm, l));
+            }
+            Console.WriteLine("   nose                          Cd(front 16 m2)   drag kN");
+            foreach (var (nm, boxes) in cases)
+            {
+                var ship = Build(nm, boxes);
+                AeroResult r = default;
+                for (int i = 0; i < 3; i++) r = ship.Model.Compute(new AeroContext(ship.Grid, ship.Surface, new Vector3(0, 0, -100f), atmo, ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold));
+                double q = 0.5 * atmo.Density * 100 * 100;
+                Console.WriteLine($"   {nm,-30} {r.DragMagnitude / (q * 16):F2}            {r.DragMagnitude / 1000:F1}");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "liftcheck")
+        {
+            // can the wings hold the ship up: each dumped ship's detected wings (planform area, area-weighted CLmax), its mass
+            // (the fixture's header), wing loading and stall speed at sea level at 1 g and 2 g: v = sqrt(2 m g / (rho S CLmax))
+            Console.WriteLine("   ship              mass t   wings  area m2  CLmax  loading kg/m2   stall 1g     stall 2g");
+            foreach (var path in Directory.GetFiles(dataDir, "*.boxes").OrderBy(x => x))
+            {
+                string name = Path.GetFileNameWithoutExtension(path);
+                float mass = 0f;
+                foreach (var l in File.ReadLines(path).Take(3)) { var m = System.Text.RegularExpressions.Regex.Match(l, @"mass\s+([0-9.]+)"); if (m.Success) mass = float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); }
+                var ship = Build(name, LoadBoxes(path));
+                var wings = ship.Model.Wings;
+                float S = 0f, cl = 0f;
+                if (wings != null) foreach (var w in wings) { S += w.PlanformArea; cl += w.CLMax * w.PlanformArea; }
+                cl = S > 0 ? cl / S : 0f;
+                string V(float g) => S > 0 && cl > 0 && mass > 0 ? $"{MathF.Sqrt(2f * mass * g / (1.225f * S * cl)):F0} m/s" : "-";
+                Console.WriteLine($"   {name,-16}  {mass / 1000f,6:F0}  {wings?.Count ?? 0,6}  {S,7:F0}  {cl,5:F2}  {(S > 0 ? mass / S : 0),13:F0}   {V(9.81f),9}   {V(19.62f),9}");
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "streamline")
+        {
+            // each dumped ship's shape streamlining along its six axes (ForceTable.ShapeStreamlining) and the transonic
+            // peak it gives (ForceTable.WavePeak) - what the per-ship Mach wall comes out as on real ships
+            Console.WriteLine($"   streamlining (wave peak) along +X -X +Y -Y +Z -Z  [brick {ForceTable.WavePeakBrick}x .. needle {ForceTable.WavePeakNeedle}x, Cd brick {ForceTable.StreamCdBrick} needle {ForceTable.StreamCdNeedle}]");
+            // plain shapes (calibration): the table's own Cd along the flow - drag / (q x its frontal area) - and streamlining
+            {
+                var shapes = new List<(string, List<(Vector3I, Vector3I)>, Vector3)>
+                {
+                    ("cube 4 m", new() { (Vector3I.Zero, new Vector3I(15, 15, 15)) }, -Vector3.UnitZ),
+                    ("brick end-on", new() { (Vector3I.Zero, new Vector3I(15, 15, 39)) }, -Vector3.UnitZ),
+                    ("plate face-on", new() { (Vector3I.Zero, new Vector3I(31, 1, 31)) }, -Vector3.UnitY),
+                };
+                foreach (int steps in new[] { 4, 8 })
+                {
+                    // a stepped cone along -Z: layers of shrinking squares, the nose at -Z (steps layers, 16 cells wide at the base)
+                    var cone = new List<(Vector3I, Vector3I)>();
+                    for (int k = 0; k < steps; k++)
+                    {
+                        int half = 8 - k * 8 / steps; int depth = 32 / steps;
+                        cone.Add((new Vector3I(8 - half, 8 - half, -k * depth - depth), new Vector3I(8 + half - 1, 8 + half - 1, -k * depth - 1)));
+                    }
+                    cone.Add((new Vector3I(0, 0, 0), new Vector3I(15, 15, 23)));   // a body behind
+                    shapes.Add(($"stepped cone {steps}", cone, -Vector3.UnitZ));
+                }
+                BlockSize = 2.5f;
+                foreach (var (nm, boxes, flow) in shapes)
+                {
+                    var ship = Build(nm, boxes);
+                    var inner = (DampedShadowedDragModel)ship.Model.InnerModel;
+                    var table = inner.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, ship.Com, 8);
+                    Span<float> e = stackalloc float[ForceTable.Stride];
+                    table.Sample(-flow, e);   // (indexed by the direction of motion: into the air)
+                    float drag = -(e[0] * -flow.X + e[1] * -flow.Y + e[2] * -flow.Z);
+                    float st = table.StreamliningAlong(-flow, -1f);
+                    Console.WriteLine($"   {nm,-16}  table Cd {(e[12] > 0 ? drag / e[12] : 0):F2} on {e[12]:F1} m2 -> streamlining {st:F2} ({ForceTable.WavePeak(st):F1}x)");
+                }
+            }
+            foreach (var path in Directory.GetFiles(dataDir, "*.boxes").OrderBy(x => x))
+            {
+                string name = Path.GetFileNameWithoutExtension(path);
+                var ship = Build(name, LoadBoxes(path));
+                var inner = (DampedShadowedDragModel)ship.Model.InnerModel;
+                var table = inner.BuildForceTable(ship.Grid, ship.Surface, ship.Manifold, ship.Com, 8);
+                var sb = new System.Text.StringBuilder($"   {name,-16}");
+                foreach (var d in new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ })
+                {
+                    float st = table.StreamliningAlong(d, -1f);
+                    sb.Append($"  {st:F2} ({ForceTable.WavePeak(st):F1}x)");
+                }
+                Console.WriteLine(sb.ToString());
             }
             return 0;
         }

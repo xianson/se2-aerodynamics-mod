@@ -38,6 +38,266 @@ public class DampedShadowedDragModel : IAeroDragModel
     public float SubsonicLimit { get; set; } = 0.6f;
     public float SupersonicLimit { get; set; } = 1.2f;
     public float Streamlining { get; set; } = 0.4f;
+    /// <summary>The subsonic pressure law (2026-10-10, AeroBench noses / blend): false - Cp = CdBluff x cos(a) (linear: a 4:1
+    /// slope still took a quarter of a wall's pressure, sloped noses dragged ~2x the measured), with the Streamlining fudge
+    /// on top; true - Cp = CdBluff x cos(a)^2 (the measured forebody pressures: 45 deg ~0.5, 2:1 ~0.2, 4:1 ~0.06 of a
+    /// wall's), no fudge. Flat faces alike either way. A static default for the A/B; tables rebuild with it.</summary>
+    public static bool SubsonicSquareLaw;
+
+    /// <summary>PRESSURE RECOVERY (2026-10-10, prototype - the bench's A/B): attached flow gives back at the tail the pressure
+    /// it put on the nose (d'Alembert - a streamlined body's drag is mostly friction). Per column of air across the flow
+    /// (BakeOcclusion's 0.5 m pixels): the subsonic pressure its front faces take, along the travel; the column's exit (its
+    /// most downstream face) turned away from the flow by less than SepDeg keeps the flow attached and is pushed forward by
+    /// RecoveryFrac of it, fading out to SepDeg + SepFadeDeg; an attached exit has no base suction either. A flat back,
+    /// a step, a blunt tail: separated, base suction as before. Subsonic end only (the Newtonian end is the wave drag).
+    /// Off: base suction everywhere on the lee side - no shape could get under ~0.3 of a wall, and a block-built
+    /// airliner's zero-lift drag came out ~13x the real one.</summary>
+    public static bool PressureRecovery;
+
+    /// <summary>REYNOLDS SKIN FRICTION (2026-10-10): the turbulent flat plate's Cf = 0.455 / (log10 Re)^2.58 at the ship's
+    /// length (Re at RefSpeed, sea level) instead of the flat CfSkin (0.005 - twice a 30 m airliner's ~0.002, and the
+    /// biggest part of a streamlined hull's drag once pressure recovers). Fixed per ship (the table is per unit q):
+    /// Cf moves only ~10 % between 50 and 300 m/s. Floor CfMin.</summary>
+    public static bool ReynoldsSkin;
+    /// <summary>Air-breathing engines' intakes and exhausts are flow-through (SetThroughFaces).</summary>
+    public static bool FlowThroughEngines;
+    public static float RefSpeed = 100f, CfMin = 0.0015f;
+    public static float TurbulentCf(float length, float speed = 0f)
+    {
+        double re = Math.Max(1e5, (speed > 0f ? speed : RefSpeed) * Math.Max(0.25f, length) / 1.46e-5);
+        return MathF.Max(CfMin, (float)(0.455 / Math.Pow(Math.Log10(re), 2.58)));
+    }
+    private float _lengthRef = 1f;
+    /// <summary>The skin friction coefficient this grid's faces take.</summary>
+    public float SkinCf => ReynoldsSkin ? TurbulentCf(_lengthRef) : CfSkin;
+    public static float RecoveryFrac = 0.9f, SepDeg = 18f, SepFadeDeg = 12f;
+    /// <summary>An exit face facing the flow's way more squarely than this (cos) is a flat back: never attached.</summary>
+    public static float FlatExit = 0.95f;
+    public static bool ColumnRun = true;
+    public static bool BluntPartial = true;   // (the two-loss column: rounded fronts recover, open exits drag BaseLoss - BakeRecovery)
+    public static float BaseLoss = 0.3f;
+    public static int RecoveryPasses = 2;   // (1, 2 (diagonal) or 4 lattices: BakeRecovery - 2 and 4 measure alike)
+    public static List<(int u, int w, float d, float sFace, float s, float front, float run)> RecDebug;   // (the bench's: each column's exit)
+    /// <summary>How attached the flow leaving a face is: 1 turning away by up to SepDeg, 0 past SepDeg + SepFadeDeg
+    /// (s: sin of the angle past parallel).</summary>
+    private static float _attSep = float.NaN, _attFade = float.NaN, _att0, _att1;
+    internal static float Attached(float s)
+    {
+        if (_attSep != SepDeg || _attFade != SepFadeDeg)
+        {
+            _att0 = MathF.Sin(SepDeg * MathF.PI / 180f); _att1 = MathF.Sin((SepDeg + SepFadeDeg) * MathF.PI / 180f);
+            _attSep = SepDeg; _attFade = SepFadeDeg;
+        }
+        float a0 = _att0, a1 = _att1;
+        if (s <= a0) return 1f;
+        if (s >= a1) return 0f;
+        float t = (s - a0) / (a1 - a0); return 1f - t * t * (3f - 2f * t);
+    }
+    /// <summary>A rear-facing face's Cp (cosA = n . travel, below 0): base suction ramped in by angle (full from 30 degrees
+    /// past parallel), none where the flow stays attached (recovery on).</summary>
+    internal static float LeeCp(float cosA, float baseCp, float cdBluff)
+    {
+        float s = Math.Clamp(-cosA, 0f, 1f);
+        float ramp = MathF.Min(1f, s * 2f); ramp = ramp * ramp * (3f - 2f * ramp);
+        float suction = baseCp * ramp;
+        return PressureRecovery ? suction * (1f - Attached(s)) : suction;
+    }
+
+    private static float Jump(TableWork work, int kk, float d0, float max)
+    {
+        if (work.RearI[kk] < 0) return 0f;
+        float dd = MathF.Abs(work.RearD[kk] - d0); return dd > max ? 0f : dd;
+    }
+
+    /// <summary>Each face's recovered push along the travel (per unit q), into work.Rec - PressureRecovery's columns.</summary>
+    private void BakeRecovery(Vector3 v, TableWork work, ReadOnlySpan<float> VA)
+    {
+        int total = _px.Count;
+        if (work.Rec.Length < total) work.Rec = new float[total];
+        var rec = work.Rec.AsSpan(0, total); rec.Clear();
+        var seed = MathF.Abs(v.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
+        var e1 = Vector3.Normalize(Vector3.Cross(v, seed)); var e2 = Vector3.Cross(v, e1);
+        const float Pix = 0.5f, inv = 1f / Pix;
+        var PX = CollectionsMarshal.AsSpan(_px); var PY = CollectionsMarshal.AsSpan(_py); var PZ = CollectionsMarshal.AsSpan(_pz);
+        var NX = CollectionsMarshal.AsSpan(_nx); var NY = CollectionsMarshal.AsSpan(_ny); var NZ = CollectionsMarshal.AsSpan(_nz);
+        var OI = CollectionsMarshal.AsSpan(_origIndex); var AR = CollectionsMarshal.AsSpan(_area); var RAW = CollectionsMarshal.AsSpan(_raw);
+        var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
+        int exLen = excl?.Count ?? 0;
+        // ONCE PER DIRECTION, per face: where it is across the flow (in columns), how far along it, and what it brings -
+        // the lattice passes below only bin these. Windward faces the air reaches and every face turned away (the exits:
+        // BakeOcclusion leaves those 'unreached' behind the front one) are listed; the rest take no part.
+        if (work.WU.Length < total)
+        {
+            int cap = total + 64;
+            work.WU = new float[cap]; work.WWc = new float[cap]; work.WD = new float[cap]; work.WV = new float[cap]; work.WA = new float[cap]; work.WS = new bool[cap];
+            work.LU = new float[cap]; work.LW = new float[cap]; work.LD = new float[cap]; work.LV = new float[cap]; work.LG = new int[cap]; work.LS = new bool[cap];
+        }
+        float[] WU = work.WU, WWc = work.WWc, WD = work.WD, WV = work.WV, WA = work.WA, LU = work.LU, LW = work.LW, LD = work.LD, LV = work.LV;
+        int[] LG = work.LG; bool[] WS = work.WS, LS = work.LS;
+        int nWin = 0, nLee = 0;
+        long tp0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        float umin = float.MaxValue, umax = float.MinValue, wmin = float.MaxValue, wmax = float.MinValue;
+        float cdBluff = CdBluff, st = Streamlining;
+        bool square = SubsonicSquareLaw;
+        for (int gi = 0; gi < total; gi++)
+        {
+            int oi = OI[gi];
+            if (oi < 0 || AR[gi] < 1e-6f || (oi < exLen && excl[oi])) continue;
+            float cosA = NX[gi] * v.X + NY[gi] * v.Y + NZ[gi] * v.Z;
+            bool windward = cosA > GrazingCos;
+            if (windward ? VA[gi] < 1e-6f : cosA >= -GrazingCos) continue;
+            float px = PX[gi], py = PY[gi], pz = PZ[gi];
+            float u = px * e1.X + py * e1.Y + pz * e1.Z, w = px * e2.X + py * e2.Y + pz * e2.Z;
+            if (u < umin) umin = u; if (u > umax) umax = u; if (w < wmin) wmin = w; if (w > wmax) wmax = w;
+            var rn = RAW[gi]; float rc = rn.X * v.X + rn.Y * v.Y + rn.Z * v.Z;
+            float d = px * v.X + py * v.Y + pz * v.Z;
+            if (windward)
+            {
+                float vai = VA[gi];
+                float cp = square ? cdBluff * cosA * cosA : cdBluff * cosA;
+                if (st > 0f && !square) cp *= 1f - st * (1f - (0.08f + 0.92f * cosA * cosA));
+                // (its push against the travel; its area across the flow in Gi's place - the front faces need no index;
+                //  Step: a cell face itself facing the flow, a step of the front)
+                WU[nWin] = u; WWc[nWin] = w; WD[nWin] = d; WV[nWin] = cp * vai * cosA; WA[nWin] = vai * cosA; WS[nWin] = rc > GrazingCos; nWin++;
+            }
+            else
+                // (its own area across the flow; Step: a cell face itself facing away, a step of the taper)
+                { LU[nLee] = u; LW[nLee] = w; LD[nLee] = d; LV[nLee] = AR[gi] * -cosA; LG[nLee] = gi; LS[nLee] = rc < -GrazingCos; nLee++; }
+        }
+        if (umin > umax || nWin == 0) return;
+        float umin0 = MathF.Floor(umin / Pix) * Pix, wmin0 = MathF.Floor(wmin / Pix) * Pix;
+        for (int i = 0; i < nWin; i++) { WU[i] = (WU[i] - umin0) * inv; WWc[i] = (WWc[i] - wmin0) * inv; }
+        for (int i = 0; i < nLee; i++) { LU[i] = (LU[i] - umin0) * inv; LW[i] = (LW[i] - wmin0) * inv; }
+        int W = (int)((umax - umin0) * inv) + 2, H = (int)((wmax - wmin0) * inv) + 2, n = W * H;
+        if (work.Front.Length < n)
+        {
+            work.Front = new float[n]; work.RearD = new float[n]; work.RearI = new int[n]; work.Run = new ulong[n]; work.Step = new ulong[n];
+            work.FrontA = new float[n]; work.ExitA = new float[n]; work.FrontD = new float[n]; work.FStep = new ulong[n];
+        }
+        var front = work.Front.AsSpan(0, n); var rearD = work.RearD.AsSpan(0, n); var rearI = work.RearI.AsSpan(0, n);
+        var frontA = work.FrontA.AsSpan(0, n); var exitA = work.ExitA.AsSpan(0, n);
+        var frontD = work.FrontD.AsSpan(0, n); var fstep = work.FStep.AsSpan(0, n);
+        var run = work.Run.AsSpan(0, n); var step = work.Step.AsSpan(0, n);
+        long tp1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        int passes = RecoveryPasses >= 4 ? 4 : RecoveryPasses >= 2 ? 2 : 1;
+        float wPass = 1f / passes;
+        for (int pass = 0; pass < passes; pass++)
+        {
+            float oU = passes == 4 ? (pass & 1) * 0.5f : pass * 0.5f, oW = passes == 4 ? (pass >> 1 & 1) * 0.5f : pass * 0.5f;
+            front.Clear(); frontA.Clear(); exitA.Clear(); fstep.Clear(); run.Clear(); step.Clear();
+            rearD.Fill(float.MaxValue); rearI.Fill(-1); frontD.Fill(float.MinValue);
+            for (int i = 0; i < nWin; i++)
+            {
+                int k = (int)(WU[i] + oU) + W * (int)(WWc[i] + oW);
+                front[k] += WV[i]; frontA[k] += WA[i];
+                if (WD[i] > frontD[k]) frontD[k] = WD[i];
+            }
+            for (int i = 0; i < nLee; i++)
+            {
+                // (the exit: the most downstream face turned away from the flow - a side along it is no exit, it took the
+                //  box's edge columns' recovery: a flat back read 15% attached)
+                int k = (int)(LU[i] + oU) + W * (int)(LW[i] + oW);
+                if (LD[i] < rearD[k]) { rearD[k] = LD[i]; rearI[k] = LG[i]; }
+            }
+            // the front's steps: which 0.25 m depth bins behind the column's front-most face hold a cell face itself facing
+            // the flow - two or more: a stepped (rounded) nose or leading edge, one: a flat face
+            for (int i = 0; i < nWin; i++)
+            {
+                if (!WS[i]) continue;
+                int k = (int)(WU[i] + oU) + W * (int)(WWc[i] + oW);
+                int fb = (int)((frontD[k] - WD[i]) * 4f);
+                if ((uint)fb < 64u) fstep[k] |= 1UL << fb;
+            }
+            // the rear surface's run up the column from its exit: which 0.25 m depth bins upstream of the exit hold a face
+            // facing away (a 64-bit mask - 16 m), its steps, and the exit's own area across the flow
+            for (int i = 0; i < nLee; i++)
+            {
+                int k = (int)(LU[i] + oU) + W * (int)(LW[i] + oW);
+                int bin = (int)((LD[i] - rearD[k]) * 4f);
+                if ((uint)bin >= 64u) continue;
+                if (bin == 0) exitA[k] += LV[i];
+                run[k] |= 1UL << bin;
+                if (LS[i]) step[k] |= 1UL << bin;
+            }
+            long tc0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            ColumnsRecover(v, work, rec, front, rearD, rearI, frontA, exitA, frontD, fstep, run, step, W, H, wPass, pass);
+            System.Threading.Interlocked.Add(ref RecTicksColumns, System.Diagnostics.Stopwatch.GetTimestamp() - tc0);
+        }
+        long tp2 = System.Diagnostics.Stopwatch.GetTimestamp();
+        System.Threading.Interlocked.Add(ref RecTicksPre, tp1 - tp0);
+        System.Threading.Interlocked.Add(ref RecTicksPasses, tp2 - tp1);
+        System.Threading.Interlocked.Increment(ref RecBakes);
+        System.Threading.Interlocked.Add(ref RecPixels, (long)n * passes);
+    }
+    public static long RecTicksPre, RecTicksPasses, RecTicksColumns, RecBakes, RecPixels;   // (the bench's profile of BakeRecovery)
+
+    /// <summary>Each column's verdict (BakeRecovery): what its exit gives back, added to that face.</summary>
+    private void ColumnsRecover(Vector3 v, TableWork work, Span<float> rec, Span<float> front, Span<float> rearD, Span<int> rearI,
+        Span<float> frontA, Span<float> exitA, Span<float> frontD, Span<ulong> fstep, Span<ulong> run, Span<ulong> step, int W, int H, float wPass, int pass)
+    {
+        const float Pix = 0.5f, JumpMax = 4f;
+        var NX = CollectionsMarshal.AsSpan(_nx); var NY = CollectionsMarshal.AsSpan(_ny); var NZ = CollectionsMarshal.AsSpan(_nz);
+        int n = W * H;
+        for (int k = 0; k < n; k++)
+        {
+            float fk = front[k];
+            if (fk <= 0f) continue;
+            int gi = rearI[k];
+            if (gi < 0) { if (RecDebug != null && pass == 0) RecDebug.Add((k % W, k / W, 0f, 0f, -2f, fk, 0f)); continue; }   // (no exit)
+            float sFace = -(NX[gi] * v.X + NY[gi] * v.Y + NZ[gi] * v.Z);
+            // THE COLUMN'S TWO LOSSES. Its front: a flat face with sharp edges (one step: a box's) separates at its edges
+            // and keeps its stagnation pressure - nothing given back; a stepped or sloping front (a nose, a leading edge)
+            // is a rounded one, its pressure answered by the suction round its shoulder. Its exit: what is left open there
+            // - a blunt end, or a steep one where the flow lets go - drags BaseLoss x q x its area (the measured base
+            // pressure), not the whole front's pressure. (All-or-nothing at the exit lost a clean airliner's wing its
+            // leading edges' pressure at every one-cell trailing edge: 35 kN.)
+            int iu = k % W, iw = k / W;
+            bool rounded = !BluntPartial || System.Numerics.BitOperations.PopCount(fstep[k] & 0xFFFFUL) >= 2;
+            if (!rounded)
+            {
+                float fd = frontD[k];
+                for (int nb = 0; nb < 4 && !rounded; nb++)
+                {
+                    int kk = nb == 0 ? (iu > 0 ? k - 1 : -1) : nb == 1 ? (iu < W - 1 ? k + 1 : -1) : nb == 2 ? (iw > 0 ? k - W : -1) : (iw < H - 1 ? k + W : -1);
+                    if (kk < 0 || frontD[kk] == float.MinValue) continue;
+                    float dd = MathF.Abs(frontD[kk] - fd);
+                    if (dd > 0.2f * Pix && dd < JumpMax) rounded = true;
+                }
+            }
+            // the run up from the exit: a staircase ending - steps at two depths or more - is the wedge it draws, its slope
+            // from the run (a wing's one-cell trailing edge after a step is a tapered edge, not a blunt one); a taper steps
+            // down - smoothing alone tilts a box's sides near its back edge, a 0.5-1 m 'run' with the back its only step
+            ulong mR = run[k]; int len = 0, gap = 0;
+            for (int b = 0; b < 64 && gap < 2; b++) { if ((mR >> b & 1UL) != 0) { len = b + 1; gap = 0; } else gap++; }
+            ulong inRun = len >= 64 ? ~0UL : (1UL << len) - 1;
+            bool stair = System.Numerics.BitOperations.PopCount(step[k] & inRun) >= 2;
+            float runM = stair ? len * 0.25f : 0f;
+            float sStair = Pix / MathF.Sqrt(Pix * Pix + runM * runM);
+            if (sFace > FlatExit)
+            {
+                float openF = stair ? 1f - Attached(sStair) : 1f;
+                float rb = rounded && BluntPartial ? MathF.Max(0f, RecoveryFrac * fk - BaseLoss * exitA[k] * openF) : 0f;
+                rec[gi] += wPass * rb;
+                if (RecDebug != null && pass == 0) RecDebug.Add((iu, iw, rearD[k], sFace, -1f, fk - rb, 0f));
+                continue;
+            }
+            // The exit surface's slope from the exits' depths (a staircase's own faces face mostly backwards whatever slope
+            // they make): per axis across the flow, the steepest one-sided depth change to a neighbouring column's exit - a
+            // jump past JumpMax is another part of the ship; or within the column (a wing is one or two columns thick).
+            float d0 = rearD[k];
+            float gu = MathF.Max(iu > 0 ? Jump(work, k - 1, d0, JumpMax) : 0f, iu < W - 1 ? Jump(work, k + 1, d0, JumpMax) : 0f) / Pix;
+            float gw = MathF.Max(iw > 0 ? Jump(work, k - W, d0, JumpMax) : 0f, iw < H - 1 ? Jump(work, k + W, d0, JumpMax) : 0f) / Pix;
+            float s = 1f / MathF.Sqrt(1f + gu * gu + gw * gw);   // (sin of the exit surface's angle past parallel to the flow)
+            if (ColumnRun && sStair < s) s = sStair;
+            float att = Attached(s);
+            float rcv = !rounded ? 0f : BluntPartial ? MathF.Max(0f, RecoveryFrac * fk - BaseLoss * exitA[k] * (1f - att)) : RecoveryFrac * att * fk;
+            rec[gi] += wPass * rcv;
+            if (RecDebug != null && pass == 0) RecDebug.Add((iu, iw, d0, sFace, s, fk, runM));
+        }
+    }
+    public bool SquareLaw => SubsonicSquareLaw;
+    /// <summary>The last face-loop evaluation's shape streamlining (displays).</summary>
+    public float LastStreamlining { get; private set; } = -1f;
 
     public PrecomputedShadowMap ShadowMap => _shadowMap;
 
@@ -54,6 +314,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     private List<float> _area = new(), _visArea = new();
     private List<float> _cpGrouped = new();
     private List<int> _origIndex = new();
+    private List<Vector3> _raw = new();   // (each face's cell direction before smoothing: PressureRecovery's step faces)
     private List<float> _cpOut = new(); // Cp in original face order
 
     // Per-direction group: start index and count in the SoA arrays
@@ -125,6 +386,7 @@ public class DampedShadowedDragModel : IAeroDragModel
         EnsureListSize(_area, _totalPadded); EnsureListSize(_visArea, _totalPadded);
         EnsureListSize(_cpGrouped, _totalPadded);
         EnsureListSizeI(_origIndex, _totalPadded);
+        while (_raw.Count < _totalPadded) _raw.Add(default);
 
         // Zero all
         for (int j = 0; j < _totalPadded; j++)
@@ -135,6 +397,7 @@ public class DampedShadowedDragModel : IAeroDragModel
             _origIndex[j] = -1;
         }
 
+        var lo = new Vector3(float.MaxValue); var hi = new Vector3(float.MinValue);
         // Fill grouped SoA with HULL faces only
         Span<int> cursor = stackalloc int[6];
         for (int d = 0; d < 6; d++) cursor[d] = _dirStart[d];
@@ -151,7 +414,10 @@ public class DampedShadowedDragModel : IAeroDragModel
             _area[j] = f.Area;
             _visArea[j] = f.Area;
             _origIndex[j] = i;
+            _raw[j] = f.RawNormal;
+            lo = Vector3.Min(lo, f.Position); hi = Vector3.Max(hi, f.Position);
         }
+        { var ext = hi - lo; _lengthRef = lo.X <= hi.X ? MathF.Max(ext.X, MathF.Max(ext.Y, ext.Z)) : 1f; }   // (the ship's length: its longest extent - ReynoldsSkin)
 
         // Ensure _cpOut is large enough (indexed by original face index)
         while (_cpOut.Count < n) _cpOut.Add(0f);
@@ -169,13 +435,46 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// <summary>Faces another model owns (a wing's skins): left out of this one. For the surface version given only.</summary>
     public void SetExcludedFaces(List<bool> excluded, int surfaceVersion)
     {
-        _excluded = excluded;
-        _excludedVersion = surfaceVersion;
+        _wingMask = excluded; _wingMaskVersion = surfaceVersion;
+        CombineExcluded();
+    }
+
+    /// <summary>FLOW-THROUGH faces (2026-10-10): an air-breathing engine's intake and exhaust - the air goes through it,
+    /// it is no wall at the front and no flat back behind (an airliner's two rear nacelles were ~16 kN of a Tu-134's
+    /// ~44 kN hull drag, as closed boxes). Left out of the face model like a wing's skins. For the surface version given.</summary>
+    public void SetThroughFaces(List<bool> through, int surfaceVersion)
+    {
+        _throughMask = through; _throughVersion = surfaceVersion;
+        CombineExcluded();
+    }
+
+    private List<bool> _wingMask, _throughMask; private int _wingMaskVersion = -1, _throughVersion = -1;
+    private void CombineExcluded()
+    {
+        int ver = Math.Max(_wingMask != null ? _wingMaskVersion : -1, _throughMask != null ? _throughVersion : -1);
+        var a = _wingMask != null && _wingMaskVersion == ver ? _wingMask : null;
+        var b = _throughMask != null && _throughVersion == ver ? _throughMask : null;
+        if (a == null || b == null) _excluded = a ?? b;
+        else
+        {
+            var c = new List<bool>(Math.Max(a.Count, b.Count));
+            for (int i = 0; i < c.Capacity; i++) c.Add((i < a.Count && a[i]) || (i < b.Count && b[i]));
+            _excluded = c;
+        }
+        _excludedVersion = ver;
         _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;   // re-bake with it
     }
 
     /// <summary>One table worker's buffers: its faces' reached areas and its depth buffer.</summary>
-    public sealed class TableWork { public float[] Vis = System.Array.Empty<float>(); public float[] Z = System.Array.Empty<float>(); }
+    public sealed class TableWork
+    {
+        public float[] Vis = System.Array.Empty<float>(); public float[] Z = System.Array.Empty<float>();
+        public float[] Rec = System.Array.Empty<float>(), Front = System.Array.Empty<float>(), RearD = System.Array.Empty<float>(); public int[] RearI = System.Array.Empty<int>(); public ulong[] Run = System.Array.Empty<ulong>(), Step = System.Array.Empty<ulong>(); public float[] FrontA = System.Array.Empty<float>(), ExitA = System.Array.Empty<float>(), FrontD = System.Array.Empty<float>(); public ulong[] FStep = System.Array.Empty<ulong>();   // (PressureRecovery's)
+        // (the recovery passes' faces, packed in list order - one array per field: arrays of mod types are banned, VRS1001)
+        public float[] WU = System.Array.Empty<float>(), WWc = System.Array.Empty<float>(), WD = System.Array.Empty<float>(), WV = System.Array.Empty<float>(), WA = System.Array.Empty<float>();
+        public float[] LU = System.Array.Empty<float>(), LW = System.Array.Empty<float>(), LD = System.Array.Empty<float>(), LV = System.Array.Empty<float>();
+        public int[] LG = System.Array.Empty<int>(); public bool[] WS = System.Array.Empty<bool>(), LS = System.Array.Empty<bool>();
+    }
     private readonly TableWork _work0 = new();
 
     /// <summary>
@@ -300,7 +599,7 @@ public class DampedShadowedDragModel : IAeroDragModel
         EnsureSoA(cache.Faces, cache.Version, manifold);
         var table = new ForceTable(n, nj) { SurfaceVersion = cache.Version, BuildCom = com };
         int total = _px.Count;
-        float cdBluff = CdBluff, cpMax = CpMax, cf = CfSkin, st = Streamlining;
+        float cdBluff = CdBluff, cpMax = CpMax, cf = SkinCf, st = Streamlining;
 
         // the directions, on up to TableThreads workers (each its own buffers; the faces are only read)
         int per = (n + 1) * (n + 1), count = 6 * per;
@@ -398,17 +697,35 @@ public class DampedShadowedDragModel : IAeroDragModel
         int total = _px.Count;
         var PX = CollectionsMarshal.AsSpan(_px); var PY = CollectionsMarshal.AsSpan(_py); var PZ = CollectionsMarshal.AsSpan(_pz);
         var NX = CollectionsMarshal.AsSpan(_nx); var NY = CollectionsMarshal.AsSpan(_ny); var NZ = CollectionsMarshal.AsSpan(_nz);
-        float cdBluff = CdBluff, cpMax = CpMax, cf = CfSkin, st = Streamlining;
+        float cdBluff = CdBluff, cpMax = CpMax, cf = SkinCf, st = Streamlining;
         float baseCp = st > 0f ? CpBase * (1f - 0.7f * st) : CpBase;
         bool turning = w.X != 0 || w.Y != 0 || w.Z != 0;
         if (bake) BakeOcclusion(v, work);
         var VA = work.Vis.AsSpan(0, Math.Min(total, work.Vis.Length));
         if (VA.Length < total) return;
+        bool recover = PressureRecovery;
+        if (recover && (bake || work.Rec.Length < total)) BakeRecovery(v, work, VA);
+        var REC = recover ? work.Rec.AsSpan(0, total) : default;
         double f0x = 0, f0y = 0, f0z = 0, f1x = 0, f1y = 0, f1z = 0, t0x = 0, t0y = 0, t0z = 0, t1x = 0, t1y = 0, t1z = 0, frontal = 0;
         for (int gi = 0; gi < total; gi++)
         {
             float vai = VA[gi];
-            if (vai < 1e-6f) continue;
+            if (vai < 1e-6f)
+            {
+                // (an unreached face behind: only a column's recovered push, if it is that column's exit)
+                float r0 = recover ? REC[gi] : 0f;
+                if (r0 == 0f) continue;
+                float rax = r0 * v.X, ray = r0 * v.Y, raz = r0 * v.Z, qx = PX[gi], qy = PY[gi], qz = PZ[gi];
+                f0x += rax; f0y += ray; f0z += raz;
+                t0x += qy * raz - qz * ray; t0y += qz * rax - qx * raz; t0z += qx * ray - qy * rax;
+                if (chunkAcc != null && faceChunk[gi] >= 0)
+                {
+                    int o = faceChunk[gi] * ForceTable.Stride;
+                    chunkAcc[o] += rax; chunkAcc[o + 1] += ray; chunkAcc[o + 2] += raz;
+                    chunkAcc[o + 6] += qy * raz - qz * ray; chunkAcc[o + 7] += qz * rax - qx * raz; chunkAcc[o + 8] += qx * ray - qy * rax;
+                }
+                continue;
+            }
             float nx = NX[gi], ny = NY[gi], nz = NZ[gi];
             float px = PX[gi], py = PY[gi], pz = PZ[gi];
             // the air past this face (per unit speed), and its dynamic pressure (per unit q)
@@ -425,15 +742,13 @@ public class DampedShadowedDragModel : IAeroDragModel
             float cpSub, cpSup;
             if (cosA > 0)
             {
-                cpSub = cdBluff * cosA; cpSup = cpMax * cosA * cosA;
-                if (st > 0f) { float factor = 0.08f + 0.92f * cosA * cosA; float m = 1f - st * (1f - factor); cpSub *= m; cpSup *= m; }
+                cpSub = SubsonicSquareLaw ? cdBluff * cosA * cosA : cdBluff * cosA; cpSup = cpMax * cosA * cosA;
+                if (st > 0f && !SubsonicSquareLaw) { float factor = 0.08f + 0.92f * cosA * cosA; float m = 1f - st * (1f - factor); cpSub *= m; cpSup *= m; }
                 frontal += vai * cosA * qf;
             }
             else
             {
-                float ramp = MathF.Min(1f, -cosA * 2f);      // (sin 30 = 0.5: full suction from 30 degrees past parallel)
-                ramp = ramp * ramp * (3f - 2f * ramp);
-                cpSub = cpSup = baseCp * ramp;
+                cpSub = cpSup = LeeCp(cosA, baseCp, cdBluff);   // (full suction from 30 degrees past parallel; recovery while attached)
             }
             float sx = 0, sy = 0, sz = 0;
             float sinSq = 1f - cosA * cosA;
@@ -443,6 +758,7 @@ public class DampedShadowedDragModel : IAeroDragModel
                 sx = -(vx - cosA * nx) * fric; sy = -(vy - cosA * ny) * fric; sz = -(vz - cosA * nz) * fric;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
             }
             float ax = -cpSub * vai * qf * nx + sx, ay = -cpSub * vai * qf * ny + sy, az = -cpSub * vai * qf * nz + sz;
+            if (recover) { float r = REC[gi]; if (r != 0f) { ax += r * v.X; ay += r * v.Y; az += r * v.Z; } }   // (the column's recovered push, along the travel: subsonic end)
             float bx = -cpSup * vai * qf * nx + sx, by = -cpSup * vai * qf * ny + sy, bz = -cpSup * vai * qf * nz + sz;
             f0x += ax; f0y += ay; f0z += az; f1x += bx; f1y += by; f1z += bz;
             t0x += py * az - pz * ay; t0y += pz * ax - px * az; t0z += px * ay - py * ax;
@@ -545,7 +861,17 @@ public class DampedShadowedDragModel : IAeroDragModel
 
             float cosDir = Vector3.Dot(vHat, DirNormals[d]);
 
-            if (cosDir > 0.001f)
+            if (PressureRecovery)
+            {
+                // (recovery: every face by its own slope - the per-face path; the rear groups' flat base pressure and the
+                //  vector path know only suction)
+                ComputeGroupScalar(ctx, d, cosDir > 0.001f, baseCp, halfRho, invSoS,
+                    hasOmega, hasSkin, hasStreamlining,
+                    ref totalFx, ref totalFy, ref totalFz,
+                    ref totalTx, ref totalTy, ref totalTz,
+                    ref frontalArea);
+            }
+            else if (cosDir > 0.001f)
             {
                 // Front-facing group — full force computation
                 if (Vector256.IsHardwareAccelerated && _dirPadded[d] >= 8)
@@ -574,8 +900,18 @@ public class DampedShadowedDragModel : IAeroDragModel
         if (invSoS > 0)
         {
             float mach0 = speed * invSoS;
-            double mcrit = 0.7 + 0.1 * Streamlining;
-            double peak = 3.5 - 1.0 * Streamlining;
+            // (the shape's own streamlining along the flow, as ForceTable.ShapeStreamlining: this drag against a flat face's
+            //  of the same frontal area - it was the fixed Streamlining for every grid)
+            float st = Streamlining;
+            float qNow = halfRho * speed * speed;
+            if (ForceTable.ShapeStreamliningOn && frontalArea > 1e-3f && qNow > 0f)
+            {
+                float dragNow = -(totalFx * vHat.X + totalFy * vHat.Y + totalFz * vHat.Z);
+                st = ForceTable.StreamliningOf(dragNow / (qNow * frontalArea));
+            }
+            LastStreamlining = st;
+            double mcrit = 0.7 + 0.1 * st;
+            double peak = ForceTable.WavePeak(st);
             float waveMul = (float)CompressibleFlow.WaveDragMultiplier(mach0, mcrit, peak);
             totalFx *= waveMul; totalFy *= waveMul; totalFz *= waveMul;
             totalTx *= waveMul; totalTy *= waveMul; totalTz *= waveMul;
@@ -737,13 +1073,15 @@ public class DampedShadowedDragModel : IAeroDragModel
 
             // Cp with pre-computed Mach blend: cosA * (cdBlend + cpBlend * cosA)
             Vector256<float> cpWindward;
-            if (Fma.IsSupported)
+            if (SubsonicSquareLaw)
+                cpWindward = cosA * cosA * (cdBlend + cpBlend);
+            else if (Fma.IsSupported)
                 cpWindward = cosA * Fma.MultiplyAdd(cpBlend, cosA, cdBlend);
             else
                 cpWindward = cosA * (cdBlend + cpBlend * cosA);
 
-            // Streamlining
-            if (hasStreamlining)
+            // Streamlining (not with the square law: it is what the fudge stood in for)
+            if (hasStreamlining && !SubsonicSquareLaw)
             {
                 var cosA2 = cosA * cosA;
                 Vector256<float> factor;
@@ -957,14 +1295,14 @@ public class DampedShadowedDragModel : IAeroDragModel
                 if (vai < 1e-6f) { _cpGrouped[gi] = 0; continue; }
 
                 float mach = spd * invSoS;
-                float cpSub = cdBluff * cosA;
+                float cpSub = SubsonicSquareLaw ? cdBluff * cosA * cosA : cdBluff * cosA;
                 float cpSup = cpMax * cosA * cosA;
                 float t = (mach - subLim) * invMachRange;
                 t = t < 0 ? 0 : (t > 1 ? 1 : t);
                 t = t * t * (3f - 2f * t);
                 cp = cpSub + (cpSup - cpSub) * t;
 
-                if (hasStreamlining)
+                if (hasStreamlining && !SubsonicSquareLaw)
                 {
                     float recovery = cosA * cosA;
                     float factor = 0.08f + 0.92f * recovery;
@@ -975,7 +1313,7 @@ public class DampedShadowedDragModel : IAeroDragModel
             }
             else
             {
-                cp = baseCp;
+                cp = PressureRecovery ? LeeCp(cosA, baseCp, cdBluff) : baseCp;
             }
 
             _cpGrouped[gi] = cp;

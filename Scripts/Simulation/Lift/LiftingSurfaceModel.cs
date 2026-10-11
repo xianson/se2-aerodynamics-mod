@@ -221,9 +221,14 @@ public class LiftingSurfaceModel : IAeroDragModel
             // The wing owns its skins (both: the face model leaves them out, ExcludeWingFaces): their drag is
             // skin friction on both sides, here, besides the induced drag.
             float left = WingRemaining(i);
-            var profileDrag = -vHat * (2f * innerCfSkin * qf * wing.PlanformArea * left);
-            totalForce += profileDrag;
-            totalTorque += Vector3.Cross(wing.Centroid - ctx.CenterOfMass, profileDrag);
+            // (with ReynoldsSkin the wing model's profile drag already is both skins - 2.4 Cf at its chord: this was a
+            //  second 0.010 on top of its 0.010, a profile drag of 0.020 where a wing measures ~0.006)
+            if (!DampedShadowedDragModel.ReynoldsSkin)
+            {
+                var profileDrag = -vHat * (2f * innerCfSkin * qf * wing.PlanformArea * left);
+                totalForce += profileDrag;
+                totalTorque += Vector3.Cross(wing.Centroid - ctx.CenterOfMass, profileDrag);
+            }
 
             var wingTotalForce = (wf.LiftForce + wf.InducedDrag) * left;
             totalForce += wingTotalForce;

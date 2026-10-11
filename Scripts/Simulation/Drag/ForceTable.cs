@@ -28,6 +28,36 @@ public sealed class ForceTable
     public Vector3 BuildCom;          // the centre of mass the rotation response was taken about
     public double BuildMs;
 
+    // ── STREAMLINING, per ship and per direction (2026-10-10 - it was a fixed 0.4 for every grid: a brick and a dart met
+    //    the same transonic wall, 3.1x at Mach 1.05): how the hull's drag along the flow compares with a flat face of the
+    //    same frontal area - a block face-on (StreamCdBrick) streamlining 0, a fine sloped nose (StreamCdNeedle) 1.
+    //    (Stepping blocks down does not help: each step is a flat face to the flow; slopes do.) It sets the wave drag: its onset (0.7 + 0.1 st) and its peak, from WavePeakBrick
+    //    (st 0) down to WavePeakNeedle (st 1). Read off the table's own subsonic drag - nothing new is built. ──
+    public static bool ShapeStreamliningOn = true;
+    /// <summary>The Cd (drag / (q x the table's frontal area)) of a plain block face-on - the model's own, measured on a
+    /// 4 m cube (AeroBench streamline: 0.87-0.90; a stepped cone of blocks the same: steps are flat faces) - and of a fine
+    /// sloped nose (~2:1 slope blocks), the two ends of the scale.</summary>
+    public static float StreamCdBrick = 0.88f, StreamCdNeedle = 0.35f, WavePeakBrick = 3.2f, WavePeakNeedle = 1.2f;
+    public static float StreamliningOf(float cd) => Math.Clamp((StreamCdBrick - cd) / Math.Max(0.01f, StreamCdBrick - StreamCdNeedle), 0f, 1f);
+    public static float WavePeak(float st) => WavePeakBrick + (WavePeakNeedle - WavePeakBrick) * Math.Clamp(st, 0f, 1f);
+    /// <summary>The streamlining along vHat from a sampled table entry (s: Stride values); the fixed one when off or
+    /// when there is no frontal area.</summary>
+    public static float ShapeStreamlining(ReadOnlySpan<float> s, Vector3 vHat, float fallback)
+    {
+        if (!ShapeStreamliningOn) return fallback;
+        float area = s[12];
+        if (!(area > 1e-3f)) return fallback;
+        float drag = -(s[0] * vHat.X + s[1] * vHat.Y + s[2] * vHat.Z);
+        return StreamliningOf(drag / area);
+    }
+    /// <summary>The streamlining along a direction (grid-local), for displays.</summary>
+    public float StreamliningAlong(Vector3 vHat, float fallback)
+    {
+        Span<float> s = stackalloc float[Stride];
+        Sample(Vector3.Normalize(vHat), s);
+        return ShapeStreamlining(s, Vector3.Normalize(vHat), fallback);
+    }
+
     public ForceTable(int n, int nj)
     {
         N = n; NJ = nj;
@@ -131,7 +161,8 @@ public sealed class ForceTable
         float t = supersonicLimit > subsonicLimit ? (mach - subsonicLimit) / (supersonicLimit - subsonicLimit) : 0f;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         t = t * t * (3f - 2f * t);
-        float wave = invSoS > 0 ? (float)CompressibleFlow.WaveDragMultiplier(mach, 0.7 + 0.1 * streamlining, 3.5 - 1.0 * streamlining) : 1f;
+        float st = ShapeStreamlining(s, vHat, streamlining);
+        float wave = invSoS > 0 ? (float)CompressibleFlow.WaveDragMultiplier(mach, 0.7 + 0.1 * st, WavePeak(st)) : 1f;
         float k = q * wave;
 
         var f = new Vector3(s[0] + (s[3] - s[0]) * t, s[1] + (s[4] - s[1]) * t, s[2] + (s[5] - s[2]) * t) * k;

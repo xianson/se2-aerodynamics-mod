@@ -139,9 +139,9 @@ public class AeroComponentRegistry
                 float cosAlpha = Vector3.Dot(vHat, face.Normal);
                 if (cosAlpha <= 0.01f) continue;
 
-                float cp = cdBluff * cosAlpha;
+                float cp = DampedShadowedDragModel.SubsonicSquareLaw ? cdBluff * cosAlpha * cosAlpha : cdBluff * cosAlpha;
 
-                if (streamlining > 0f)
+                if (streamlining > 0f && !DampedShadowedDragModel.SubsonicSquareLaw)
                 {
                     float recovery = cosAlpha * cosAlpha;
                     float minFraction = 0.08f;
@@ -187,9 +187,9 @@ public class AeroComponentRegistry
                 if (cosAlpha <= 0.01f)
                     continue;
 
-                float cp = cdBluff * cosAlpha;
+                float cp = DampedShadowedDragModel.SubsonicSquareLaw ? cdBluff * cosAlpha * cosAlpha : cdBluff * cosAlpha;
 
-                if (streamlining > 0f)
+                if (streamlining > 0f && !DampedShadowedDragModel.SubsonicSquareLaw)
                 {
                     float recovery = cosAlpha * cosAlpha;
                     float minFraction = 0.08f;

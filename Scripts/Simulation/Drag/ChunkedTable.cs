@@ -6,11 +6,11 @@ namespace AeroMod;
 /// <summary>The face model's per-face terms, for unit dynamic pressure (as DampedShadowedDragModel.SumFaces).</summary>
 public readonly struct FacePhysics
 {
-    public readonly float CdBluff, CpMax, Cf, St, BaseCp;
+    public readonly float CdBluff, CpMax, Cf, St, BaseCp; public readonly bool Square;
 
     public FacePhysics(DampedShadowedDragModel m)
     {
-        CdBluff = m.CdBluff; CpMax = m.CpMax; Cf = m.CfSkin; St = m.Streamlining;
+        CdBluff = m.CdBluff; CpMax = m.CpMax; Cf = m.SkinCf; St = m.Streamlining; Square = m.SquareLaw;
         BaseCp = m.Streamlining > 0f ? m.CpBase * (1f - 0.7f * m.Streamlining) : m.CpBase;
     }
 
@@ -22,14 +22,13 @@ public readonly struct FacePhysics
         float cpSub, cpSup;
         if (cosA > 0)
         {
-            cpSub = CdBluff * cosA; cpSup = CpMax * cosA * cosA;
-            if (St > 0f) { float m = 1f - St * (1f - (0.08f + 0.92f * cosA * cosA)); cpSub *= m; cpSup *= m; }
+            cpSub = Square ? CdBluff * cosA * cosA : CdBluff * cosA; cpSup = CpMax * cosA * cosA;
+            if (St > 0f && !Square) { float m = 1f - St * (1f - (0.08f + 0.92f * cosA * cosA)); cpSub *= m; cpSup *= m; }
             acc[o + 12] += a * cosA;
         }
         else
         {
-            float ramp = MathF.Min(1f, -cosA * 2f); ramp = ramp * ramp * (3f - 2f * ramp);
-            cpSub = cpSup = BaseCp * ramp;
+            cpSub = cpSup = DampedShadowedDragModel.LeeCp(cosA, BaseCp, CdBluff);
         }
         float sx = 0, sy = 0, sz = 0;
         float sinSq = 1f - cosA * cosA;
@@ -109,6 +108,14 @@ public sealed class ChunkedTable
     }
 
     public bool HasShare(int c) => _q[c] != null;
+
+    /// <summary>One value of chunk c's share - slot (a direction-table node), component k - decoded alone (GetShare
+    /// decodes the whole share into a new array: the flight field read four corners that way, per chunk, per direction).</summary>
+    public float ShareAt(int c, int slot, int k)
+    {
+        var q = _q[c]; if (q == null) return 0f;
+        return q[slot * ForceTable.Stride + k] * _scale[c][k];
+    }
 
     /// <summary>Bytes held (shares and occluders).</summary>
     public long Bytes()

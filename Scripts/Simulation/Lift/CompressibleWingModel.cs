@@ -29,6 +29,126 @@ public class CompressibleWingModel : IWingLiftModel
     private float[] _alphaEff = Array.Empty<float>();
     private float[] _efficiency = Array.Empty<float>();
     private float[] _oswaldMod = Array.Empty<float>();
+    private float[] _arSys = Array.Empty<float>(); private int[] _sys = Array.Empty<int>(); private double _sysSig = double.NaN;
+
+    /// <summary>WING SYSTEMS (2026-10-10, AeroBench polar): the detector hands over a wing in pieces - a Tu-134's main wing
+    /// came as its left half and its right half in two stacked layers, each flown as a stub of aspect ratio 2.3-4.8 (lift
+    /// slope halved, induced drag doubled, and the layers charged as a biplane against each other). Pieces lying in one
+    /// plane (parallel, within SystemGap of each other across it), overlapping fore and aft, and touching or overlapping
+    /// along the span (across a fuselage: a gap up to SystemSpanGap of their spans) are one wing: each flies with the
+    /// system's tip-to-tip aspect ratio (span^2 / its area), and no downwash between them. False: each piece alone.</summary>
+    public static float TestAlpha0;   // (rad, negative: a cambered wing's zero-lift angle - AeroBench only)
+
+    /// <summary>GEOMETRIC CAMBER AND INCIDENCE (2026-10-10): read from the wing's own cells. Per span row: the mean line
+    /// (halfway between its top and bottom cells at each chord station), the chord line (the mean line's leading to
+    /// trailing end); camber = the mean line's furthest bulge from the chord line toward +Normal over the chord; incidence
+    /// = the chord line's tilt across the wing's plane. Thin-airfoil theory: camber m lifts as if the wing met the air
+    /// 2m (rad) steeper; incidence adds itself, its sign by which end leads. A flat-bottomed wing with its top stepped
+    /// up lifts at zero angle, as a real one does; a slab does not. (Without: every ship flew its whole hull nose-up 8-10
+    /// deg to make its lift - an airliner's fuselage dragging across the flow.) Caps: camber 0.08, incidence 10 deg.</summary>
+    public static bool GeometricCamber;
+    private float[] _camber = Array.Empty<float>(), _slope = Array.Empty<float>();
+
+    /// <summary>A wing's zero-lift angle (rad, about its plane, lift toward +Normal positive) with its leading edge at the
+    /// low end of ChordAxis (lo) and at the high end (hi): per span row, a parabola z = a + b xi + c xi^2 fitted by least
+    /// squares to the mean line (heights over the chord, xi 0 at the leading edge) - the fit rides over the cells' steps;
+    /// thin-airfoil theory for it, alpha_L0 = b + 1.5 c (camber and incidence both). Area-weighted over the rows.</summary>
+    internal static (float lo, float hi) CamberOf(in LiftingSurface w)
+    {
+        var rows = new Dictionary<int, Dictionary<int, (float lo, float hi)>>();
+        foreach (var c in w.Cells)
+        {
+            int sp = (int)MathF.Round(c.X * w.SpanAxis.X + c.Y * w.SpanAxis.Y + c.Z * w.SpanAxis.Z);
+            int x = (int)MathF.Round(c.X * w.ChordAxis.X + c.Y * w.ChordAxis.Y + c.Z * w.ChordAxis.Z);
+            float h = c.X * w.Normal.X + c.Y * w.Normal.Y + c.Z * w.Normal.Z;
+            if (!rows.TryGetValue(sp, out var row)) rows[sp] = row = new Dictionary<int, (float, float)>();
+            row[x] = row.TryGetValue(x, out var e) ? (MathF.Min(e.lo, h), MathF.Max(e.hi, h)) : (h, h);
+        }
+        double sLo = 0, sHi = 0, wSum = 0;
+        foreach (var row in rows.Values)
+        {
+            if (row.Count < 4) continue;
+            int x0 = int.MaxValue, x1 = int.MinValue;
+            foreach (var x in row.Keys) { x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); }
+            double chord = x1 - x0 + 1;
+            // least squares for z(xi) = a + b xi + c xi^2
+            double s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
+            foreach (var (x, e) in row)
+            {
+                double xi = (x - x0 + 0.5) / chord, z = (e.lo + e.hi) * 0.5 / chord;
+                double xi2 = xi * xi;
+                s0 += 1; s1 += xi; s2 += xi2; s3 += xi2 * xi; s4 += xi2 * xi2; t0 += z; t1 += z * xi; t2 += z * xi2;
+            }
+            // solve [[s0 s1 s2][s1 s2 s3][s2 s3 s4]] [a b c] = [t0 t1 t2]
+            double det = s0 * (s2 * s4 - s3 * s3) - s1 * (s1 * s4 - s3 * s2) + s2 * (s1 * s3 - s2 * s2);
+            if (Math.Abs(det) < 1e-12) continue;
+            double db = s0 * (t1 * s4 - s3 * t2) - t0 * (s1 * s4 - s3 * s2) + s2 * (s1 * t2 - t1 * s2);
+            double dc = s0 * (s2 * t2 - t1 * s3) - s1 * (s1 * t2 - t1 * s2) + t0 * (s1 * s3 - s2 * s2);
+            double b = db / det, cq = dc / det;
+            sLo += (b + 1.5 * cq) * row.Count; sHi += (-b - 0.5 * cq) * row.Count; wSum += row.Count;
+        }
+        if (wSum <= 0) return (0f, 0f);
+        return (Math.Clamp((float)(sLo / wSum), -0.2f, 0.2f), Math.Clamp((float)(sHi / wSum), -0.2f, 0.2f));
+    }
+    public static bool WingSystems;   // (off until the flight-model A/B is decided: AeroBench AERO_WINGSYS=1)
+    public static float SystemGap = 1.0f, SystemSpanGap = 0.35f;
+
+    private void UpdateSystems(ReadOnlySpan<LiftingSurface> wings)
+    {
+        int n = wings.Length;
+        double sig = n;
+        for (int i = 0; i < n; i++) sig += (wings[i].Centroid.X * 1.3 + wings[i].Centroid.Y * 1.7 + wings[i].Centroid.Z * 2.9 + wings[i].PlanformArea) * (i + 1);
+        if (_arSys.Length >= n && sig == _sysSig) return;
+        _sysSig = sig; _influenceValid = false;   // (the downwash between pieces depends on which are one wing)
+        if (_arSys.Length < n) { _arSys = new float[n]; _sys = new int[n]; }
+        for (int i = 0; i < n; i++) _sys[i] = i;
+        int Find(int i) { while (_sys[i] != i) i = _sys[i] = _sys[_sys[i]]; return i; }
+        if (WingSystems)
+            for (int i = 0; i < n; i++)
+                for (int j = i + 1; j < n; j++)
+                {
+                    ref readonly var a = ref wings[i]; ref readonly var b = ref wings[j];
+                    if (MathF.Abs(Vector3.Dot(a.Normal, b.Normal)) < 0.95f) continue;
+                    var d = b.Centroid - a.Centroid;
+                    if (MathF.Abs(Vector3.Dot(d, a.Normal)) > SystemGap) continue;
+                    if (MathF.Abs(Vector3.Dot(a.SpanAxis, b.SpanAxis)) < 0.9f)
+                    {
+                        // (a sliver of the same wing detected the other way round - a 3 m2 piece of a Tu-134's right wing
+                        //  with its span along the chord: one in the other's planform is the same wing)
+                        ref readonly var big = ref a.PlanformArea >= b.PlanformArea ? ref a : ref b;
+                        ref readonly var small = ref a.PlanformArea >= b.PlanformArea ? ref b : ref a;
+                        var ds = small.Centroid - big.Centroid;
+                        if (MathF.Abs(Vector3.Dot(ds, big.SpanAxis)) > big.Span * 0.5f || MathF.Abs(Vector3.Dot(ds, big.ChordAxis)) > big.MeanChord * 0.75f) continue;
+                        int r0 = Find(i), r1 = Find(j); if (r0 != r1) _sys[r1] = r0;
+                        continue;
+                    }
+                    float chordSep = MathF.Abs(Vector3.Dot(d, a.ChordAxis));
+                    float chordOverlap = (a.MeanChord + b.MeanChord) * 0.5f - chordSep;
+                    if (chordOverlap < 0.3f * MathF.Min(a.MeanChord, b.MeanChord)) continue;
+                    float spanGap = MathF.Abs(Vector3.Dot(d, a.SpanAxis)) - (a.Span + b.Span) * 0.5f;
+                    if (spanGap > SystemSpanGap * (a.Span + b.Span)) continue;
+                    int ri = Find(i), rj = Find(j); if (ri != rj) _sys[rj] = ri;
+                }
+        for (int i = 0; i < n; i++) _sys[i] = Find(i);
+        if (_camber.Length < n) { _camber = new float[n]; _slope = new float[n]; }
+        for (int i = 0; i < n; i++) (_camber[i], _slope[i]) = GeometricCamber ? CamberOf(wings[i]) : (0f, 0f);
+        for (int r = 0; r < n; r++)
+        {
+            if (_sys[r] != r) continue;
+            var ax = wings[r].SpanAxis; float lo = float.MaxValue, hi = float.MinValue, area = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                if (_sys[i] != r) continue;
+                float c = Vector3.Dot(wings[i].Centroid, ax), h = wings[i].Span * 0.5f;
+                lo = MathF.Min(lo, c - h); hi = MathF.Max(hi, c + h); area += wings[i].PlanformArea;
+            }
+            float arS = area > 1e-3f ? (hi - lo) * (hi - lo) / area : 0f;
+            for (int i = 0; i < n; i++) if (_sys[i] == r) _arSys[i] = MathF.Max(wings[i].AspectRatio, arS);
+        }
+    }
+
+    /// <summary>The aspect ratio wing i flies with: its system's (UpdateSystems).</summary>
+    internal float SystemAR(int i) => i < _arSys.Length ? _arSys[i] : 0f;
     private float[] _influence = Array.Empty<float>();
     private bool _influenceValid;
     private int _influenceN;
@@ -144,6 +264,7 @@ public class CompressibleWingModel : IWingLiftModel
 
         EnsureArrays(n);
         EnsureInfluenceArray(n);
+        UpdateSystems(wings);
 
         float rho = (float)ctx.Atmosphere.Density;
         float speedOfSound = (float)ctx.Atmosphere.SpeedOfSound;
@@ -169,7 +290,14 @@ public class CompressibleWingModel : IWingLiftModel
             float vDotN = -Vector3.Dot(v, w.Normal);
             var vInPlane = v - Vector3.Dot(v, w.Normal) * w.Normal;
             float vPlaneSpeed = vInPlane.Length();
-            _alphas[i] = MathF.Atan2(vDotN, vPlaneSpeed + 1e-6f);
+            _alphas[i] = MathF.Atan2(vDotN, vPlaneSpeed + 1e-6f) - TestAlpha0;   // (TestAlpha0: the bench's camber experiment)
+            if (GeometricCamber && i < _camber.Length)
+            {
+                // (the leading end is the one moving ahead: the chord line's rise toward it is the incidence)
+                // (moving toward +ChordAxis: its leading edge is the high end)
+                float along = Vector3.Dot(vInPlane, w.ChordAxis);
+                _alphas[i] -= along >= 0 ? _slope[i] : _camber[i];   // (_camber: alpha_L0 leading at the low end, _slope: at the high end)
+            }
 
             // Runtime CLAlpha from Mach regime
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
@@ -179,7 +307,8 @@ public class CompressibleWingModel : IWingLiftModel
             //  so its lift slope rises; phi from its own height over its span, capped at 4x)
             float phiG = GroundPhi(ctx, w);
             _groundPhi[i] = phiG;
-            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(w.AspectRatio / phiG, 4f * w.AspectRatio), w.SweepAngle,
+            float arI = _arSys[i];
+            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), w.SweepAngle,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
             // Runtime stall angle, floored at 3 degrees
@@ -208,6 +337,7 @@ public class CompressibleWingModel : IWingLiftModel
                 for (int j = 0; j < n; j++)
                 {
                     if (i == j) continue;
+                    if (_sys[i] == _sys[j]) continue;   // (one wing: its own downwash is in its aspect ratio)
                     ref readonly var wi = ref wings[i];
                     ref readonly var wj = ref wings[j];
 
@@ -328,9 +458,11 @@ public class CompressibleWingModel : IWingLiftModel
 
             // Induced drag: CDi = CL²/(π·e·AR)
             float e = _oswaldMod[i];
-            float cdi = w.AspectRatio > 0.1f ? cl * cl / (MathF.PI * e * w.AspectRatio) : 0;
+            float cdi = _arSys[i] > 0.1f ? cl * cl / (MathF.PI * e * _arSys[i]) : 0;
 
-            float cd0 = 0.010f;
+            // (profile drag: two turbulent skins on the chord plus a little form - ~0.006 for an airliner's wing, as
+            //  measured - with ReynoldsSkin; the flat 0.010 without)
+            float cd0 = DampedShadowedDragModel.ReynoldsSkin ? 2.4f * DampedShadowedDragModel.TurbulentCf(w.MeanChord) : 0.010f;
 
             // ── Ground effect: reduce induced drag near the surface ──
             // φ = (h / b)² / (1 + (h / b)²), where h = ground height, b = span
