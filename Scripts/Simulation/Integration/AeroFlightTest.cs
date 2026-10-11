@@ -41,6 +41,9 @@ public partial class AeroGridComponent
     {
         /// <summary>Off by default. This teleports once during setup, so never leave it on casually.</summary>
         public static bool Enabled = false;
+        /// <summary>Bind only to a grid whose name contains this (null: the most wings) - a world's load order otherwise
+        /// decides between two winged grids, and an A/B flew different ships.</summary>
+        public static string Only;
 
         public const float TargetAltitude = 1500f;  // metres of ground clearance to start from
         public const float EntrySpeed = 200f;       // m/s at entry (the Jetliner, 261 t on 200 m2 of wing, needs ~200-260 in Verdure's thin air)
@@ -77,6 +80,7 @@ public partial class AeroGridComponent
             if (_subject == null)
             {
                 int wings = aero._model?.Wings?.Count ?? 0;
+                if (Only != null && (aero.Entity?.DebugName ?? "").IndexOf(Only, StringComparison.OrdinalIgnoreCase) < 0) wings = -1000;
                 int comps = aero._components?.Count ?? 0;
                 if (_choosingSince == 0) _choosingSince = System.Diagnostics.Stopwatch.GetTimestamp();
                 if (wings + comps > _bestScore) { _bestScore = wings + comps; _best = aero; }

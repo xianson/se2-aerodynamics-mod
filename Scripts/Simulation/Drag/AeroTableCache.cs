@@ -14,11 +14,21 @@ namespace AeroMod;
 public static class AeroTableCache
 {
     /// <summary>Bump on any change to how a table, its chunks or its wings are built.</summary>
-    public const int Version = 7;   // (7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
+    public const int Version = 10;   // (10: low-aspect plates are wings - ConnectedComponentWingDetector.LowAspectRatio; 9: the model switches in the key; 8: the L/D flight model on by default - square law, pressure recovery, Reynolds skin - 2026-10-11; 7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
     public static bool Enabled = true;
     /// <summary>The folder's cap: past it, the least recently used files go.</summary>
     public static long MaxBytes = 256L << 20;
     const uint Magic = 0x41455254;   // 'AERT'
+
+    /// <summary>The model's static switches that change a built table, as bits of the key: a table built with one setting
+    /// was read back under another (2026-10-11: tables built with ColumnMode on - 9 wings - served after it was turned
+    /// off again, under the same Version). Add any new switch that changes how faces, chunks or wings are built.</summary>
+    public static int ModelSwitches =>
+        (DampedShadowedDragModel.SubsonicSquareLaw ? 1 : 0) | (DampedShadowedDragModel.PressureRecovery ? 2 : 0)
+      | (DampedShadowedDragModel.ReynoldsSkin ? 4 : 0) | (DampedShadowedDragModel.FlowThroughEngines ? 8 : 0)
+      | (CompressibleWingModel.GeometricCamber ? 16 : 0) | (CompressibleWingModel.WingSystems ? 32 : 0)
+      | (ConnectedComponentWingDetector.ColumnMode ? 64 : 0) | (DampedShadowedDragModel.RecoveryPasses & 7) << 7
+      | (ConnectedComponentWingDetector.LowAspectRatio > 0f ? 1024 : 0);
 
     public static int Hits, Misses, Writes;
     public static double LastLoadMs;
@@ -37,7 +47,7 @@ public static class AeroTableCache
             h = Mix(h ^ ((ulong)(uint)hi.Y << 32 ^ (uint)hi.Z));
             a += h; b += Mix(h ^ 0x9E3779B97F4A7C15UL);
         }
-        ulong p = Mix((ulong)boxes.Count ^ ((ulong)BitConverter.SingleToInt32Bits(blockSize) << 20) ^ ((ulong)cellScale << 52) ^ ((ulong)Version << 56));
+        ulong p = Mix((ulong)boxes.Count ^ ((ulong)BitConverter.SingleToInt32Bits(blockSize) << 20) ^ ((ulong)cellScale << 52) ^ ((ulong)Version << 56) ^ ((ulong)ModelSwitches << 40));
         foreach (float f in new[] { phys.CdBluff, phys.CpMax, phys.Cf, phys.St, phys.BaseCp }) p = Mix(p ^ (uint)BitConverter.SingleToInt32Bits(f));
         return $"{a ^ p:x16}{b:x16}";
     }

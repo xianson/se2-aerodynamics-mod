@@ -406,7 +406,8 @@ static partial class Program
             if (Environment.GetEnvironmentVariable("AERO_WINGBOX") == "1" && w.Cells.Count > 0) Console.WriteLine($"       cells {w.Cells.Count}: x {w.Cells.Min(c => c.X)}..{w.Cells.Max(c => c.X)}  y {w.Cells.Min(c => c.Y)}..{w.Cells.Max(c => c.Y)}  z {w.Cells.Min(c => c.Z)}..{w.Cells.Max(c => c.Z)}  distinct y {w.Cells.Select(c => c.Y).Distinct().Count()}");
             Console.WriteLine($"     wing: S {w.PlanformArea,6:F1} m2  span {w.Span,5:F1}  AR {w.AspectRatio,4:F1}  sweep {w.SweepAngle * 57.3f,4:F0}  CLmax {w.CLMax:F2} stall {w.AlphaStall * 57.3f:F0}  zero-lift {AeroMod.CompressibleWingModel.CamberOf(w).lo * 57.3f:F1}/{AeroMod.CompressibleWingModel.CamberOf(w).hi * 57.3f:F1} deg  t/c {w.ThicknessRatio:F2}  normal ({w.Normal.X:F2},{w.Normal.Y:F2},{w.Normal.Z:F2})  span axis ({w.SpanAxis.X:F2},{w.SpanAxis.Y:F2},{w.SpanAxis.Z:F2})  at ({w.Centroid.X:F1},{w.Centroid.Y:F1},{w.Centroid.Z:F1})");
         }
-        Console.WriteLine("   alpha |  total L kN  D kN  L/D |  hull L   hull D |  wings L  wings D");
+        Console.WriteLine("   alpha |  total L kN  D kN  L/D |  hull L   hull D |  wings L  wings D | pitch kN m (nose-up +; falling with alpha: stable)");
+        var pitchAxis = Vector3.Normalize(Vector3.Cross(nose, up));
         for (int ai = 0; ai <= 8; ai++)
         {
             float al = ai * 2f / 57.3f;
@@ -416,7 +417,7 @@ static partial class Program
             AeroResult t = default; for (int k = 0; k < 2; k++) t = ship.Model.Compute(ctx);
             var h = inner.ExactTableValue(ctx, null);
             float L(Vector3 f) => Vector3.Dot(f, lu) / 1000f; float D(Vector3 f) => -Vector3.Dot(f, vh) / 1000f;
-            Console.WriteLine($"   {ai * 2,4}  | {L(t.Force),9:F0} {D(t.Force),6:F0} {L(t.Force) / Math.Max(0.01f, D(t.Force)),5:F1} | {L(h.Force),7:F0} {D(h.Force),7:F0}  | {L(t.Force) - L(h.Force),7:F0} {D(t.Force) - D(h.Force),7:F0}");
+            Console.WriteLine($"   {ai * 2,4}  | {L(t.Force),9:F0} {D(t.Force),6:F0} {L(t.Force) / Math.Max(0.01f, D(t.Force)),5:F1} | {L(h.Force),7:F0} {D(h.Force),7:F0}  | {L(t.Force) - L(h.Force),7:F0} {D(t.Force) - D(h.Force),7:F0} | {Vector3.Dot(t.Torque, pitchAxis) / 1000f,9:F0}");
         }
         return 0;
     }

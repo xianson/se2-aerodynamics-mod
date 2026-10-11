@@ -21,6 +21,15 @@ public class ConnectedComponentWingDetector : IWingDetector
     /// <summary>Minimum aspect ratio to qualify as a wing.</summary>
     public float MinAspectRatio { get; set; } = 1.5f;
 
+    /// <summary>LOW-ASPECT PLATES (2026-10-11): a piece turned down for its aspect ratio alone, at LowAspectRatio or more and
+    /// LowArMinArea or larger, is a wing too - added after the merge, where no wing already holds its cells, so the main
+    /// pass's wings stay exactly as they were (lowering MinAspectRatio itself merged and split real wings and let in
+    /// hundreds of 0.2 m2 slivers - AeroBench, every fixture). Why: with pressure recovery and the square law, a flat
+    /// fin or plate the detector missed lost ~90% of its lift (a 3 x 3 m plate's slope 0.56 -> 0.07 /rad: lift is
+    /// circulation, the wing model's, not a face pressure's). 0: off.</summary>
+    public static float LowAspectRatio = 0.5f, LowArMinArea = 2f;
+    private bool _lowArPass, _rejectedAr;
+
     /// <summary>Maximum thickness-to-chord ratio.</summary>
     public float MaxThicknessRatio { get; set; } = 0.5f;
 
@@ -149,6 +158,7 @@ public class ConnectedComponentWingDetector : IWingDetector
     {
         if (ColumnMode) return DetectColumns(grid, blockSize);
         var results = new List<LiftingSurface>();
+        var lowAr = new List<LiftingSurface>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
         double tAnalyze = 0; int comps = 0, analyzed = 0;
 
@@ -170,9 +180,16 @@ public class ConnectedComponentWingDetector : IWingDetector
                 comps++;
                 if (component.Count < MinFaceCount) continue;
                 analyzed++;
+                _rejectedAr = false;
                 var wing = AnalyzeComponent(grid, component, posNormal, blockSize, gridBBox);
                 if (wing.HasValue)
                     results.Add(wing.Value);
+                else if (_rejectedAr && LowAspectRatio > 0f)
+                {
+                    _lowArPass = true;
+                    try { var low = AnalyzeComponent(grid, component, posNormal, blockSize, gridBBox); if (low.HasValue) lowAr.Add(low.Value); }
+                    finally { _lowArPass = false; }
+                }
             }
             tAnalyze += sw.Elapsed.TotalMilliseconds - t1;
         }
@@ -180,7 +197,21 @@ public class ConnectedComponentWingDetector : IWingDetector
         double t2 = sw.Elapsed.TotalMilliseconds;
         int before = results.Count;
         results = MergeCoplanarWings(results, blockSize);
-        LastProfile = $"collect {tCollect:F0} ms, flood + analyze {tAnalyze:F0} ms ({comps} components, {analyzed} analyzed), merge {sw.Elapsed.TotalMilliseconds - t2:F0} ms ({before} -> {results.Count} wings)";
+        int lowAdded = 0;
+        if (lowAr.Count > 0)
+        {
+            var held = new HashSet<Vector3I>();
+            foreach (var w in results) foreach (var c in w.Cells) held.Add(c);
+            foreach (var w in lowAr)
+            {
+                bool free = true;
+                foreach (var c in w.Cells) if (held.Contains(c)) { free = false; break; }
+                if (!free) continue;
+                results.Add(w); lowAdded++;
+                foreach (var c in w.Cells) held.Add(c);
+            }
+        }
+        LastProfile = $"collect {tCollect:F0} ms, flood + analyze {tAnalyze:F0} ms ({comps} components, {analyzed} analyzed), merge {sw.Elapsed.TotalMilliseconds - t2:F0} ms ({before} -> {results.Count} wings, {lowAdded} low-aspect plates)";
 
         _cachedWings = results;
         BuildCellLookup();
@@ -199,7 +230,7 @@ public class ConnectedComponentWingDetector : IWingDetector
     /// Cost: one sort of the packed cells per axis, a sweep, a flood over slabs - no per-cell hashing. Replaces the
     /// layer-by-layer flood, whose stepped wings fell apart (a Tu-134 main wing in three stubs, a clean wing missing its
     /// leading and trailing strips) and whose patches doubled solid tailplanes.</summary>
-    public static bool ColumnMode;
+    public static bool ColumnMode;   // (off: on the in-game jetliner it found 373 m2 of main wing in two halves where the layer flood finds 605, and its camber lifted the wrong way (-256 kN at 0 deg) - AeroBench polar jetliner, 2026-10-11)
     public static int MaxSlabCells = 16;
     public static float SlabTrim = 2.5f;
 
@@ -1073,7 +1104,11 @@ public class ConnectedComponentWingDetector : IWingDetector
         float meanChord = span > 0 ? planformArea / span : 0;
         float ar = span > 0 ? span * span / planformArea : 0;
 
-        if (ar < MinAspectRatio) { Rejected?.Add($"n {normal} cells {cells.Count} S {planformArea:F1} span {span:F1} AR {ar:F2}: aspect ratio"); return null; }
+        if (_lowArPass ? ar < LowAspectRatio || ar >= MinAspectRatio || planformArea < LowArMinArea : ar < MinAspectRatio)
+        {
+            if (!_lowArPass) { _rejectedAr = true; Rejected?.Add($"n {normal} cells {cells.Count} S {planformArea:F1} span {span:F1} AR {ar:F2}: aspect ratio"); }
+            return null;
+        }
 
         // Thickness measurement — use pre-computed grid bbox
         int nMin, nMax;

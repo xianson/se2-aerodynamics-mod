@@ -31,11 +31,21 @@ plasma. Scripts live in `Scripts/Simulation`. The offline tests are in `Tests/`.
 - **Damage updates.** A `ChunkedTable` (8 m chunks) updates the table locally after damage, without a full rebuild.
 - **Disk cache** (`Drag/AeroTableCache.cs`, `%TEMP%\AeroMod\tables`).
   - Keyed by the grid's shape: block boxes in any order, block size, cell scale, face physics.
+  - Also keyed by the model's switches (`AeroTableCache.ModelSwitches`). A table built with one setting was once served under another. Add any new switch that changes faces, chunks or wings there.
   - A reloaded world, a pasted blueprint or a copy loads its table in milliseconds instead of rebuilding.
   - Trimmed to 256 MB, least recently used first.
 - **The version rule.** Any change to how tables, chunks or wings are built must bump `AeroTableCache.Version`. Otherwise players load stale tables.
   - The gate enforces this: it hashes the table-building sources into `Tests/table_sources.txt`.
   - After a bump, record the new hash with `dotnet run -- tablehash` in `Tests/AeroBench`.
+
+## Flight model defaults (2026-10-11)
+
+On by default: `SubsonicSquareLaw`, `PressureRecovery` (4 lattice passes), `ReynoldsSkin`, `GeometricCamber`, `WingSystems`, and low-aspect plates as wings (`ConnectedComponentWingDetector.LowAspectRatio` 0.5, at least 2 m2, added after the main pass).
+
+- **Effect.** The in-game jetliner (273 t) cruises at L/D 7.8, up from 4.9; the bench gives 8.4 at 8 deg, up from 4.7.
+- **Measuring it.** `tools/harness/aeroab.sh <tag>` in the Orbital Mod flies the A/B. `polar <ship>` in AeroBench prints the polar, now with the pitching moment.
+- **Still off:** `ColumnMode` (on the jetliner it found 60% of the main wing and pitched the ship past 50 deg); `FlowThroughEngines` (nothing in game sets the faces).
+- **AeroBench env overrides:** `AERO_SQUARE` etc. `=0` gives the old behaviour.
 
 ## Reentry plasma
 

@@ -42,7 +42,7 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// slope still took a quarter of a wall's pressure, sloped noses dragged ~2x the measured), with the Streamlining fudge
     /// on top; true - Cp = CdBluff x cos(a)^2 (the measured forebody pressures: 45 deg ~0.5, 2:1 ~0.2, 4:1 ~0.06 of a
     /// wall's), no fudge. Flat faces alike either way. A static default for the A/B; tables rebuild with it.</summary>
-    public static bool SubsonicSquareLaw;
+    public static bool SubsonicSquareLaw = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
 
     /// <summary>PRESSURE RECOVERY (2026-10-10, prototype - the bench's A/B): attached flow gives back at the tail the pressure
     /// it put on the nose (d'Alembert - a streamlined body's drag is mostly friction). Per column of air across the flow
@@ -52,15 +52,15 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// a step, a blunt tail: separated, base suction as before. Subsonic end only (the Newtonian end is the wave drag).
     /// Off: base suction everywhere on the lee side - no shape could get under ~0.3 of a wall, and a block-built
     /// airliner's zero-lift drag came out ~13x the real one.</summary>
-    public static bool PressureRecovery;
+    public static bool PressureRecovery = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
 
     /// <summary>REYNOLDS SKIN FRICTION (2026-10-10): the turbulent flat plate's Cf = 0.455 / (log10 Re)^2.58 at the ship's
     /// length (Re at RefSpeed, sea level) instead of the flat CfSkin (0.005 - twice a 30 m airliner's ~0.002, and the
     /// biggest part of a streamlined hull's drag once pressure recovers). Fixed per ship (the table is per unit q):
     /// Cf moves only ~10 % between 50 and 300 m/s. Floor CfMin.</summary>
-    public static bool ReynoldsSkin;
+    public static bool ReynoldsSkin = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
     /// <summary>Air-breathing engines' intakes and exhausts are flow-through (SetThroughFaces).</summary>
-    public static bool FlowThroughEngines;
+    public static bool FlowThroughEngines;   // (off: nothing in game calls SetThroughFaces yet - the bench's .boxes tag thrusters, the live grid does not)
     public static float RefSpeed = 100f, CfMin = 0.0015f;
     public static float TurbulentCf(float length, float speed = 0f)
     {
@@ -76,7 +76,8 @@ public class DampedShadowedDragModel : IAeroDragModel
     public static bool ColumnRun = true;
     public static bool BluntPartial = true;   // (the two-loss column: rounded fronts recover, open exits drag BaseLoss - BakeRecovery)
     public static float BaseLoss = 0.3f;
-    public static int RecoveryPasses = 2;   // (1, 2 (diagonal) or 4 lattices: BakeRecovery - 2 and 4 measure alike)
+    public static int RecoveryPasses = 4;   // (1, 2 (diagonal) or 4 lattices: BakeRecovery. 4 since 2026-10-11: with 2 a yawed brick and its mirror image
+                                            //  binned differently - 380 N m of stray roll against 6 with 4 (AeroBench torque); tables ~30% slower to build)
     public static List<(int u, int w, float d, float sFace, float s, float front, float run)> RecDebug;   // (the bench's: each column's exit)
     /// <summary>How attached the flow leaving a face is: 1 turning away by up to SepDeg, 0 past SepDeg + SepFadeDeg
     /// (s: sin of the angle past parallel).</summary>

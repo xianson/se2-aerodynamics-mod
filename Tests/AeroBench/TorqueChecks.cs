@@ -149,7 +149,10 @@ static partial class Program
                 // with the model's own plate slope that is q S slope (w l / V) l - the turn must be damped at least half that
                 // (the body adds more)
                 float est = 0.5f * (float)atmo.Density * sp * sp * 18f * slope * (0.3f * 8.5f / sp) * 8.5f;
-                TCheck(-dt / 0.3f >= 0.5f * est, $"dart turning at {w} rad/s, force table: damping {-dt / 0.3f:F0} N m vs fin estimate {est:F0} (at least half)");
+                // (the table is the face model's; the fins are wings since low-aspect plates are (2026-10-11) - what the game
+                //  applies is the table plus the wings: d - dh)
+                float dWing = d - dh;
+                TCheck(-(dt + dWing) / 0.3f >= 0.5f * est, $"dart turning at {w} rad/s, force table + wings: damping {-(dt + dWing) / 0.3f:F0} N m (table {-dt / 0.3f:F0}, wings {-dWing / 0.3f:F0}) vs fin estimate {est:F0} (at least half)");
                 TCheck(-d / 0.3f >= 0.5f * est, $"dart turning at {w} rad/s, face model: damping {-d / 0.3f:F0} N m vs fin estimate {est:F0} (at least half)");
                 TCheck(d < 0f, $"dart turning at {w} rad/s, face model (per frame): the air opposes the turn (torque . w {d:F0}: hull faces {dh:F0}, wings {d - dh:F0}; {s.Model.Wings?.Count ?? 0} wings)");
             }

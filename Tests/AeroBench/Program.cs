@@ -171,7 +171,8 @@ static partial class Program
             var ship = Build(name, new List<(Vector3I, Vector3I)> { (Vector3I.Zero, size - Vector3I.One) });
             var inner = (DampedShadowedDragModel)ship.Model.InnerModel;
             AeroResult r = default;
-            for (int i = 0; i < 3; i++) r = inner.Compute(new AeroContext(ship.Grid, ship.Surface, flow * 100f, atmo, ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold));
+            // (the whole model, wings too: the plate is a low-aspect wing since 2026-10-11 and its skins left the face model)
+            for (int i = 0; i < 3; i++) r = ship.Model.Compute(new AeroContext(ship.Grid, ship.Surface, flow * 100f, atmo, ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold));
             // frontal area: the box's extent across the flow
             var ext = new Vector3(size.X, size.Y, size.Z) * 0.25f;
             float area = MathF.Abs(flow.X) > 0.5f ? ext.Y * ext.Z : MathF.Abs(flow.Y) > 0.5f ? ext.X * ext.Z : ext.X * ext.Y;
@@ -519,15 +520,15 @@ static partial class Program
 
     static int Main(string[] args)
     {
-        if (Environment.GetEnvironmentVariable("AERO_SQUARE") == "1") DampedShadowedDragModel.SubsonicSquareLaw = true;
-        if (Environment.GetEnvironmentVariable("AERO_RECOVERY") == "1") DampedShadowedDragModel.PressureRecovery = true;   // (the A/B: lee-side pressure recovery)
-        if (Environment.GetEnvironmentVariable("AERO_RESKIN") == "1") DampedShadowedDragModel.ReynoldsSkin = true;
+        if (Environment.GetEnvironmentVariable("AERO_SQUARE") is string aero_square) DampedShadowedDragModel.SubsonicSquareLaw = aero_square == "1";   // (on by default now: =0 for the old)
+        if (Environment.GetEnvironmentVariable("AERO_RECOVERY") is string aero_recovery) DampedShadowedDragModel.PressureRecovery = aero_recovery == "1";   // (on by default now: =0 for the old)   // (the A/B: lee-side pressure recovery)
+        if (Environment.GetEnvironmentVariable("AERO_RESKIN") is string aero_reskin) DampedShadowedDragModel.ReynoldsSkin = aero_reskin == "1";   // (on by default now: =0 for the old)
         if (Environment.GetEnvironmentVariable("AERO_THROUGH") == "1") DampedShadowedDragModel.FlowThroughEngines = true;
-        if (Environment.GetEnvironmentVariable("AERO_WINGSYS") == "1") CompressibleWingModel.WingSystems = true;
-        if (Environment.GetEnvironmentVariable("AERO_CAMBER") == "1") CompressibleWingModel.GeometricCamber = true;
+        if (Environment.GetEnvironmentVariable("AERO_WINGSYS") is string aero_wingsys) CompressibleWingModel.WingSystems = aero_wingsys == "1";   // (on by default now: =0 for the old)
+        if (Environment.GetEnvironmentVariable("AERO_CAMBER") is string aero_camber) CompressibleWingModel.GeometricCamber = aero_camber == "1";   // (on by default now: =0 for the old)
         if (float.TryParse(Environment.GetEnvironmentVariable("AERO_ALPHA0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a0)) CompressibleWingModel.TestAlpha0 = a0 / 57.3f;
         if (Environment.GetEnvironmentVariable("AERO_STEPWING") == "1") ConnectedComponentWingDetector.StepConnect = true;
-        if (Environment.GetEnvironmentVariable("AERO_COLWING") == "1") ConnectedComponentWingDetector.ColumnMode = true;
+        if (Environment.GetEnvironmentVariable("AERO_COLWING") is string aero_colwing) ConnectedComponentWingDetector.ColumnMode = aero_colwing == "1";   // (on by default now: =0 for the old)
         if (int.TryParse(Environment.GetEnvironmentVariable("AERO_RECPASSES"), out var rp)) DampedShadowedDragModel.RecoveryPasses = rp;
         if (float.TryParse(Environment.GetEnvironmentVariable("AERO_RECFRAC"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var recFrac)) DampedShadowedDragModel.RecoveryFrac = recFrac;
         if (Environment.GetEnvironmentVariable("AERO_COLRUN") == "0") DampedShadowedDragModel.ColumnRun = false;

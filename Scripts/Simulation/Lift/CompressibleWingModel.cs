@@ -46,7 +46,7 @@ public class CompressibleWingModel : IWingLiftModel
     /// 2m (rad) steeper; incidence adds itself, its sign by which end leads. A flat-bottomed wing with its top stepped
     /// up lifts at zero angle, as a real one does; a slab does not. (Without: every ship flew its whole hull nose-up 8-10
     /// deg to make its lift - an airliner's fuselage dragging across the flow.) Caps: camber 0.08, incidence 10 deg.</summary>
-    public static bool GeometricCamber;
+    public static bool GeometricCamber = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
     private float[] _camber = Array.Empty<float>(), _slope = Array.Empty<float>();
 
     /// <summary>A wing's zero-lift angle (rad, about its plane, lift toward +Normal positive) with its leading edge at the
@@ -90,7 +90,7 @@ public class CompressibleWingModel : IWingLiftModel
         if (wSum <= 0) return (0f, 0f);
         return (Math.Clamp((float)(sLo / wSum), -0.2f, 0.2f), Math.Clamp((float)(sHi / wSum), -0.2f, 0.2f));
     }
-    public static bool WingSystems;   // (off until the flight-model A/B is decided: AeroBench AERO_WINGSYS=1)
+    public static bool WingSystems = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
     public static float SystemGap = 1.0f, SystemSpanGap = 0.35f;
 
     private void UpdateSystems(ReadOnlySpan<LiftingSurface> wings)
