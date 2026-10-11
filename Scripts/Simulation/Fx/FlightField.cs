@@ -359,7 +359,8 @@ internal sealed partial class FlightField
     /// the front, aimed down the flow, its cone just covering SpotCover x R: the windward surface lit (with the hull's
     /// own shadows when SpotShadow), nothing below or behind - a "plasma sun". Spot: its strength (linear; a vanilla
     /// spotlight is 300-700), 0: none. SpotFlip: aim the other way (if the engine's spot faces +Z).</summary>
-    public static float Spot = 3000000f, SpotDist = 2.5f, SpotCover = 1.3f, SpotFalloff = 2f;
+    public static float Spot = 24000000f;   // (x8: "much much brighter" - the user, 2026-10-09)
+    public static float SpotDist = 2.5f, SpotCover = 1.3f, SpotFalloff = 2f;
     public static bool SpotShadow = true, SpotFlip;
     private object _spotRoot, _spot;
     private string _spotWhy;
@@ -527,10 +528,11 @@ internal sealed partial class FlightField
     private int _lineBad;
 
     private bool _draining;
+    private bool _spawnTip; private object _vapPrm;   // (a tip spawns on the grid's own root, not the swing's)
 
     private void LineSegment(Vector3 p0, Vector3 p1, Vector3 f, float R, float zFront, Vector3 lift)
     {
-        if (!_draining)
+        if (!_draining && !_relayout)
         {
             // (queued: flight mode's pass (_sub) and the vapour's own spray captured now - they are restored after the pass)
             int s7 = _sub; float dm = DownMix, jt = Jitter; int g7 = s7 == 6 ? _genEdges : _genPlasma;
@@ -634,7 +636,7 @@ internal sealed partial class FlightField
         _puffs.Add(h);
         try
         {
-            (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
+            SetParamsIfChanged(h, prm);
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
             if (held > 0f) { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         }
@@ -645,6 +647,11 @@ internal sealed partial class FlightField
 
     /// <summary>The local pressure at p: the chunks' drag over their frontal area, Gaussian-blended (sigma 0.6 chunk).</summary>
     private float LocalPressure(Vector3 p)
+    {
+        long tP = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { return LocalPressure0(p); } finally { BkPressure += Ms(tP); }
+    }
+    private float LocalPressure0(Vector3 p)
     {
         if (_chunkDrag.Count == 0) return 1f;
         float sig2 = 2f * (0.6f * 8f) * (0.6f * 8f), sd = 0f, sf = 0f;
@@ -728,7 +735,7 @@ internal sealed partial class FlightField
     /// a held test grid has no real air, so no aero lift. Placed again when it changes much.</summary>
     public static float LiftSens = 1.5f, LiftTest;
     private Vector3 _liftDir; private float _liftCoef, _liftUsed = -1f;
-    public static float SnapRadius = 2f, SnapLift = 0.05f, VapourSpawn = 0.3f;
+    public static float SnapRadius = 2f, SnapLift = 0.05f, VapourSpawn = 0.12f;   // (VapourEdgeScale 1.5 -> 0.75, VapourSpawn 0.3 -> 0.12: "way tighter" - the user, 2026-10-09)
     /// <summary>Every spark held on its emitter's spray direction, every frame (the instance's VelocityDirection: the GPU
     /// re-applies it - ParticleSimulation.hlsl); off: the emitter's cone and speed spread show.</summary>
     public static bool Strict;
@@ -855,7 +862,7 @@ internal sealed partial class FlightField
     /// ConeScale: the cone ring x the grid's widest radius; VapourEdgeScale: the edge sprays' size; ChordShift: how far
     /// back along the chord the edge emitters sit (0.5 = mid-chord).</summary>
     public static float[] ConeBand = { 0.90f, 0.97f, 1.02f, 1.08f }, EdgeBand = { 0.80f, 0.90f, 1.02f, 1.10f };
-    public static float VapourRho = 1.0f, AxisTol = 5f, ConeScale = 1.0f, VapourEdgeScale = 1.5f, ChordShift = 0.5f, VapourSpeed = 10f;   // (VapourSpeed 2.5 -> 10 with a quarter of the life: fast and tight - the user, 2026-10-09)
+    public static float VapourRho = 1.0f, AxisTol = 5f, ConeScale = 1.0f, VapourEdgeScale = 0.75f, ChordShift = 0.5f, VapourSpeed = 20f;   // (VapourSpeed 2.5 -> 10 with a quarter of the life: fast and tight - the user, 2026-10-09)
     /// <summary>TEST: a fixed Mach (0: the real one) - the shape at any speed.</summary>
     public static float MachOverride;
     /// <summary>DIAGNOSTIC: 0 the cone as built, 1 without collisions, 2 without collisions or the inner-cone ring;
@@ -875,7 +882,7 @@ internal sealed partial class FlightField
     /// <summary>Wingtip lines: the tip vortex trail (Vapour_Tip) from every outline point that sticks out furthest from
     /// the fuselage axis - a local maximum of its distance, at least TipMinFrac of the farthest - at that tip's trailing
     /// edge; on from TipBand (Mach), x density. Not transonic: tip vortices condense whenever fast in humid air.</summary>
-    public static float TipMinFrac = 0.7f, TipScale = 3f, TipSpeed = 1f;
+    public static float TipMinFrac = 0.7f, TipScale = 6f, TipSpeed = 1f;   // (6: the trail moving with the air reads at a distance - 3 vanished)
     public static float[] TipBand = { 0.25f, 0.45f, 5f, 6f };   // (unused since the tips run at all speeds; kept for the knob)
     /// <summary>Tip trails at ALL speeds, by flight regime: on from TipMinSpeed (full by 3x it), strength TipBase + TipLiftGain x
     /// the lift strength (a slow, high-lift approach shows them strongest - the vortex is the lift), x (1 + TipMachBoost x the
@@ -1120,7 +1127,7 @@ internal sealed partial class FlightField
     /// <summary>One vapour effect: scale (sizes, ring, speeds), its local weight (rate x it), held by VapourFlow.</summary>
     private void VapourEffect(Guid effect, Vector3 at, Quaternion q, float scale, float weight, bool cone, float speed = -1f, bool tip = false, float spawn = -1f)
     {
-        if (!_draining)
+        if (!_draining && !(_relayout && !tip))
         {
             int g = tip ? _genTips : _genEdges;
             _spawnQueue.Enqueue(() => { if ((tip ? _genTips : _genEdges) == g) VapourEffect(effect, at, q, scale, weight, cone, speed, tip, spawn); });
@@ -1133,12 +1140,16 @@ internal sealed partial class FlightField
             t.GetField("EmitterScaleMultiplier").SetValue(prm, Math.Max(0.1f, scale));
             t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, speed > 0f ? speed : VapourSpeed));
         }
-        object h = SpawnEffect(_client, effect, new RelativeTransform(at, q), out object prm, out _puffWhy, Fill);
+        _spawnTip = tip;
+        object h;
+        try { h = SpawnEffect(_client, effect, new RelativeTransform(at, q), out object prm0, out _puffWhy, Fill); _vapPrm = prm0; }
+        finally { _spawnTip = false; }
+        object prm = _vapPrm;
         if (h == null) return;
         _puffs.Add(h);
         int kind = tip ? 2 : cone ? 1 : 0;
         _vapour.Add((h, weight, kind));
-        if (tip && prm != null) _tipPrm[h] = (prm, spawn);   // (its spawn line's length kept live: TipLine)
+        if (tip && prm != null) { _tipPrm[h] = (prm, speed); _tipAt[h] = (at, q, -1f); _tipOrder.Add(h); }   // (its airspeed as sent: no rebuild at once)   // (its spawn line's length and its lead kept live: TipLine)
         float held = Math.Clamp((kind == 1 ? _coneI : kind == 2 ? _tipI : _edgeI) * weight, 0.001f, 0.999f);
         try { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         catch (Exception e) { _puffWhy = "vapour time: " + Inner(e); }
@@ -1253,7 +1264,7 @@ internal sealed partial class FlightField
 
     private void Puff(Guid effect, Vector3 at, Quaternion turn, float scale)
     {
-        if (!_draining) { _spawnQueue.Enqueue(() => Puff(effect, at, turn, scale)); return; }
+        if (!_draining && !_relayout) { _spawnQueue.Enqueue(() => Puff(effect, at, turn, scale)); return; }
         bool spark0 = effect != ShockPuff && effect != StreamPuff;
         float held = spark0 ? WeightTime(at, 1f) : -1f;
         if (held == 0f) { _weightSkipped++; return; }
@@ -1279,7 +1290,7 @@ internal sealed partial class FlightField
         _puffs.Add(h);
         try
         {
-            (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
+            SetParamsIfChanged(h, prm);
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
             if (held > 0f) { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
         }

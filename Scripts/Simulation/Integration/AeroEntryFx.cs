@@ -62,7 +62,8 @@ public static class AeroEntryFx
         string tw = TestWorld;
         if (!string.IsNullOrEmpty(tw))
         {
-            if (!ReferenceEquals(tw, _testWorldParsed)) { _testWorldDir = ParseAxis(tw); _testWorldParsed = tw; }   // (parsed once per value)
+            // ("freeze": the first grid's TestAxis as it points NOW, held in the world - spin a grid through its airflow)
+            if (!ReferenceEquals(tw, _testWorldParsed)) { _testWorldDir = tw == "freeze" ? WorldTransform.TransformDirection(TestDir(), wt) : ParseAxis(tw); _testWorldParsed = tw; }   // (parsed once per value)
             return _testWorldDir * TestSpeed;
         }
         return WorldTransform.TransformDirection(TestDir(), wt) * TestSpeed;

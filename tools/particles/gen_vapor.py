@@ -78,8 +78,12 @@ def vapour(name, *, pps, life, velocity, size, emitter, shell, cone, inner=0, co
     t["AccelerationFactor"] = over_life([(0, 0), (1, 0)])
     t["ParticleSize"] = over_life(size)
     t["Color"] = over_life(MIST)
-    t["Emissivity"] = over_life([(0, GLOW), (1, GLOW * 0.5)])
-    t["ScatteringIntensity"] = over_life([(0, 10), (0.8, 8), (1, 0)])
+    # (LIT BY THE SCENE - the user, 2026-10-10: "the vapor and trails need to be lighting aware": no emission of its own
+    #  (it was GLOW = 25 - self-lit, white in shadow and at night) and the scattering of the game's own smoke and dust)
+    # (white in sunshine, greyish at night - the user, 2026-10-10: a small emissive floor (it was 25: self-lit, white even
+    #  in the dark; then 0: black at night) and scattering x3 so direct sun takes it to white)
+    t["Emissivity"] = over_life([(0, 2), (1, 2)])
+    t["ScatteringIntensity"] = over_life([(0, 3), (0.8, 2.4), (1, 0)])
     t["Offset"] = const(v3(0, 0, 0))
     v["EmissionParameters"].update({"ParticleBurst": 0, "ParticleLifeSpanVariance": life_var, "Direction": v3(0, 0, 1)})
     # (the smoke atlas is a puff GROWING over 64 frames at 12/s: a 0.4 s particle only ever showed the first ~5 - nearly
@@ -89,7 +93,7 @@ def vapour(name, *, pps, life, velocity, size, emitter, shell, cone, inner=0, co
     # (the meteor smoke's ParticleSizeVariance 10 made puffs up to 10x their size - a fog bank; its particle shadows
     #  (ShadowParticleAlphaMultiplier 3) darkened what is under them grey)
     v["RenderingParameters"].update({"DistanceScalingFactor": 0, "ParticleSizeVariance": 0.3, "ShadowParticleAlphaMultiplier": 0})
-    v["SimulationParameters"].update({"EmitterMotionInheritance": 0.9 if name.endswith("Tip") else 0, "CollisionCountToKill": 1, "Bounciness": 0})
+    v["SimulationParameters"].update({"EmitterMotionInheritance": 1 if name.endswith("Tip") else 0, "CollisionCountToKill": 1, "Bounciness": 0})
     write(f"Vapour_{name}_ParticleEmitter.def", d, g)
     return g
 
@@ -118,8 +122,10 @@ effect("Cone", vapour("Cone", pps=4000, life=1.0, velocity=1.0, size=[(0, 0.03),
 # (faded more at both ends: the user - a slow fade in to a ~30 % peak, then a long fade out; the game allows 4 keys)
 MIST_WISP = [(0, c4(1, 1, 1, 0)), (0.35, c4(1, 1, 1, 0.3)), (0.55, c4(1, 1, 1, 0.22)), (1, c4(0.97, 0.98, 1, 0))]
 _mist = MIST; MIST = MIST_WISP
-effect("Edge", vapour("Edge", pps=500, life=1.2, velocity=1.5, size=[(0, 0.06), (0.5, 0.22), (1, 0.4)],
-                      emitter=(0.2, 0.2, 0.2), shell=0, cone=40), "5d0c7a3e-0102-4000-8000-000000000001")   # (longer, wider: the user)
+# (2026-10-10 "higher spawn rate... and tight" - the user: half the life, twice the rate, and the life VARIANCE in
+#  absolute seconds as the game reads it - 0.3 s on a 0.15 s life let sheets live 3x as long and drift off the hull)
+effect("Edge", vapour("Edge", pps=1000, life=0.6, velocity=1.5, size=[(0, 0.06), (0.5, 0.22), (1, 0.4)],
+                      emitter=(0.2, 0.2, 0.2), shell=0, cone=40, life_var=0.0375), "5d0c7a3e-0102-4000-8000-000000000001")
 MIST = _mist
 
 # DIAGNOSTIC variants of the cone (the first one drew nothing; the edge wisps seemed to stay in world space): B without
@@ -145,9 +151,9 @@ MIST = _mist
 # (thin, sharp, long, very transparent: the user - tiny tight puffs barely growing, many of them, living 3 s: a fine
 #  pencil line; ~12 % at most, faded in and out)
 # (longer, thinner, fainter again: the user - 5 s, ~3-5 cm, ~6 %; the length set per airspeed by the code)
-MIST_TIP = [(0, c4(1, 1, 1, 0.06)), (0.1, c4(1, 1, 1, 0.06)), (0.6, c4(1, 1, 1, 0.04)), (1, c4(0.97, 0.98, 1, 0))]
+MIST_TIP = [(0, c4(1, 1, 1, 0.2)), (0.1, c4(1, 1, 1, 0.2)), (0.6, c4(1, 1, 1, 0.133)), (1, c4(0.97, 0.98, 1, 0))]   # (moving with the air now: shorter and brighter to read)
 _mist = MIST
 MIST = MIST_TIP
-effect("Tip", vapour("Tip", pps=2000, life=2.0, velocity=4, size=[(0, 0.01), (0.5, 0.013), (1, 0.018)],
-                     emitter=(0.01, 0.01, 1.0), shell=0, cone=0.3, life_var=0.05, collide=False), "5d0c7a3e-0107-4000-8000-000000000001")
+effect("Tip", vapour("Tip", pps=2000, life=0.3, velocity=4, size=[(0, 0.02), (0.5, 0.02), (1, 0.022)],   # (born full size: the thin young end did not show - the trail began metres back)
+                     emitter=(0.01, 0.01, 0.01), shell=0, cone=0.3, life_var=0.05, collide=False), "5d0c7a3e-0107-4000-8000-000000000001")
 MIST = _mist

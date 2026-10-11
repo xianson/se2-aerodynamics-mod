@@ -72,7 +72,7 @@
             {
               "Key": "c8166a2e-11dc-5a8c-9c63-83e169750ad6",
               "Value": {
-                "Value": 2,
+                "Value": 0.3,
                 "Key": 0
               }
             }
@@ -88,7 +88,7 @@
                 "Value": {
                   "X": 0.01,
                   "Y": 0.01,
-                  "Z": 1.0
+                  "Z": 0.01
                 },
                 "Key": 0
               }
@@ -177,7 +177,7 @@
                             "X": 1,
                             "Y": 1,
                             "Z": 1,
-                            "W": 0.06
+                            "W": 0.2
                           },
                           "Key": 0
                         }
@@ -189,7 +189,7 @@
                             "X": 1,
                             "Y": 1,
                             "Z": 1,
-                            "W": 0.06
+                            "W": 0.2
                           },
                           "Key": 0.1
                         }
@@ -201,7 +201,7 @@
                             "X": 1,
                             "Y": 1,
                             "Z": 1,
-                            "W": 0.04
+                            "W": 0.133
                           },
                           "Key": 0.6
                         }
@@ -213,7 +213,7 @@
                             "X": 0.97,
                             "Y": 0.98,
                             "Z": 1,
-                            "W": 0
+                            "W": 0.0
                           },
                           "Key": 1
                         }
@@ -239,21 +239,21 @@
                       {
                         "Key": "1911c538-a11c-59fb-9200-617e53cb7b18",
                         "Value": {
-                          "Value": 10,
+                          "Value": 3.0,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "dff606b5-f11c-52d7-a680-76f55c361b8e",
                         "Value": {
-                          "Value": 8,
+                          "Value": 2.4,
                           "Key": 0.8
                         }
                       },
                       {
                         "Key": "62e74dc2-164f-5929-937a-9bbd664120ae",
                         "Value": {
-                          "Value": 0,
+                          "Value": 0.0,
                           "Key": 1
                         }
                       }
@@ -278,14 +278,14 @@
                       {
                         "Key": "0888aff0-1df9-5be9-898d-a16b0e353914",
                         "Value": {
-                          "Value": 25,
+                          "Value": 2.0,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "f43ac1a9-1dc1-5b44-b706-b15e2d521916",
                         "Value": {
-                          "Value": 12.5,
+                          "Value": 2.0,
                           "Key": 1
                         }
                       }
@@ -310,21 +310,21 @@
                       {
                         "Key": "d05cc666-e601-57b8-901c-f06aa225f8fd",
                         "Value": {
-                          "Value": 0.01,
+                          "Value": 0.02,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "28e8e27f-fc2e-58dc-ad4f-f40726c34092",
                         "Value": {
-                          "Value": 0.013,
+                          "Value": 0.02,
                           "Key": 0.5
                         }
                       },
                       {
                         "Key": "79ee1f73-bc0c-53e3-b835-f464cb7c7009",
                         "Value": {
-                          "Value": 0.018,
+                          "Value": 0.022,
                           "Key": 1
                         }
                       }
@@ -443,7 +443,7 @@
       "Bounciness": 0,
       "AngularVelocityCollisionMultiplier": 1,
       "CollisionCountToKill": 1,
-      "EmitterMotionInheritance": 0.9
+      "EmitterMotionInheritance": 1
     },
     "RenderingParameters": {
       "AmbientMultiplier": 1,

@@ -51,15 +51,19 @@ internal sealed partial class FlightField
     /// <summary>Totals since the last Reset: frames seen; pops (the drawn plasma strength stepping more than PopStep in one
     /// frame); rebuilds while the plasma showed (over 0.05); frames lost (no flow found while the field lived); group toggles
     /// (a group up/down); the largest one-frame step; the peak strength.</summary>
-    public static int RecFrames, RecPops, RecRebuilds, RecLost, RecToggles, RecFlicker;
+    public static int RecFrames, RecPops, RecRebuilds, RecLost, RecToggles, RecFlicker, RecSpotMade;
     public static float RecMaxStep, RecPeak, PopStep = 0.05f, RecEdgeStep, RecTipStep;
     /// <summary>On/off changes per group (plasma, vapour, tips) and flickers: a group back on within FlickerSec of going
     /// off, or off again within FlickerSec of coming on.</summary>
     public static readonly int[] RecOn = new int[3], RecOff = new int[3];
     public static float FlickerSec = 2f;
-    public static void RecReset() { PoolSpawned = PoolReused = 0; RecFrames = RecPops = RecRebuilds = RecLost = RecToggles = RecFlicker = 0; RecMaxStep = RecPeak = RecEdgeStep = RecTipStep = 0f; Array.Clear(RecOn); Array.Clear(RecOff); }
+    public static void RecReset() { PoolSpawned = PoolReused = 0; RecFrames = RecPops = RecRebuilds = RecLost = RecToggles = RecFlicker = RecSpotMade = RecRelayouts = PoolCarried = RecSwingMoves = RecBakes = RecBakeNow = RecBakedFrames = 0; RecBakedMaxMs = RecBakedSumMs = 0; lock (_recDrops) _recDrops.Clear(); RecMaxStep = RecPeak = RecEdgeStep = RecTipStep = 0f; Array.Clear(RecOn); Array.Clear(RecOff); }
+    /// <summary>Which line dropped a group (P plasma, V vapour edges, T tips) while lit, and how often: the rebuilds' causes.</summary>
+    static readonly System.Collections.Generic.Dictionary<string, int> _recDrops = new();
+    void RecDrop(string g, int line) { if (_entryS > 0.05f || _edgeSm > 0.05f || _tipSm > 0.05f) lock (_recDrops) { string k = g + line + ":" + (_entryS > 0.05f ? "lit" : "v"); _recDrops.TryGetValue(k, out int n); _recDrops[k] = n + 1; } }
+    public static string RecDropsReport() { lock (_recDrops) { var r = string.Join(" ", System.Linq.Enumerable.Select(_recDrops, kv => kv.Key + "x" + kv.Value)); return r.Length == 0 ? "none" : r; } }
     public static string RecReport() =>
-        $"spawned {PoolSpawned} reused {PoolReused} | fx frames {RecFrames} pops {RecPops} rebuilds-while-lit {RecRebuilds} lost {RecLost} toggles {RecToggles} flicker {RecFlicker} max-step {RecMaxStep:F3} edge-step {RecEdgeStep:F3} tip-step {RecTipStep:F3} peak {RecPeak:F2} on P{RecOn[0]} V{RecOn[1]} T{RecOn[2]} off P{RecOff[0]} V{RecOff[1]} T{RecOff[2]}";
+        $"spawned {PoolSpawned} reused {PoolReused} | fx frames {RecFrames} pops {RecPops} rebuilds-while-lit {RecRebuilds} lost {RecLost} toggles {RecToggles} flicker {RecFlicker} max-step {RecMaxStep:F3} edge-step {RecEdgeStep:F3} tip-step {RecTipStep:F3} peak {RecPeak:F2} spots-made {RecSpotMade} [{BakeProfile}] chunks {_lastChunkCount} bakes {RecBakes} bakes-on-demand {RecBakeNow} baked-ms avg {(RecBakedFrames > 0 ? RecBakedSumMs / RecBakedFrames : 0):F2} max {RecBakedMaxMs:F1} swing-moves {RecSwingMoves} relayouts {RecRelayouts} carried {PoolCarried} drops [{RecDropsReport()}] on P{RecOn[0]} V{RecOn[1]} T{RecOn[2]} off P{RecOff[0]} V{RecOff[1]} T{RecOff[2]}";
     private float _recEdge = -1f, _recTip = -1f; private readonly double[] _recFlip = new double[3];
     private float _recS = -1f; private int _recGen = -1; private int _recGroups = -1;
     void Record()
@@ -127,16 +131,18 @@ internal sealed partial class FlightField
             travel = Vector3.Normalize(travel);
             // the flow axis eased too, and the field placed again only past AxisTol (twice it while the plasma is strong): a
             // 5 degree turn threw every group away and drew it in again, in a new pattern, over 20-40 frames
-            _axisSm = _axisSm == default ? travel : Vector3.Normalize(Vector3.Lerp(_axisSm, travel, Math.Clamp(fdt / AxisTau, 0f, 1f)));
+            // (BAKED: the live flow itself - no easing, no re-layout: the bake is blended to it every frame)
+            if (BakedOn) { _axisSm = travel; if (_axis == default) _axis = travel; }
+            else _axisSm = _axisSm == default ? travel : Vector3.Normalize(Vector3.Lerp(_axisSm, travel, Math.Clamp(fdt / AxisTau, 0f, 1f)));
             float tol = _entryS > 0.1f ? 2f * AxisTol : AxisTol;
-            bool past = _axis == default || Vector3.Dot(_axisSm, _axis) < MathF.Cos(tol * MathF.PI / 180f);
+            bool past = !BakedOn && (_axis == default || Vector3.Dot(_axisSm, _axis) < MathF.Cos(tol * MathF.PI / 180f));
             if (!past) _axisPastAt = 0;
             else if (_axis == default || (_axisPastAt != 0 && tsNow - _axisPastAt > 0.3 * System.Diagnostics.Stopwatch.Frequency))
             {
                 // (the AoA moved, for 0.3 s: the shadow, outline, weights and the plasma and sheets again - not the tips, not the
                 //  spot; the old emitters stop and their particles live out their lives, the new ones fill in fast)
-                _axis = _axisSm; _axisPastAt = 0;
-                DropPlasma(keepSpot: true); DropEdges(); _shapeKey = null;
+                _axis = _axisSm; _axisPastAt = 0; _swingDone = Quaternion.Identity;   // (laid out for the live flow again: no swing)
+                Carry(); _shapeKey = null;
             }
             else if (_axisPastAt == 0) _axisPastAt = tsNow;
             if (!Shape(out var f, out float R, out int N, out var pts)) return false;
@@ -150,17 +156,23 @@ internal sealed partial class FlightField
             }
 
             // the groups the regime needs
-            bool wantPlasma = PlasmaOn && (_entryS > 0.001f || _mach > AeroEntryFx.OnsetMach - PlasmaLead);
-            bool dropPlasma = !PlasmaOn || (_entryS <= 0.001f && _mach < AeroEntryFx.OnsetMach - PlasmaLead - 0.1f);
-            bool wantEdges = VapourOn && _mach > EdgeBand[0] - VapourLead && _mach < EdgeBand[3] + VapourLead && _rho > 0f;
-            bool dropEdges = !VapourOn || ((_mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f) && _edgeSm < 0.02f);   // (faded out first - a hard brake cut them at ~20 % - and under 2 %, invisible: dropped then)
+            bool wantPlasma = !BakedOn && PlasmaOn && (_entryS > 0.001f || _mach > AeroEntryFx.OnsetMach - PlasmaLead);
+            bool dropPlasma = BakedOn || !PlasmaOn || (_entryS <= 0.001f && _mach < AeroEntryFx.OnsetMach - PlasmaLead - 0.1f);
+            bool wantEdges = !BakedOn && VapourOn && _mach > EdgeBand[0] - VapourLead && _mach < EdgeBand[3] + VapourLead && _rho > 0f;
+            bool dropEdges = BakedOn || !VapourOn || ((_mach < EdgeBand[0] - VapourLead - 0.05f || _mach > EdgeBand[3] + VapourLead + 0.05f) && _edgeSm < 0.02f);   // (faded out first - a hard brake cut them at ~20 % - and under 2 %, invisible: dropped then)
             bool owner = _server == null || _server.FxTipOwner;
             if (!owner) TipWhyHere = "not the ship's main grid";
             bool wantTips = TipsOn && owner && _speed > TipMinSpeed;
-            if (wantPlasma && !_plasmaUp) PlacePlasma(f, R, N);
-            else if (dropPlasma && _plasmaUp) DropPlasma();
-            if (wantEdges && !_edgesUp) PlaceEdges(f, R, N, pts);
-            else if (dropEdges && _edgesUp) DropEdges();
+            _relayout = _carrying;   // (a re-layout: placed in this frame from the carried emitters, not queued over frames)
+            try
+            {
+                if (wantPlasma && !_plasmaUp) PlacePlasma(f, R, N);
+                else if (dropPlasma && _plasmaUp) DropPlasma();
+                if (wantEdges && !_edgesUp) PlaceEdges(f, R, N, pts);
+                else if (dropEdges && _edgesUp) DropEdges();
+            }
+            finally { _relayout = false; }
+            if (_carrying) ParkCarried();
             if (wantTips && !_tipsUp) PlaceTips(f, N);
             else if (!wantTips && _tipsUp && (!TipsOn || !owner || _speed < 0.5f * TipMinSpeed)) DropTips();   // (no longer the ship's main grid: its trails go)
             else if (_tipsUp && _tipF != default)
@@ -176,8 +188,11 @@ internal sealed partial class FlightField
                 else _axisFlipAt = 0;
             }
 
-            // the spot light follows the grid (its own render root)
-            if (_spotRoot != null) UpdateRootTransform(_spotRoot, wt);
+            // the spot light follows the grid (its own render root), eased onto its aim; the field swung onto the live flow
+            BakedFrame(travel, fdt);   // (the plasma and the sheets: the bake blended to the live flow)
+            SpotFollow(wt);
+            SwingFollow();
+            TipLead_(fdt);
             // spawning a few a frame
             // (a refused spawn stopped the field for good while its queue kept growing: drop the queue, retry after 2 s)
             if (_puffWhy != null)
@@ -194,7 +209,7 @@ internal sealed partial class FlightField
                 finally { _draining = false; }
             }
             Record();
-            Status = $"M {_mach:F2} rho {_rho:F2} plasma {_entryS:F2}{(p.ExtStrength >= 0f ? " (entry source)" : "")} edge {_edgeI:F2} tip {_tipI:F2}"
+            Status = BakedStatus + $" | spot {(_spot != null ? $"on at {_spotPos.X:F1},{_spotPos.Y:F1},{_spotPos.Z:F1} (hull centre {_pivot.X:F1},{_pivot.Y:F1},{_pivot.Z:F1}, R {_shapeR:F1}) x{_spotSetS:F2} aim {Vector3.Transform(Vector3.UnitZ, _spotQ).X:F2},{Vector3.Transform(Vector3.UnitZ, _spotQ).Y:F2},{Vector3.Transform(Vector3.UnitZ, _spotQ).Z:F2} flow {_axisSm.X:F2},{_axisSm.Y:F2},{_axisSm.Z:F2}" : "off")}" + " | " + $"M {_mach:F2} rho {_rho:F2} plasma {_entryS:F2}{(p.ExtStrength >= 0f ? " (entry source)" : "")} edge {_edgeI:F2} tip {_tipI:F2}"
                    + $" | groups {(_plasmaUp ? "P" : "-")}{(_edgesUp ? "V" : "-")}{(_tipsUp ? "T" : "-")} effects {_puffs.Count} queued {_spawnQueue.Count}"
                    + (_puffWhy != null ? " | " + _puffWhy : "") + (_spotWhy != null ? " | spot: " + _spotWhy : "") + (_hullWhy != null ? " | " + _hullWhy : "");
             return true;
@@ -216,7 +231,8 @@ internal sealed partial class FlightField
         string key = string.Join(",", _axis, pts.Count, Res, Blur, Standoff, Sweep, Margin, MinStandoff, Dilate, RimSmooth, ChordGap);
         if (key != _shapeKey)
         {
-            DropPlasma(); DropEdges();   // (the tips do not hang on the shadow: kept)
+            { Vector3 c = Vector3.Zero; foreach (var q in pts) c += q; _pivot = pts.Count > 0 ? c / pts.Count : Vector3.Zero; }   // (the swing's pivot: the hull's centre)
+            Carry();   // (carried onto the new layout, not dropped; the tips do not hang on the shadow: kept)
             ShockGrid(f, a, b, R, pts, out _P3, out _past);
             _ring = SmoothRing(Rim(_P3, _past, a, b, out _ringC), RimSmooth);
             _shapeKey = key;
@@ -249,7 +265,10 @@ internal sealed partial class FlightField
         _entryS = Ease(_entryS, 0f, fdt);
         _coneI = _coneSm = Ease(_coneSm, 0f, fdt); _edgeI = _edgeSm = Ease(_edgeSm, 0f, fdt); _tipI = _tipSm = Ease(_tipSm, 0f, fdt);
         if (tsNow - _flowAt >= System.Diagnostics.Stopwatch.Frequency / 10) { _flowAt = tsNow; Strengths(); }
-        if (_spotRoot != null) UpdateRootTransform(_spotRoot, wt);
+        BakedFrame(_axisSm, fdt);
+        SpotFollow(wt);
+        SwingFollow();
+        TipLead_(fdt);
         return _entryS < 0.002f && _coneSm < 0.002f && _edgeSm < 0.002f && _tipSm < 0.002f;
     }
 
@@ -264,14 +283,22 @@ internal sealed partial class FlightField
         // the spot: off below 2 %, else Spot x strength, placed again when it moved a quarter
         if (Spot > 0f && _P3 != null)
         {
-            bool want = SpotOn && _plasmaUp && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
+            // (a rebuild drops the plasma for a moment: the light made stays through it - it was destroyed and made again
+            //  at every rebuild, blinking and jumping whenever the angle of attack moved, 2026-10-09)
+            // (one light a ship: its main grid's - a ship of six grids made six, FxTipOwner as the tips)
+            bool want = SpotOn && (_server == null || _server.FxTipOwner) && (_plasmaUp || BakedOn || _spot != null) && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
             if (!want) { if (_spotUsed > 0f) StopSpot(); _spotUsed = -1f; }
             else if (_spotUsed < 0f || _spot == null)
             {
-                StopSpot(); _spotMul = _entryS; _spotUsed = _entryS;   // (made ONCE per plasma group)
+                StopSpot(); _spotMul = 1f; _spotUsed = _entryS;   // (made ONCE, at full brightness: the strength is its distance)
                 SpawnSpot(_axis, _shapeR, _P3.GetLength(0) - 1);
             }
-            else if (MathF.Abs(_entryS - _spotSetS) > 0.02f * MathF.Max(_spotSetS, 0.05f)) SpotIntensity(_entryS);   // (dimmed in place, 10 Hz: it was destroyed and re-made in 25 % steps)
+            else
+            {
+                // (NOT SetParameters: measured 2026-10-09, a spot dimmed that way lit nothing - the renderer re-binds its cookie
+                //  from the handle passed, and there is none to pass. The strength sets its DISTANCE instead: SpotFollow)
+                _spotUsed = _entryS;
+            }
         }
     }
 
@@ -284,7 +311,7 @@ internal sealed partial class FlightField
         DownMix = PlasmaDownMix; Jitter = PlasmaJitter;
         try { _sub = 5; SpawnPuffs(_P3, _past, _ring, f, R); }   // (the spot is the strength's: Strengths places it)
         finally { _sub = 0; _noStop = false; }
-        _spotUsed = -1f;
+        if (_spot == null) _spotUsed = -1f;   // (a light already there is kept: re-aimed, not made again)
         _plasmaUp = true;
     }
 
@@ -344,9 +371,92 @@ internal sealed partial class FlightField
     // (the tips inherit TipInherit of the ship's motion - Vapour_Tip EmitterMotionInheritance - and are pushed back at
     //  4 m/s x TipSpread: relative to the ship they drift back at (1 - TipInherit) x airspeed + that push - the spacing of one
     //  frame's batch from the next, and the spawn line that fills it)
-    public static float TipInherit = 0.9f;
-    private float TipDrift => (1f - TipInherit) * _speed + 4f * TipSpread;
+    // WIND (the user, 2026-10-09: "they're not following the windspeed"): the tips inherit ALL of the ship's motion
+    // (Vapour_Tip EmitterMotionInheritance 1) and are emitted backwards at the AIRSPEED - so each particle moves with the air
+    // itself: still in the world in real flight, streaming back at the airflow past a held (puppeted) ship. At 90 % and no
+    // push they drifted back at a tenth of the airspeed - and not at all past a held ship.
+    public static float TipInherit = 1f;
+    private float TipDrift => _speed;
+    /// <summary>The tips' VelocityMultiplier for the airspeed: 4 m/s x TipScale (the effect's speed, scaled by its
+    /// EmitterScaleMultiplier) x it = the airspeed.</summary>
+    private float TipWindVm => MathF.Max(0.01f, _speed / (4f * MathF.Max(0.1f, TipScale)));
     private float TipLineLen() => Math.Clamp(TipDrift * Math.Max(1f / 240f, _frameDt), TipLineMin, TipLineMax);
+    /// <summary>
+    /// The tip emitters' LEAD (s x airspeed upwind of the tip): a trail moving with the air showed nothing for its first
+    /// ~0.07 s - a gap of ~30 m at 440 m/s, ~10 m at 150 (it scales with the airspeed: a time, not a place) - so each emitter
+    /// sits that far upwind of its tip, kept live, and the visible trail begins at the tip.
+    /// </summary>
+    public static float TipLead = 0f;   // (0: the emitter AT the tip. The 'invisible first 0.1 s' was the spawn line - 6x too long through the
+                                        //  effect scale, its particles born at its far end - not a delay; with no line the trail starts at the tip)
+    private readonly Dictionary<object, (Vector3 at, Quaternion q, float lead)> _tipAt = new Dictionary<object, (Vector3, Quaternion, float)>(ReferenceEqualityComparer.Instance);
+    // ── the tips re-found across the LIVE wind (the user, 2026-10-09): twice a second the hull's extremes along the span axis
+    //    taken across the actual airflow, each at its downwind (trailing) edge; an emitter moved (UpdateTransform) when its
+    //    tip moved more than 0.3 m - never re-spawned. Placement still decides WHETHER there are tips (thin and sharp). ──
+    private Vector3 _tipSpan, _tipC; private List<Vector3> _hullTips; private long _windTipsAt;
+    private readonly List<object> _tipOrder = new List<object>();
+    private void WindTips(Vector3 flow)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_hullTips == null || _tipOrder.Count == 0 || now - _windTipsAt < System.Diagnostics.Stopwatch.Frequency / 10) return;
+        _windTipsAt = now;
+        Vector3 u = _tipSpan - flow * Vector3.Dot(_tipSpan, flow);
+        if (u.LengthSquared() < 1e-4f) return;
+        u = Vector3.Normalize(u);
+        float hi = float.MinValue, lo = float.MaxValue;
+        foreach (var p in _hullTips) { float d = Vector3.Dot(p - _tipC, u); hi = MathF.Max(hi, d); lo = MathF.Min(lo, d); }
+        var found = new Vector3[2]; float[] best = { float.MinValue, float.MinValue };
+        foreach (var p in _hullTips)
+        {
+            float d = Vector3.Dot(p - _tipC, u), down = -Vector3.Dot(p, flow);
+            if (MathF.Abs(d - hi) <= 0.5f && down > best[0]) { best[0] = down; found[0] = p; }
+            if (MathF.Abs(d - lo) <= 0.5f && down > best[1]) { best[1] = down; found[1] = p; }
+        }
+        for (int k = 0; k < _tipOrder.Count && k < 2; k++)
+        {
+            var h = _tipOrder[k];
+            if (best[k] == float.MinValue || !_tipAt.TryGetValue(h, out var cur)) continue;
+            if ((cur.at - found[k]).LengthSquared() < 0.0025f) continue;
+            _tipAt[h] = (found[k], cur.q, -1f);   // (moved by TipLead_ below, this tick)
+            if (k < _tipLocal.Count) _tipLocal[k] = found[k];
+        }
+    }
+
+    /// <summary>How fast a tip emitter follows its target place and the wind direction (s).</summary>
+    public static float TipEaseTau = 0f;   // (0: on the live target every frame - the user, 2026-10-09: "no lag")
+    private readonly Dictionary<object, (Vector3 at, Quaternion q)> _tipShown = new();
+    /// <summary>EVERY FRAME (it was 10 Hz with a 1 degree / 0.5 m step, and the tip points 2 Hz with 0.3 m: turning fast the
+    /// trails' origins and directions stepped - the user, 2026-10-09: "make sure everything smoothly flows"): each tip
+    /// emitter eased onto its tip point (WindTips, 10 Hz) and the live wind direction, moved when it moved 2 cm or 0.2 deg.</summary>
+    private void TipLead_(float fdt)
+    {
+        float lead = TipLead * _speed;
+        if (_axisSm != default) WindTips(_axisSm);
+        // DOWNWIND (the user, 2026-10-09: "not reacting to the actual wind direction"): each tip emitter sprays along the LIVE
+        // airflow (the eased flow axis _axisSm, the grid's frame)
+        Vector3 flow = _axisSm != default ? _axisSm : _tipF;
+        if (flow == default || _tipAt.Count == 0) return;
+        var qw = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -flow);
+        Vector3 back = -flow;
+        float k = fdt <= 0f ? 1f : 1f - MathF.Exp(-fdt / Math.Max(0.01f, TipEaseTau));
+        foreach (var h in new List<object>(_tipAt.Keys))
+        {
+            var (at, q, was) = _tipAt[h];
+            Vector3 goal = at - back * lead;
+            Vector3 pos; Quaternion rot;
+            if (_tipShown.TryGetValue(h, out var shown) && was >= 0f) { pos = Vector3.Lerp(shown.at, goal, k); rot = Quaternion.Normalize(Quaternion.Slerp(shown.q, qw, k)); }
+            else { pos = goal; rot = qw; }
+            if (was >= 0f && (pos - shown.at).LengthSquared() < 0.0004f && MathF.Abs(Quaternion.Dot(rot, shown.q)) > 0.9999985f) continue;
+            try
+            {
+                (_updTransform ??= h.GetType().GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null))
+                    .Invoke(h, new object[] { new RelativeTransform(pos, rot) });
+                _tipShown[h] = (pos, rot);
+                _tipAt[h] = (at, rot, lead);
+            }
+            catch (Exception e) { _puffWhy = "tip lead: " + Inner(e); _tipAt.Remove(h); _tipShown.Remove(h); }
+        }
+    }
+
     private void TipLine()
     {
         if (_tipPrm.Count == 0) return;
@@ -354,12 +464,15 @@ internal sealed partial class FlightField
         foreach (var h in new List<object>(_tipPrm.Keys))
         {
             var (prm, len) = _tipPrm[h];
-            if (len > 0f && (MathF.Abs(want - len) < 0.2f * len || System.Diagnostics.Stopwatch.GetTimestamp() - _tipLineAt < System.Diagnostics.Stopwatch.Frequency / 2)) continue;
+            // (EVERY SetParameters rebuilds the GPU emitter and deletes its live particles - the trail vanished for ~0.3 s at each:
+            //  the airspeed is sent only on a 15 % change and at most every 3 s; there is no spawn line any more to keep up)
+            want = TipWindVm;
+            if (len > 0f && (MathF.Abs(want - len) < 0.15f * len || System.Diagnostics.Stopwatch.GetTimestamp() - _tipLineAt < 3 * System.Diagnostics.Stopwatch.Frequency)) continue;
             _tipLineAt = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
-                prm.GetType().GetField("EmitterSizeMultiplier").SetValue(prm, want);
-                (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
+                prm.GetType().GetField("VelocityMultiplier").SetValue(prm, want);   // (the airspeed)
+                (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm }); _prmOf[h] = prm;
                 _tipPrm[h] = (prm, want);
             }
             catch (Exception e) { _puffWhy = "tip line: " + Inner(e); _tipPrm.Remove(h); }
@@ -377,7 +490,7 @@ internal sealed partial class FlightField
         var q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -a);
         foreach (var t in tips)
         {
-            VapourEffect(VapourTip, t, q, TipScale, 1f, false, Math.Max(0.01f, TipSpread), true, TipLineLen());
+            VapourEffect(VapourTip, t, q, TipScale, 1f, false, TipWindVm, true);   // (a point at the tip: no spawn line - see TipLine)
             _tipLocal.Add(t); _tipHist.Add(new List<(double t, Vector3D p)>());
         }
         TrkPlaced += tips.Count;
@@ -432,6 +545,7 @@ internal sealed partial class FlightField
         }
         float hiS = float.MinValue, loS = float.MaxValue;
         foreach (var p in pts) { float d = Vector3.Dot(p - c, u); hiS = MathF.Max(hiS, d); loS = MathF.Min(loS, d); }
+        _tipSpan = u; _hullTips = pts; _tipC = c;   // (kept: the tips re-found across the live wind - WindTips)
         // ONLY A REAL WING TIP (the user, 2026-10-08: "only if the outline is truly sharp and thin"; a brick has none): the
         // outer TipZone of the span on that side must be thin - under TipThinFrac of the ship's thickest - and sharp - its
         // chord under TipSharpFrac of the ship's longest
@@ -553,16 +667,16 @@ internal sealed partial class FlightField
             }
     }
 
-    private void DropPlasma(bool keepSpot = false)
+    private void DropPlasma(bool keepSpot = false, [System.Runtime.CompilerServices.CallerLineNumber] int why = 0)
     {
-        _genPlasma++;
+        _genPlasma++; RecDrop("P", why);
         foreach (var (h, _) in _plasma) { _puffs.Remove(h); Park(h); }
         _plasma.Clear(); _plasmaUp = false;
         if (!keepSpot) { StopSpot(); _spotUsed = -1f; }
     }
 
-    private void DropEdges() { _genEdges++; DropVapour(k => k != 2); _edgesUp = false; }
-    private void DropTips() { _genTips++; DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); }
+    private void DropEdges([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genEdges++; RecDrop("V", why); DropVapour(k => k != 2); _edgesUp = false; }
+    private void DropTips([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genTips++; RecDrop("T", why); DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear(); _tipShown.Clear(); }
 
     private void DropVapour(Func<int, bool> which)
     {
@@ -573,12 +687,57 @@ internal sealed partial class FlightField
         }
     }
 
+    // -- RE-LAYOUT (the flow turned past AxisTol, or the shadow changed): the plasma and the vapour sheets' emitters are
+    //    CARRIED onto the new layout in the same frame - each moved to its new place (UpdateTransform), its parameters set
+    //    only when they differ (SetParameters wipes its live particles) - still emitting; only the ones left over are
+    //    parked, only the missing spawned; the spot untouched. They were parked and handed straight back from the pool
+    //    with their particles wiped and refilled 48 a frame: the field blanked and stepped at every re-layout, ~2.5 times
+    //    a second while turning (the user, 2026-10-09: "rotating very fast makes the particle emissions very
+    //    discontinuous", "the reentry particles update at 1hz") --
+    private readonly Dictionary<Guid, Queue<object>> _carried = new();
+    private bool _carrying, _relayout;
+    public static int RecRelayouts, PoolCarried;
+    private void Carry()
+    {
+        if (!_plasmaUp && !_edgesUp && _plasma.Count == 0) return;
+        _carrying = true; RecRelayouts++;
+        _genPlasma++; _genEdges++;   // (anything still queued for the old layout is void)
+        foreach (var (h, _) in _plasma) { _puffs.Remove(h); CarryOne(h); }
+        _plasma.Clear(); _plasmaUp = false;
+        for (int i = 0; i < _vapour.Count; i++)
+        {
+            if (_vapour[i].kind == 2) continue;
+            var h = _vapour[i].h; _vapour.RemoveAt(i--); _puffs.Remove(h); CarryOne(h);
+        }
+        _edgesUp = false;
+        _spawnQueue.Clear();
+    }
+    private void CarryOne(object h)
+    {
+        if (!_effectOf.TryGetValue(h, out Guid eff)) { DisposeEffect(h); return; }
+        if (!_carried.TryGetValue(eff, out var q)) _carried[eff] = q = new Queue<object>();
+        q.Enqueue(h);
+    }
+    private void ParkCarried()
+    {
+        foreach (var q in _carried.Values) while (q.Count > 0) Park(q.Dequeue());
+        _carrying = false;
+    }
+    /// <summary>SetParameters only when they differ from what this emitter has (a set wipes its live particles).</summary>
+    private void SetParamsIfChanged(object h, object prm)
+    {
+        if (_prmOf.TryGetValue(h, out var had) && had.Equals(prm)) return;
+        (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm });
+        _prmOf[h] = prm;
+    }
+    private readonly Dictionary<object, object> _prmOf = new();
+
     /// <summary>Everything off (a new axis or shape, out of range, the grid gone).</summary>
     public void DropAll()
     {
         _genPlasma++; _genEdges++; _genTips++;
-        _noStop = false; StopPuffs();
-        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _lightAt = default; _tipF = default; _tipPrm.Clear();
+        _noStop = false; StopPuffs(); BakedDrop();
+        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _lightAt = default; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear();
     }
 
     // ── the aero model, read directly ──
@@ -599,12 +758,13 @@ internal sealed partial class FlightField
 
     /// <summary>Every chunk of the force table: its centre, Newtonian drag along the flow f and frontal area (its share
     /// for f, at unit dynamic pressure; bilinear over the direction table's face, as ForceTable.Locate).</summary>
+    public static int _lastChunkCount;
     private void ChunkDrag(Vector3 f)
     {
         _chunkDrag.Clear(); _dragWhy = null;
         var table = _server?.FxChunks;
         if (table == null) { _dragWhy = "no chunk table"; return; }
-        int n = table.N, count = table.ChunkCount;
+        int n = table.N, count = table.ChunkCount; _lastChunkCount = count;
         Vector3 d = f; float ax = MathF.Abs(d.X), ay = MathF.Abs(d.Y), az = MathF.Abs(d.Z), aa, bb; int face;
         if (ax >= ay && ax >= az) { face = d.X >= 0 ? 0 : 1; aa = d.Y / ax; bb = d.Z / ax; }
         else if (ay >= az) { face = d.Y >= 0 ? 2 : 3; aa = d.X / ay; bb = d.Z / ay; }
@@ -617,9 +777,10 @@ internal sealed partial class FlightField
         for (int c = 0; c < count; c++)
         {
             if (!table.HasShare(c)) continue;
-            var sh = table.GetShare(c);
+            // (the four corners read alone: GetShare decoded the chunk's whole share, per chunk, per direction - ~15 ms a
+            //  direction on the Hercules; the baked field bakes 642 of them)
             float f1x = 0, f1y = 0, f1z = 0, fr = 0;
-            foreach (var (k, wt) in corners) { int o = k * 13; f1x += sh[o + 3] * wt; f1y += sh[o + 4] * wt; f1z += sh[o + 5] * wt; fr += sh[o + 12] * wt; }
+            foreach (var (k, wt) in corners) { f1x += table.ShareAt(c, k, 3) * wt; f1y += table.ShareAt(c, k, 4) * wt; f1z += table.ShareAt(c, k, 5) * wt; fr += table.ShareAt(c, k, 12) * wt; }
             float drag = -(f1x * f.X + f1y * f.Y + f1z * f.Z);
             var (lo, hi) = table.Bounds[c];
             if (fr > 1e-3f) _chunkDrag.Add(((lo + hi) * 0.5f, Math.Max(0f, drag), fr));
@@ -747,14 +908,27 @@ internal sealed partial class FlightField
             // REUSE (the user, 2026-10-09: "spawning new emitters is unacceptable - we should be reusing"): a parked emitter of
             // this effect is moved to the new place, given the new parameters and set emitting again; a new one only when
             // none is parked. Parked: stopped emitting (its particles in flight live out their lives), not disposed.
+            RelativeTransform place = _spawnTip ? at : Swung(at, _swingDone);   // (the plasma and the sheets: where the swing has them now)
+            if (_carrying && _carried.TryGetValue(effect, out var carried) && carried.Count > 0)
+            {
+                object hc = carried.Dequeue();
+                prm = Activator.CreateInstance(_tParams);
+                init?.Invoke(prm);
+                SetParamsIfChanged(hc, prm);
+                (_updTransform ??= hc.GetType().GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null)).Invoke(hc, new object[] { place });
+                if (!_spawnTip) _baseOf[hc] = at;
+                PoolCarried++;
+                return hc;
+            }
             if (_pool.TryGetValue(effect, out var parked) && parked.Count > 0)
             {
                 object hp = parked.Pop();
                 prm = Activator.CreateInstance(_tParams);
                 init?.Invoke(prm);
                 var ht = hp.GetType();
-                (_setParams ??= ht.GetMethod("SetParameters", AnyInst)).Invoke(hp, new[] { prm });
-                (_updTransform ??= ht.GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null)).Invoke(hp, new object[] { at });
+                (_setParams ??= ht.GetMethod("SetParameters", AnyInst)).Invoke(hp, new[] { prm }); _prmOf[hp] = prm;
+                (_updTransform ??= ht.GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null)).Invoke(hp, new object[] { place });
+                if (!_spawnTip) _baseOf[hp] = at;
                 (_resume ??= ht.GetMethod("ResumeEmitting", AnyInst, null, Type.EmptyTypes, null)).Invoke(hp, null);
                 PoolReused++;
                 return hp;
@@ -765,11 +939,11 @@ internal sealed partial class FlightField
             var p = _spawn.GetParameters();
             var args = new object[p.Length];
             for (int i = 0; i < args.Length; i++) args[i] = p[i].HasDefaultValue ? p[i].DefaultValue : null;
-            args[0] = at; args[1] = def; args[2] = prm; args[3] = _renderParent;
+            args[0] = place; args[1] = def; args[2] = prm; args[3] = _renderParent;
             for (int i = 4; i < args.Length; i++) if (p[i].ParameterType == typeof(string)) args[i] = "AeroFlight";
             object h = _spawn.Invoke(_fxSession, args);
             if (h == null) why = "spawn refused";
-            else { _effectOf[h] = effect; PoolSpawned++; }
+            else { _effectOf[h] = effect; _prmOf[h] = prm; PoolSpawned++; if (!_spawnTip) _baseOf[h] = at; }
             return h;
         }
         catch (Exception e) { why = "spawn: " + Inner(e); return null; }
@@ -810,6 +984,7 @@ internal sealed partial class FlightField
     private void Park(object h)
     {
         if (h == null) return;
+        Unswing(h);
         if (!_effectOf.TryGetValue(h, out Guid eff)) { DisposeEffect(h); return; }
         try
         {
@@ -828,7 +1003,9 @@ internal sealed partial class FlightField
     {
         DropAll();
         foreach (var st in _pool.Values) foreach (var h in st) DisposeEffect(h);
-        _pool.Clear(); _effectOf.Clear();
+        foreach (var q in _carried.Values) foreach (var h in q) DisposeEffect(h);
+        _carried.Clear(); _carrying = false;
+        _pool.Clear(); _effectOf.Clear(); _prmOf.Clear(); _baseOf.Clear();
     }
 
     /// <summary>An effect goes GRACEFULLY: it stops emitting and disposes itself once its particles have died (a
@@ -897,15 +1074,11 @@ internal sealed partial class FlightField
         try
         {
             if (!ResolveRender()) { _spotWhy = "render contracts not available"; return; }
-            float zFront = float.MinValue; Vector3 mid = Vector3.Zero; int cnt = 0;
-            for (int i = 0; i <= N; i++) for (int j = 0; j <= N; j++)
-                if (_hullHas[i, j]) { var q = _hullSurf[i, j]; zFront = Math.Max(zFront, Vector3.Dot(q, f)); mid += q - f * Vector3.Dot(q, f); cnt++; }
-            if (cnt == 0) { _spotWhy = "no hull"; return; }
-            mid /= cnt;
-            float d = SpotDist * R;
-            Vector3 at = mid + f * (zFront + d);
+            if (!SpotAim(f, out var at, out var q2)) { _spotWhy = "no hull"; return; }
             float cone = 2f * MathF.Atan(SpotCover / Math.Max(0.1f, SpotDist));
-            var q2 = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, SpotFlip ? -f : f);   // (the engine's forward is -Z)
+            // (the light sits at its root's origin; the ROOT carries the aim - moved every frame, so the light is re-aimed in
+            //  place: a light's own transform is fixed when it is made)
+            _spotPos = at; _spotQ = q2; _spotEase = 0; _spotMovedAt = at; _spotMovedQ = q2;
             _spotRoot = _createRoot.Invoke(_contracts, new object[] { "AeroPlasmaSpotRoot", _client.Data.GetWorldTransform(), true });
             if (_spotRoot == null) { _spotWhy = "no root"; return; }
             var ps = _createSpot.GetParameters();
@@ -926,10 +1099,75 @@ internal sealed partial class FlightField
                     case "falloffMultiplier": args[i] = SpotFalloff; break;
                 }
             _spot = _createSpot.Invoke(_contracts, args);
+            RecSpotMade++;
             _spotWhy = null;
             _spotCone = cone; _spotRgb = new Vector3(lr, lg, lb); _spotSetS = _spotMul;   // (its brightness changed in place from here: SpotIntensity)
         }
         catch (Exception e) { _spotWhy = "spot: " + Inner(e); StopSpot(); }
+    }
+
+    // ── the spot's aim: SpotDist x R upwind of the hull's front along the flow f, pointing down it (grid-local) ──
+    private Vector3 _spotPos, _spotGoalAt; private Quaternion _spotQ = Quaternion.Identity, _spotGoalQ = Quaternion.Identity; private long _spotEase;
+    /// <summary>How fast the light follows a new aim (s).</summary>
+    public static float SpotAimTau = 0f;
+    /// <summary>How far upwind of the front the light sits: SpotDist x R at full strength, further as the entry weakens -
+    /// the light reaching the hull goes as 1 / distance^2, so it is the strength (made at full brightness; never dimmed
+    /// by SetParameters).</summary>
+    private float SpotDistance() => SpotDist * _shapeR / MathF.Sqrt(Math.Clamp(_entryS * _spotFlick, 0.01f, 1.5f));
+    /// <summary>The flicker: the light's strength x (1 + SpotFlicker x a fire-like wobble - three unrelated frequencies,
+    /// SpotFlickerHz the fastest), through its distance like the strength (the user, 2026-10-09: "slightly flickery").</summary>
+    public static float SpotFlicker = 0.2f, SpotFlickerHz = 17f;
+    private float _spotFlick = 1f;
+    private static float Flick(double t)
+    {
+        double w = 2 * Math.PI * SpotFlickerHz;
+        double n = 0.5 * Math.Sin(w * t) + 0.3 * Math.Sin(w * 0.537 * t + 1.3) + 0.2 * Math.Sin(w * 0.291 * t + 4.1);
+        return 1f + SpotFlicker * (float)n;
+    }
+    private bool SpotAim(Vector3 f, out Vector3 at, out Quaternion q)
+    {
+        at = default; q = Quaternion.Identity;
+        if (BakedOn && _bakedSpotOk)
+        {
+            at = _bakedSpotMid + f * (_bakedSpotFront + SpotDistance());
+            q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, SpotFlip ? -f : f);
+            return true;
+        }
+        if (_hullHas == null || _hullSurf == null || f == default) return false;
+        int N = _hullHas.GetLength(0) - 1;
+        float zFront = float.MinValue; Vector3 mid = Vector3.Zero; int cnt = 0;
+        for (int i = 0; i <= N; i++) for (int j = 0; j <= N; j++)
+            if (_hullHas[i, j]) { var p = _hullSurf[i, j]; zFront = Math.Max(zFront, Vector3.Dot(p, f)); mid += p - f * Vector3.Dot(p, f); cnt++; }
+        if (cnt == 0) return false;
+        mid /= cnt;
+        at = mid + f * (zFront + SpotDistance());
+        q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, SpotFlip ? -f : f);   // (the engine's forward is -Z)
+        return true;
+    }
+    private static MethodInfo _spotMove;
+    private Vector3 _spotMovedAt; private Quaternion _spotMovedQ;
+    /// <summary>Every frame: the root with the grid; the light itself (SpotLightEntity.UpdateTransform) on the live aim -
+    /// SpotAimTau 0: no easing (the user, 2026-10-09: "no lag").</summary>
+    private void SpotFollow(WorldTransform wt)
+    {
+        if (_spotRoot == null) return;
+        UpdateRootTransform(_spotRoot, wt);
+        _spotFlick = SpotFlicker > 0f ? Flick(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency) : 1f;
+        if (_spot == null || _axisSm == default || !SpotAim(_axisSm, out var goal, out var goalQ)) return;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float dt = _spotEase == 0 ? 0f : (float)Math.Min(0.25, (now - _spotEase) / (double)System.Diagnostics.Stopwatch.Frequency);
+        _spotEase = now;
+        float k = SpotAimTau <= 0f || dt <= 0f ? 1f : 1f - MathF.Exp(-dt / SpotAimTau);
+        _spotPos = Vector3.Lerp(_spotPos, goal, k);
+        _spotQ = Quaternion.Normalize(Quaternion.Slerp(_spotQ, goalQ, k));
+        if ((_spotPos - _spotMovedAt).LengthSquared() < 0.0004f && MathF.Abs(Quaternion.Dot(_spotQ, _spotMovedQ)) > 0.9999996f) return;
+        try
+        {
+            (_spotMove ??= _spot.GetType().GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null))
+                ?.Invoke(_spot, new object[] { new RelativeTransform(_spotPos, _spotQ) });
+            _spotMovedAt = _spotPos; _spotMovedQ = _spotQ;
+        }
+        catch (Exception e) { _spotWhy = "spot move: " + Inner(e); }
     }
 
     // ── the spot light's brightness, changed IN PLACE (ISpotLightEntity.SetParameters: intensity, cone, cookie, flare) ──
