@@ -208,6 +208,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal bool IsServerScene = true;
     static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
     private Quaternion _rcsHold; private bool _rcsHoldValid; private int _holdStall;
+    internal int _rcsWarmGen = -1;
 
     /// <summary>
     /// The orientation the thrusters steer to (ThrustTorque): the pilot's target (TargetControlData, the one the
@@ -235,14 +236,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
         if (Data.Has<DampeningData>())
         {
-            if (!_rcsHoldValid) { _rcsHold = wt.Orientation; _rcsHoldValid = true; _holdStall = 0; }
-            // A hold the ship cannot reach (resting on terrain, wedged): off by over 2 degrees yet barely turning or
-            // moving for 3 s, it takes the orientation it rests in, instead of pushing the ground forever. (Not in flight:
-            // a flying ship slowly losing to the air re-anchored every 3 s, and the hold ratcheted away with it.)
-            float errAngle = 2f * MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(wt.Orientation, _rcsHold)), 0f, 1f));
-            if (errAngle > 0.035f && LastAngVel.Length() < 0.01f && LastSpeed < 1f) { if (++_holdStall > 180) { _rcsHold = wt.Orientation; _holdStall = 0; } }
-            else _holdStall = 0;
-            target = _rcsHold; mode = "hold"; return true;
+            // UNPILOTED, dampeners on: as the game's gyros (their target rate zero) - the rotation damped, the thrusters'
+            // own offset torque cancelled, NO remembered attitude. It held the attitude the ship was left at: a pilot leaving
+            // mid-turn left their last target and the ship crept back to it for ~15 s, thrusters lit, against the gyros
+            // braking it; a rate pilot letting go got snapped back past where the gyros stopped (audit 2026-10-10)
+            _rcsHoldValid = false;
+            target = wt.Orientation; mode = "damp"; return true;
         }
         _rcsHoldValid = false; mode = "free"; return false;
     }
@@ -305,8 +304,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     // ── Lifecycle ──
 
+    /// <summary>Every aero grid in a scene (server and client copies): DesignProbe pairs a client grid with its server copy.</summary>
+    internal static readonly HashSet<AeroGridComponent> Live = new();
     void IInSceneListener.OnAddedToScene()
     {
+        lock (Live) Live.Add(this);
         Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
         // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
         _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
@@ -353,6 +355,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
+        lock (Live) Live.Remove(this);
+        DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
         // (the ground ray's ignore list: released when no ray is in flight - the engine reads it until the cast completes)

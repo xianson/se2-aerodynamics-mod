@@ -133,6 +133,11 @@ static class Program
     sealed class Sim
     {
         public Ship S; public bool Steering;
+        /// <summary>Unpiloted, dampeners on (AeroGridComponent.AttitudeTarget "damp"): the target is where the ship points,
+        /// every step - the mod's thrusters and the game's gyros both only stop the rotation.</summary>
+        public bool Damp;
+        /// <summary>A thruster dead (switched off, unpowered, damaged: its live maximum 0), by index; -1 none.</summary>
+        public int Dead = -1;
         public Quaternion Q = Quaternion.Identity, Target = Quaternion.Identity;
         public Vector3 W;                // local rad/s
         public Vector3 Pos, Vel;         // world
@@ -176,12 +181,14 @@ static class Program
 
         public void Step(float dt = 1f / 60f)
         {
+            if (Damp) Target = Q;
+            if (Dead >= 0 && caps[Dead] > 0f) { capDir[ThrustAllocator.DirIndex(dirs[Dead])] -= caps[Dead]; caps[Dead] = 0f; }
             Vector3 gameF = GameThrust();
             // the mod (ThrustTorque.Apply): the game's sharing makes the offset torque; with a target, the allocator
             Vector3 torque = ThrustAllocator.GameShare(gameF, arms, dirs, caps, capDir, f0, n);
             if (Steering)
             {
-                Vector3 accel = ThrustAllocator.RateCommand(Q, Target, W, 1.2f, 0.8f, 0.3f, 0.002f, 0.002f, out _);
+                Vector3 accel = ThrustAllocator.RateCommand(Q, Target, W, 1.2f, 0.8f, 0.3f, 0.002f, Damp ? 0.0002f : 0.002f, out _);
                 Vector3 tau = S.I(accel);
                 if (!warm) { for (int i = 0; i < n; i++) f[i] = f0[i]; warm = true; }
                 ThrustAllocator.Solve(tau, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, 60, out float prio);
@@ -217,6 +224,9 @@ static class Program
             if (!float.IsFinite(W.X + W.Y + W.Z) || W.Length() > 50f) { Diverged = true; DivergeNote = $"w {W} thruster torque {torque} gyro dw {dwGyro} air {AirTorque(this)}"; W = Vector3.Zero; }
         }
 
+        public float Use { get { float u = 0f; for (int i = 0; i < n; i++) u += Steering ? f[i] : f0[i]; return u; } }
+        public float ForceOf(int i) => Steering ? f[i] : f0[i];
+        public int Count => n;
         public float ErrorDeg => 2f * MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(Q, Target)), 0f, 1f)) / Deg;
         /// <summary>How far the ship's up has left the target's up (deg): the cross-axis upset of a yaw.</summary>
         public float TiltFromTargetDeg
@@ -386,6 +396,24 @@ static class Program
                 for (int i = 0; i < n; i++) if (f[i] < 0f || f[i] > caps[i] * 1.0001f) { Check(false, $"allocator {tag}: force {i} {f[i]} within 0..{caps[i]}"); break; }
             }
 
+            // after a turn, holding still: the thrusters drain back to the hover's own (2026-10-09: couples - opposing
+            // thrusters firing against each other - cost nothing in the solve, so after any turn they stayed lit at a low
+            // glow on every thruster, warm-started frame to frame: the flames 'stuck on'). Steered 1 s about yaw, then
+            // 3 s of no torque (60 frames a second, as in game).
+            {
+                ThrustAllocator.GameShare(hover, arms, dirs, caps, capDir, f0, n);
+                Array.Copy(f0, f, n);
+                for (int k = 0; k < 60; k++) ThrustAllocator.Solve(new Vector3(0f, 2e6f, 0f), hover, arms, dirs, caps, f0, f, prev, y, armSq, n, 60);
+                float turnUse = 0f; for (int i = 0; i < n; i++) turnUse += f[i];
+                for (int k = 0; k < 180; k++) ThrustAllocator.Solve(Vector3.Zero, hover, arms, dirs, caps, f0, f, prev, y, armSq, n, 60);
+                float use = 0f, hoverUse = 0f, sumCap = 0f; int litDown = 0;
+                for (int i = 0; i < n; i++) { use += f[i]; hoverUse += f0[i]; sumCap += caps[i]; if (dirs[i].Y < -0.5f && f[i] > 0.01f * caps[i]) litDown++; }
+                Measure(f, arms, dirs, n, out tq, out tot);
+                Check(use <= hoverUse * 1.05f + 0.005f * sumCap, $"allocator {tag}: after a turn, holding still drains to the hover's thrust (total {use:F0} N, the hover's {hoverUse:F0}, during the turn {turnUse:F0})");
+                Check(litDown == 0, $"allocator {tag}: after a turn, no downward thruster left lit against the upward ones ({litDown} lit)");
+                Check((tot - hover).Length() <= 0.005f * hover.Length() + 1f, $"allocator {tag}: after a turn, hover thrust kept ({(tot - hover).Length():F0} N off)");
+            }
+
             // full upward thrust: nothing to rebalance with along Y (every up thruster at max) - the thrust must still be kept
             var full = new Vector3(0f, capDir[2], 0f);
             ThrustAllocator.GameShare(full, arms, dirs, caps, capDir, f0, n);
@@ -396,6 +424,50 @@ static class Program
             // every up thruster at full power: pitch can only come from giving some of it up (attitude priority, bounded)
             Check((tot - full).Length() <= ThrustAllocator.MaxThrustLoss * full.Length() + 1f, $"allocator {tag}: at full thrust, at most {ThrustAllocator.MaxThrustLoss * 100f:F0}% given up for attitude ({(tot - full).Length() / full.Length() * 100f:F1}%)");
             Check(tq.X > 0.3f * 2e6f, $"allocator {tag}: at full thrust it still pitches the way asked ({tq.X:F0} of 2000000 N m, priority {prio:F2})");
+        }
+    }
+
+    /// <summary>The control audit of 2026-10-10: unpiloted damping (no remembered attitude, no creep, no burn left on) and a
+    /// dead thruster (never shared onto, never steered with).</summary>
+    static void ControlAuditChecks()
+    {
+        foreach (var com in new[] { Vector3.Zero, new Vector3(1.5f, 0.8f, -4f) })
+        {
+            string tag = com == Vector3.Zero ? "centred" : "off-centre";
+            // unpiloted, spinning: damped to rest where it ends up - and stays there (it crept back to a held attitude)
+            var sim = new Sim(Hercules(com, 0f), true) { Damp = true, W = new Vector3(0.05f, 0.3f, -0.08f) };
+            for (int k = 0; k < 360; k++) sim.Step();
+            float w6 = sim.W.Length(); var q6 = sim.Q;
+            for (int k = 0; k < 300; k++) sim.Step();
+            float drift = 2f * MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(q6, sim.Q)), 0f, 1f)) / Deg;
+            float hoverUse = sim.S.Mass * sim.S.G;
+            Check(!sim.Diverged && w6 < 0.01f, $"damp {tag}: an unpiloted spin damped to rest in 6 s ({w6:F4} rad/s)");
+            Check(drift < 0.5f, $"damp {tag}: then it stays where it stopped - no creep to a held attitude ({drift:F2} deg in 5 s)");
+            Check(sim.Use <= hoverUse * 1.10f, $"damp {tag}: no thrust left burning against itself at rest ({sim.Use:F0} N, the hover's {hoverUse:F0})");
+            // a dead thruster: never given thrust, never steered with, the rest still hold the hover and steer
+            var probe = new Sim(Hercules(com, 0f), true);
+            int dead = -1;
+            for (int i = 0; i < probe.Count; i++) if (Hercules(com, 0f).Thrusters[i].dir.Y > 0.5f) { dead = i; break; }
+            var dsim = new Sim(Hercules(com, 0f), true) { Dead = dead };
+            float worst = 0f;
+            for (int k = 0; k < 240; k++) { dsim.Target = Quaternion.CreateFromAxisAngle(Vector3.UnitY, k < 120 ? 0.3f : 0f); dsim.Step(); worst = MathF.Max(worst, dsim.ForceOf(dead)); }
+            Check(dead >= 0 && worst == 0f, $"dead thruster {tag}: an upward thruster switched off is never given thrust or steered with (max {worst:F1} N)");
+            // (can the rest balance it at all? the hover's own torque with the dead one gone, against the best the solver finds)
+            {
+                var sh = Hercules(com, 0f); int nn = sh.Thrusters.Count;
+                var ar = new Vector3[nn]; var di = new Vector3[nn]; var ca = new float[nn]; var cd = new float[6]; float asq = 0f;
+                for (int i = 0; i < nn; i++) { var t = sh.Thrusters[i]; di[i] = t.dir; ar[i] = Vector3.Cross(t.pos - com, t.dir); ca[i] = i == dead ? 0f : t.cap; cd[ThrustAllocator.DirIndex(t.dir)] += ca[i]; asq += (t.pos - com).LengthSquared(); }
+                var hov = new Vector3(0f, sh.Mass * 9.81f, 0f); var g0 = new float[nn]; var ff = new float[nn]; var pv = new float[nn]; var yy = new float[nn];
+                var off = ThrustAllocator.GameShare(hov, ar, di, ca, cd, g0, nn); Array.Copy(g0, ff, nn);
+                for (int k = 0; k < 40; k++) ThrustAllocator.Solve(Vector3.Zero, hov, ar, di, ca, g0, ff, pv, yy, asq, nn, 60);
+                Measure(ff, ar, di, nn, out var tq, out var tt);
+                float upCap = 0f; for (int i = 0; i < nn; i++) if (di[i].Y > 0.5f) upCap += ca[i];
+                Console.WriteLine($"   dead {tag}: hover {hov.Y:F0} N of {upCap:F0} N up capacity; offset torque {off.Length():F0}, left after balancing {tq.Length():F0} N m (net off {(tt - hov).Length():F0} N)");
+            }
+            // (centred: the rest balance it and steer; off-centre with an upward one dead, no sharing that keeps it up balances
+            //  it - the line above: it tilts, as it physically must - stable, the dead one still unused)
+            if (com == Vector3.Zero) Check(!dsim.Diverged && dsim.ErrorDeg < 5f, $"dead thruster {tag}: the others still turn it and hold it ({dsim.ErrorDeg:F2} deg off)");
+            else Check(!dsim.Diverged, $"dead thruster {tag}: unbalanceable with it gone - it tilts ({dsim.ErrorDeg:F1} deg), stays stable"); 
         }
     }
 
@@ -656,6 +728,7 @@ static class Program
         }
         Console.WriteLine("1. allocator");
         AllocatorChecks();
+        ControlAuditChecks();
         Console.WriteLine("2. flight (60 Hz, the game's target gyros + the mod's thruster steering)");
         FlightChecks();
         Console.WriteLine("3. real ships (Tests/data/*.flight, dumped from the game)");

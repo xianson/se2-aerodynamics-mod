@@ -64,6 +64,8 @@ public static class ThrustAllocator
     /// rebalanced, and its offset torque out-turned the steering (the Hercules at full forward thrust: 0.10 MN m of yaw
     /// left against 1.11 from its own thrusters - it could not stop a turn).</summary>
     public const float MaxThrustLoss = 0.25f;
+    /// <summary>The cost on thrust used, as the share of the mean capacity drained per solver iteration (Fista).</summary>
+    public static float Drain = 1e-4f;
     [ThreadStatic] static float[] _free;
 
     public static void Solve(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f0, float[] f,
@@ -109,6 +111,12 @@ public static class ThrustAllocator
         for (int i = 0; i < n; i++) { prev[i] = f[i]; y[i] = f[i]; }
         float lmax = LargestEigen(arms, dirs, mu, n);
         float step = lmax > 0f ? 1f / lmax : 0f;
+        // + Drain x sum f_i: a cost on the thrust used. Couples (opposing thrusters firing against each other) make no force
+        // and, balanced, no torque - free to the solve, so after a turn they stayed, warm-started frame to frame: every
+        // thruster lit at a low glow, burning, the flames "stuck on" (2026-10-09). With it, thrust doing nothing drains
+        // (Drain x the mean capacity per iteration: a 30% couple gone in about a second) and couples form only for torque.
+        float meanCap = 0f; for (int i = 0; i < n; i++) meanCap += caps[i];
+        float drain = n > 0 && step > 0f ? Drain * (meanCap / n) / step : 0f;
         float tk = 1f;
         for (int it = 0; it < iterations && step > 0f; it++)
         {
@@ -117,7 +125,7 @@ public static class ThrustAllocator
             float tk1 = (1f + MathF.Sqrt(1f + 4f * tk * tk)) / 2f, mom = (tk - 1f) / tk1;
             for (int i = 0; i < n; i++)
             {
-                float fi = Math.Clamp(y[i] - step * (Vector3.Dot(arms[i], tr) + mu * Vector3.Dot(dirs[i], fr)), 0f, caps[i]);
+                float fi = Math.Clamp(y[i] - step * (Vector3.Dot(arms[i], tr) + mu * Vector3.Dot(dirs[i], fr) + drain), 0f, caps[i]);
                 y[i] = Math.Clamp(fi + mom * (fi - prev[i]), 0f, caps[i]);
                 prev[i] = fi; f[i] = fi;
             }

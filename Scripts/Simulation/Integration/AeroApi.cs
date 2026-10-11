@@ -29,7 +29,7 @@ public static class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 3;
+    public const int Version = 4;   // (4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -234,6 +234,49 @@ public static class AeroApi
         table.Sample(Vector3.Normalize(travelLocal), into.AsSpan(0, ForceTable.Stride));
         return true;
     }
+
+    // ── the design probe (version 4): the build hints - the ship as if flying, at any direction and Mach (DesignProbe) ──
+
+    /// <summary>The whole ship (hull and wings) as if travelling along travelLocal (grid-local) at this Mach in sea-level air:
+    /// its centre of pressure (grid-local: the force's line nearest the centre of mass), force and torque about the centre of
+    /// mass, its static stability about the two axes across the flow (positive: the air turns it back; per radian, over q x
+    /// area x size) and its streamlining along it. Works for a client grid (paired with its server copy). False: no aero,
+    /// or its force table is not built yet (asked for: try again shortly).</summary>
+    public static bool TryDesign(Keen.VRage.DCS.Components.Entity grid, Vector3 travelLocal, float mach, out Vector3 copLocal, out Vector3 forceLocal,
+        out Vector3 torqueLocal, out float stabilityA, out float stabilityB, out float streamlining)
+    {
+        copLocal = forceLocal = torqueLocal = default; stabilityA = stabilityB = 0f; streamlining = -1f;
+        var aero = DesignProbe.ServerAero(grid);
+        return aero != null && DesignProbe.Probe(aero, travelLocal, mach, out copLocal, out forceLocal, out torqueLocal, out stabilityA, out stabilityB, out streamlining);
+    }
+
+    /// <summary>The top speed at sea level travelling along dirLocal (m/s): forward thrust (each thruster's profile at the
+    /// Mach) against drag. NaN: no aero or table yet; 0: not enough thrust to move; +inf: past 3 km/s.</summary>
+    public static float GetTopSpeed(Keen.VRage.DCS.Components.Entity grid, Vector3 dirLocal)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        return aero == null || dirLocal.LengthSquared() < 1e-8f ? float.NaN : DesignProbe.TopSpeed(aero, dirLocal);
+    }
+
+    /// <summary>The thrust pushing along dirLocal at sea level and this Mach (N), and where it acts on average (grid-local).</summary>
+    public static float GetThrustAlong(Keen.VRage.DCS.Components.Entity grid, Vector3 dirLocal, float mach, out Vector3 centreLocal)
+    {
+        centreLocal = default;
+        var aero = DesignProbe.ServerAero(grid);
+        return aero == null || dirLocal.LengthSquared() < 1e-8f ? 0f : DesignProbe.ThrustAlong(aero, dirLocal, mach, out centreLocal);
+    }
+
+    /// <summary>The grid's centre of mass (grid-local). False: no mass data.</summary>
+    public static bool TryGetCenterOfMass(Keen.VRage.DCS.Components.Entity grid, out Vector3 comLocal)
+    {
+        comLocal = default;
+        var aero = DesignProbe.ServerAero(grid);
+        if (aero == null || !aero.Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp)) return false;
+        comLocal = mp.CenterOfMass; return true;
+    }
+
+    /// <summary>The transonic drag peak (x subsonic) a streamlining gives (ForceTable.WavePeak).</summary>
+    public static float GetWavePeak(float streamlining) => ForceTable.WavePeak(streamlining);
 
     // ── the atmosphere (version 3) ──
 

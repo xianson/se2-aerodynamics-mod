@@ -34,6 +34,9 @@ public static class ThrustTorque
     public const float ResponseTime = 0.3f;
     /// <summary>Below this error and rate the hold rests (no chatter).</summary>
     public const float RestAngle = 0.002f, RestRate = 0.002f;
+    /// <summary>Unpiloted damping's rest rate: no attitude to hold still about, so a far finer one - at RestRate a residual
+    /// 0.1 deg/s coasted on for good (ThrustTests ControlAuditChecks).</summary>
+    public const float DampRestRate = 0.0002f;
     /// <summary>Allocation solver iterations (projected gradient).</summary>
     public const int Iterations = 60;
 
@@ -41,6 +44,59 @@ public static class ThrustTorque
     /// <summary>Last frame's numbers: the imbalance as the game shares the thrust (OffsetTorque), what the controller's
     /// sharing changes (RcsTorque, RcsForce), the attitude error, and how much thrust it moved (RcsUse).</summary>
     public struct Report { public Vector3 OffsetTorque, RcsTorque, RcsForce, Error; public float RcsUse, AttitudePriority; public string Mode; }
+
+    /// <summary>
+    /// The thrust the game's thrusters give this frame (grid-local, N), the GRAVITY HOLD INCLUDED. The game's
+    /// ActiveThrustData.ComputedThrustPerFrame leaves the hold out: ThrustComponent.ComputeThrust cancels gravity by
+    /// shrinking the grid's gravity in place and only puts the thrust beyond it there - a hovering ship read ~0 N: no
+    /// hover offset torque, almost no steering (KeepNetThrust held ~0 net), and at rest its flames went dark (audit
+    /// 2026-10-10). Its VoluntaryThrustData is the whole command (hold + dampening + input) as a fraction of each
+    /// direction's regular maximum (ThrustComponent.UnscaleThrust): x that maximum, clamped to it, + the overrides.
+    /// </summary>
+    internal static Vector3 GameThrust(DEntityContext data, bool server)
+    {
+        if (data.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.VoluntaryThrustData>(out var vt) && data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var mt))
+        {
+            Vector3 v = vt.VoluntaryThrust;
+            Vector3 f = mt.Regular.Clamp(v * mt.Regular.SignSelectAbs(in v));
+            // (the client copy's overrides are the flames this mod draws - not thrust)
+            if (server && data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.OverriddenThrustData>(out var ov)) f += ov.DirectionalThrust;
+            return f.IsValid() ? f : Vector3.Zero;
+        }
+        return data.TryGet<ActiveThrustData>(out var atd) ? atd.ComputedThrustPerFrame * 60f : Vector3.Zero;
+    }
+
+    /// <summary>A thruster's maximum now, the game's own rule (GridMovementCollectorComponent.OnThrusterChanged): 0 when
+    /// disabled (off, unpowered, damaged - DisabledTag), else its ThrustData.MaxThrustPower, x a player's power override
+    /// (server only: the client copy's overrides are this mod's flames). -1: not readable (the cached maximum stands).</summary>
+    internal static float LiveMax(Entity thruster, bool server)
+    {
+        var d = thruster?.Data;
+        // (a thruster removed - the ship cut, a block ground off - is not alive: its data threw, 2026-10-10)
+        if (d == null || !PhysicsHack.Alive(d.Value) || !d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ThrustData>(out var td)) return -1f;
+        if (d.Value.Has<Keen.Game2.Simulation.WorldObjects.CubeBlocks.DisabledTag>()) return 0f;
+        float m = td.MaxThrustPower;
+        if (server && d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterOverrideData>(out var o)) m *= Math.Max(0f, o.OverridePower);
+        return m;
+    }
+
+    // ── the PROBE (harness: aeroset ThrustTorque.Probe true): once a second per grid, [AERO-THRUST] - its mode, the game's
+    //    thrust as read (gravity hold included), that thrust over the weight it holds (1: hovering), the steering's use ──
+    public static bool Probe; public static int ProbeHz = 1;
+    static readonly System.Collections.Generic.Dictionary<AeroGridComponent, long> _probeAt = new();
+    static void ProbeLog(AeroGridComponent aero, DEntityContext data, in WorldTransform wt, Vector3 gameF, float invMass, in Report rep)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        lock (_probeAt) { if (_probeAt.TryGetValue(aero, out var at) && now - at < System.Diagnostics.Stopwatch.Frequency / ProbeHz) return; _probeAt[aero] = now; }
+        Vector3 g = WorldTransform.TransformDirectionInv(PhysicsHack.GetGravityDirection(data), wt);
+        float weight = invMass > 0f ? g.Length() / invMass : 0f;
+        float raw = data.TryGet<ActiveThrustData>(out var atd) ? (atd.ComputedThrustPerFrame * 60f).Length() : 0f;
+        string vs = data.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.VoluntaryThrustData>(out var vt) ? $"{vt.VoluntaryThrust.X:F3},{vt.VoluntaryThrust.Y:F3},{vt.VoluntaryThrust.Z:F3}" : "none";
+        string ms = data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var mt) ? $"+{mt.Regular.Positive.X:F0},{mt.Regular.Positive.Y:F0},{mt.Regular.Positive.Z:F0} -{mt.Regular.Negative.X:F0},{mt.Regular.Negative.Y:F0},{mt.Regular.Negative.Z:F0}" : "none";
+        Vector3 rawV = atd.ComputedThrustPerFrame * 60f;
+        Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-THRUST-IN] {aero.Entity?.DebugName} voluntary {vs} regular {ms} rawV {rawV.X:F0},{rawV.Y:F0},{rawV.Z:F0} gameF {gameF.X:F0},{gameF.Y:F0},{gameF.Z:F0} gLocal {g.X:F2},{g.Y:F2},{g.Z:F2} mass {(invMass > 0 ? 1f / invMass : 0):F0}");
+        Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-THRUST] {(aero.IsServerScene ? "server" : "client")} {aero.Entity?.DebugName} mode {rep.Mode} gameF {gameF.Length():F0} N (raw active {raw:F0}) weight {weight:F0} N -> {(weight > 1f ? Vector3.Dot(gameF, -Vector3.Normalize(g)) / weight : 0f):F2} of it held | rcs use {rep.RcsUse:F3} err {rep.Error.Length() * 57.3f:F2} deg | t {now * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1} pos {wt.Position.X:F3} {wt.Position.Y:F3} {wt.Position.Z:F3} vel {aero.LastLinVel.X:F3} {aero.LastLinVel.Y:F3} {aero.LastLinVel.Z:F3}");
+    }
 
     public static Report Apply(AeroGridComponent aero, in WorldTransform wt, Vector3 angVelWorld, float dt)
     {
@@ -60,7 +116,7 @@ public static class ThrustTorque
         var arms = aero._rcsArm; var dirs = aero._rcsDir; var caps = aero._rcsCap; var f = aero._rcsF; var f0 = aero._thrustUse;
 
         // ── 1. The game's thrust this frame (grid-local, N), as the game shares it: by direction, by capacity ──
-        Vector3 gameF = data.TryGet<ActiveThrustData>(out var atd) ? atd.ComputedThrustPerFrame * 60f : Vector3.Zero;
+        Vector3 gameF = GameThrust(data, aero.IsServerScene);
         // At rest - nothing pushing, not moving, not turning, no pilot steering: nothing to do (a parked ship cost
         // as much as a flying one, every frame)
         if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>())
@@ -86,7 +142,7 @@ public static class ThrustTorque
                 //  game's thrust was shared among the opposite thrusters and the offset torque taken at their positions -
                 //  Tests/ThrustTests checks the grouping against the game's capacities on dumped ships)
                 arms[i] = Vector3.Cross(t.GridLocalPosition - com, dirs[i]);       // torque per newton
-                nom[i] = Math.Max(0f, t.MaxPower);
+                nom[i] = -1f;   // (its live maximum, below)
                 sq += (t.GridLocalPosition - com).LengthSquared();
             }
             aero._rcsArmSq = sq;
@@ -96,7 +152,17 @@ public static class ThrustTorque
         // the game's thrust onto atmospheric thrusters in vacuum, and a flame share (force / capacity) came out x efficiency
         // where the game multiplies by efficiency again: the flames showed u x eff^2, too dark. Only when the air changes.
         float air = data.TryGet<Keen.Game2.Simulation.GameSystems.RangedAffectGenerators.Atmosphere.AirData>(out var ad) ? ad.Density : 0f;
-        if (MathF.Abs(air - aero._rcsGeomAir) > 1e-4f)
+        // (each thruster's maximum NOW - a thruster switched off, unpowered or damaged counted at its rated power: the game
+        //  pushed through the others and this shared it onto the dead one too, steered with it, and lit its flame - audit
+        //  2026-10-10)
+        bool liveChanged = false;
+        for (int i = 0; i < n; i++)
+        {
+            float m = LiveMax(thrusters[i].ThrusterEntity, aero.IsServerScene);
+            if (m < 0f) m = Math.Max(0f, thrusters[i].MaxPower);
+            if (m != nom[i]) { nom[i] = m; liveChanged = true; }
+        }
+        if (liveChanged || MathF.Abs(air - aero._rcsGeomAir) > 1e-4f)
         {
             aero._rcsGeomAir = air;
             System.Array.Clear(cap, 0, 6);
@@ -118,13 +184,14 @@ public static class ThrustTorque
         bool steered = aero.AttitudeTarget(wt, out Quaternion target, out rep.Mode);
         if (steered)
         {
-            Vector3 accel = ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, RestRate, out rep.Error);
+            Vector3 accel = ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, rep.Mode == "damp" ? DampRestRate : RestRate, out rep.Error);
             Vector3 tauTarget = accel == Vector3.Zero ? Vector3.Zero : Inertia(mass, accel);
             // Each thruster's force so the torque is the one wanted and the net force stays the game's (ThrustAllocator.Solve).
             // Warm start: last frame's sharing (targets move slowly, so the iterations add up over frames), else the game's.
             var prev = aero._rcsPrev; var y = aero._rcsY;
-            if (prev.Length != n || !aero._rcsWarm) { aero._rcsPrev = prev = new float[n]; aero._rcsY = y = new float[n]; for (int i = 0; i < n; i++) f[i] = f0[i]; }
+            if (prev.Length != n || !aero._rcsWarm || aero._rcsWarmGen != aero._thrusterGen) { aero._rcsWarmGen = aero._thrusterGen; aero._rcsPrev = prev = new float[n]; aero._rcsY = y = new float[n]; for (int i = 0; i < n; i++) f[i] = f0[i]; }
             ThrustAllocator.Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority);
+            for (int i = 0; i < n; i++) if (!float.IsFinite(f[i])) { for (int j = 0; j < n; j++) f[j] = f0[j]; aero._rcsWarm = false; rep.Mode += " (reset: not finite)"; break; }
             aero._rcsWarm = true;
             torque = Vector3.Zero; Vector3 total = Vector3.Zero;
             float moved = 0f, sumCap = 0f;
@@ -145,12 +212,23 @@ public static class ThrustTorque
         // The flames: each thruster's share, published for the client copy to show - the controller's sharing while it
         // steers, the game's own otherwise (free, rate input: the gyros turn it), so a flame is never handed back mid-flight.
         Publish(aero, wt, steered ? f : f0);
+        if (Probe) ProbeLog(aero, data, wt, gameF, mass.InvMass, rep);
         return rep;
     }
 
     /// <summary>Each thruster's thrust class (ThrustData.ThrustClass -> the game's ThrustClassesConfiguration): on a new
     /// thruster list only. None found: efficiency 1 (the nominal maximum, as before).</summary>
     static Keen.Game2.Simulation.GameSystems.Movement.ThrustClassesConfiguration _classes;
+    /// <summary>A thruster's thrust efficiency in air of this density (its class's curve: the game's GetThrustEfficiency); 1
+    /// when its class is not known.</summary>
+    internal static float SeaLevelEfficiency(Entity thruster, float density)
+    {
+        if (_classes == null) { try { _classes = DefinitionManager.Instance?.GetConfiguration<Keen.Game2.Simulation.GameSystems.Movement.ThrustClassesConfiguration>(); } catch { _classes = null; } }
+        var d = thruster?.Data;
+        if (_classes == null || d == null || !PhysicsHack.Alive(d.Value) || !d.Value.TryGet<ThrustData>(out var td) || !_classes.ThrustClasses.TryGetValue(td.ThrustClass, out var cd)) return 1f;
+        return Keen.Game2.Simulation.WorldObjects.CubeGrids.Movement.GridMovementCollectorComponent.GetThrustEfficiency(in cd, density, 0f);
+    }
+
     static void ResolveClasses(AeroGridComponent aero, int n)
     {
         if (_classes == null)
@@ -263,6 +341,13 @@ public static class ThrustTorque
             }
             flame._match = m; flame._table = tab; flame._idx = idx;
             flame._recheckAt = now + (long)(freq * 0.25);
+        }
+        // (a record published before its table, or re-keyed shorter: no share this frame - it read a null table and crashed
+        //  the game, 2026-10-09)
+        if (tab == null || tab.Share == null || (uint)flame._idx >= (uint)tab.Share.Length)
+        {
+            flame._match = null; flame._table = null; flame._recheckAt = now;
+            return -1f;
         }
         float s = tab.Share[flame._idx];
         Interlocked.Increment(ref FlameHits);
