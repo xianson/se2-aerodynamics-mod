@@ -26,6 +26,8 @@ public struct ThrusterInfo
     /// <summary>The block's place in its grid (its cell box's Min + Max, 0.25 m cells): the same in the server and client
     /// copies of a grid, at any speed - the key its flame share is published under (ThrustTorque.Publish).</summary>
     public Vector3I Cell;
+    /// <summary>The block's cell box (0.25 m cells, inclusive): flow-through engines (AeroGridComponent.EngineBoxes).</summary>
+    public Vector3I CellMin, CellMax;
 }
 
 /// <summary>
@@ -746,6 +748,7 @@ public static class OffsetThrustJob
                         AttitudeFraction = attFrac,
                         Settings = aeroSettings,
                         Cell = aabb.Min + aabb.Max,
+                        CellMin = aabb.Min, CellMax = aabb.Max,
                     });
                 }
             }

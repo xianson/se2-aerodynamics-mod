@@ -18,7 +18,9 @@ namespace AeroMod;
 /// </summary>
 public static class MachHud
 {
-    public static bool On = true;
+    /// <summary>Off by default (2026-10-12, the user: "take the mach out of the speed indicator, since it's on the right" - the
+    /// Orbital mod's flight boxes by ALT show it); Hud.Mach turns it back on.</summary>
+    public static bool On = false;
     /// <summary>What {Aero:Mach} prints now ("" for nothing).</summary>
     public static volatile string Suffix = "";
     public static string Status = "not started";

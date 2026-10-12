@@ -86,6 +86,8 @@ public static class AeroSettings
             "Below this speed (m/s) a damaged or edited hull waits before updating its forces.");
         F("Perf.QuietBeforeFullRebuild", "world", 0.5, 120, false, () => AeroGridComponent.QuietBeforeFullRebuild, v => AeroGridComponent.QuietBeforeFullRebuild = v,
             "Seconds without block changes before a full rebuild cleans up after local updates.");
+        B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
+            "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.");
         B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
             "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.");
         F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
@@ -93,7 +95,7 @@ public static class AeroSettings
 
         // ── CLIENT ──
         B("Hud.Mach", "client", false, () => MachHud.On, v => MachHud.On = v,
-            "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying.");
+            "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying. Off by default: the flight boxes by ALT show it.");
         B("Fx.Effects", "client", false, () => AeroEntryFx.AllEffects, v => AeroEntryFx.AllEffects = v,
             "Every aero visual effect (plasma, vapour, tip trails, the plasma light). Off: none at all.");
         B("Fx.FlightField", "client", false, () => FlightField.On, v => FlightField.On = v,

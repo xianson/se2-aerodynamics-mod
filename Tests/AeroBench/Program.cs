@@ -74,20 +74,8 @@ static partial class Program
         model.ExcludeWingFaces(inner, surface.Version);
         if (DampedShadowedDragModel.FlowThroughEngines && LastThrusters.Count > 0)
         {
-            // a face is an engine's intake or exhaust: its cell inside an engine's box, facing along the engine's axis
-            var through = new List<bool>(surface.FaceCount); int nThrough = 0;
-            for (int i = 0; i < surface.FaceCount; i++)
-            {
-                var f = surface.Faces[i]; bool t = false;
-                var c = f.Position - f.RawNormal * (cs * 0.5f);   // (the cell's centre behind the face)
-                foreach (var (lo, hi, ax) in LastThrusters)
-                {
-                    if (MathF.Abs(Vector3.Dot(f.RawNormal, ax)) < 0.9f) continue;
-                    if (c.X < lo.X * 0.25f || c.Y < lo.Y * 0.25f || c.Z < lo.Z * 0.25f || c.X > (hi.X + 1) * 0.25f || c.Y > (hi.Y + 1) * 0.25f || c.Z > (hi.Z + 1) * 0.25f) continue;
-                    t = true; break;
-                }
-                through.Add(t); if (t) nThrough++;
-            }
+            // a face is an engine's intake or exhaust: its cell inside an engine's box, facing along the engine's axis (the game's own mask)
+            var through = DampedShadowedDragModel.ThroughMask(surface.Faces, cs, LastThrusters, out int nThrough);
             inner.SetThroughFaces(through, surface.Version);
             Console.WriteLine($"   ({name}: {LastThrusters.Count} engine boxes, {nThrough} flow-through faces)");
         }
@@ -821,6 +809,7 @@ static partial class Program
         if (args.Length > 1 && args[0] == "polar") return Polar(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "damping") return Damping(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "attitude") return Attitude(dataDir, atmo, args[1]);
+        if (args.Length > 1 && args[0] == "dragmap") return DragMap(dataDir, atmo, args[1]);
         if (args.Length > 0 && args[0] == "cleanplane") return CleanPlane(atmo);
         if (args.Length > 1 && args[0] == "detecttime") return DetectTime(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "dragsplit") return DragSplit(dataDir, atmo, args.Skip(1).ToArray());

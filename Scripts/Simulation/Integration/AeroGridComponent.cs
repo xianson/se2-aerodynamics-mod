@@ -260,9 +260,21 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _rcsHoldValid = false; mode = "free"; return false;
     }
     internal ThrustTorque.Report LastThrust;
+    /// <summary>The air-breathing engines of the last build (their block boxes, 0.25 m cells, and axes): flow-through.</summary>
+    internal List<(Vector3I lo, Vector3I hi, Vector3 axis)> _engines;
+    /// <summary>The atmospheric thrusters (an air-breathing profile) as boxes and axes, from the thruster list.</summary>
+    internal List<(Vector3I lo, Vector3I hi, Vector3 axis)> EngineBoxes()
+    {
+        var l = new List<(Vector3I, Vector3I, Vector3)>();
+        foreach (var t in _thrusterCache) if (t.Profile != null && t.CellMax.X >= t.CellMin.X) l.Add((t.CellMin, t.CellMax, t.ThrustDirection));
+        return l;
+    }
     /// <summary>The air's torque applied this frame (local, N m, the world's multipliers in; zero: none) - the attitude
     /// control's feedforward (ThrustTorque, aero-aware).</summary>
     internal Vector3 LastAeroTorque;
+    /// <summary>The wind at the grid (world m/s; AeroWind), whether aero applied its forces last tick (the game's own wind
+    /// push is then taken back), and the impulse taken back (world N s).</summary>
+    internal Vector3 LastWind, LastWindUndone; internal bool AeroForcesApplied;
     internal int _clearedOverride;
     private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>
@@ -840,7 +852,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_faceOverridesDirty && _surface != null)
         {
             _model.BuildFaceOverrideIndex(_surface, _components.Components);
-            if (_model.InnerModel is DampedShadowedDragModel dsmEx) _model.ExcludeWingFaces(dsmEx, _surface.Version);
+            if (_model.InnerModel is DampedShadowedDragModel dsmEx)
+            {
+                _model.ExcludeWingFaces(dsmEx, _surface.Version);
+                var eng = _engines;
+                if (DampedShadowedDragModel.FlowThroughEngines && eng != null && eng.Count > 0)
+                    dsmEx.SetThroughFaces(DampedShadowedDragModel.ThroughMask(_surface.Faces, _surface.CellSize, eng, out _), _surface.Version);
+            }
             _faceOverridesDirty = false;
         }
         if (_model.InnerModel is DampedShadowedDragModel dsmCp)
@@ -1399,6 +1417,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
             if (block == null) continue;
             foreach (var g in block.GetTransformedOccupiedCellGroups()) boxes.Add((g.Min, g.Max));
         }
+        // the air-breathing engines (flow-through: their intakes and exhausts are no walls) - the thruster list first, if
+        // the blocks changed it (the build would otherwise take the engines of the shape before)
+        if (_thrusterCacheDirty && _blockSize > 0)
+        {
+            OffsetThrustJob.RebuildThrusterCache(_octree, _blockSize, _thrusterCache, Entity);
+            _thrusterCacheDirty = false; _rcsGeomCount = -1; ThrustersRebuilt();
+        }
+        var engines = EngineBoxes();
+        _engines = engines;
         AeroCost.Begin.Stop(tb);
         AeroExport.Write($"{Entity?.DebugName}_{LastMass / 1000f:F0}t", boxes, _blockSize, LastMass);
         var surface = _buildSurface;
@@ -1436,7 +1463,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             var sw = System.Diagnostics.Stopwatch.StartNew(); var ms = new double[6];
             // a shape seen before (a reloaded world, a pasted blueprint, a copy): its table from disk, no build
             var phys = TablePhysics;
-            string cacheKey = AeroTableCache.Enabled ? AeroTableCache.Key(boxes, blockSize, cellScale, phys) : null;
+            string cacheKey = AeroTableCache.Enabled ? AeroTableCache.Key(boxes, blockSize, cellScale, phys, engines) : null;
             if (cacheKey != null && AeroTableCache.TryLoad(cacheKey, phys, out var cTable, out var cChunks, out var cWings))
             {
                 foreach (var (a, b) in boxes) cChunks.CountBlock(cChunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); cChunks.SealCounts();
@@ -1482,6 +1509,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 tmp.InstallWings(_builtWings ?? new List<LiftingSurface>());
                 tmp.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
                 tmp.ExcludeWingFaces(builder, surface.Version);
+                if (DampedShadowedDragModel.FlowThroughEngines && engines.Count > 0)
+                    builder.SetThroughFaces(DampedShadowedDragModel.ThroughMask(surface.Faces, surface.CellSize, engines, out _), surface.Version);
                 // a grid with no forces yet gets a coarse table at once (TickLocal installs it), the full one after
                 if (_model.Table == null)
                 {

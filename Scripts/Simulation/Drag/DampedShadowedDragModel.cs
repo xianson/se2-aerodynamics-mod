@@ -59,8 +59,39 @@ public class DampedShadowedDragModel : IAeroDragModel
     /// biggest part of a streamlined hull's drag once pressure recovers). Fixed per ship (the table is per unit q):
     /// Cf moves only ~10 % between 50 and 300 m/s. Floor CfMin.</summary>
     public static bool ReynoldsSkin = true;   // (default since 2026-10-11: AeroBench jetliner L/D at 8 deg 4.7 -> 8.4, lift kept; the in-game flight A/B)
-    /// <summary>Air-breathing engines' intakes and exhausts are flow-through (SetThroughFaces).</summary>
-    public static bool FlowThroughEngines;   // (off: nothing in game calls SetThroughFaces yet - the bench's .boxes tag thrusters, the live grid does not)
+    /// <summary>Air-breathing engines' intakes and exhausts are flow-through (SetThroughFaces). On since 2026-10-12 (the
+    /// user: the Tu-134 at L/D 3.4 where the real one makes ~7 - its two rear engines' intakes were 9.5 of its 16 m2 of
+    /// drag area, as walls): the live grid marks them from its atmospheric thrusters (AeroGridComponent.EngineBoxes).</summary>
+    public static bool FlowThroughEngines = true;
+
+    /// <summary>Which faces are an engine's intake or exhaust: the cell behind the face in an engine's block box (0.25 m cells,
+    /// inclusive) stretched IntakeReach along its axis both ways, and the face along the axis (either way). cellSize: the
+    /// surface's cell (m).</summary>
+    /// <summary>How far ahead of and behind an engine block its intake and exhaust reach (m): the cowling a builder puts in
+    /// front of it (the Tu-134's rear nacelles: a solid face 2.7 m ahead of each engine, ~3 m2 of drag area each).</summary>
+    public static float IntakeReach = 3f;
+    public static List<bool> ThroughMask(IReadOnlyList<SurfaceFace> faces, float cellSize, IReadOnlyList<(Vector3I lo, Vector3I hi, Vector3 axis)> engines, out int count)
+    {
+        count = 0;
+        var through = new List<bool>(faces.Count);
+        for (int i = 0; i < faces.Count; i++)
+        {
+            var f = faces[i]; bool t = false;
+            var c = f.Position - f.RawNormal * (cellSize * 0.5f);   // (the cell's centre behind the face)
+            for (int k = 0; k < engines.Count; k++)
+            {
+                var (lo, hi, ax) = engines[k];
+                if (MathF.Abs(Vector3.Dot(f.RawNormal, ax)) < 0.9f) continue;
+                // (within the engine's cross-section, and along its axis up to IntakeReach past either end: a cowling built
+                //  in front of the thruster is its intake - the game gives it full thrust whatever covers it, so the air goes in)
+                float rx = MathF.Abs(ax.X) > 0.5f ? IntakeReach : 0f, ry = MathF.Abs(ax.Y) > 0.5f ? IntakeReach : 0f, rz = MathF.Abs(ax.Z) > 0.5f ? IntakeReach : 0f;
+                if (c.X < lo.X * 0.25f - rx || c.Y < lo.Y * 0.25f - ry || c.Z < lo.Z * 0.25f - rz || c.X > (hi.X + 1) * 0.25f + rx || c.Y > (hi.Y + 1) * 0.25f + ry || c.Z > (hi.Z + 1) * 0.25f + rz) continue;
+                t = true; break;
+            }
+            through.Add(t); if (t) count++;
+        }
+        return through;
+    }
     public static float RefSpeed = 100f, CfMin = 0.0015f;
     public static float TurbulentCf(float length, float speed = 0f)
     {
@@ -486,7 +517,8 @@ public class DampedShadowedDragModel : IAeroDragModel
         if (recover) BakeRecovery(v, work, VA);
         float st = Streamlining, cdBluff = CdBluff, cpMax = CpMax;
         float baseCp = st > 0f ? CpBase * (1f - 0.7f * st) : CpBase;
-        float t = SupersonicLimit > SubsonicLimit ? Math.Clamp((mach - SubsonicLimit) / (SupersonicLimit - SubsonicLimit), 0f, 1f) : (mach >= SubsonicLimit ? 1f : 0f);
+        float lo0 = ForceTable.TransonicOnset(SubsonicLimit, st);   // (the table's onset: ForceTable.TransonicOnset)
+        float t = SupersonicLimit > lo0 ? Math.Clamp((mach - lo0) / (SupersonicLimit - lo0), 0f, 1f) : (mach >= lo0 ? 1f : 0f);
         t = t * t * (3f - 2f * t);
         var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
         int exLen = excl?.Count ?? 0, stride = Math.Max(1, total / Math.Max(1, max));

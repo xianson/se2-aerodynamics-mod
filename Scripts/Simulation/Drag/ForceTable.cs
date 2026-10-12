@@ -40,6 +40,16 @@ public sealed class ForceTable
     public static float StreamCdBrick = 0.88f, StreamCdNeedle = 0.35f, WavePeakBrick = 3.2f, WavePeakNeedle = 1.2f;
     public static float StreamliningOf(float cd) => Math.Clamp((StreamCdBrick - cd) / Math.Max(0.01f, StreamCdBrick - StreamCdNeedle), 0f, 1f);
     public static float WavePeak(float st) => WavePeakBrick + (WavePeakNeedle - WavePeakBrick) * Math.Clamp(st, 0f, 1f);
+    /// <summary>
+    /// TRANSONIC ONSET (2026-10-12, the user: a Tu-134 at Mach 0.79 flew at L/D 3.4 where the real one makes ~7): where the
+    /// hull's pressures begin to turn from the subsonic table (pressure recovered behind a smooth shape) to the supersonic
+    /// one (Newtonian, none recovered). It was the model's SubsonicLimit (0.6) for every shape - the Tu-134's whole drag
+    /// doubled from Mach 0.5 to 0.8, before a real airliner's drag has risen at all - and the wave drag then rose from 0.7
+    /// to 0.8 on top. Now it starts with the critical Mach: SubsonicLimit for a brick (streamlining 0), TransonicSleek
+    /// for a sleek hull (1) - the wave drag's onset moves the same way (0.7 + 0.1 st).
+    /// </summary>
+    public static float TransonicSleek = 0.8f;
+    public static float TransonicOnset(float subsonicLimit, float st) => subsonicLimit + (MathF.Max(subsonicLimit, TransonicSleek) - subsonicLimit) * Math.Clamp(st, 0f, 1f);
     /// <summary>The streamlining along vHat from a sampled table entry (s: Stride values); the fixed one when off or
     /// when there is no frontal area.</summary>
     public static float ShapeStreamlining(ReadOnlySpan<float> s, Vector3 vHat, float fallback)
@@ -158,10 +168,11 @@ public sealed class ForceTable
         float q = halfRho * speed * speed;
         float invSoS = ctx.Atmosphere.SpeedOfSound > 0 ? 1f / (float)ctx.Atmosphere.SpeedOfSound : 0;
         float mach = speed * invSoS;
-        float t = supersonicLimit > subsonicLimit ? (mach - subsonicLimit) / (supersonicLimit - subsonicLimit) : 0f;
+        float st = ShapeStreamlining(s, vHat, streamlining);
+        float lo = TransonicOnset(subsonicLimit, st);
+        float t = supersonicLimit > lo ? (mach - lo) / (supersonicLimit - lo) : 0f;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         t = t * t * (3f - 2f * t);
-        float st = ShapeStreamlining(s, vHat, streamlining);
         float wave = invSoS > 0 ? (float)CompressibleFlow.WaveDragMultiplier(mach, 0.7 + 0.1 * st, WavePeak(st)) : 1f;
         float k = q * wave;
 

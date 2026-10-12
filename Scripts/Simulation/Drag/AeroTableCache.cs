@@ -14,7 +14,7 @@ namespace AeroMod;
 public static class AeroTableCache
 {
     /// <summary>Bump on any change to how a table, its chunks or its wings are built.</summary>
-    public const int Version = 14;   // (14: the overlay pass returns the cells' own normals - tables unchanged; 13: the overlay builds the face arrays itself - tables unchanged; 12: the drag overlay pass sits in the model's source - tables unchanged; 11: ColumnMode span axis from mirror pairs; 10: low-aspect plates are wings - ConnectedComponentWingDetector.LowAspectRatio; 9: the model switches in the key; 8: the L/D flight model on by default - square law, pressure recovery, Reynolds skin - 2026-10-11; 7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
+    public const int Version = 16;   // (16: intakes reach IntakeReach past the engine block - its cowling; transonic onset by streamlining (runtime only); 15: engines flow-through in game - their boxes in the key; 14: 14: the overlay pass returns the cells' own normals - tables unchanged; 13: the overlay builds the face arrays itself - tables unchanged; 12: the drag overlay pass sits in the model's source - tables unchanged; 11: ColumnMode span axis from mirror pairs; 10: low-aspect plates are wings - ConnectedComponentWingDetector.LowAspectRatio; 9: the model switches in the key; 8: the L/D flight model on by default - square law, pressure recovery, Reynolds skin - 2026-10-11; 7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
     public static bool Enabled = true;
     /// <summary>The folder's cap: past it, the least recently used files go.</summary>
     public static long MaxBytes = 256L << 20;
@@ -36,7 +36,7 @@ public static class AeroTableCache
     static string Dir => Path.Combine(Path.GetTempPath(), "AeroMod", "tables");
 
     /// <summary>The shape's key: its block boxes (in any order), the block size and cell scale, the face physics.</summary>
-    public static string Key(List<(Vector3I, Vector3I)> boxes, float blockSize, int cellScale, FacePhysics phys)
+    public static string Key(List<(Vector3I, Vector3I)> boxes, float blockSize, int cellScale, FacePhysics phys, IReadOnlyList<(Vector3I lo, Vector3I hi, Vector3 axis)> engines = null)
     {
         // order-free: two sums of a strong per-box hash (the octree's order is not the same from load to load)
         ulong a = 0, b = 0;
@@ -49,6 +49,14 @@ public static class AeroTableCache
         }
         ulong p = Mix((ulong)boxes.Count ^ ((ulong)BitConverter.SingleToInt32Bits(blockSize) << 20) ^ ((ulong)cellScale << 52) ^ ((ulong)Version << 56) ^ ((ulong)ModelSwitches << 40));
         foreach (float f in new[] { phys.CdBluff, phys.CpMax, phys.Cf, phys.St, phys.BaseCp }) p = Mix(p ^ (uint)BitConverter.SingleToInt32Bits(f));
+        // (the flow-through engines change the table: their boxes and axes, order-free)
+        if (engines != null && DampedShadowedDragModel.FlowThroughEngines)
+        {
+            ulong e = 0;
+            foreach (var (lo, hi, ax) in engines)
+                e += Mix(Mix(((ulong)(uint)lo.X << 32) ^ (uint)lo.Y ^ ((ulong)(uint)lo.Z << 16)) ^ Mix(((ulong)(uint)hi.X << 32) ^ (uint)hi.Y ^ ((ulong)(uint)hi.Z << 16)) ^ (ulong)(MathF.Abs(ax.X) > 0.5f ? 1 : MathF.Abs(ax.Y) > 0.5f ? 2 : 3));
+            p = Mix(p ^ e ^ (ulong)engines.Count);
+        }
         return $"{a ^ p:x16}{b:x16}";
     }
 

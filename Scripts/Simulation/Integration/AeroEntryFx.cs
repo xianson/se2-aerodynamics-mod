@@ -185,10 +185,11 @@ public static class AeroEntryFx
     /// <summary>Server, each aero step, for every grid (not gated by the entry plasma's switch or heat): the air past it -
     /// its travel in its own frame, Mach (speed over the speed of sound the aero model last used; 340 m/s before it has
     /// one), density. TestSpeed applies here too (sea-level air).</summary>
-    internal static void Flow(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density)
+    internal static void Flow(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, Vector3 moving)
     {
+        // (vel: the air past it - its velocity less the wind; moving: its real motion, what carries its published position
+        //  forward for a client's match)
         if (!aero.IsServerScene) return;
-        Vector3 moving = vel;   // (the grid's real motion: what carries its published position forward for a client's match)
         if (TestSpeed > 0f) { vel = TestVelocityWorld(wt); density = MathF.Max(density, 1.2f); }
         float extS = -1f;
         if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extS = es; }

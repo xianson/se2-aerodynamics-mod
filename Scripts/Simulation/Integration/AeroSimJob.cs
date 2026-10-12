@@ -62,6 +62,20 @@ public partial class AeroGridComponent
         AeroCost.Thrust.Stop(tth2);
     }
 
+    /// <summary>After the game's wind push (RangedAffectGenerators: WindUpdate.ApplyForceGroup), before the physics step:
+    /// on a grid aero applies its forces to, the game's own wind push taken back (AeroWind - aero's air has the wind in).</summary>
+    [After(typeof(Keen.Game2.Simulation.GameSystems.RangedAffectGenerators.RangedAffectGenerators))]
+    [Before(typeof(Keen.Game2.Simulation.Physics))]
+    private class OnWindUndo : JobGroup;
+
+    [OnWindUndo]
+    [MustHave(typeof(AeroGridComponent))]
+    private static void WindUndoJob(AeroGridComponent aero, WorldTransform wt)
+    {
+        if (!aero._initialized || !AeroSwitch.Enabled || !AeroWind.Enabled || !aero.AeroForcesApplied) return;
+        aero.LastWindUndone = AeroWind.UndoGameForce(aero.Data, wt);
+    }
+
     [OnAeroSim]
     [MustHave(typeof(AeroGridComponent))]
     private static void AeroSimJob(AeroGridComponent aero, WorldTransform wt)
@@ -104,6 +118,9 @@ public partial class AeroGridComponent
 
         // ── Read physics state ──
         PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
+        // the air: the grid's velocity less the wind's (AeroWind) - what the aero model, Mach and the effects meet
+        aero.LastWind = AeroWind.At(aero.Data);
+        Vector3 airVel = linVel - aero.LastWind;
         PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
 
         float density = 0f;
@@ -197,15 +214,15 @@ public partial class AeroGridComponent
             if (AeroEntryFx.TestForcesOn)   // (TEST: the forces at the test airflow, measured not applied)
                 aero.TryCompute(wt, MathF.Max(density, 1.2f), AeroEntryFx.TestVelocityWorld(wt), angVel, com, aero.GroundHeight);
             else
-                aero.TryCompute(wt, density, linVel, angVel, com, aero.GroundHeight);
+                aero.TryCompute(wt, density, airVel, angVel, com, aero.GroundHeight);
             System.Threading.Interlocked.Increment(ref AeroFrameBudget.ComputedThisSecond);
         }
         else
             aero.SkipCompute(wt, angVel);   // (the last forces, in the grid's frame, are applied again below)
         AeroFrameBudget.Add(System.Diagnostics.Stopwatch.GetTimestamp() - tco);
         AeroCost.Compute.Stop(tco);
-        AeroEntryFx.Flow(aero, wt, linVel, density);
-        AeroEntryFx.Server(aero, wt, linVel, density, 1f / 60f);
+        AeroEntryFx.Flow(aero, wt, airVel, density, linVel);
+        AeroEntryFx.Server(aero, wt, airVel, density, 1f / 60f);
         if (aero.IsServerScene) aero.TickWingStrain(AeroPhysics.Dt);   // (under TestForces too: the forces at the test airflow strain the wings - damage only with Structure.WingStrain on)   // (wing strain: WingStrainServer.cs)
 
         if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
@@ -231,12 +248,13 @@ public partial class AeroGridComponent
             && aero.EulerError.LengthSquared() > GyroHandoffRad * GyroHandoffRad;
 
         aero.LastAeroTorque = Vector3.Zero;
+        aero.AeroForcesApplied = aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn;
         if (aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn)
         {
             // (the world's drag / lift multipliers - AeroSettings, server - on the model's result: 1 / 1 is the model as is)
             Vector3 forceLocal = aero.LastResult.Force, torqueLocal = aero.LastResult.Torque;
             if (AeroTuning.DragMultiplier != 1f || AeroTuning.LiftMultiplier != 1f)
-                AeroTuning.Scale(ref forceLocal, ref torqueLocal, WorldTransform.TransformDirectionInv(linVel, wt));
+                AeroTuning.Scale(ref forceLocal, ref torqueLocal, WorldTransform.TransformDirectionInv(airVel, wt));
             Vector3 worldForce = WorldTransform.TransformDirection(forceLocal, wt);
             Vector3 deltaV = worldForce * (dt / mass); // diagnostics only; the impulse path uses worldForce
 
