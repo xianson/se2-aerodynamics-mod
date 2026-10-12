@@ -43,7 +43,25 @@ public static class ThrustTorque
     /// <summary>Last frame's numbers (for the harness / log).</summary>
     /// <summary>Last frame's numbers: the imbalance as the game shares the thrust (OffsetTorque), what the controller's
     /// sharing changes (RcsTorque, RcsForce), the attitude error, and how much thrust it moved (RcsUse).</summary>
-    public struct Report { public Vector3 OffsetTorque, RcsTorque, RcsForce, Error; public float RcsUse, AttitudePriority; public string Mode; }
+    public struct Report { public Vector3 OffsetTorque, RcsTorque, RcsForce, Error; public float RcsUse, AttitudePriority; public string Mode;
+        /// <summary>Flying by the aero-aware law (AeroAware): the air's torque it answered, the gyros' torque it gave, and the
+        /// game gyros' own angular velocity change it took back (all local).</summary>
+        public bool Aware; public Vector3 AeroTorque, GyroTorque, GameGyroUndone; }
+
+    /// <summary>
+    /// AERO-AWARE ATTITUDE (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but they don't
+    /// cheat"). Piloted (a target orientation) in air with the air's forces known, ONE law flies both the thrusters and the
+    /// gyros: ThrustAllocator.AttitudeAccel, told the air's torque this frame (AeroGridComponent.LastAeroTorque - the very
+    /// torque applied), asks for I x its acceleration - the air's torque; the thrusters give what they can of what the gyros
+    /// cannot (the game's thrust kept, as before), the gyros the rest up to their real reach (GyroControl: the game's own
+    /// budget; the game's gyro law's impulse this frame taken back - it knows nothing of the air and fought this one).
+    /// Nothing is given that the ship's thrusters and gyros could not give: a ship without the authority departs.
+    /// Off, in vacuum, unpiloted: the game's gyros and the thruster law as before. (Before: the thrusters steered by
+    /// their own law and the game's gyros by theirs - two controllers on one axis - neither knowing the air.)
+    /// </summary>
+    public static bool AeroAware = true;
+    /// <summary>Air thinner than this: not flown by the aero-aware law (kg/m^3).</summary>
+    public const float AwareMinDensity = 1e-4f;
 
     /// <summary>
     /// The thrust the game's thrusters give this frame (grid-local, N), the GRAVITY HOLD INCLUDED. The game's
@@ -103,9 +121,29 @@ public static class ThrustTorque
         var rep = new Report { Mode = "off" };
         var thrusters = aero._thrusterCache;
         if (aero.IsServerScene) System.Threading.Interlocked.Increment(ref ServerCalls); else System.Threading.Interlocked.Increment(ref ClientCalls);
-        if (!Enabled || thrusters.Count == 0) { Unpublish(aero); return rep; }   // (the game's own flames again)
+        if (!Enabled) { Unpublish(aero); return rep; }   // (the game's own flames again)
         var data = aero.Data;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || mass.InvMass <= 0f) { Unpublish(aero); return rep; }
+        // ── 0. Flown by the aero-aware law: the game gyros' turn this frame taken back (they are flown below) ──
+        TargetControlData tcd = default;
+        bool aware = AeroAware && aero.HasResult && aero.LastDensity > AwareMinDensity && !aero.SuppressPhantomTorque && !aero.HarnessControlsAttitude
+            && data.TryGet<TargetControlData>(out tcd) && tcd.TargetOrientation.IsValidAndRotationIsNormalized() && aero.AttitudeTarget(wt, out _, out _);
+        Vector3 gyroReach = Vector3.Zero;
+        if (aware)
+        {
+            gyroReach = GyroControl.Reach(data, in mass, in tcd);
+            if (gyroReach != Vector3.Zero)
+            {
+                if (!GyroControl.Ready) aware = false;   // (the game's gyro impulse unreadable: its law flies them, as before)
+                else
+                {
+                    rep.GameGyroUndone = GyroControl.Undo(data, wt);
+                    if (data.TryGet<RigidBodyData>(out var rbNow)) angVelWorld = rbNow.AngularVelocity;
+                }
+            }
+            if (aware && thrusters.Count == 0) { rep.Mode = "pilot target (aero-aware, gyros)"; rep.Aware = true; FlyGyros(aero, wt, in mass, angVelWorld, gyroReach, dt, ref rep); return rep; }
+        }
+        if (thrusters.Count == 0) { Unpublish(aero); return rep; }
         Vector3 com = mass.CenterOfMass;
         int n = thrusters.Count;
         if (aero._rcsArm.Length != n)
@@ -182,10 +220,18 @@ public static class ThrustTorque
         Vector3 torque = offsetTorque, extraForce = Vector3.Zero;
         Vector3 w = WorldTransform.TransformDirectionInv(angVelWorld, wt);
         bool steered = aero.AttitudeTarget(wt, out Quaternion target, out rep.Mode);
+        Vector3 tauNeed = Vector3.Zero;
         if (steered)
         {
             Vector3 accel = ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, rep.Mode == "damp" ? DampRestRate : RestRate, out rep.Error);
             Vector3 tauTarget = accel == Vector3.Zero ? Vector3.Zero : Inertia(mass, accel);
+            if (aware)
+            {
+                // the aero-aware law: all it needs (the air's torque answered); the thrusters asked for what the gyros cannot give
+                tauNeed = AwareNeed(aero, in mass, w, rep.Error, gyroReach + ThrusterReach(aero, n), dt, out rep.AeroTorque);
+                tauTarget = tauNeed - Vector3.Clamp(tauNeed, -gyroReach, gyroReach);
+                rep.Mode += " (aero-aware)"; rep.Aware = true;
+            }
             // Each thruster's force so the torque is the one wanted and the net force stays the game's (ThrustAllocator.Solve).
             // Warm start: last frame's sharing (targets move slowly, so the iterations add up over frames), else the game's.
             var prev = aero._rcsPrev; var y = aero._rcsY;
@@ -201,6 +247,12 @@ public static class ThrustTorque
         }
         else aero._rcsWarm = false;
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
+        // the gyros: what the thrusters' torque left of the need, up to their reach
+        if (rep.Aware && gyroReach != Vector3.Zero)
+        {
+            rep.GyroTorque = Vector3.Clamp(tauNeed - torque, -gyroReach, gyroReach);
+            if (ApplyForces && rep.GyroTorque.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, rep.GyroTorque, dt);
+        }
         // (applied: 68bda99 replaced this call with the flame publishing below, and thrust stopped turning ships at all -
         //  offset torque and the controller's steering were computed, reported and shown as flames, never applied)
         // Torque only: the sharing keeps the game's net thrust (KeepNetThrust), so no linear force is ever added. (Applying
@@ -396,6 +448,44 @@ public static class ThrustTorque
             if (Fits(kept, 20.0, 20.0, HoldSeconds, out _, out kt, out ki)) { match = kept; table = kt; idx = ki; return true; }   // (stale: held)
             return false;
         }
+    }
+
+    /// <summary>The aero-aware law's whole ask (local N m): I x AttitudeAccel - the air's torque. reach: the most torque per
+    /// axis the actuators give (gyros + thrusters); the rate read without this frame's air kick (applied before this ran).</summary>
+    static Vector3 AwareNeed(AeroGridComponent aero, in RigidBodyMassProperties mass, Vector3 w, Vector3 error, Vector3 reach, float dt, out Vector3 aeroTorque)
+    {
+        aeroTorque = aero.LastAeroTorque;
+        Vector3 d = DeltaW(in mass, aeroTorque);   // (rad/s^2)
+        var axisReach = new Vector3(AxisAccel(in mass, Vector3.UnitX, reach.X), AxisAccel(in mass, Vector3.UnitY, reach.Y), AxisAccel(in mass, Vector3.UnitZ, reach.Z));
+        Vector3 acc = ThrustAllocator.AttitudeAccel(error, w - d * dt, axisReach, d, RestAngle, RestRate);
+        return Inertia(mass, acc) - aeroTorque;
+    }
+
+    /// <summary>The angular acceleration (local) a torque gives.</summary>
+    static Vector3 DeltaW(in RigidBodyMassProperties m, Vector3 torque)
+        => Vector3.Transform(m.InvInertiaMajorAxisRotation * torque * m.InvInertiaTensor, m.InertiaMajorAxisRotation);
+
+    /// <summary>The acceleration a torque of size t gives about a local axis.</summary>
+    static float AxisAccel(in RigidBodyMassProperties m, Vector3 axis, float t) => t > 0f ? MathF.Abs(Vector3.Dot(DeltaW(in m, axis * t), axis)) : 0f;
+
+    /// <summary>A rough reach of the thrusters about each local axis (N m): half the summed torque of every thruster's
+    /// maximum about it - they turn the ship in pairs, the game's thrust kept. Only the law's braking plan reads it.</summary>
+    static Vector3 ThrusterReach(AeroGridComponent aero, int n)
+    {
+        var arms = aero._rcsArm; var caps = aero._rcsCap; Vector3 r = Vector3.Zero;
+        for (int i = 0; i < n && i < arms.Length && i < caps.Length; i++) r += Vector3.Abs(arms[i]) * caps[i];
+        return r * 0.5f;
+    }
+
+    /// <summary>A grid with gyros and no thrusters, flown by the aero-aware law: the gyros alone.</summary>
+    static void FlyGyros(AeroGridComponent aero, in WorldTransform wt, in RigidBodyMassProperties mass, Vector3 angVelWorld, Vector3 gyroReach, float dt, ref Report rep)
+    {
+        if (gyroReach == Vector3.Zero || !aero.AttitudeTarget(wt, out var target, out _)) return;
+        Vector3 w = WorldTransform.TransformDirectionInv(angVelWorld, wt);
+        ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, RestRate, out rep.Error);
+        Vector3 need = AwareNeed(aero, in mass, w, rep.Error, gyroReach, dt, out rep.AeroTorque);
+        rep.GyroTorque = Vector3.Clamp(need, -gyroReach, gyroReach);
+        if (ApplyForces && rep.GyroTorque.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, rep.GyroTorque, dt);
     }
 
     /// <summary>The torque that changes the angular velocity by dw (grid-local) in one second (the inverse of the

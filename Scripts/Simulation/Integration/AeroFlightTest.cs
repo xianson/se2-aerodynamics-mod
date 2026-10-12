@@ -24,9 +24,16 @@ namespace AeroMod;
 ///
 /// PROFILE (frames at the fixed 60 Hz sim step)
 ///   SETUP    once      place at TargetAltitude, level, pointed at the horizon, at EntrySpeed
-///   CRUISE   0-600     full forward throttle, neutral stick -- does it hold altitude?
-///   CLIMB    600-1200  full throttle + nose-up -- does lift and AoA respond?
-///   GLIDE    1200-2400 throttle cut, neutral stick -- sink rate and lift-to-drag ratio
+///   CRUISE   0-600     full forward throttle, angle of attack held at CruiseAoa
+///   CLIMB    600-1200  full throttle, ClimbAoa -- does lift and AoA respond?
+///   GLIDE    1200-2400 throttle cut, GlideAoa -- sink rate and lift-to-drag ratio
+///
+/// THE TRIM (2026-10-11): an ideal elevator. A real aircraft trims its pitching moment with its tail; a block-built
+/// one has gyros, and on the Jetliner the aero moment (~1.6 MN m nose-down at 2 deg) beat them - neutral stick dived it
+/// into the ground before the glide began, so nothing past the cruise measured anything. Each tick a pitch-rate servo
+/// (rate toward the angle of attack wanted, at most MaxRate) gives the grid the angular impulse that brings its pitch
+/// rate there, in its own axes - that is the only write after setup, and it is logged ("trim" kN m, beside the gyros'
+/// maximum) so a run says what a real build would need to fly it. AoaHold false: the old open-loop stick.
 ///
 /// Telemetry is one line per second, tagged [FLIGHT], so a run can be read straight from the log.
 /// </summary>
@@ -48,6 +55,13 @@ public partial class AeroGridComponent
         public const float TargetAltitude = 1500f;  // metres of ground clearance to start from
         public const float EntrySpeed = 200f;       // m/s at entry (the Jetliner, 261 t on 200 m2 of wing, needs ~200-260 in Verdure's thin air)
         private const float EntryPitchDeg = 3f;     // nose above the horizon at entry: some angle of attack to cruise on
+
+        public static bool AoaHold = true;
+        public static float CruiseAoa = 6f, ClimbAoa = 9f, GlideAoa = 6f;   // degrees (the Jetliner's best L/D is near 8-12 on the bench)
+        private const float AoaGain = 1.0f, MaxRate = 0.15f, ServoFrac = 0.25f;   // (1/s per rad of error; rad/s; of the rate error closed per tick)
+        private static double _trimSum; private static int _trimN;
+        private static Vector3 _lastVel; private static bool _hasLastVel;
+        private static long _subjectSeen;   // (Stopwatch ticks: the bound component's last tick)
 
         private const int CruiseEnd = 600;          // 10 s
         private const int ClimbEnd = 1200;          // 20 s
@@ -72,11 +86,14 @@ public partial class AeroGridComponent
             {
                 // switched on (again): start over, a fresh subject and profile
                 _wasEnabled = true;
-                _subject = null; _best = null; _bestScore = 0; _choosingSince = 0; _warnedNone = false; _frame = -1;
+                _subject = null; _best = null; _bestScore = 0; _choosingSince = 0; _warnedNone = false; _frame = -1; _trimSum = 0; _trimN = 0; _hasLastVel = false;
             }
 
             // Bind to the grid with the most wings seen in the first 2 s (the first one found was arbitrary: in a
             // world with an airliner and wrecks it could pick a wreck).
+            // (the server's copy only: both scenes' copies tick here and each has the wings - bound to the client's, the
+            //  servo steered and the telemetry read a copy the server's state overwrites)
+            if (!aero.IsServerScene) return;
             if (_subject == null)
             {
                 int wings = aero._model?.Wings?.Count ?? 0;
@@ -90,11 +107,24 @@ public partial class AeroGridComponent
                     if (!_warnedNone) { _warnedNone = true; Log.Default?.Info($"[FLIGHT] no subject: no grid has wings or aero components (this grid: wings={wings} comps={comps} faces={aero._surface?.FaceCount ?? 0})"); }
                     return;
                 }
-                _subject = _best;
+                _subject = _best; _subjectSeen = System.Diagnostics.Stopwatch.GetTimestamp();
                 Log.Default?.Info($"[FLIGHT] subject bound: '{_subject.Entity?.DebugName}' wings={_subject._model?.Wings?.Count ?? 0} " +
-                                  $"aeroComponents={_subject._components?.Count ?? 0} faces={_subject._surface?.FaceCount ?? 0} mass={_subject.LastMass:F0}");
+                                  $"aeroComponents={_subject._components?.Count ?? 0} faces={_subject._surface?.FaceCount ?? 0} mass={_subject.LastMass:F0} server={_subject.IsServerScene}");
             }
-            if (!ReferenceEquals(aero, _subject)) return;
+            if (!ReferenceEquals(aero, _subject))
+            {
+                // (the same grid's new component: the setup's teleport made the server add the grid to its scene again -
+                //  the bound one never ticked after, and the run logged nothing past SETUP. Its successor carries on the
+                //  profile where it was.)
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                // (same name, wings, and its mass: a grid's subgrids and split-off pieces share its name)
+                if (aero.Entity?.DebugName == null || aero.Entity.DebugName != _subject.Entity?.DebugName
+                    || now - _subjectSeen < System.Diagnostics.Stopwatch.Frequency / 2   // (still ticking: another copy)
+                    || (aero._model?.Wings?.Count ?? 0) == 0 || MathF.Abs(aero.LastMass - _subject.LastMass) > 0.05f * _subject.LastMass) return;
+                Log.Default?.Info($"[FLIGHT] subject re-added to the scene: following its new component at frame {_frame}");
+                _subject = aero;
+            }
+            _subjectSeen = System.Diagnostics.Stopwatch.GetTimestamp();
 
             _frame++;
 
@@ -134,13 +164,65 @@ public partial class AeroGridComponent
                 phase = "GLIDE";                          // throttle cut, stick neutral
             }
 
-            PhysicsHack.TrySetControlData(aero.Entity, movement, rotation);
-            // The stick: the game's gyros steer an unpiloted grid to AngularControlData (grid-local rad/s, +X nose up),
-            // and a rate command releases the aero mod's attitude hold. (ControlData's Rotation alone steered nothing.)
-            aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * (-rotation.X * PitchRate) });
+            if (AoaHold)
+            {
+                float want = phase == "CRUISE" ? CruiseAoa : phase == "CLIMB" ? ClimbAoa : GlideAoa;
+                float rate = Hold(aero, wt, want);
+                PhysicsHack.TrySetControlData(aero.Entity, movement, Vector3.Zero);
+                aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * rate });
+            }
+            else
+            {
+                PhysicsHack.TrySetControlData(aero.Entity, movement, rotation);
+                // The stick: the game's gyros steer an unpiloted grid to AngularControlData (grid-local rad/s, +X nose up),
+                // and a rate command releases the aero mod's attitude hold. (ControlData's Rotation alone steered nothing.)
+                aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * (-rotation.X * PitchRate) });
+            }
 
             if (_frame % 60 == 0)
                 Report(aero, wt, phase);
+        }
+
+        /// <summary>The trim servo: the pitch rate that brings the angle of attack to want (deg), and the angular impulse,
+        /// about the grid's own pitch axis, that closes ServoFrac of the gap to it this tick. Returns the rate (for the gyros).</summary>
+        private static float Hold(AeroGridComponent aero, in WorldTransform wt, float want)
+        {
+            if (!PhysicsHack.TryGetVelocity(aero.Data, out Vector3 vel, out Vector3 angW)) return 0f;
+            float aoa = Aoa(vel, wt, out _);
+            float rate = Math.Clamp(AoaGain * (want - aoa) * MathF.PI / 180f, -MaxRate, MaxRate);
+            var pitchL = Vector3.Normalize(PitchAxisL);
+            float q = Vector3.Dot(WorldTransform.TransformDirectionInv(angW, wt), pitchL);
+            if (!PhysicsHack.TryGetInertiaData(aero.Data, out Vector3 invI, out Quaternion major)) return rate;
+            // (the pitch axis in the principal axes: 1 / I about it = sum of its squared components x the inverse moments)
+            var a = Vector3.Transform(pitchL, Quaternion.Inverse(major));
+            float invIa = a.X * a.X * invI.X + a.Y * a.Y * invI.Y + a.Z * a.Z * invI.Z;
+            if (!(invIa > 0f)) return rate;
+            float impulse = ServoFrac * (rate - q) / invIa;
+            PhysicsHack.ApplyTorqueImpulse(aero.Data, pitchL * impulse, wt);
+            _trimSum += impulse * 60f; _trimN++;
+            return rate;
+        }
+
+        /// <summary>The game's whole thrust command (gravity hold and dampening included - ThrustTorque.GameThrust) along the
+        /// travel and up, kN.</summary>
+        private static string Thrust(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, Vector3 up)
+        {
+            var tw = WorldTransform.TransformDirection(ThrustTorque.GameThrust(aero.Data, aero.IsServerScene), wt);
+            float sp = vel.Length();
+            return $" thrust fwd={(sp > 1f ? Vector3.Dot(tw, vel / sp) : 0f) / 1000f:F0}kN up={Vector3.Dot(tw, up) / 1000f:F0}kN";
+        }
+
+        /// <summary>Angle of attack (deg, + nose above the flight path) and the nose's pitch above the horizon.</summary>
+        private static float Aoa(Vector3 vel, in WorldTransform wt, out Vector3 nose)
+        {
+            nose = WorldTransform.TransformDirection(_noseL, wt);
+            float speed = vel.Length();
+            if (speed < 1f) return 0f;
+            var pitchW = WorldTransform.TransformDirection(Vector3.Normalize(PitchAxisL), wt);
+            Vector3 vhat = vel / speed;
+            // (signed in the grid's own pitch plane: the nose's turn from the travel about the pitch axis, nose-up +)
+            float sin = Vector3.Dot(Vector3.Cross(vhat, nose), pitchW), cos = Vector3.Dot(vhat, nose);
+            return MathF.Atan2(sin, cos) * 180f / MathF.PI;
         }
 
         private static void Setup(AeroGridComponent aero, WorldTransform wt)
@@ -239,6 +321,26 @@ public partial class AeroGridComponent
             // Pitch of the nose above the horizon.
             float pitch = (float)(Math.Asin(Math.Clamp(Vector3.Dot(nose, up), -1f, 1f)) * 180.0 / Math.PI);
 
+            string trim = "";
+            if (AoaHold && _trimN > 0)
+            {
+                trim = $" trim={_trimSum / _trimN / 1000.0,7:F0}kNm gyroMax={PhysicsHack.TryGetGyroMaxTorque(aero.Data) / 1000f:F0}kNm";
+                _trimSum = 0; _trimN = 0;
+            }
+            // THE RESIDUAL: the force the measured acceleration (over the last second) needs beyond gravity and the aero
+            // model's own - thrust, dampeners, the trim servo's (angular only), anything unaccounted for; along the
+            // travel (+ forward) and up (kN)
+            string resid = "";
+            PhysicsHack.TryGetMassProperties(aero.Data, out float massR, out _);
+            if (_hasLastVel && massR > 0f && aero.HasResult && speed > 1f)
+            {
+                Vector3 accel = vel - _lastVel;   // (per second: the report is once a second)
+                Vector3 aeroW = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
+                float gm = PhysicsHack.GravityMultiplier();   // (the engine's: a world at 2 flies in twice GravitySum)
+                Vector3 extra = accel * massR - aeroW - g * gm * massR;
+                resid = $" resid fwd={Vector3.Dot(extra, vel / speed) / 1000f,6:F0}kN up={Vector3.Dot(extra, up) / 1000f,6:F0}kN g={glen:F2}x{gm:F1} mult D{AeroTuning.DragMultiplier:F2} L{AeroTuning.LiftMultiplier:F2}";
+            }
+            _lastVel = vel; _hasLastVel = true;
             float lift = aero.HasResult ? aero.LastResult.LiftMagnitude : 0f;
             // signed (the result's DragMagnitude is an absolute value: it hid the wings pushing forward)
             float drag = aero.HasResult ? (aero._model is LiftingSurfaceModel lms ? lms.LastInnerDrag + lms.LastWingsDrag : aero.LastResult.DragMagnitude) : 0f;
@@ -249,7 +351,7 @@ public partial class AeroGridComponent
             Log.Default?.Info(
                 $"[FLIGHT] t={_frame / 60,3}s {phase,-6} spd={speed,6:F1} vs={vs,7:F1} alt={aero.GroundHeight,7:F0} " +
                 $"aoa={aoa,6:F1} pitch={pitch,6:F1} lift={lift,9:F0} drag={drag,9:F0} L/D={ld,5:F2} " +
-                $"M={mach,4:F2} q={q,8:F0} angV={angVel.Length(),5:F2}" +
+                $"M={mach,4:F2} q={q,8:F0} angV={angVel.Length(),5:F2}{trim}{Thrust(aero, wt, vel, up)}{resid}" +
                 (aero._model is LiftingSurfaceModel lm ? $" | faceD={lm.LastInnerDrag:F0} wingD={lm.LastWingsDrag:F0} floor={lm.LastFloorAdd:F0}" : "") +
                 $" wings={aero._model?.Wings?.Count ?? 0} faces={aero._surface?.FaceCount ?? 0} rebuild={aero.Rebuilding}");
         }

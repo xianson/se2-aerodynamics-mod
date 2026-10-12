@@ -158,6 +158,14 @@ public static class PhysicsHack
     /// The lookup is now a direct DefinitionManager.GetConfiguration&lt;T&gt;() call; only the
     /// private property setters still need reflection (see EngineOverrides).
     /// </summary>
+    /// <summary>The world's PhysicsSessionConfiguration.GravityMultiplier (1 when unreadable): the engine scales the
+    /// gravity it applies by it, on top of GravityEffectData.GravitySum.</summary>
+    public static float GravityMultiplier()
+    {
+        try { return DefinitionManager.Instance?.GetConfiguration<PhysicsSessionConfiguration>()?.GravityMultiplier ?? 1f; }
+        catch { return 1f; }
+    }
+
     public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f, bool apply = true)
     {
         if (_gravityFixed) return;

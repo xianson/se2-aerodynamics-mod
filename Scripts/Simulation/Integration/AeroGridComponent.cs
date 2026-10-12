@@ -190,6 +190,20 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>The model and the surface it runs on - for the public API (AeroApi: wings, surfaces, prediction).</summary>
     internal LiftingSurfaceModel FxModel => _model;
     internal SmoothSurfaceProvider FxSurface => _surface;
+    internal ManifoldClassifier FxManifold => _manifold;
+    internal float FxBlockSize => _blockSize;
+    /// <summary>Each block's occupied-cell boxes, now (simulation thread) - as a rebuild captures them.</summary>
+    internal List<(Vector3I, Vector3I)> CaptureBoxes()
+    {
+        var boxes = new List<(Vector3I, Vector3I)>();
+        if (_octree == null) return boxes;
+        foreach (var block in _octree.GetAllCubeBlocks())
+        {
+            if (block == null) continue;
+            foreach (var g in block.GetTransformedOccupiedCellGroups()) boxes.Add((g.Min, g.Max));
+        }
+        return boxes;
+    }
     internal (float size, float offset) FxCellGeo => _surface != null ? (_surface.CellSize, _surface.CellOffset) : (0.25f, 0f);
     /// <summary>This grid's table is wanted though it sees no air (an entry source flies it through some).</summary>
     internal bool EntryWantsTable;
@@ -246,6 +260,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _rcsHoldValid = false; mode = "free"; return false;
     }
     internal ThrustTorque.Report LastThrust;
+    /// <summary>The air's torque applied this frame (local, N m, the world's multipliers in; zero: none) - the attitude
+    /// control's feedforward (ThrustTorque, aero-aware).</summary>
+    internal Vector3 LastAeroTorque;
     internal int _clearedOverride;
     private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>

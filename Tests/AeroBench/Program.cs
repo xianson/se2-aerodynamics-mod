@@ -545,6 +545,8 @@ static partial class Program
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships
             int fails = known + TorqueChecks(atmo, false);
+            // the aero-aware attitude law on the F-6 (statically unstable in pitch): every case within its gyros settles
+            if (Directory.GetFiles(dataDir, "3737149863.boxes", SearchOption.AllDirectories).Length > 0) fails += Attitude(dataDir, atmo, "bp/3737149863");
             foreach (var name in new[] { "bluefighter", "pelican" })
             {
                 var path = Path.Combine(dataDir, name + ".boxes");
@@ -817,6 +819,8 @@ static partial class Program
         if (args.Length > 0 && args[0] == "bodies") return Bodies(atmo);
         if (args.Length > 1 && args[0] == "columns") return Columns(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "polar") return Polar(dataDir, atmo, args[1]);
+        if (args.Length > 1 && args[0] == "damping") return Damping(dataDir, atmo, args[1]);
+        if (args.Length > 1 && args[0] == "attitude") return Attitude(dataDir, atmo, args[1]);
         if (args.Length > 0 && args[0] == "cleanplane") return CleanPlane(atmo);
         if (args.Length > 1 && args[0] == "detecttime") return DetectTime(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "dragsplit") return DragSplit(dataDir, atmo, args.Skip(1).ToArray());

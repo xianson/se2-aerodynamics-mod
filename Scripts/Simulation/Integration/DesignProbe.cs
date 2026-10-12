@@ -49,6 +49,71 @@ internal static class DesignProbe
         return best;
     }
 
+    // ── THE SHIP (2026-10-11, the user: "it needs to handle subgrids"): the grid and every grid jointed to it (rotors,
+    //    hinges, pistons, connectors - AeroGridComponent.FxGroup, the server's connection search once a second), each
+    //    member's figures turned into the aimed grid's axes and summed: forces, torques about the ship's centre of mass,
+    //    thrust, mass, the overlay's faces, the control torque. Everything below the per-grid helpers works on a ship.
+    internal sealed class Member { public AeroGridComponent A; public WorldTransform W; }
+    internal sealed class Ship { public AeroGridComponent Root; public WorldTransform RW; public List<Member> M = new(); public long At; }
+    static readonly Dictionary<AeroGridComponent, Ship> _ships = new();
+
+    internal static Ship ShipOf(AeroGridComponent root)
+    {
+        if (root?.Entity == null) return null;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        lock (_ships)
+            if (_ships.TryGetValue(root, out var cached) && now - cached.At < System.Diagnostics.Stopwatch.Frequency / 4) return cached;
+        root.RefreshFxGroup();
+        var sh = new Ship { Root = root, RW = root.Entity.Data.GetWorldTransform(), At = now };
+        sh.M.Add(new Member { A = root, W = sh.RW });
+        foreach (var a in root.FxGroup)
+        {
+            if (a == null || ReferenceEquals(a, root) || a.Entity == null || !a.IsServerScene || !PhysicsHack.Alive(a.Entity.Data)) continue;
+            sh.M.Add(new Member { A = a, W = a.Entity.Data.GetWorldTransform() });
+        }
+        lock (_ships) _ships[root] = sh;
+        return sh;
+    }
+    static Vector3 ToRootDir(Ship s, Member m, Vector3 d) => ReferenceEquals(m.A, s.Root) ? d : WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(d, m.W), s.RW);
+    static Vector3 ToMemberDir(Ship s, Member m, Vector3 d) => ReferenceEquals(m.A, s.Root) ? d : WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(d, s.RW), m.W);
+    static Vector3 ToRootPoint(Ship s, Member m, Vector3 p) => ReferenceEquals(m.A, s.Root) ? p
+        : WorldTransform.TransformDirectionInv((Vector3)(WorldTransform.Transform((Vector3D)p, in m.W) - s.RW.Position), s.RW);
+
+    /// <summary>The ship's mass (kg) and centre of mass (the aimed grid's axes).</summary>
+    internal static float ShipMass(Ship s, out Vector3 com)
+    {
+        com = default; float total = 0f; Vector3 moment = Vector3.Zero;
+        if (s == null) return 0f;
+        foreach (var m in s.M)
+        {
+            if (!PhysicsHack.TryGetMassProperties(m.A.Data, out float mass, out var c) || !(mass > 0f)) continue;
+            total += mass; moment += ToRootPoint(s, m, c) * mass;
+        }
+        if (total > 0f) com = moment / total;
+        return total;
+    }
+
+    /// <summary>The ship's air force and torque about its centre of mass (the aimed grid's axes): each member's (Forces) in
+    /// its own flow, turned and summed. False: the aimed grid has no table yet; a member without one is left out.</summary>
+    internal static bool ShipForces(Ship s, Vector3 travelRoot, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
+    {
+        force = torque = default; frontal = 0f;
+        ShipMass(s, out com);
+        if (s == null) return false;
+        bool any = false;
+        foreach (var m in s.M)
+        {
+            if (!Forces(m.A, ToMemberDir(s, m, travelRoot), mach, rho, sos, out var f, out var t, out var c, out float fr))
+            {
+                if (ReferenceEquals(m.A, s.Root)) return false;
+                continue;
+            }
+            var fR = ToRootDir(s, m, f);
+            force += fR; torque += ToRootDir(s, m, t) + Vector3.Cross(ToRootPoint(s, m, c) - com, fR); frontal += fr; any = true;
+        }
+        return any;
+    }
+
     /// <summary>The ship's air force and torque (about its centre of mass) moving along travelLocal at this Mach, sea-level
     /// air unless given. False: no force table yet (asked for).</summary>
     internal static bool Forces(AeroGridComponent aero, Vector3 travelLocal, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
@@ -86,7 +151,8 @@ internal static class DesignProbe
         cop = force = torque = default; stabA = stabB = 0f; streamlining = -1f;
         if (travelLocal.LengthSquared() < 1e-8f) return false;
         var dHat = Vector3.Normalize(travelLocal);
-        if (!Forces(aero, dHat, mach, SeaRho, SeaSos, out force, out torque, out var com, out float frontal)) return false;
+        var ship = ShipOf(aero);
+        if (!ShipForces(ship, dHat, mach, SeaRho, SeaSos, out force, out torque, out var com, out float frontal)) return false;
         float f2 = force.LengthSquared();
         cop = f2 > 1e-6f ? com + Vector3.Cross(force, torque) / f2 : com;
         // static stability about the two axes across the flow: the ship turned by +e about axis a sees the flow turned by -e
@@ -96,8 +162,8 @@ internal static class DesignProbe
         float qRef = 0.5f * SeaRho * MathF.Pow(Math.Max(1f, mach * SeaSos), 2) * Math.Max(1f, frontal) * size;
         float Stab(Vector3 a)
         {
-            if (!Forces(aero, Vector3.Transform(dHat, Quaternion.CreateFromAxisAngle(a, -e)), mach, SeaRho, SeaSos, out _, out var tp, out _, out _)) return 0f;
-            if (!Forces(aero, Vector3.Transform(dHat, Quaternion.CreateFromAxisAngle(a, +e)), mach, SeaRho, SeaSos, out _, out var tm, out _, out _)) return 0f;
+            if (!ShipForces(ship, Vector3.Transform(dHat, Quaternion.CreateFromAxisAngle(a, -e)), mach, SeaRho, SeaSos, out _, out var tp, out _, out _)) return 0f;
+            if (!ShipForces(ship, Vector3.Transform(dHat, Quaternion.CreateFromAxisAngle(a, +e)), mach, SeaRho, SeaSos, out _, out var tm, out _, out _)) return 0f;
             float dTdTheta = Vector3.Dot(tp - tm, a) / (2f * e);   // (the body turned +theta about a: the flow turned -theta)
             return -dTdTheta / qRef;                                // positive: the torque turns it back
         }
@@ -110,6 +176,24 @@ internal static class DesignProbe
     /// <summary>The thrust along a direction at sea level and a Mach (N): each thruster pushing that way, at its live
     /// maximum x its class's sea-level efficiency x its profile at the Mach, by how much it points that way.</summary>
     internal static float ThrustAlong(AeroGridComponent aero, Vector3 dirLocal, float mach, out Vector3 centre)
+    {
+        // (the ship's: each member's thrusters along the direction turned into its axes, their centre back into the aimed grid's)
+        var s = ShipOf(aero);
+        if (s != null && s.M.Count > 1)
+        {
+            float sum = 0f; Vector3 moment = Vector3.Zero;
+            foreach (var m in s.M)
+            {
+                float f = ThrustAlongOne(m.A, ToMemberDir(s, m, dirLocal), mach, out var c);
+                if (f > 0f) { sum += f; moment += ToRootPoint(s, m, c) * f; }
+            }
+            centre = sum > 0f ? moment / sum : default;
+            return sum;
+        }
+        return ThrustAlongOne(aero, dirLocal, mach, out centre);
+    }
+
+    static float ThrustAlongOne(AeroGridComponent aero, Vector3 dirLocal, float mach, out Vector3 centre)
     {
         centre = default;
         var cache = aero?._thrusterCache; if (cache == null) return 0f;
@@ -132,16 +216,154 @@ internal static class DesignProbe
 
     /// <summary>The top speed at sea level travelling along a direction: where the forward thrust (at that Mach) meets the
     /// drag along it. NaN: no table; +inf: thrust beats drag past 3 km/s.</summary>
-    internal static float TopSpeed(AeroGridComponent aero, Vector3 dirLocal)
+    static readonly DampedShadowedDragModel.TableWork _pressureWork = new();
+    internal static string PressureWhy = "-";
+    static readonly List<Vector3> _mp = new(), _mn = new(); static readonly List<float> _ma = new(), _mc = new();
+
+    /// <summary>The drag overlay's faces: DampedShadowedDragModel.FacePressures on this grid's model (one at a time).</summary>
+    internal static int Pressures(AeroGridComponent aero, Vector3 travelLocal, float mach, List<Vector3> pos, List<Vector3> nrm, List<float> area, List<float> cp, int max)
+    {
+        string why;
+        int n = 0;
+        if (aero == null) why = "no server aero";
+        else if (travelLocal.LengthSquared() < 1e-8f) why = "no direction";
+        else
+        {
+            // (each member of the ship its own faces, in its own flow, turned into the aimed grid's axes - shadowing is
+            //  per grid: a subgrid behind the main one is not hidden by it)
+            var s = ShipOf(aero);
+            pos.Clear(); nrm.Clear(); area.Clear(); cp.Clear();
+            why = "not built";
+            if (s != null)
+                foreach (var m in s.M)
+                {
+                    var ov = OverlayOf(m.A, out string w1);
+                    if (ReferenceEquals(m.A, s.Root)) why = w1;
+                    if (ov == null) continue;
+                    lock (_pressureWork)
+                        try
+                        {
+                            int k = ov.Model.FacePressures(ov.Surface, ov.Manifold, ToMemberDir(s, m, travelLocal), mach, _pressureWork, _mp, _mn, _ma, _mc, Math.Max(1, max / s.M.Count));
+                            for (int i = 0; i < k; i++) { pos.Add(ToRootPoint(s, m, _mp[i])); nrm.Add(ToRootDir(s, m, _mn[i])); area.Add(_ma[i]); cp.Add(_mc[i]); }
+                        }
+                        catch (Exception e) { why = "threw " + e.GetType().Name + ": " + e.Message; }
+                }
+            n = pos.Count;
+            if (n > 0) why = "ok"; else if (why == "ok") why = "0 faces";
+        }
+        if (n == 0) { pos.Clear(); nrm.Clear(); area.Clear(); cp.Clear(); }
+        if (why != PressureWhy) { PressureWhy = why; Log.Default?.Info($"[AERO] drag overlay: {why}"); }
+        return n;
+    }
+
+    /// <summary>THE OVERLAY'S OWN FACES (2026-10-11): the live model often has none - a table from the disk cache never
+    /// builds the surface, and a big grid's is released after its build (the overlay found "surface 0") - so the probe
+    /// builds a surface of its own from the grid's block boxes, on an aero worker, once per shape: again a second after
+    /// the shape last changed (mass or block boxes), while you build. Wing skins included (it shows pressure, not only
+    /// the face model's share). Grids over OverlayMaxCells: none (a surface that size is hundreds of MB).</summary>
+    sealed class Overlay { public DampedShadowedDragModel Model; public SmoothSurfaceProvider Surface; public ManifoldClassifier Manifold; public long Key; }
+    sealed class OverlayState { public Overlay Ready; public bool Building; public long WantKey, BuiltKey; public long KeySince; }
+    static readonly Dictionary<AeroGridComponent, OverlayState> _overlays = new();
+    public static long OverlayMaxCells = 4_000_000;
+
+    static Overlay OverlayOf(AeroGridComponent aero, out string why)
+    {
+        OverlayState st;
+        lock (_overlays) if (!_overlays.TryGetValue(aero, out st)) _overlays[aero] = st = new OverlayState();
+        // (the shape's key: its mass and its live surface's version - both move as blocks go on or off)
+        long key = (long)MathF.Round(aero.LastMass) * 31 + (aero.FxSurface?.Version ?? 0);
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (key != st.WantKey) { st.WantKey = key; st.KeySince = now; }
+        bool settled = now - st.KeySince > System.Diagnostics.Stopwatch.Frequency;
+        if (!st.Building && st.BuiltKey != st.WantKey && (settled || st.Ready == null))
+        {
+            var boxes = aero.CaptureBoxes();
+            long cells = 0; foreach (var (lo, hi) in boxes) cells += (long)(hi.X - lo.X + 1) * (hi.Y - lo.Y + 1) * (hi.Z - lo.Z + 1);
+            if (boxes.Count == 0) { why = "no blocks"; return st.Ready; }
+            if (cells > OverlayMaxCells) { why = $"too big for the overlay ({cells:N0} cells)"; st.BuiltKey = st.WantKey; return null; }
+            st.Building = true; long building = st.WantKey; float bs = aero.FxBlockSize > 0f ? aero.FxBlockSize : 2.5f;
+            AeroWork.Enqueue(() => 0f, () =>
+            {
+                try
+                {
+                    int k = SnapshotGridAccessor.CellScale(bs); var geo = SnapshotGridAccessor.CellGeometry(k);
+                    var snap = k > 1 ? new SnapshotGridAccessor(boxes).CoarsenMajority(k) : new SnapshotGridAccessor(boxes);
+                    var surf = new SmoothSurfaceProvider { CellSize = geo.size, CellOffset = geo.offset };
+                    surf.BeginBuild(snap, bs); while (!surf.AddCellBatch(int.MaxValue)) { } surf.FinalizeBuild();
+                    var man = new ManifoldClassifier(); man.Classify(surf);
+                    st.Ready = new Overlay { Model = new DampedShadowedDragModel(), Surface = surf, Manifold = man, Key = building };
+                }
+                catch (Exception e) { Log.Default?.Info($"[AERO] drag overlay build failed: {e.GetType().Name}: {e.Message}"); }
+                finally { st.BuiltKey = building; st.Building = false; }
+            });
+        }
+        why = st.Ready != null ? "ok" : st.Building ? "building the overlay's faces" : "not built";
+        return st.Ready;
+    }
+
+    /// <summary>The grid's mass (kg; 0 unknown).</summary>
+    internal static float Mass(AeroGridComponent aero) => ShipMass(ShipOf(aero), out _);
+
+    /// <summary>The ship's centre of mass (the aimed grid's axes). False: no mass data.</summary>
+    internal static bool CenterOfMass(AeroGridComponent aero, out Vector3 com) => ShipMass(ShipOf(aero), out com) > 0f;
+
+    /// <summary>CONTROLLABLE (2026-10-11, the user: "controllable if the rcs can overcome the torques"): the torque the ship
+    /// can hold against an upset across dirLocal - its gyros' maximum plus what its thrusters give about each of the two
+    /// axes across the flow, the weaker sign of the weaker axis (it must hold either way) - over the air's torque with the
+    /// ship UpsetDeg off the flow at this speed (sea level), the larger of the two axes. Over 1: it can hold it. NaN: no table.</summary>
+    public static float UpsetDeg = 5f;
+    internal static float ControlRatio(AeroGridComponent aero, Vector3 dirLocal, float speed)
+    {
+        var s = ShipOf(aero);
+        if (s == null || dirLocal.LengthSquared() < 1e-8f) return float.NaN;
+        var d = Vector3.Normalize(dirLocal);
+        ShipMass(s, out var com);
+        Vector3 a1 = Vector3.Normalize(Vector3.Cross(d, MathF.Abs(d.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX)), a2 = Vector3.Cross(d, a1);
+        float mach = Math.Max(0.01f, speed / SeaSos), e = UpsetDeg * MathF.PI / 180f;
+        float air = 0f;
+        foreach (var a in new[] { a1, a2 })
+        {
+            if (!ShipForces(s, Vector3.Transform(d, Quaternion.CreateFromAxisAngle(a, e)), mach, SeaRho, SeaSos, out _, out var t, out _, out _)) return float.NaN;
+            air = Math.Max(air, MathF.Abs(Vector3.Dot(t, a)));
+        }
+        if (air < 1f) return float.PositiveInfinity;
+        float gyro = 0f, hold = float.MaxValue;
+        foreach (var a in new[] { a1, a2 })
+        {
+            float pos = 0f, neg = 0f;
+            foreach (var m in s.M)
+            {
+                var cache = m.A._thrusterCache; if (cache == null) continue;
+                for (int i = 0; i < cache.Count; i++)
+                {
+                    var t = cache[i];
+                    float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
+                    max *= ThrustTorque.SeaLevelEfficiency(t.ThrusterEntity, SeaRho);
+                    var r = ToRootPoint(s, m, t.GridLocalPosition) - com;
+                    float tq = Vector3.Dot(Vector3.Cross(r, ToRootDir(s, m, t.ThrustDirection) * max), a);
+                    if (tq > 0f) pos += tq; else neg -= tq;
+                }
+            }
+            hold = Math.Min(hold, Math.Min(pos, neg));
+        }
+        foreach (var m in s.M) { float g = PhysicsHack.TryGetGyroMaxTorque(m.A.Data); if (g > 0f) gyro += g; }
+        return (gyro + (hold == float.MaxValue ? 0f : hold)) / air;
+    }
+
+    internal static float TopSpeed(AeroGridComponent aero, Vector3 dirLocal) => TopSpeed(aero, dirLocal, 1f);
+
+    /// <summary>The sea-level speed along dirLocal where drag meets throttle x the forward thrust (1: the top speed).</summary>
+    internal static float TopSpeed(AeroGridComponent aero, Vector3 dirLocal, float throttle)
     {
         var dHat = Vector3.Normalize(dirLocal);
+        var ship = ShipOf(aero);
         float Net(float v)
         {
             float m = v / SeaSos;
-            if (!Forces(aero, dHat, m, SeaRho, SeaSos, out var f, out _, out _, out _)) return float.NaN;
+            if (!ShipForces(ship, dHat, m, SeaRho, SeaSos, out var f, out _, out _, out _)) return float.NaN;
             // (Forces evaluates at speed max(1, m sos): the drag scales from there)
             float drag = -Vector3.Dot(f, dHat);
-            return ThrustAlong(aero, dHat, m, out _) - drag;
+            return throttle * ThrustAlong(aero, dHat, m, out _) - drag;
         }
         float lo = 1f, hi = 3000f, nlo = Net(lo);
         if (float.IsNaN(nlo)) return float.NaN;
@@ -163,5 +385,5 @@ internal static class DesignProbe
         return float.PositiveInfinity;
     }
 
-    internal static void Forget(AeroGridComponent aero) { lock (_wingModels) _wingModels.Remove(aero); }
+    internal static void Forget(AeroGridComponent aero) { lock (_wingModels) _wingModels.Remove(aero); lock (_overlays) _overlays.Remove(aero); lock (_ships) _ships.Remove(aero); }
 }

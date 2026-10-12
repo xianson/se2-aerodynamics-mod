@@ -362,15 +362,21 @@ public class ConnectedComponentWingDetector : IWingDetector
                 float lim = MathF.Max(4f, SlabTrim * sc.Thick[sc.Thick.Count / 4]);   // (the lower quartile: a fin on a fuselage roof is the smaller part of their piece - its median was the roof's)
                 foreach (int si in sc.Comp) if (sc.SHi[si] - sc.SLo[si] + 1 > lim) sc.SComp[si] = -2;
             }
-            // pass 2: pieces of what is left, each a wing or not
+            // pass 2: pieces of what is left; then their mirror pairs (the span axis); then each a wing or not
             for (int i = 0; i < ns; i++) if (sc.SComp[i] != -2) sc.SComp[i] = -1;
             comps = 0;
             for (int i = 0; i < ns; i++)
             {
                 if (sc.SComp[i] != -1) continue;
                 FloodSlabs(sc, i, comps++);
-                if (sc.Comp.Count < MinFaceCount) continue;
-                var w = AnalyzeSlabs(sc, normal, ax1, ax2, v1, v2, blockSize);
+            }
+            var pieces = Pieces(sc, ns, comps);
+            var span = Pairs(pieces);
+            for (int c = 0; c < comps; c++)
+            {
+                if (pieces[c].Slabs.Count < MinFaceCount) continue;
+                sc.Comp.Clear(); sc.Comp.AddRange(pieces[c].Slabs);
+                var w = AnalyzeSlabs(sc, normal, ax1, ax2, v1, v2, blockSize, span[c]);
                 if (w.HasValue) results.Add(w.Value);
             }
             tFlood += sw.Elapsed.TotalMilliseconds - t2;
@@ -474,12 +480,63 @@ public class ConnectedComponentWingDetector : IWingDetector
         }
     }
 
-    private LiftingSurface? AnalyzeSlabs(Scratch sc, Vector3I normal, Vector3I ax1, Vector3I ax2, Vector3 v1, Vector3 v2, float blockSize)
+    private sealed class Piece { public readonly List<int> Slabs = new(); public int MinA = int.MaxValue, MaxA = int.MinValue, MinB = int.MaxValue, MaxB = int.MinValue; public double H; }
+
+    /// <summary>Each piece's slabs and its bounds across the plane (A, B) and its mean height along the normal.</summary>
+    private static List<Piece> Pieces(Scratch sc, int ns, int comps)
+    {
+        var ps = new List<Piece>(comps);
+        for (int c = 0; c < comps; c++) ps.Add(new Piece());
+        for (int i = 0; i < ns; i++)
+        {
+            int c = sc.SComp[i];
+            if (c < 0 || c >= comps) continue;
+            var p = ps[c]; p.Slabs.Add(i);
+            int a = sc.SA[i], b = sc.SB[i];
+            if (a < p.MinA) p.MinA = a; if (a > p.MaxA) p.MaxA = a; if (b < p.MinB) p.MinB = b; if (b > p.MaxB) p.MaxB = b;
+            p.H += 0.5 * (sc.SLo[i] + sc.SHi[i]);
+        }
+        foreach (var p in ps) if (p.Slabs.Count > 0) p.H /= p.Slabs.Count;
+        return ps;
+    }
+
+    /// <summary>MIRROR PAIRS (2026-10-11): two pieces in one plane, of like size (within PairSize) and height (within
+    /// PairHeight cells), whose ranges along one axis overlap by PairOverlap of the shorter and along the other do not
+    /// meet, are a pair of wing halves: the axis they lie apart along is their span. Per piece: true span A, false span
+    /// B, null no pair (its extent decides).</summary>
+    public static float PairSize = 1.6f, PairOverlap = 0.7f, PairHeight = 8f;
+    private bool?[] Pairs(List<Piece> ps)
+    {
+        var span = new bool?[ps.Count];
+        static float Over(int lo1, int hi1, int lo2, int hi2) => (MathF.Min(hi1, hi2) - MathF.Max(lo1, lo2) + 1f) / MathF.Min(hi1 - lo1 + 1f, hi2 - lo2 + 1f);
+        for (int i = 0; i < ps.Count; i++)
+        {
+            var p = ps[i];
+            if (p.Slabs.Count < MinFaceCount) continue;
+            for (int j = 0; j < ps.Count && span[i] == null; j++)
+            {
+                var q = ps[j];
+                if (j == i || q.Slabs.Count < MinFaceCount) continue;
+                float r = (float)p.Slabs.Count / q.Slabs.Count;
+                if (r > PairSize || r < 1f / PairSize || Math.Abs(p.H - q.H) > PairHeight) continue;
+                bool apartB = p.MaxB < q.MinB || q.MaxB < p.MinB, apartA = p.MaxA < q.MinA || q.MaxA < p.MinA;
+                if (apartB && !apartA && Over(p.MinA, p.MaxA, q.MinA, q.MaxA) >= PairOverlap) span[i] = false;
+                else if (apartA && !apartB && Over(p.MinB, p.MaxB, q.MinB, q.MaxB) >= PairOverlap) span[i] = true;
+            }
+        }
+        return span;
+    }
+
+    private LiftingSurface? AnalyzeSlabs(Scratch sc, Vector3I normal, Vector3I ax1, Vector3I ax2, Vector3 v1, Vector3 v2, float blockSize, bool? forceSpanA = null)
     {
         var comp = sc.Comp;
         int minA = int.MaxValue, maxA = int.MinValue, minB = int.MaxValue, maxB = int.MinValue;
         foreach (int si in comp) { int sa = sc.SA[si], sb = sc.SB[si]; minA = Math.Min(minA, sa); maxA = Math.Max(maxA, sa); minB = Math.Min(minB, sb); maxB = Math.Max(maxB, sb); }
-        bool spanIsA = maxA - minA >= maxB - minB;
+        // The span axis: the mirror pair's (see Pairs), else the longer extent. (The extent alone: a swept half-wing reaches
+        // further along the fuselage than out to its tip - the Jetliner's, 33.5 m against 30 - and each half came out a
+        // wing spanning fore and aft: wrong area, sweep, aspect ratio and camber; the ship pitched past 50 deg in flight.
+        // Its unbroken runs did not tell either: a block-built 40-deg wing's spanwise runs, ~4 m, are shorter than its chord.)
+        bool spanIsA = forceSpanA ?? maxA - minA >= maxB - minB;
         float cs = CellSize;
         int spanCells = spanIsA ? maxA - minA + 1 : maxB - minB + 1;
         float span = spanCells * cs, area = comp.Count * cs * cs;

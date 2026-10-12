@@ -466,6 +466,58 @@ public class DampedShadowedDragModel : IAeroDragModel
         _lastShadowVersion = -1; _loopBakeVersion = int.MinValue;   // re-bake with it
     }
 
+    /// <summary>THE DRAG OVERLAY's pressures (2026-10-11, build hints): each hull face's pressure coefficient for the grid
+    /// travelling along v (unit, grid-local) at this Mach, as the force table sees it - shadowed windward faces left out,
+    /// the lee side's suction less what pressure recovery gives back. Positive pushes in, negative pulls. At most max faces
+    /// (every k-th past that). Reads the per-face arrays only, into work's buffers - the live model is not touched.</summary>
+    internal int FacePressures(ISurfaceProvider surface, ManifoldClassifier manifold, Vector3 v, float mach, TableWork work, List<Vector3> pos, List<Vector3> nrm, List<float> area, List<float> cps, int max)
+    {
+        pos.Clear(); nrm.Clear(); area.Clear(); cps.Clear();
+        // (the per-face arrays: a ship whose table came from the disk cache and has not flown has none yet - the
+        //  overlay found 0 faces on a parked ship)
+        if (surface != null && surface.FaceCount > 0) EnsureSoA(surface.Faces, surface.Version, manifold);
+        int total = _px.Count;
+        if (total == 0 || _nx.Count < total || _area.Count < total || _origIndex.Count < total) return 0;
+        v = Vector3.Normalize(v);
+        BakeOcclusion(v, work);
+        if (work.Vis.Length < total) return 0;
+        var VA = work.Vis.AsSpan(0, total);
+        bool recover = PressureRecovery;
+        if (recover) BakeRecovery(v, work, VA);
+        float st = Streamlining, cdBluff = CdBluff, cpMax = CpMax;
+        float baseCp = st > 0f ? CpBase * (1f - 0.7f * st) : CpBase;
+        float t = SupersonicLimit > SubsonicLimit ? Math.Clamp((mach - SubsonicLimit) / (SupersonicLimit - SubsonicLimit), 0f, 1f) : (mach >= SubsonicLimit ? 1f : 0f);
+        t = t * t * (3f - 2f * t);
+        var excl = _excluded != null && _excludedVersion == _lastSurfaceVersion ? _excluded : null;
+        int exLen = excl?.Count ?? 0, stride = Math.Max(1, total / Math.Max(1, max));
+        for (int gi = 0; gi < total; gi += stride)
+        {
+            int oi = _origIndex[gi];
+            if (oi < 0 || (oi < exLen && excl[oi])) continue;
+            float a = _area[gi];
+            if (a < 1e-6f) continue;
+            var n = new Vector3(_nx[gi], _ny[gi], _nz[gi]);
+            float cosA = Vector3.Dot(n, v), cp;
+            if (cosA > 0f)
+            {
+                if (VA[gi] <= 0f) continue;   // (shadowed)
+                float cpSub = SubsonicSquareLaw ? cdBluff * cosA * cosA : cdBluff * cosA, cpSup = cpMax * cosA * cosA;
+                if (st > 0f && !SubsonicSquareLaw) cpSub *= 1f - st * (1f - (0.08f + 0.92f * cosA * cosA));
+                cp = cpSub + (cpSup - cpSub) * t;
+            }
+            else
+            {
+                cp = LeeCp(cosA, baseCp, cdBluff);
+                // (the column's recovered push along the travel, as a pressure on this face: it pushes the face forward)
+                if (recover && gi < work.Rec.Length && work.Rec[gi] != 0f) cp += work.Rec[gi] / (a * MathF.Max(0.2f, -cosA)) * (1f - t);
+            }
+            // (the face's own cell axis out, not the smoothed normal its pressure used: the overlay lays a quad on the block)
+            var raw = gi < _raw.Count ? _raw[gi] : Vector3.Zero;
+            pos.Add(new Vector3(_px[gi], _py[gi], _pz[gi])); nrm.Add(raw.LengthSquared() > 0.5f ? raw : n); area.Add(a); cps.Add(cp);
+        }
+        return pos.Count;
+    }
+
     /// <summary>One table worker's buffers: its faces' reached areas and its depth buffer.</summary>
     public sealed class TableWork
     {

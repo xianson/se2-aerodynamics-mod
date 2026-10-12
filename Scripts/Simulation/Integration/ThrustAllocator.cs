@@ -55,6 +55,42 @@ public static class ThrustAllocator
         return (wDes - wLocal) / responseTime;
     }
 
+    /// <summary>
+    /// THE AERO-AWARE ATTITUDE LAW (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but
+    /// they don't cheat"). Per local axis: the angular acceleration (rad/s^2) wanted ON TOP of answering the known
+    /// disturbance (the air's torque this frame, as an acceleration: disturb) - the caller asks its actuators for
+    /// I x this - torque from the air, and they give what their real limits allow.
+    ///   reach  the most acceleration the actuators can give about each axis (rad/s^2, > 0)
+    ///   rate   to the target: the braking curve sqrt(2 a |e|) with a = the authority left after the disturbance
+    ///          (Margin of reach, less |disturb|; never under MinShare of reach) - it slows in time to stop with what it
+    ///          really has - and, near the target, LinearGain x error (no chatter at zero)
+    ///   accel  (that rate - the rate now) / RateTime
+    /// wLocal: the rate WITHOUT this frame's disturbance kick when the caller answers it - the air's torque was applied
+    /// before the controller ran, so the rate already carries one frame of it; read so and answered as well, the law
+    /// counted it twice and held a standing error of disturb x dt / LinearGain (0.16 deg at Mach 3 - AeroBench attitude).
+    /// Resting (error and rate under their thresholds): only the rate taken out (with the disturbance answered by the
+    /// caller, a rate left alone coasted: 0.0012 rad/s drifted out past the threshold and back, a 2 s limit cycle - AeroBench
+    /// attitude).
+    /// </summary>
+    public static Vector3 AttitudeAccel(Vector3 error, Vector3 wLocal, Vector3 reach, Vector3 disturb, float restAngle, float restRate)
+    {
+        if (error.Length() <= restAngle && wLocal.Length() <= restRate)
+            return Vector3.Clamp(-wLocal / RateTime, -reach, reach);
+        return new Vector3(Axis(error.X, wLocal.X, reach.X, disturb.X), Axis(error.Y, wLocal.Y, reach.Y, disturb.Y), Axis(error.Z, wLocal.Z, reach.Z, disturb.Z));
+        static float Axis(float e, float w, float reach, float d)
+        {
+            if (!(reach > 0f)) return 0f;
+            float a = MathF.Max(MinShare * reach, Margin * reach - MathF.Abs(d));
+            float ae = MathF.Abs(e);
+            float wDes = MathF.Sign(e) * MathF.Min(MathF.Sqrt(2f * a * ae), LinearGain * ae);
+            return Math.Clamp((wDes - w) / RateTime, -reach, reach);
+        }
+    }
+    /// <summary>AttitudeAccel's tuning: rad/s of rate per rad of error near the target, the time it closes a rate
+    /// difference in (s; LinearGain x RateTime ~0.3: about critically damped), the share of the reach it brakes with, and
+    /// the least share it plans with when the disturbance takes nearly all of it.</summary>
+    public static float LinearGain = 6f, RateTime = 0.05f, Margin = 0.8f, MinShare = 0.1f;
+
     /// <summary>Each thruster's force f (0..cap) so that the torque is tauTarget and the net force stays gameF: minimises
     /// |sum a_i f_i - tauTarget|^2 + mu |sum d_i f_i - gameF|^2 (mu: the mean arm squared, so force and torque weigh
     /// alike) by accelerated projected gradient (FISTA) from f as given (the warm start), then KeepNetThrust. prev, y:

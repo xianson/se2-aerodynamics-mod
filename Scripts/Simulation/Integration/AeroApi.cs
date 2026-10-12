@@ -29,7 +29,7 @@ public static class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 4;   // (4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 5;   // (5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -271,12 +271,39 @@ public static class AeroApi
     {
         comLocal = default;
         var aero = DesignProbe.ServerAero(grid);
-        if (aero == null || !aero.Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp)) return false;
-        comLocal = mp.CenterOfMass; return true;
+        return aero != null && DesignProbe.CenterOfMass(aero, out comLocal);   // (the ship's: its subgrids too)
     }
 
     /// <summary>The transonic drag peak (x subsonic) a streamlining gives (ForceTable.WavePeak).</summary>
     public static float GetWavePeak(float streamlining) => ForceTable.WavePeak(streamlining);
+
+    /// <summary>(version 5) The sea-level speed along dirLocal where drag meets throttle (0..1) x the forward thrust; NaN no
+    /// aero or table; +infinity past 3000 m/s; 0 too little thrust. GetTopSpeed is this at throttle 1.</summary>
+    public static float GetTopSpeedAt(Keen.VRage.DCS.Components.Entity grid, Vector3 dirLocal, float throttle)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        return aero == null || dirLocal.LengthSquared() < 1e-8f ? float.NaN : DesignProbe.TopSpeed(aero, dirLocal, Math.Clamp(throttle, 0f, 1f));
+    }
+
+    /// <summary>(version 5) How well the ship holds its attitude travelling along dirLocal at speed (m/s, sea level): the
+    /// torque its gyros and thrusters can give over the air's torque at a 5 degree upset (DesignProbe.ControlRatio). Over
+    /// 1: it can hold it. NaN: no aero or table. (Design figures are for the whole ship: the grid and its subgrids.)</summary>
+    public static float GetControlRatio(Keen.VRage.DCS.Components.Entity grid, Vector3 dirLocal, float speed)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        return aero == null ? float.NaN : DesignProbe.ControlRatio(aero, dirLocal, speed);
+    }
+
+    /// <summary>(version 5) The ship's mass, kg - the grid and its subgrids (0: unknown).</summary>
+    public static float GetMass(Keen.VRage.DCS.Components.Entity grid) => DesignProbe.Mass(DesignProbe.ServerAero(grid));
+
+    /// <summary>(version 5) THE DRAG OVERLAY: the hull's faces (grid-local centres, normals, areas) and their pressure
+    /// coefficients for the grid travelling along travelLocal at this Mach - positive pushes in (drag at the front),
+    /// negative pulls (suction behind); shadowed windward faces and wing skins left out. At most max faces (spread over
+    /// the hull). Returns the count; 0 no aero, or its model not built yet.</summary>
+    public static int GetDesignPressures(Keen.VRage.DCS.Components.Entity grid, Vector3 travelLocal, float mach, List<Vector3> centresLocal,
+        List<Vector3> normalsLocal, List<float> areas, List<float> cp, int max)
+        => DesignProbe.Pressures(DesignProbe.ServerAero(grid), travelLocal, mach, centresLocal, normalsLocal, areas, cp, max);
 
     // ── the atmosphere (version 3) ──
 
