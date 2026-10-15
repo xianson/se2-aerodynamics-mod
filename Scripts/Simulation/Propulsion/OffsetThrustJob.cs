@@ -83,14 +83,19 @@ public static partial class OffsetThrustJob
     private static int _traceSkipCount = 0; // skip first N grids before locking
     private static bool _traceActive;
     // Net torque accumulators (written by Execute offset loop, read for NET log)
-    /// <summary>Total coupling torque from offset loop (all thrusters, current frame).</summary>
-    public static Vector3 NetOffsetCouplingTorque { get; private set; }
-    private static Vector3 _traceNetOffsetTorque;
+    // (per thread - 2026-10-15: plain statics, while every grid's sim job runs Execute in parallel: grid A read grid B's
+    //  coupling as its own and cancelled it, and wrote B's override thrust. A grid's Execute and its read of the result
+    //  run on one thread, one after the other: AeroSimJob)
+    /// <summary>Total coupling torque from offset loop (all thrusters, current frame) - of the grid this thread last ran.</summary>
+    public static Vector3 NetOffsetCouplingTorque { get => _netOffsetCoupling; private set => _netOffsetCoupling = value; }
+    [ThreadStatic] private static Vector3 _netOffsetCoupling;
+    [ThreadStatic] private static Vector3 _traceNetOffsetTorque;
     /// <summary>Coupling torque from gravity-hover-only thrust (constant bias).
     /// Apply phantom -HoverCouplingTorque to cancel it while preserving attitude differential.</summary>
-    public static Vector3 HoverCouplingTorque { get; private set; }
-    private static Vector3 _traceNetAttitudeTorque;
-    private static Vector3 _netOverrideThrust; // accumulated thrust from damping/attitude overrides (local frame, Newtons)
+    public static Vector3 HoverCouplingTorque { get => _hoverCoupling; private set => _hoverCoupling = value; }
+    [ThreadStatic] private static Vector3 _hoverCoupling;
+    [ThreadStatic] private static Vector3 _traceNetAttitudeTorque;
+    [ThreadStatic] private static Vector3 _netOverrideThrust; // accumulated thrust from damping/attitude overrides (local frame, Newtons)
 
     // (Per-thruster blending manages its own overrides — no tracking needed)
 
@@ -125,6 +130,7 @@ public static partial class OffsetThrustJob
         Vector3 aeroTorqueLocal = default,
         bool skipOffsetLoop = false)
     {
+        NetOffsetCouplingTorque = Vector3.Zero; HoverCouplingTorque = Vector3.Zero;   // (this grid's, even when it returns early)
         if (thrusters.Count == 0) return;
         if (!PhysicsHack.ThrusterAccessAvailable) return;
         long tcs = AeroCost.Start();
