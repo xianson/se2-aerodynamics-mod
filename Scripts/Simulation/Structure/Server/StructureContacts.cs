@@ -73,7 +73,9 @@ public partial class AeroGridComponent
     int _cSinceMove = int.MaxValue;
     /// <summary>The attitude control's extra force (world, N), applied after this grid's tick (ThrustTorque).</summary>
     internal Vector3 LastExtraForceWorld;
-    bool _cFault;
+    /// <summary>After a fault: seconds the contact loads stay off (2 s, doubling to 60 s a fault) - it latched them off for
+    /// the session (a wheel removed inside the support refresh's second threw once, 2026-10-15).</summary>
+    float _cFaultWait; int _cFaults;
     // the remainder (for locked plates, grid-local): its impulse over the window, its crushed peak
     Vector3 _cResJ, _cResPeak; float _cResT;
     // the supports: suspension blocks (their wheels) and magnetic plates, refreshed when the blocks change (at most 1/s)
@@ -166,15 +168,17 @@ public partial class AeroGridComponent
     }
 
     /// <summary>Every tick (simulation thread, before the physics step), the ship a player flies only. Never takes the game
-    /// down: a fault turns this grid's contact loads off (logged).</summary>
+    /// down: a fault turns this grid's contact loads off for a while (_cFaultWait; logged), the supports read again after.</summary>
     void AccumulateContacts(float dt, Vector3 airLocal)
     {
-        if (!StructureContactLoads.Enabled || _cFault || dt <= 0f) return;
+        if (!StructureContactLoads.Enabled || dt <= 0f) return;
+        if (_cFaultWait > 0f) { _cFaultWait -= dt; return; }
         try { AccumulateContactsCore(dt, airLocal); }
         catch (Exception e)
         {
-            _cFault = true; ClearContactWindow();
-            Log.Default?.Warning($"[AERO-STRUCT] grid {Entity?.DebugName}: contact loads off after a fault: {e.GetType().Name}: {e.Message} {e.StackTrace?.Split(System.Environment.NewLine)[0]}");
+            _cFaults++; _cFaultWait = MathF.Min(2f * (1 << Math.Min(_cFaults - 1, 5)), 60f);
+            _supportsVersion = -1; ClearContactWindow();   // (the supports read again on the retry: a removed wheel gone from them)
+            Log.Default?.Warning($"[AERO-STRUCT] grid {Entity?.DebugName}: contact loads off for {_cFaultWait:F0} s after a fault: {e.GetType().Name}: {e.Message} {e.StackTrace?.Split(System.Environment.NewLine)[0]}");
         }
     }
 
