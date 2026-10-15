@@ -305,21 +305,10 @@ public static partial class AeroSettings
             {
                 long now = System.Diagnostics.Stopwatch.GetTimestamp();
                 // client: written after an API change has settled (1 s), else read when edited by hand
-                long dirty = _clientDirtyAt;
+                long dirty = System.Threading.Interlocked.Read(ref _clientDirtyAt);
                 var client = new FileInfo(ClientPath);   // (whether it is there and when it was written: one look)
-                if (dirty != 0 && now - dirty > System.Diagnostics.Stopwatch.Frequency)
-                {
-                    _clientDirtyAt = 0;
-                    Directory.CreateDirectory(Folder);
-                    File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
-                    _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
-                }
-                else if (!client.Exists)
-                {
-                    Directory.CreateDirectory(Folder);
-                    File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
-                    _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
-                }
+                if (dirty != 0 && now - dirty > System.Diagnostics.Stopwatch.Frequency) WriteClient(dirty);
+                else if (!client.Exists) WriteClient(0);   // (0: a pending change stays marked)
                 else
                 {
                     var at = client.LastWriteTimeUtc;
@@ -337,6 +326,18 @@ public static partial class AeroSettings
             }
             catch (Exception e) { _fileFails++; FileWhy = $"{e.GetType().Name}: {e.Message}" + (_fileFails >= 3 ? " (files given up for this session)" : ""); }
         }
+    }
+
+    /// <summary>The client file written; the change marked at `dirty` (its time, read at the poll's start) cleared.</summary>
+    static void WriteClient(long dirty)
+    {
+        // (cleared only if still that mark - a Set since marked a later time, and the next poll writes it again: the clear
+        //  was unconditional, and a Set landing between its text being taken and the clear was left out of the file
+        //  until another change, 2026-10-15; the exchange is also a full fence, so the text below is read after it)
+        System.Threading.Interlocked.CompareExchange(ref _clientDirtyAt, 0, dirty);
+        Directory.CreateDirectory(Folder);
+        File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
+        _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
     }
 
     static string Commented(string text)

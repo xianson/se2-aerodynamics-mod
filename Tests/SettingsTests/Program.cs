@@ -19,7 +19,8 @@
 //    ("failed, off for the session") is a flag of its own (the Orbital Mod's ProxyAtmospheres, 2026-10-15).
 // 11. FILE POLL (2026-10-15, in a temp folder - never the player's): what the background poll reads is applied only on the
 //    next tick-thread Poll (setters touch tick-thread state); a forced poll applies at once; a world unload discards a
-//    host-file read still waiting.
+//    host-file read still waiting. A Set made while the client file is being written stays marked: the next poll writes
+//    it (it was cleared unconditionally and could miss the file).
 global using Keen.VRage.Library.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -378,6 +379,23 @@ static class Program
             TickPoll();
             Check(!AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm2) && hm2 == hmDef, "poll: a world unload discards a host-file read still waiting for a tick");
             carriers.SetValue(null, 0);
+            // a change made while the client file is written (after the poll took its mark) is not lost
+            var dirtyAt = typeof(AeroSettings).GetField("_clientDirtyAt", Priv);
+            var write = typeof(AeroSettings).GetMethod("WriteClient", Priv);
+            Check(AeroSettings.Set("Fx.Vapour", 0, out _), "poll: a client set");
+            long mark = (long)dirtyAt.GetValue(null);
+            Check(mark != 0, "poll: the set marks the client file for writing");
+            System.Threading.Thread.Sleep(2);   // (the next set's mark a later tick)
+            Check(AeroSettings.Set("Fx.Vapour", 1, out _), "poll: another client set, while the first is written");
+            write.Invoke(null, new object[] { mark });   // (the write of the first mark)
+            Check((long)dirtyAt.GetValue(null) != 0, "poll: a set during the write leaves the file marked");
+            dirtyAt.SetValue(null, 1L);   // (settled: the next poll writes)
+            PollFiles(); TickPoll();
+            Check((long)dirtyAt.GetValue(null) == 0 && File.ReadAllText(client).Contains(NL + "Fx.Vapour = true" + NL), "poll: the next poll writes the set made during the write");
+            Check(AeroSettings.Set("Fx.Vapour", 0, out _), "poll: a client set, not yet settled");
+            write.Invoke(null, new object[] { 0L });   // (the file missing: written, the mark taken was none)
+            Check((long)dirtyAt.GetValue(null) != 0, "poll: writing a missing file leaves a pending set marked");
+            dirtyAt.SetValue(null, 0L);
         }
         finally
         {
