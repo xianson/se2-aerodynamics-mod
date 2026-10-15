@@ -203,6 +203,9 @@ public partial class AeroGridComponent
             {
                 Log.Default?.Info($"[AERO] background rebuild failed ({task.Error?.Message}); rebuilding in one go");
                 _buildSurface.CellSize = _surface.CellSize = 0.25f; _buildSurface.CellOffset = _surface.CellOffset = 0f; _cellScale = 1;
+                // (the wing detector too - 2026-10-15: it kept the failed build's coarse cell, 0.5 m on a large grid, and read
+                //  the 0.25 m surface's cells at it: fallback wings at 2x span, 4x area)
+                if (_model.Detector is ConnectedComponentWingDetector fcc) { fcc.CellSize = 0.25f; fcc.CellOffset = 0f; }
             }
             else
             {
