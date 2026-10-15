@@ -81,7 +81,7 @@ public partial class AeroGridComponent
                 float dragN = MathF.Abs(fDotV);
                 float liftN = liftW.Length();
                 float ld = dragN > 1f ? liftN / dragN : 0f;
-                float weight = mass * 9.81f;
+                float weight = mass * aero.LastGravity;   // (the planet's own - 2026-10-15: a fixed 9.81 read L/W wrong off 1 g)
                 float lw = weight > 1f ? liftN / weight : 0f;
 
                 dd.AddText(textPos,

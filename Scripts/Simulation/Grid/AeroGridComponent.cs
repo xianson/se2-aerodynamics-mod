@@ -266,6 +266,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>In a planet's gravity (set by the job): a grid there may meet air soon, so it is built beforehand.</summary>
     internal bool InGravity;
+    /// <summary>The gravity here (m/s2), last simulation frame: the debug draw's lift-to-weight.</summary>
+    internal float LastGravity;
 
     /// <summary>Static grids (stations) never move: no aero.</summary>
     internal bool IsStatic => !Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) || mp.InvMass <= 0f;

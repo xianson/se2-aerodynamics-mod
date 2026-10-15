@@ -190,6 +190,7 @@ public partial class AeroGridComponent
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
         aero.InGravity = gravity.LengthSquared() > 1e-4f;
+        aero.LastGravity = gravity.Length();
         aero.GroundHeight = aero.IsServerScene ? PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity) : -1f;   // (rays in the server's world only)
         aero.GroundUpLocal = aero.InGravity ? -Vector3.Normalize(WorldTransform.TransformDirectionInv(gravity, wt)) : Vector3.Zero;
 
