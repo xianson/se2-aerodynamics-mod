@@ -138,6 +138,28 @@ static partial class Program
             catch (Exception ex) { threw = true; Console.WriteLine("      " + ex.GetType().Name + ": " + ex.Message); }
             Check(!threw && sZero == 0.4f, $"A30 force table along a zero / NaN direction: {(threw ? "threw" : "streamlining " + sZero + " (the fallback 0.4)")}");
         }
+        // A20: two solids touching only at a corner are both hull (only the larger was; the other culled as a cavity), and
+        // a sealed room inside a box is still a cavity.
+        {
+            int Classified(List<(Vector3I, Vector3I)> bx, out int cavity)
+            {
+                var g = new SnapshotGridAccessor(bx);
+                var surf = new SmoothSurfaceProvider();
+                surf.BeginBuild(g, 0.5f);
+                while (!surf.AddCellBatch(int.MaxValue)) { }
+                surf.FinalizeBuild();
+                var mc = new ManifoldClassifier(); mc.Classify(surf);
+                cavity = mc.CavityFaceCount; return mc.HullFaceCount;
+            }
+            var edge = new List<(Vector3I, Vector3I)> { (new Vector3I(0, 0, 0), new Vector3I(3, 3, 3)), (new Vector3I(4, 4, 4), new Vector3I(9, 9, 9)) };
+            int hull = Classified(edge, out int cav);
+            var room = new List<(Vector3I, Vector3I)>();
+            for (int x = 0; x < 6; x++) for (int y = 0; y < 6; y++) for (int z = 0; z < 6; z++)
+                if (x == 0 || x == 5 || y == 0 || y == 5 || z == 0 || z == 5) room.Add((new Vector3I(x, y, z), new Vector3I(x, y, z)));
+            int roomHull = Classified(room, out int roomCav);
+            Check(cav == 0 && hull == 6 * 16 + 6 * 36 && roomCav == 6 * 16 && roomHull == 6 * 36,
+                $"A20 hull: two solids touching at a corner {hull} hull / {cav} cavity faces (all {6 * 16 + 6 * 36} hull); a sealed room {roomHull} / {roomCav} (its {6 * 16} inner faces cavity)");
+        }
         return fails;
     }
 }
