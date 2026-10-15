@@ -249,7 +249,9 @@ public static class PhysicsHack
     /// Zero out the grid's gyroscope MaxTorque so game gyros don't compete.
     /// Uses Set&lt;MaxTorqueData&gt; via reflection.
     /// </summary>
-    private static float _savedMaxTorque = -1f;
+    /// (Per grid, 2026-10-15: one static float - the first grid ever zeroed, kept across world loads, never given back: the
+    ///  game keeps MaxTorque as a sum of gyro deltas and never recomputes it, so a zeroed grid kept 0 for good.)
+    private static readonly System.Collections.Generic.Dictionary<Keen.VRage.DCS.Accessors.DEntity, float> _savedMaxTorque = new();
 
 
     public static bool TryZeroGyroTorque(DEntityContext data)
@@ -258,12 +260,23 @@ public static class PhysicsHack
             return false;
         if (mt.MaxTorque == 0f)
             return true;
-        if (_savedMaxTorque < 0f)
-            _savedMaxTorque = mt.MaxTorque;
+        lock (_savedMaxTorque) _savedMaxTorque.TryAdd(data.Entity, mt.MaxTorque);
         float was = mt.MaxTorque;
         if (!TrySetGyroTorque(data, 0f, "zeroed"))
             return false;
         Log.Default?.Info($"[AERO] Physics: zeroed MaxTorque (was {was:F0})");
+        return true;
+    }
+
+    /// <summary>A grid's MaxTorque given back as TryZeroGyroTorque found it, plus whatever gyros changed since (the game
+    /// adds their deltas to the zero). False: not zeroed by us. (AeroGridComponent leaving its scene; a harness teardown.)</summary>
+    public static bool RestoreGyroTorque(DEntityContext data)
+    {
+        float saved;
+        lock (_savedMaxTorque) if (!_savedMaxTorque.Remove(data.Entity, out saved)) return false;
+        if (!SafeTryGet<MaxTorqueData>(data, out var mt)) return false;
+        if (!TrySetGyroTorque(data, mt.MaxTorque + saved, "restored")) return false;
+        Log.Default?.Info($"[AERO] Physics: restored MaxTorque ({mt.MaxTorque + saved:F0})");
         return true;
     }
 

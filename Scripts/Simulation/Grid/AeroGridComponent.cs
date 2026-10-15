@@ -229,6 +229,19 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>DEV (harness: aeroset AeroGridComponent.TestTurnPitch 10, then TestTurnGen n - a new n re-bases): a seated
     /// grid's target, as the reticle sets it, turned from its orientation at that moment. 0: the pilot's own.</summary>
     public static int TestTurnGen; public static float TestTurnPitch, TestTurnYaw, TestTurnRoll;
+    /// <summary>The sessions seen (weakly): a new one - a world loaded - sets the dev knobs above back to off. They survived
+    /// a reload and, non-zero, overwrote every seated grid's target each tick, 2026-10-15.</summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _devSessions = new();
+    static void DevResetOnNewSession(object session)
+    {
+        if (session == null) return;
+        lock (_devSessions)
+        {
+            if (_devSessions.TryGetValue(session, out _)) return;
+            _devSessions.Add(session, _devSessions);
+        }
+        TestTurnGen = 0; TestTurnPitch = TestTurnYaw = TestTurnRoll = 0f;
+    }
     private int _testTurnGen; private Quaternion _testTurnBase = Quaternion.Identity;
     /// <summary>The allocation's last step: the surfaces it gave inputs to, and how many at their limit.</summary>
     internal int _allocN, _allocSat;
@@ -323,6 +336,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnAddedToScene()
     {
         lock (Live) Live.Add(this);
+        DevResetOnNewSession(Entity?.GetSession());
         Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
         // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
         _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
@@ -370,6 +384,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         lock (Live) Live.Remove(this);
+        try { PhysicsHack.RestoreGyroTorque(Data); } catch { }   // (a harness test's zeroed gyros given back - rare: removal only)
         DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
