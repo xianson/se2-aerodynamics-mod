@@ -115,7 +115,10 @@ public static class AeroEntryFx
     // entry heats, weakens and scorches the hull as a real one. Asked of the Orbital mod's API (OrbitalApi.TryGetEntryState,
     // by reflection - mods compile apart: a typed delegate bound once, looked up again now and then until found).
     delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
-    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt;
+    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt; static int _orbitalStateFaults;
+    /// <summary>The wait (s) after the Orbital mod's call threw or did not fit, doubling a fault up to 300 s: a throwing
+    /// delegate was dropped with no wait - an assembly scan and a ~200 ms exception per grid every 0.25 s, 2026-10-15.</summary>
+    static long FaultWait() => (long)(Math.Min(10.0 * (1 << Math.Min(System.Threading.Interlocked.Increment(ref _orbitalStateFaults) - 1, 5)), 300.0) * System.Diagnostics.Stopwatch.Frequency);
     public static string EntryStateStatus = "not looked up";
 
     /// <summary>A grid's real re-entry state (the Orbital mod's): the true air velocity (world) and density. False: none.</summary>
@@ -138,8 +141,10 @@ public static class AeroEntryFx
                 if (m != null) mi = m;   // (the last loaded copy wins)
             }
             if (mi == null) { EntryStateStatus = "OrbitalApi.TryGetEntryState not found (no Orbital mod, or an older one)"; return false; }
+            // (the shape checked first: CreateDelegate throws on a mismatch - the same throw every 5 s, for good)
+            if (!mi.IsStatic || mi.ReturnType != typeof(bool)) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
             try { fn = (EntryStateFn)Delegate.CreateDelegate(typeof(EntryStateFn), mi); }
-            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; return false; }
+            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
             System.Threading.Volatile.Write(ref _orbitalState, fn);
             EntryStateStatus = "bound to OrbitalApi.TryGetEntryState";
         }
@@ -147,7 +152,12 @@ public static class AeroEntryFx
         {
             if (!fn(grid, out airWorld, out density)) return false;
         }
-        catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _orbitalState, null); return false; }
+        catch (Exception e)
+        {
+            EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name;
+            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, System.Diagnostics.Stopwatch.GetTimestamp() + FaultWait());   // (looked up again after the wait)
+            System.Threading.Volatile.Write(ref _orbitalState, null); return false;
+        }
         return density > 0f && float.IsFinite(density) && float.IsFinite(airWorld.X + airWorld.Y + airWorld.Z) && airWorld.LengthSquared() > 1f;
     }
 
