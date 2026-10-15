@@ -61,35 +61,9 @@ internal sealed partial class FlightField
     /// default cap would cut its reach); 0: none. LightAhead: where, as a fraction of the way from the hull to the shock.</summary>
     public static float Light = 16000f, LightAhead = 0.5f;
     public static float[] LightTint = { 1f, 1f, 1f };
-    private static readonly Guid LightEffect = new Guid("8a7994a9-ef54-5cef-909a-c86f27aa0f27");
-    private object _light, _lightParams;
     private Vector3 _lightAt;
-    private string _lightWhy;
 
-    // PBRTransparent, two-sided (as MapRingMesh)
-    private static readonly Guid LitState = new Guid("5c12f1bd-f4c8-4626-86b5-0778e0613762");
-    // (an unlit variant - its state in the deleted Assets/Plasma - drew flat grey: the lit state + the plasma's own light)
-    private Guid TransparentState => LitState;
-    // the meteor fire's main emitter (V3): an 8x8 animated flame atlas
-    private Guid _emitter = new Guid("7ad5b453-1c7e-41a6-b0be-43727eee6b3f");
-    // the atlas as the emitter plays it: its grid (columns x rows), the frames it uses (from First, Count of them) and
-    // their rate - an atlas often uses only part of its sheet (the meteor fire: frames 32-63 of 8 x 8, at 24 a second)
-    private int _cellsX = 8, _cellsY = 8, _first, _count = 64;
-    private float _fps = 24f;
-    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
-    private int _shownFrame = -1;
-
-    private long _grid;
     private Vector3 _nose, _axis;
-    private float _radius;
-    private bool _on;
-    // the aero mod's plasma materials (tools/particles/gen_plasma_tex.py): textures laid out as the transparent shader
-    // reads them; a 4 x 2 atlas of Fire_A frames 9..16
-    private static readonly Guid ShockMat = new Guid("77d70b1d-f064-5102-be1d-9dd028f505b7"), SkirtMat = new Guid("4eb8f117-0131-5789-9e83-08aabe263a56");
-    private const int PlasmaAtlasFirst = 9;
-    // the safe-zone (unlit, additive) plasma material and its state; the colours: the shock, then the three skirts
-    private static readonly Guid GlowMat = new Guid("5b9374a6-ef3f-5cbc-9720-e41d7fb2aa21"), GlowState = new Guid("6566e25c-7571-4f2b-b74b-3298226a80e6");
-    private Definition _matGlow;
     /// <summary>Mode 4, calibration: eight flat patches beside the ship, each one uniform (every corner on the same
     /// texel, CalibUV, of the glow atlas), white at CalibLevels (sRGB) - a screenshot gives the game's curve.</summary>
     public static float[] CalibLevels = { 1f, 0.7f, 0.5f, 0.35f, 0.25f, 0.18f, 0.12f, 0.08f };
@@ -108,31 +82,6 @@ internal sealed partial class FlightField
     /// <summary>Saturation (live): each colour pushed from its grey (linear) by this - the game's tone map pulls bright
     /// colours to white, so they need more than the prototype's.</summary>
     public static float Sat = 1f;
-    // one model entity per slot (a tint is per model): 0 the shock (or modes 0-2), 1-3 the skirts
-    private const int Slots = 8;
-    private readonly object[] _roots = new object[Slots], _models = new object[Slots], _runtimes = new object[Slots];
-    private readonly bool[] _colored = new bool[Slots];
-    private object _model => _models[0];
-    private int _frame, _tick;
-
-    /// <summary>Any flow axis, "x,y,z" (grid space, normalised): e.g. 30 degrees nose up on a +x ship "0.866,-0.5,0".</summary>
-    private Vector3 ParseAxis(string s)
-    {
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
-        var p = s.Split(',');
-        if (p.Length != 3) return -Vector3.UnitZ;
-        var v = new Vector3(float.Parse(p[0], ci), float.Parse(p[1], ci), float.Parse(p[2], ci));
-        return v.LengthSquared() > 1e-6f ? Vector3.Normalize(v) : -Vector3.UnitZ;
-    }
-
-    private Type _tRmd, _tVs0, _tVs1, _tSub, _tRuntimeModel;
-    private object _cullNone;
-    private MethodInfo _createRuntimeModel, _toHandle, _add0, _add1;
-
-    private object _vs0, _vs1;
-    private Buffer<int> _idx;
-    private readonly object[] _a1 = new object[1], _a2 = new object[2];
-    private int _n;
 
     private float _shapeR;
 
@@ -179,18 +128,10 @@ internal sealed partial class FlightField
             && _dilate == o._dilate && _rimSmooth == o._rimSmooth && Same(_chordGap, o._chordGap);
     }
 
-    private Type _tSafeZone;
-
-    private Type _tColoring;
-
     private const BindingFlags AnyInst = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    private bool _lightSet;
 
     /// <summary>The client's copy of a (server) grid - the one with a render component: same name, nearest.</summary>
     private Keen.VRage.DCS.Components.Entity _client;
-    private double _buildMs;
-
-    private Keen.VRage.DCS.Components.Entity _fxFor;
 
     // ── Mode 5: the plasma as particles over the shock (the aero mod's PlasmaField effects, tools/particles/gen_plasma_field.py)
 
@@ -212,8 +153,6 @@ internal sealed partial class FlightField
     /// spray, behind it the long one.</summary>
     public static float SegLen = 1.5f, LineScale = 3f;   // (SegLen: the spacing of the emitters along the outline; LineScale 20 -> 3: very tiny sparks - the user, 2026-10-09)
     public static int LineSmooth = 2;
-    private static readonly Guid LineShockViolet = new Guid("ccbf284f-50ca-59f8-8898-c870b3122f31"), LineTailViolet = new Guid("3b24bc6d-83a9-5468-87ef-df83ce644f98");
-    private static readonly Guid LineShockOrange = new Guid("a4274abe-a27c-5279-ad54-c6ae558dee2a"), LineTailOrange = new Guid("3c4c31a7-66f0-5222-9cbf-c107360be119");
     public static float SurfaceLift = 0.01f;   // (was 0.05: tighter to the skin)
     /// <summary>Lights over the windward surface, every LightGrid cells (0: the one light at the nose), each LightEach
     /// strong, LightLift x R off the hull; at most LightMax of them.</summary>
@@ -248,8 +187,6 @@ internal sealed partial class FlightField
     /// 1-5 (emissivity 3000 / 1000 / 330 / 165 / 80 at birth: the aero mod's PlasmaField_*Matched*) - the spot and the sparks balanced.</summary>
     public static int SparkLevel = 4;
     public static readonly float[] PlasmaColor = { 1f, 0.55f, 0.25f };   // (sRGB; = PLASMA in gen_plasma_field.py)
-    private static readonly Guid[] ShockMatched = { new Guid("0066f51e-7ba2-563b-9fc5-f1b275496dea"), new Guid("d3c5ace4-ad42-51a6-8952-18046f197789"), new Guid("e15e192a-3b2c-5ada-ae5c-cb2c2116ad04"), new Guid("1feed661-b4df-5371-a7e7-0fa0aeaf1719"), new Guid("0c8b0d2b-5098-504a-bc02-6ccf4c2f96e3") };
-    private static readonly Guid[] TailMatched = { new Guid("5b840f1b-d19b-5605-8afe-750473a56d05"), new Guid("f3cd3f03-31f6-5386-9777-53b7a1801b7b"), new Guid("89c9fe35-49d7-5f00-98da-61221a71dcd4"), new Guid("7eb50314-40d3-5d02-9981-f4df249559d3"), new Guid("171b20ba-98ab-572c-8a60-d9d61dc0408b") };
     /// <summary>Sparks per emitter, % of the authored rate: 100 / 75 / 50 / 25 (the emitters as dense; fewer sparks
     /// each - gen_plasma_field.py's rate variants, Guid 5d0c7a3e-000K-4LLL-8RRR-000000000001).</summary>
     public static int SparkRate = 75;
@@ -284,8 +221,6 @@ internal sealed partial class FlightField
     private float[] SparkBirth => SparkColor == 3 ? DeepColor : PlasmaColor;
     private Guid ShockSparks => SparkColor == 3 ? RateGuid(3) : SparkColor == 2 ? RateGuid(1) : SparkColor == 1 ? ShockSparksViolet : ShockSparksOrange;
     private Guid TailSparks => SparkColor == 3 ? RateGuid(4) : SparkColor == 2 ? RateGuid(2) : SparkColor == 1 ? TailSparksViolet : TailSparksOrange;
-    private Guid ShockSparksOld => SparkColor == 2 ? ShockMatched[Math.Clamp(SparkLevel, 1, 5) - 1] : SparkColor == 1 ? ShockSparksViolet : ShockSparksOrange;
-    private Guid TailSparksOld => SparkColor == 2 ? TailMatched[Math.Clamp(SparkLevel, 1, 5) - 1] : SparkColor == 1 ? TailSparksViolet : TailSparksOrange;
     private readonly List<object> _puffs = new List<object>();
     // (the effect handle's methods - _setParams, _fixTime, declared in FlightFieldHost - looked up once, not by name per spawn)
     private string _puffWhy;
@@ -597,7 +532,7 @@ internal sealed partial class FlightField
     /// lift from the aero mod (its force across the travel), or LiftTest (along the grid's up across the flow) when > 0 -
     /// a held test grid has no real air, so no aero lift. Placed again when it changes much.</summary>
     public static float LiftSens = 1.5f, LiftTest;
-    private Vector3 _liftDir; private float _liftCoef, _liftUsed = -1f;
+    private Vector3 _liftDir; private float _liftCoef;
     public static float SnapRadius = 2f, SnapLift = 0.05f, VapourSpawn = 0.12f;   // (VapourEdgeScale 1.5 -> 0.75, VapourSpawn 0.3 -> 0.12: "way tighter" - the user, 2026-10-09)
     /// <summary>Every spark held on its emitter's spray direction, every frame (the instance's VelocityDirection: the GPU
     /// re-applies it - ParticleSimulation.hlsl); off: the emitter's cone and speed spread show.</summary>
@@ -758,65 +693,23 @@ internal sealed partial class FlightField
     private int _sub; private bool _noStop; private Vector3 _lastF;
     private float _entryS, _spotMul = 1f, _spotUsed = -1f;
     private readonly List<(object h, float w)> _plasma = new List<(object, float)>();
-    private MethodInfo _entryStrength; private bool _entryLooked;
     public static float TipMinSpeed = 60f, TipBase = 0.3f, TipLiftGain = 0.8f, TipMachBoost = 0.5f;   // (a floor: at 0 the trails came out sparse and dotted - read as separate pieces)   // (from lift only, and from 60 m/s: a ship cruising at 44 m/s drew three fat trails)
     public static float TipLenBase = 20f, TipLenPerMs = 0.25f, TipLenMax = 150f, TipRespawn = 1.0f;   // (respawned only when the speed doubles or halves: at 25 % the trails vanished and regrew every few seconds)
     private float _speed, _tipSpeedUsed = -1f;
-    /// <summary>The Tip effect's own trail length at VelocityMultiplier 1: 4 m/s x TipScale (EmitterScaleMultiplier scales
-    /// local speeds) x 5 s life.</summary>
-    private float TipLenAtOne => 4f * TipScale * 5f;
     private static readonly Guid VapourTip = new Guid("5d0c7a3e-0107-4000-8000-000000000001");
     private float _tipI;
     private static readonly Guid VapourConeSpray = new Guid("5d0c7a3e-0106-4000-8000-000000000001");
     public static float ConeStation = 0.5f, ConeMargin = 1.5f, ConeSpacing = 1.2f, ConeFlare = 0.35f, ConeEmitScale = 3f, ConeSpeed = 3f;
-    private static readonly Guid VapourCone = new Guid("5d0c7a3e-0101-4000-8000-000000000001"), VapourEdge = new Guid("5d0c7a3e-0102-4000-8000-000000000001");
+    private static readonly Guid VapourEdge = new Guid("5d0c7a3e-0102-4000-8000-000000000001");
     private float _chordShift;
     private readonly List<(object h, float w, int kind)> _vapour = new List<(object, float, int)>();   // (kind 0 edge, 1 cone, 2 tip)
     private float _mach, _rho, _coneI, _edgeI;
     private bool _flowFound;
     private long _flowAt;
     private string _vapourStatus = "";
-    private MethodInfo _tryGetFlow;
-    private string _flowWhy;
 
     private float Smooth(float a, float b, float x) { float t = Math.Clamp((x - a) / Math.Max(1e-4f, b - a), 0f, 1f); return t * t * (3f - 2f * t); }
     private float Band(float[] k, float m) => Smooth(k[0], k[1], m) * (1f - Smooth(k[2], k[3], m));
-
-    /// <summary>Mode 6's field: the cone at the widest station, the edge sheets along the outline half a chord back.</summary>
-    private void SpawnVapour(Vector3[,] P3, Vector3 f, float R, int N, List<Vector3> pts)
-    {
-        StopPuffs();
-        var turn = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f);
-        // the middle across the flow, and the widest station along it (the 1 m slice with the most hull, ~ the wing)
-        Vector3 mid = Vector3.Zero; foreach (var q in pts) mid += q - f * Vector3.Dot(q, f); mid /= Math.Max(1, pts.Count);
-        var slices = new Dictionary<int, int>(); float rMax = 0f;
-        foreach (var q in pts)
-        {
-            int k = (int)MathF.Floor(Vector3.Dot(q, f));
-            slices[k] = slices.TryGetValue(k, out int c) ? c + 1 : 1;
-            Vector3 rad = q - f * Vector3.Dot(q, f) - mid; rMax = Math.Max(rMax, rad.Length());
-        }
-        int best = 0, bestN = -1; foreach (var kv in slices) if (kv.Value > bestN) { bestN = kv.Value; best = kv.Key; }
-        Vector3 conePos = mid + f * (best + 0.5f);
-        float coneR = Math.Max(2f, rMax * ConeScale);
-        if (ConeLoop > 0) { ConeLoopEmitters(P3, f, N, pts); goto edges; }
-        VapourEffect(ConeVariant == 1 ? new Guid("5d0c7a3e-0103-4000-8000-000000000001") : ConeVariant == 2 ? new Guid("5d0c7a3e-0104-4000-8000-000000000001") : VapourCone,
-                     conePos, turn, coneR, 1f, true);
-        edges:
-        // the edge sheets: the reentry outline, half a chord back, weighted by the local drag
-        if (Weighted)
-        {
-            ChunkDrag(f);
-            _weightMax = 1e-6f;
-            for (int i = 0; i <= N; i++) for (int j = 0; j <= N; j++) if (_hullHas[i, j]) _weightMax = Math.Max(_weightMax, RawWeight(_hullSurf[i, j], f));
-        }
-        _flow = f;
-        _stagMid = mid;
-        _chordShift = ChordShift;
-        try { SpawnLines(P3, f, R, N, turn); }
-        finally { _chordShift = 0f; }
-        _vapourStatus = ConeLoop > 0 ? _vapourStatus : $"vapour placed: cone r {coneR:F1} m at station {best}";
-    }
 
     /// <summary>The cone as a loop: the frontal silhouette (or its convex hull) at one station along the hull, pushed out
     /// from the fuselage axis, an emitter every ConeSpacing metres spraying outward-and-back.</summary>
@@ -925,20 +818,7 @@ internal sealed partial class FlightField
         _vapourStatus = $"vapour placed: cone loop {(ConeLoop == 2 ? "hull" : "silhouette")} {placed} emitters at {ConeStation:P0} of {zMax - zMin:F0} m, axis chord {bestChord:F1} m";
     }
 
-    private MethodInfo _wingTips; private bool _wingTipsLooked;
-    private readonly List<Vector3> _tipPts = new List<Vector3>(), _tipNs = new List<Vector3>();
     public static string TipWhy = "";
-
-    /// <summary>Only the tip lines again (their length is fixed at spawn): the old ones disposed, new ones placed.</summary>
-    private void RespawnTips()
-    {
-        for (int i = _vapour.Count - 1; i >= 0; i--)
-        {
-            if (_vapour[i].kind != 2) continue;
-            var h = _vapour[i].h; _vapour.RemoveAt(i); _puffs.Remove(h); Park(h);
-        }
-        if (_P3 != null) WingtipLines(_lastF, _P3.GetLength(0) - 1, Vector3.Zero);
-    }
 
     /// <summary>Wingtip lines: outline points (the frontal silhouette) furthest from the fuselage axis locally (a maximum over
     /// +-6 neighbours) and at least TipMinFrac of the farthest; each at its cell's rearmost hull point (the trailing edge).</summary>
@@ -1159,13 +1039,4 @@ internal sealed partial class FlightField
         }
         catch (Exception e) { _puffWhy = "set: " + Inner(e); }
     }
-
-    private void SetField(object boxed, string name, object value)
-    {
-        for (Type t = boxed.GetType(); t != null; t = t.BaseType)
-        {
-            var f = t.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            if (f != null) { f.SetValue(boxed, value); return; }
-        }
-        throw new MissingFieldException(boxed.GetType().Name, name);
-    }}
+}

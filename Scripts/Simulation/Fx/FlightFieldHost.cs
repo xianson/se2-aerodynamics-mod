@@ -44,7 +44,7 @@ internal sealed partial class FlightField
     /// <summary>Strength easing: up over RiseTau, down over FallTau (s). The flow axis over AxisTau.</summary>
     public static float RiseTau = 0.3f, FallTau = 1.5f, AxisTau = 0.3f;
     private long _easeAt; private Vector3 _axisSm;
-    private float _coneSm, _edgeSm, _tipSm, _spotAt;
+    private float _coneSm, _edgeSm, _tipSm;
     static float Ease(float cur, float target, float dt, float fall = -1f)
     {
         if (dt <= 0f) return target;
@@ -814,59 +814,6 @@ internal sealed partial class FlightField
         if (_chunkDrag.Count == 0) _dragWhy = "no windward chunks";
     }
 
-    /// <summary>One tip line at each of the aero mod's wing tips (trailing edge), weighted by how much the wing lifts along
-    /// the lift (|normal . lift|: a fin at zero sideslip makes no tip vortex); length from airspeed. -1: no wings.</summary>
-    private int AeroWingTips(Vector3 f)
-    {
-        var e = _server?.Entity;
-        if (e == null) { TipWhy = "no grid"; return 0; }
-        // one set per ship: only its main grid draws them, from the wings of every grid of the ship (in this grid's frame);
-        // no wings, no trails (the outline's jutting corners drew trails off any hull - a sub-grid, a box)
-        if (!_server.FxTipOwner) { TipWhy = "not the ship's main grid"; return 0; }
-        _tipPts.Clear(); _tipNs.Clear();
-        var wtO = e.Data.GetWorldTransform();
-        var gp = new List<Vector3>(); var gn = new List<Vector3>();
-        foreach (var m in _server.FxGroup)
-        {
-            var me = m?.Entity; if (me == null) continue;
-            if (AeroEntryFx.WingTips(me, gp, gn) == 0) continue;
-            var wtM = me.Data.GetWorldTransform();
-            for (int k = 0; k < gp.Count; k++)
-            {
-                Vector3D w = WorldTransform.Transform(new Vector3D(gp[k].X, gp[k].Y, gp[k].Z), wtM);
-                Vector3D l = WorldTransform.TransformInv(w, wtO);
-                _tipPts.Add(new Vector3((float)l.X, (float)l.Y, (float)l.Z));
-                _tipNs.Add(WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(gn[k], wtM), wtO));
-            }
-        }
-        int n = _tipPts.Count;
-        if (n == 0) { TipWhy = "no wings"; return 0; }
-        Vector3 L = LiftTest > 0f ? Vector3.UnitY - f * Vector3.Dot(Vector3.UnitY, f) : _liftDir;
-        bool haveL = L.LengthSquared() > 1e-6f; if (haveL) L = Vector3.Normalize(L);
-        var q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f);
-        float spd = MachOverride > 0f ? MachOverride * 340f : _speed;
-        _tipSpeedUsed = Math.Max(1f, spd);
-        float len = Math.Clamp(TipLenBase + TipLenPerMs * spd, 5f, TipLenMax);
-        // (world-space particles: the trail is laid in the air by the ship's own motion - no push backwards, which spread it
-        //  into blobs)
-        float vm = 0.01f;
-        var cand = new List<int>();
-        for (int i = 0; i < n; i++)
-        {
-            float w = haveL ? Math.Clamp(MathF.Abs(Vector3.Dot(_tipNs[i], L)), 0f, 1f) : 1f;
-            if (w >= 0.2f) cand.Add(i);
-        }
-        int placed = 0;
-        foreach (int i in Extremes(cand, j => _tipPts[j], f))
-        {
-            float w = haveL ? Math.Clamp(MathF.Abs(Vector3.Dot(_tipNs[i], L)), 0f, 1f) : 1f;
-            VapourEffect(VapourTip, _tipPts[i], q, TipScale, w, false, vm, true);
-            placed++;
-        }
-        TipWhy = $"{placed}/{n} wing tips (the extremes), {len:F0} m at {spd:F0} m/s";
-        return placed;
-    }
-
     /// <summary>
     /// The tip trails kept: at most two along each of the ship's axes across the airflow - the point furthest out in + and the
     /// one furthest out in - (the user, 2026-10-07: a trail from every jutting corner was far too many). Indices into the
@@ -1132,13 +1079,13 @@ internal sealed partial class FlightField
             _spot = _createSpot.Invoke(_contracts, args);
             RecSpotMade++;
             _spotWhy = null;
-            _spotCone = cone; _spotRgb = new Vector3(lr, lg, lb); _spotSetS = _spotMul;   // (its brightness changed in place from here: SpotIntensity)
+            _spotSetS = _spotMul;
         }
         catch (Exception e) { _spotWhy = "spot: " + Inner(e); StopSpot(); }
     }
 
     // ── the spot's aim: SpotDist x R upwind of the hull's front along the flow f, pointing down it (grid-local) ──
-    private Vector3 _spotPos, _spotGoalAt; private Quaternion _spotQ = Quaternion.Identity, _spotGoalQ = Quaternion.Identity; private long _spotEase;
+    private Vector3 _spotPos; private Quaternion _spotQ = Quaternion.Identity; private long _spotEase;
     /// <summary>How fast the light follows a new aim (s).</summary>
     public static float SpotAimTau = 0f;
     /// <summary>How far upwind of the front the light sits: SpotDist x R at full strength, further as the entry weakens -
@@ -1202,30 +1149,7 @@ internal sealed partial class FlightField
     }
 
     // ── the spot light's brightness, changed IN PLACE (ISpotLightEntity.SetParameters: intensity, cone, cookie, flare) ──
-    private float _spotCone; private Vector3 _spotRgb; private float _spotSetS = -1f;
-    private static MethodInfo _spotSetParams;
-    private void SpotIntensity(float strength)
-    {
-        if (_spot == null) return;
-        try
-        {
-            if (_spotSetParams == null)
-                foreach (var m in _spot.GetType().GetMethods(AnyInst))
-                    if (m.Name.EndsWith("SetParameters") && m.GetParameters().Length == 4) { _spotSetParams = m; break; }
-            if (_spotSetParams == null) { _spotWhy = "no SetParameters"; return; }
-            var ps = _spotSetParams.GetParameters();
-            float sc = Spot * strength;
-            var args = new object[]
-            {
-                new ColorLinear(_spotRgb.X * sc, _spotRgb.Y * sc, _spotRgb.Z * sc, 1f), _spotCone,
-                Activator.CreateInstance(ps[2].ParameterType), null,
-            };
-            _spotSetParams.Invoke(_spot, args);
-            _spotSetS = strength; _spotUsed = strength;
-        }
-        catch (Exception e) { _spotWhy = "spot set: " + Inner(e); }
-    }
-
+    private float _spotSetS = -1f;
     private void StopSpot()
     {
         _spotSetS = -1f;
