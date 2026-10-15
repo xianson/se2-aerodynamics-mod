@@ -29,7 +29,7 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   heating with skin / core temperatures, heat-weakened structure and burn damage, and scorch decals where the hull got
   hot. A railed re-entry in the Orbital mod heats the hull as a real one.
 - **Structure.** On the grid a player flies: air, thrust, gyro and contact loads spread over the blocks and solved;
-  overloaded sections wear, fatigue (from tension; compression tires far slower), fail and split; worn joints bend
+  overloaded sections wear, fatigue (from tension, and from compression where thin walls buckle), fail and split; worn joints bend
   permanently and dent. A failing section cracks across over a fraction of a second - the pulled side tears first, the
   pushed side crumples and goes last as a hinge, along a jagged line - and a large piece peels off on several springs
   that let go in the crack's order. Creaks, groans and cockpit shake follow the load; smoke at torn edges. The flight

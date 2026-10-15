@@ -49,34 +49,39 @@ public partial class AeroGridComponent
             for (int b = 0; b < n; b++) { ents[b] = blocks != null && b < blocks.Count ? blocks[b]?.Entity : null; cen[b] = st.Center[b]; mass[b] = st.Mass[b]; }
             lock (s.Lock) { s.LayoutOf = st; s.Layout++; s.BlockCount = n; s.Blocks = ents; s.Centres = cen; s.Mass = mass; s.TempsExternal = false; }
         }
-        if (now >= s.WatchUntil) return;
-        // the blocks: each one's worst joint (a contact on it, or its own section's middle), health, temperatures, heat in, loads
-        var u = s.UtilB = ApiGridState.Fit(s.UtilB, n);
-        if (st.BlockUtil != null && st.BlockUtil.Length >= n) Array.Copy(st.BlockUtil, u, n); else Array.Clear(u, 0, n);
-        if (st.ContactUtil != null)
-            for (int k = 0; k < st.ContactCount; k++)
-            {
-                float cu = st.ContactUtil[k];
-                st.ContactBlocks(k, out int a, out int b);
-                if (a >= 0 && a < n && cu > u[a]) u[a] = cu;
-                if (b >= 0 && b < n && cu > u[b]) u[b] = cu;
-            }
-        s.HealthB = ApiGridState.Fit(s.HealthB, n); Array.Copy(st.Integrity, s.HealthB, n);
-        s.TempKB = ApiGridState.Fit(s.TempKB, n); Array.Copy(st.TempK, s.TempKB, n);
-        s.SkinKB = ApiGridState.Fit(s.SkinKB, n);
-        var heat = s.HeatWB = ApiGridState.Fit(s.HeatWB, n);
-        Array.Clear(heat, 0, n);
+        // (each record while its own reader reads it - the block state, the heat faces: a flight-state reader alone kept all
+        //  this running every evaluation, 2026-10-15 review)
         bool hhOk = hh != null && hh.BlockCount == n;
-        if (hhOk)
+        bool blocksOn = s.On(ApiGridState.RecStruct, now), faces = hhOk && s.On(ApiGridState.RecFaces, now);
+        if (!blocksOn && !faces) return;
+        if (blocksOn)
         {
-            Array.Copy(hh.BlockSkinMaxK, s.SkinKB, n);
-            for (int i = 0; i < hh.FaceCount; i++) { int b = hh.FaceBlock[i]; if (b >= 0 && b < n) heat[b] += hh.FaceHeatW[i]; }
+            // the blocks: each one's worst joint (a contact on it, or its own section's middle), health, temperatures, heat in, loads
+            var u = s.UtilB = ApiGridState.Fit(s.UtilB, n);
+            if (st.BlockUtil != null && st.BlockUtil.Length >= n) Array.Copy(st.BlockUtil, u, n); else Array.Clear(u, 0, n);
+            if (st.ContactUtil != null)
+                for (int k = 0; k < st.ContactCount; k++)
+                {
+                    float cu = st.ContactUtil[k];
+                    st.ContactBlocks(k, out int a, out int b);
+                    if (a >= 0 && a < n && cu > u[a]) u[a] = cu;
+                    if (b >= 0 && b < n && cu > u[b]) u[b] = cu;
+                }
+            s.HealthB = ApiGridState.Fit(s.HealthB, n); Array.Copy(st.Integrity, s.HealthB, n);
+            s.TempKB = ApiGridState.Fit(s.TempKB, n); Array.Copy(st.TempK, s.TempKB, n);
+            s.SkinKB = ApiGridState.Fit(s.SkinKB, n);
+            var heat = s.HeatWB = ApiGridState.Fit(s.HeatWB, n);
+            Array.Clear(heat, 0, n);
+            if (hhOk)
+            {
+                Array.Copy(hh.BlockSkinMaxK, s.SkinKB, n);
+                for (int i = 0; i < hh.FaceCount; i++) { int b = hh.FaceBlock[i]; if (b >= 0 && b < n) heat[b] += hh.FaceHeatW[i]; }
+            }
+            else Array.Copy(st.TempK, s.SkinKB, n);
+            s.LoadFB = ApiGridState.Fit(s.LoadFB, n); Array.Copy(st.ExtForce, s.LoadFB, n);
+            s.LoadMB = ApiGridState.Fit(s.LoadMB, n); Array.Copy(st.ExtMoment, s.LoadMB, n);
         }
-        else Array.Copy(st.TempK, s.SkinKB, n);
-        s.LoadFB = ApiGridState.Fit(s.LoadFB, n); Array.Copy(st.ExtForce, s.LoadFB, n);
-        s.LoadMB = ApiGridState.Fit(s.LoadMB, n); Array.Copy(st.ExtMoment, s.LoadMB, n);
         // the faces, while watched for them (their geometry once per layout)
-        bool faces = hhOk && now < s.FacesUntil;
         int nf = faces ? hh.FaceCount : 0;
         if (faces)
         {
@@ -95,14 +100,19 @@ public partial class AeroGridComponent
                 if (fp != null) { s.FacePos = fp; s.FaceNrm = fn; s.FaceArea = fa; s.FaceBlock = fb; s.FaceLayout = s.Layout; }
                 s.FaceCount = nf; s.RecoveryK = hh.LastRecoveryK; s.FaceEvaluation = s.Evaluation + 1;
                 ApiGridState.Swap(ref s.FaceHeatW, ref s.FaceHeatWB); ApiGridState.Swap(ref s.FaceSkinK, ref s.FaceSkinKB); ApiGridState.Swap(ref s.FaceFilm, ref s.FaceFilmB);
+                s.Held[ApiGridState.RecFaces] = true;
             }
         }
         lock (s.Lock)
         {
-            ApiGridState.Swap(ref s.Util, ref s.UtilB); ApiGridState.Swap(ref s.Health, ref s.HealthB); ApiGridState.Swap(ref s.TempK, ref s.TempKB);
-            ApiGridState.Swap(ref s.SkinK, ref s.SkinKB); ApiGridState.Swap(ref s.HeatW, ref s.HeatWB);
-            ApiGridState.Swap(ref s.LoadF, ref s.LoadFB); ApiGridState.Swap(ref s.LoadM, ref s.LoadMB);
-            s.Evaluation++; s.StateLayout = s.Layout;
+            if (blocksOn)
+            {
+                ApiGridState.Swap(ref s.Util, ref s.UtilB); ApiGridState.Swap(ref s.Health, ref s.HealthB); ApiGridState.Swap(ref s.TempK, ref s.TempKB);
+                ApiGridState.Swap(ref s.SkinK, ref s.SkinKB); ApiGridState.Swap(ref s.HeatW, ref s.HeatWB);
+                ApiGridState.Swap(ref s.LoadF, ref s.LoadFB); ApiGridState.Swap(ref s.LoadM, ref s.LoadMB);
+                s.StateLayout = s.Layout; s.Held[ApiGridState.RecStruct] = true;
+            }
+            s.Evaluation++;
         }
     }
 

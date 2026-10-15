@@ -196,6 +196,31 @@ static class Program
             Check(!md.DescendantNodes().OfType<TryStatementSyntax>().Any() && !body.Contains(live) && (name.StartsWith("GetAero") ? body.Contains("lock (reg.SyncRoot)") : true),
                 $"{name}: reads a published copy or under the list's lock, never the live list in a try");
         }
+        // (2026-10-15 review) GetSurface fills the caller's lists after the grid's API lock, never inside it: 4 x 10^5 List.Adds
+        // with LOH growth held the lock the grid's simulation tick waits on
+        {
+            var m = members.FirstOrDefault(x => x.name == "GetSurface");
+            var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
+            Check(locks.Count > 0 && locks.All(l => !l.Statement.ToString().Contains(".Add(")), "GetSurface: no List.Add under the grid's API lock (copied out, added after)");
+        }
+        // (2026-10-15 review) SetBlockTemperatures checks the caller's arrays before the grid's API lock, not under it (an O(blocks)
+        // scan held the lock the structure's evaluation takes)
+        {
+            var m = members.FirstOrDefault(x => x.name == "SetBlockTemperatures");
+            var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
+            Check(locks.Count == 1 && !locks[0].Statement.DescendantNodes().OfType<ForStatementSyntax>().Any() && m.node.DescendantNodes().OfType<ForStatementSyntax>().Any(),
+                "SetBlockTemperatures: validates before the lock, only copies under it");
+        }
+        // (2026-10-15 review) each reader pushes on only the record it reads (ApiGridState.Watch.cs): one window for all kept a
+        // flight-state reader's grid publishing its whole structure every evaluation, and a structure reader the tick record
+        foreach (var (name, rec) in new[] { ("GetFlightState", "RecFlight"), ("GetControlSurfaces", "RecFlight"), ("GetThrusterForces", "RecFlight"),
+            ("GetSurface", "RecHull"), ("TryGetStructureCounters", "RecStruct"), ("GetStructureBlocks", "RecStruct"), ("GetStructureBlockState", "RecStruct"),
+            ("GetStructureBlockLoads", "RecStruct"), ("SetBlockTemperatures", "RecStruct"), ("GetHeatFaces", "RecFaces"), ("GetHeatFaceState", "RecFaces") })
+        {
+            var m = members.FirstOrDefault(x => x.name == name);
+            var watches = m.node?.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(i => i.Expression.ToString() == "Watch").Select(i => i.ArgumentList.Arguments.Last().ToString()).ToList() ?? new();
+            Check(watches.Count == 1 && watches[0] == "ApiGridState." + rec, $"{name}: watches {rec} only ({string.Join(", ", watches)})");
+        }
         // a new member says its version in its summary
         foreach (var m in members.Where(x => !Frozen.ContainsKey(x.name)))
         {
@@ -217,6 +242,24 @@ static class Program
             bool ok = true; for (long s = r.First; s < r.NextUnlocked; s++) ok &= r.At(s) == 100 + s;
             Check(ok, "ring: each kept item at its number");
         }
+        // (2026-10-15 review) cleared on a world's end / a reader gone quiet, skipped while nobody reads: the numbers go on
+        var o = new SeqRing<object>(4);
+        for (int i = 0; i < 3; i++) o.Add(new object());
+        o.Clear();
+        lock (o.Lock) Check(o.NextUnlocked == 3 && o.First == 3 && o.At(0) == null && o.At(2) == null, $"ring: cleared - every reference dropped, the numbers go on (first {o.First})");
+        Check(o.Skip() == 3 && o.Next == 4, "ring: an unkept event takes its number");
+        lock (o.Lock) Check(o.First == 4, "ring: a reader from before an unkept event sees the gap");
+        Check(o.Add(new object()) == 4, "ring: kept again after, numbered on");
+        lock (o.Lock) Check(o.First == 4 && o.NextUnlocked == 5 && o.At(4) != null, "ring: the new one readable");
+        var gate = new ReaderGate(); long idle = 10;
+        Check(!gate.Open(0, idle, out bool c0) && !c0, "events gate: closed until a reader calls");
+        gate.Touch(100);
+        Check(gate.Open(105, idle, out _) && gate.Open(110, idle, out _), "events gate: open within the idle time of a reader's call");
+        Check(!gate.Open(111, idle, out bool c1) && c1 && !gate.Open(112, idle, out bool c2) && !c2, "events gate: closed once idle - once told (the ring dropped)");
+        gate.Touch(200);
+        Check(gate.Open(200, idle, out _), "events gate: the next call opens it again");
+        gate.Close();
+        Check(!gate.Open(201, idle, out bool c3) && !c3, "events gate: closed by a world's end");
     }
 
     static void Film()
@@ -281,6 +324,20 @@ static class Program
 
     static void Link()
     {
+        // (2026-10-15 review) at the refresh, ONE thread scans; the others go on with the current binding - every thread
+        // reaching the 5 s expiry queued on the lock while it ran AppDomain.GetAssemblies
+        {
+            var inside = new System.Threading.ManualResetEventSlim(); var release = new System.Threading.ManualResetEventSlim();
+            int calls = 0;
+            var slow = new LastLoadedType("OrbitalMod.OrbitalApi", () => { if (System.Threading.Interlocked.Increment(ref calls) == 1) { inside.Set(); release.Wait(5000); } return new[] { typeof(object).Assembly }; }) { CheckSeconds = 0 };
+            long tRef = System.Diagnostics.Stopwatch.GetTimestamp();
+            var first = System.Threading.Tasks.Task.Run(() => slow.GenerationAt(tRef));
+            bool entered = inside.Wait(5000);
+            var second = System.Threading.Tasks.Task.Run(() => slow.GenerationAt(tRef));
+            bool waitedNot = second.Wait(1000);
+            release.Set(); first.Wait(5000);
+            Check(entered && waitedNot && second.Result == 0 && calls == 1, $"link: a refresh under way - another thread goes on with the current binding, no wait (returned {waitedNot}, scans {calls})");
+        }
         var loaded = new List<System.Reflection.Assembly> { typeof(object).Assembly };
         var api = new LastLoadedType("OrbitalMod.OrbitalApi", () => loaded.ToArray()) { CheckSeconds = 0 };
         var which = new CrossModBinding<Func<int>>(api, "OrbitalApi", "Which", Type.EmptyTypes);
@@ -322,10 +379,69 @@ static class Program
         Check(which.GetAt(t0 + 31 * f, ref st) == null && api.Type == null, $"link: the mod gone - unbound ({st})");
     }
 
+    // 5. THE WATCH WINDOWS (Api/ApiGridState.Watch.cs, 2026-10-15 review): one per record - a read keeps its own record on,
+    //    never the others; the simulation tick runs for the tick record or the hull's faces only.
+    static void Watches()
+    {
+        var s = new ApiGridState();
+        long t = 1_000_000, w = 5 * System.Diagnostics.Stopwatch.Frequency;
+        bool none = true; for (int r = 0; r < ApiGridState.RecCount; r++) none &= !s.On(r, t);
+        Check(none && !s.TickWatched(t), "watch: nothing on before a read");
+        s.Push(ApiGridState.RecFlight, t + w);
+        Check(s.On(ApiGridState.RecFlight, t) && !s.On(ApiGridState.RecStruct, t) && !s.On(ApiGridState.RecFaces, t) && !s.On(ApiGridState.RecHull, t) && s.TickWatched(t),
+            "watch: a flight read keeps the flight record on, not the structure's, the faces' or the hull's");
+        Check(!s.On(ApiGridState.RecFlight, t + w) && !s.TickWatched(t + w), "watch: the flight record off 5 s after its last read");
+        s.Push(ApiGridState.RecFlight, t + w / 2);
+        Check(s.Until[ApiGridState.RecFlight] == t + w, "watch: an earlier push never shortens a window");
+        var s2 = new ApiGridState();
+        s2.Push(ApiGridState.RecStruct, t + w);
+        Check(s2.On(ApiGridState.RecStruct, t) && !s2.On(ApiGridState.RecFlight, t) && !s2.TickWatched(t), "watch: a structure read keeps the structure on, never the tick record");
+        s2.Push(ApiGridState.RecFaces, t + w);
+        Check(s2.On(ApiGridState.RecFaces, t) && !s2.TickWatched(t), "watch: a heat-face read is the evaluation's, not the tick's");
+        var s3 = new ApiGridState();
+        s3.Push(ApiGridState.RecHull, t + w);
+        Check(s3.TickWatched(t) && !s3.On(ApiGridState.RecFlight, t), "watch: a GetSurface read runs the tick for the hull's faces only");
+
+        // releasing (2026-10-15 review: the arrays were kept for the life of the grid, ~12-15 MB on a big ship)
+        long f = System.Diagnostics.Stopwatch.Frequency, rel = (long)(ApiGridState.ReleaseSeconds * f);
+        var a = new ApiGridState();
+        Check(ApiGridState.Fit(new float[10], 1000).Length == 1000 && ApiGridState.Fit(new float[10], 4).Length == 10, "release: Fit grows to exactly the count, never doubles");
+        a.Push(ApiGridState.RecStruct, t + w);
+        int n = 50_000;
+        lock (a.Lock)
+        {
+            a.Layout = 3; a.BlockCount = n; a.StateLayout = 3;
+            a.Util = new float[n]; a.UtilB = new float[n]; a.Health = new float[n]; a.LoadF = new Vector3[n]; a.LoadMB = new Vector3[n];
+            a.Held[ApiGridState.RecStruct] = true;
+        }
+        Check(!a.Due(ApiGridState.RecStruct, t) && !a.Due(ApiGridState.RecStruct, t + w) && !a.Due(ApiGridState.RecStruct, t + w + rel - 1),
+            "release: kept while watched and for ReleaseSeconds after the window closed");
+        Check(a.Due(ApiGridState.RecStruct, t + w + rel) && !a.Due(ApiGridState.RecFlight, t + w + rel), "release: due after that - only a record that holds arrays");
+        Check(a.TickWatched(t + w + rel), "release: the tick runs while a record holds arrays (it drops them)");
+        lock (a.Lock) a.Release(ApiGridState.RecStruct);
+        Check(a.Util.Length == 0 && a.UtilB.Length == 0 && a.Health.Length == 0 && a.LoadF.Length == 0 && a.LoadMB.Length == 0, "release: the block state's arrays dropped, front and back");
+        Check(a.StateLayout == -1 && a.Layout == 3 && a.BlockCount == n, "release: the state reads 0 until published again (StateLayout); the layout kept");
+        Check(!a.AnyHeld && !a.Due(ApiGridState.RecStruct, t + 10 * w) && !a.TickWatched(t + 10 * w), "release: nothing held, the tick idle again");
+        var h = new ApiGridState();
+        lock (h.Lock)
+        {
+            h.HullCount = n; h.HullPos = new Vector3[n]; h.HullCpB = new float[n]; h.HullOf = new object(); h.HullVersion = 2; h.Held[ApiGridState.RecHull] = true;
+            h.FlightStamp = 123; h.SurfCount = 2; h.SurfCmd = new float[2]; h.ThrCount = 3; h.ThrForce = new float[3]; h.Held[ApiGridState.RecFlight] = true;
+            h.FaceLayout = 1; h.FaceCount = n; h.FacePos = new Vector3[n]; h.FaceFilmB = new float[n]; h.Held[ApiGridState.RecFaces] = true;
+            h.ExtLayout = 1; h.ExtTempK = new float[n]; h.Held[ApiGridState.RecExt] = true;
+            for (int r = 0; r < ApiGridState.RecCount; r++) h.Release(r);
+        }
+        Check(h.HullCount == -1 && h.HullOf == null && h.HullVersion == -1 && h.HullPos.Length == 0 && h.HullCpB.Length == 0, "release: the hull's faces dropped (GetSurface answers 0 until the next publish)");
+        Check(h.FlightStamp == 0 && h.SurfCount == 0 && h.ThrCount == 0 && h.SurfCmd.Length == 0 && h.ThrForce.Length == 0 && h.Flight.Length == AeroApi.FlightStateLength,
+            "release: the tick record unpublished (GetFlightState answers 0 as on a first read)");
+        Check(h.FaceLayout == -1 && h.FaceCount == 0 && h.FacePos.Length == 0 && h.FaceFilmB.Length == 0, "release: the heat faces dropped");
+        Check(h.ExtLayout == -1 && h.ExtTempK.Length == 0 && !h.AnyHeld, "release: another model's temperatures dropped");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "dump") { Shape(true); return 0; }
-        Shape(false); Ring(); Film(); Link();
+        Shape(false); Ring(); Film(); Link(); Watches();
         Console.WriteLine($"ApiTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

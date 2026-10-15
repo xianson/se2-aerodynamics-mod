@@ -24,6 +24,10 @@ fly.
   `Fx.Brightness`, `Fx.ScorchVisible` (hide scorch marks on this PC; marks already placed stay), `Fx.ThrusterFlamesFollow`,
   `Fx.DebrisScale`, `Debris.Drag`, `Debris.DragScale`. Every setting now has a player-facing label, group and tier.
   (897b0e1, 8b5be02)
+- **12 settings for how a ship breaks** (advanced, world; defaults unchanged): `Structure.Crack`, `Structure.CrackSeconds`,
+  `Structure.CrackSmokes`, `Structure.Jagged`, `Structure.JaggedShare`, `Structure.CrushUtil`, `Structure.CrumpleDepth`,
+  `Structure.HingeToCompression`, `Structure.CompressionFatigueShare`, `Structure.BucklingFatigueShare`,
+  `Structure.TearAnchors`, `Structure.TearPeelFirst`. (b6523e6)
 - **Organic structural failure.** When a section of the ship fails it no longer lets go as one flat, instant cut
   (WHEN it fails is unchanged):
   - **The crack runs across the section** over 0.3 s (`FractureMath.CrackSeconds`): the pulled (tension) side tears
@@ -37,9 +41,13 @@ fly.
     ligament instead of the whole hold fading at once.
   - **Bends fold to the compressed side** (about the most pushed member's edge).
   (7de47c5, 65acb1f)
-- **Tension vs compression in fatigue.** Metal fatigue now comes from tension at the full rate and from compression at
-  0.2 of it (`StructureFatigue.CompressionFatigueShare`); in the tests a pushed member lasts 5.9x longer, a pulled one is
-  unchanged. Yield wear past 1 is unchanged. (7de47c5)
+- **Tension vs compression in fatigue.** Fatigue now comes from a member's tension (and shear) at the full rate; what
+  its compression adds depends on how it fails in compression. A **buckling-limited** member - a thin light-armour wall,
+  most governing members of real ships - tires at the full rate (`Structure.BucklingFatigueShare` 1: a plate that buckles
+  and straightens every pull cracks at its edges); only a **stocky**, yield-limited member tires at 0.2 of it
+  (`Structure.CompressionFatigueShare`). Real ships therefore fatigue as before (AeroBench, 40 pulls at 0.8: worst health
+  lost 0.142 on Plane2, 0.139 on the Tu-134; with every compression at 0.2 it was 0.028 - ~5x slower, the user's
+  decision 2026-10-15 to keep the full rate). Yield wear past 1 is unchanged. (7de47c5, 078ab3a)
 - **Debris drag.** The loose chips a broken block throws off (the game's fracture debris, not grids) had no air force but
   the game's wind push (none in still air). They now get slight quadratic drag on their bounding box against the air
   (`Debris.DragScale`, Cd 0.4 by default), the wind taken off and the game's own wind push counted once, plus a little
@@ -128,7 +136,17 @@ fly.
   8bd6baf, 7230118)
 - Caches that kept removed grids alive are pruned (suppressed grids, thrust probes, design-probe caches, tear smoke on a
   dedicated server). (688ed8f)
-- Structure events are recorded only once a reader has asked. (0adfa8a)
+- Structure events are recorded only while someone polls: from a call until 10 s after the last one; the ring then
+  clears, and is cleared at a world unload (it held up to 512 destroyed grids' and blocks' references into the next
+  world). A failure not kept still takes its number, so a reader back after a pause sees the gap. (0adfa8a, 8acc2d0)
+- Version-7 records each have their own watch window (a HUD reading only the flight state no longer keeps the whole
+  structure publish running), and a record's arrays are sized to the count and released 10 s after its last read (one
+  `GetSurface` on a 10^5-face ship used to keep ~12-15 MB for the grid's life). (efcb6e2, 4226e58)
+- `GetSurface` copies the faces under the grid's lock and fills your lists after it; `SetBlockTemperatures` checks your
+  arrays before taking the lock. (0c2a059, 838ebb8)
+- A running crack is abandoned cleanly when `Structure.Loads` goes off; the jagged line's separation check is bounded;
+  no shared-word writes per grid or per debris piece each tick; the tear's constraint check binds a delegate (no boxing).
+  (6ad799d, 6e8dd7e, 2b283af, 000d926, 6f9c42b)
 
 **Settings**
 - A harness / dev override (an `aeroset` write) is never saved as the player's setting; each setting keeps the value set
@@ -154,7 +172,10 @@ fly.
   - **Version 8** - what a settings screen needs: `TryGetSettingUi` (label, group, tier, unit, step, choices),
     `IsSettingForced`, `CanEditWorldSettings`, `ResetSettingsGroup`, `AreWorldSettingsUnsaved`. `GetSettings` lists the
     settings in screen order. (59e773e)
-  - Changed answers: `GetSurface` answers 0 until the grid's next tick after your first call; `GetThrusters`'
+  - Changed answers: each version-7 record (flight, hull faces, structure blocks, heat faces) is watched on its own -
+    the first read of a record answers 0 / `false`, every read keeps it published 5 s more, and 10 s after its last read
+    its arrays go (it answers 0 again until republished); structure events record only while polled (10 s after the
+    last poll) and clear per world; `GetSurface` answers 0 until the grid's next tick after your first call; `GetThrusters`'
     effectiveness is 1 by default (profiles apply only on the legacy thrust path); thrust centres moved 0.125 m (see above).
 - **The settings menu contract `ModSettings/v1`** - any mod can add its own section to the shared Mods tab with no code
   shared: the `TabItem` tagged `"ModSettings/v1"` in `OptionsScreen.PART_TabControl.Items` (or add it: `Header` "Mods",

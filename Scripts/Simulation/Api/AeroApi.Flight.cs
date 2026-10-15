@@ -10,18 +10,18 @@ public static partial class AeroApi
 {
     // ── watching ──
 
-    /// <summary>(version 7) How long (s) a read keeps a grid's version-7 records published: every read of them pushes it on.</summary>
+    /// <summary>(version 7) How long (s) a read keeps a grid's version-7 record published: every read of it pushes it on.</summary>
     internal const float WatchSeconds = 5f;
 
-    /// <summary>The grid's API copies, made on the first ask (any thread). Null: no aero for this grid here.</summary>
-    static ApiGridState Watch(Keen.VRage.DCS.Components.Entity grid, bool faces)
+    /// <summary>The grid's API copies, made on the first ask (any thread), with the record <paramref name="rec"/>
+    /// (ApiGridState.RecFlight ...) kept published for WatchSeconds more - that record only (2026-10-15 review: one window
+    /// for all kept a flight reader's grid publishing its whole structure every evaluation). Null: no aero for this grid here.</summary>
+    static ApiGridState Watch(Keen.VRage.DCS.Components.Entity grid, int rec)
     {
         var aero = AeroOf(grid);
         if (aero == null) return null;
         var s = aero.ApiStateFor();
-        long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency);
-        if (until > s.WatchUntil) s.WatchUntil = until;
-        if (faces && until > s.FacesUntil) s.FacesUntil = until;
+        s.Push(rec, System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency));
         return s;
     }
 
@@ -32,11 +32,12 @@ public static partial class AeroApi
     /// this grid here. Any thread.</summary>
     public static bool WatchGrid(Keen.VRage.DCS.Components.Entity grid, float seconds, bool faces)
     {
-        var s = Watch(grid, faces);
+        var s = Watch(grid, ApiGridState.RecFlight);
         if (s == null) return false;
-        long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(Math.Clamp(seconds, 0f, 600f) * System.Diagnostics.Stopwatch.Frequency);
-        if (until > s.WatchUntil) s.WatchUntil = until;
-        if (faces && until > s.FacesUntil) s.FacesUntil = until;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long until = now + (long)(Math.Max(Math.Clamp(seconds, 0f, 600f), WatchSeconds) * System.Diagnostics.Stopwatch.Frequency);
+        s.Push(ApiGridState.RecFlight, until); s.Push(ApiGridState.RecStruct, until);
+        if (faces) s.Push(ApiGridState.RecFaces, until);
         return true;
     }
 
@@ -87,7 +88,7 @@ public static partial class AeroApi
     public static int GetFlightState(Keen.VRage.DCS.Components.Entity grid, float[] into)
     {
         if (into == null) return 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecFlight);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -104,7 +105,7 @@ public static partial class AeroApi
     /// yet - see GetFlightState). Any thread; no allocation.</summary>
     public static int GetControlSurfaces(Keen.VRage.DCS.Components.Entity grid, Vector3I[] cells, float[] commands, float[] deflectionsDeg, float[] liftN, float[] dragN)
     {
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecFlight);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -125,7 +126,7 @@ public static partial class AeroApi
     public static int GetThrusterForces(Keen.VRage.DCS.Components.Entity grid, float[] forceN, out int thrusterList)
     {
         thrusterList = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecFlight);
         if (s == null) return 0;
         lock (s.Lock)
         {

@@ -403,7 +403,8 @@ public static class StructureEval
     ///    FractureMath: each member's mode by its side of the section, the crack's release order - CutFail.Release, Mode - and
     ///    the jagged line's blocks - JagCut);
     ///  - FATIGUE BY SIGN (2026-10-15): each member's fatigue by its tensile part at the full rate, its compression's at
-    ///    StructureFatigue.CompressionFatigueShare (StructureFatigue.TensilePart);
+    ///    StructureFatigue.CompressionFatigueShare (StructureFatigue.TensilePart) - a buckling-limited member's (ShipStructure
+    ///    .PieceBuckling) at StructureFatigue.BucklingFatigueShare, the full rate;
     ///  - BUDGET: the worst maxBreaks failing cuts an evaluation, after the first no more than MaxBreakBlocks blocks; a cut
     ///    past it is DEFERRED WHOLE - its members held just short (next time), never part of it failed now;
     ///  - NO ZIPPER: an evaluation's failures are decided on its own solve (no load moved onto neighbours inside it; a failing
@@ -436,8 +437,10 @@ public static class StructureEval
                 //  block's health lost raises its utilisation only once it is the weaker; a straddling block's own: none)
                 float cap = float.MaxValue; int k = st.PieceContact(mi);
                 if (k >= 0) { st.ContactBlocks(k, out int ca, out int cb); float sb = st.BlockStrength(b); cap = sb > 0f ? st.BlockStrength(ca == b ? cb : ca) / sb : float.MaxValue; }
-                // (TENSION DRIVES FATIGUE, 2026-10-15: a member pushed more than pulled tires slower - StructureFatigue.TensilePart)
-                float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact, StructureFatigue.TensilePart(st.PieceTension(mi), st.PieceCompression(mi), u));
+                // (TENSION DRIVES FATIGUE, 2026-10-15: a stocky member pushed more than pulled tires slower - StructureFatigue
+                //  .TensilePart; a buckling-limited one's push tires it as a pull would - its plates buckle and un-buckle)
+                float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact, StructureFatigue.TensilePart(st.PieceTension(mi), st.PieceCompression(mi), u),
+                    StructureFatigue.CompressionShare(st.PieceBuckling(mi)));
                 // (the snap on the load against the INTACT strength - a genuine overload; a worn member's own utilisation runs
                 //  high as its health goes, and wears through instead)
                 if (uIntact >= snap || (loss > 0f && have - loss <= st.FloorOf(b))) fails = true;
@@ -495,7 +498,7 @@ public static class StructureEval
             if (FractureMath.Jagged && nm > 1)
             {
                 jb = new int[nm]; js = new int[nm]; jat = new Vector3[nm]; var stubs = new List<int>();
-                jag ??= new FractureMath.JagScratch();
+                jag ??= st.Jag ??= new FractureMath.JagScratch();   // (kept with the structure: its adjacency built once, 2026-10-15 review)
                 cf.Steps = FractureMath.JagCut(st, g, st.Seed, jag, jb, jat, js, stubs);
                 if (stubs.Count > 0) { cf.Stubs = stubs.ToArray(); (stubbed ??= new HashSet<int>()).UnionWith(stubs); }
             }

@@ -11,7 +11,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. |
 | `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). |
-| `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate, compression at `CompressionFatigueShare` 0.2: `TensilePart`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
+| `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate; compression at `BucklingFatigueShare` 1 for a buckling-limited member, `CompressionFatigueShare` 0.2 for a stocky one: `TensilePart`, `CompressionShare`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
 | `StructureBend.cs` | Permanent bends: which joints set, the far side, the displacement. |
 | `StructMaterial.cs` | Material classes from block names: wall thickness, strength by temperature, burn rate, each class's scorch thresholds (`ScorchAt`). |
 | `HullHeat.cs` | Hull skin / core temperatures from the flow (stagnation heating, radiation, conduction). |

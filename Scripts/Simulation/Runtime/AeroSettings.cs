@@ -148,12 +148,33 @@ public static partial class AeroSettings
         B("Structure.Dents", "world", false, () => AeroGridComponent.Dents, v => AeroGridComponent.Dents = v,
             "Overloaded armour dents as its joints wear (the game's deformation, more the further over). With Structure.Damage.")
             .Ui("Dents", GStructure, Basic);
+        B("Structure.Crack", "world", false, () => FractureMath.Crack, v => FractureMath.Crack = v,
+            "A failing section cracks across over a moment (Structure.CrackSeconds): the most pulled side tears first, the pushed side - the hinge - crumples and lets go last. Off: every block across the break lets go in the same instant.")
+            .Ui("Cracks run across the break", GStructure, Basic);
+        B("Structure.Jagged", "world", false, () => FractureMath.Jagged, v => FractureMath.Jagged = v,
+            "The break line steps a block either side of the failing section here and there (the least loaded blocks most), never through a cockpit or a much heavier block. Off: ruler-straight breaks.")
+            .Ui("Jagged break lines", GStructure, Basic);
         B("Structure.SplitBlocks", "world", false, () => AeroGridComponent.SplitBlocks, v => AeroGridComponent.SplitBlocks = v,
             "A joint that fails breaks its block's pieces on the failing side - the block stays, broken, on one side, and the ship parts along the failed face - instead of destroying the whole block (a block of one piece is still destroyed).")
             .Ui("Split broken blocks", GStructure, Advanced);
         B("Structure.BySection", "world", false, () => StructureEval.BySection, v => StructureEval.BySection = v,
             "A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck).")
             .Ui("Fail whole sections", GStructure, Advanced);
+        F("Structure.CrackSeconds", "world", 0.05, 3, false, () => FractureMath.CrackSeconds, v => FractureMath.CrackSeconds = (float)v,
+            "Seconds a crack takes to run across a failing section, from its first block letting go to the last (the hinge). With Structure.Crack.")
+            .Ui("Crack run time", GStructure, Advanced, "s", 0.05);
+        F("Structure.JaggedShare", "world", 0, 1, false, () => FractureMath.JaggedShare, v => FractureMath.JaggedShare = (float)v,
+            "How rough a jagged break is: the chance the section's least loaded block steps off the break line (the most loaded step less). With Structure.Jagged.")
+            .Ui("Break line roughness", GStructure, Advanced, "", 0.05);
+        F("Structure.CrushUtil", "world", 1.05, 10, false, () => FractureMath.CrushUtil, v => FractureMath.CrushUtil = (float)v,
+            "A block on the pushed side of a break is crushed - it goes whole - at this many times its compressive strength; below it, it crumples as the hinge and stays as a bent stub.")
+            .Ui("Crush load", GStructure, Advanced, "× strength", 0.05);
+        F("Structure.CrumpleDepth", "world", 0, 0.25, false, () => AeroGridComponent.CrumpleDepth, v => AeroGridComponent.CrumpleDepth = (float)v,
+            "How far (m) a crumpling hinge's armour folds in at a break (0: no crumple).")
+            .Ui("Hinge crumple depth", GStructure, Advanced, "m", 0.01);
+        I("Structure.CrackSmokes", "world", 1, 10, false, () => AeroGridComponent.CrackSmokes, v => AeroGridComponent.CrackSmokes = (int)v,
+            "Smoke puffs along a crack as it runs (at its first release, then evenly to the hinge). Picked on the server; Fx.TornSmoke hides the smoke on this PC.")
+            .Ui("Smoke puffs per crack", GStructure, Advanced);
         B("Structure.ThrustLoads", "world", false, () => StructureEval.ThrustLoads, v => StructureEval.ThrustLoads = v,
             "Engine thrust loads the structure (engine mounts, and the push through the ship). Off: engines never strain or break a ship.")
             .Ui("Engine mount loads", GStructure, Advanced);
@@ -187,12 +208,24 @@ public static partial class AeroSettings
         F("Structure.EnduranceUtil", "world", 0, 1, false, () => StructureFatigue.EnduranceUtil, v => StructureFatigue.EnduranceUtil = (float)v,
             "The endurance limit: joints loaded under this share of their yield never tire.")
             .Ui("Fatigue-free load", GStructure, Advanced, "× yield", 0.05);
+        F("Structure.CompressionFatigueShare", "world", 0, 1, false, () => StructureFatigue.CompressionFatigueShare, v => StructureFatigue.CompressionFatigueShare = (float)v,
+            "Fatigue grows cracks only while they are pulled open: a joint tires at the full rate for its tension, and a SOLID (stocky) member at this share of it for what compression adds (0.2: a pure compression member lasts about five times as long). Thin walls that buckle use Structure.BucklingFatigueShare.")
+            .Ui("Compression fatigue (solid members)", GStructure, Advanced, "× tension", 0.05);
+        F("Structure.BucklingFatigueShare", "world", 0, 1, false, () => StructureFatigue.BucklingFatigueShare, v => StructureFatigue.BucklingFatigueShare = (float)v,
+            "Fatigue from compression in a THIN, buckling-limited member (most light armour walls), as a share of the tension rate: a plate that buckles and straightens every pull cracks at its edges, so 1 - the full rate.")
+            .Ui("Compression fatigue (buckling walls)", GStructure, Advanced, "× tension", 0.05);
         F("Structure.TearSeconds", "world", 0.1, 10, false, () => StructureTear.TearSeconds, v => StructureTear.TearSeconds = (float)v,
             "Seconds a large broken-off piece takes to tear loose.")
             .Ui("Tear duration", GStructure, Advanced, "s", 0.1);
         F("Structure.TearMinMass", "world", 0, 1e7, false, () => StructureTear.MinMass, v => StructureTear.MinMass = (float)v,
             "Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once.")
             .Ui("Slow-tear minimum mass", GStructure, Advanced, "kg", 100);
+        I("Structure.TearAnchors", "world", 3, 8, false, () => StructureTear.MaxAnchors, v => StructureTear.MaxAnchors = (int)v,
+            "The most points a tearing piece hangs from, spread over the broken section; each lets go in the crack's order.")
+            .Ui("Tear anchor points", GStructure, Advanced);
+        F("Structure.TearPeelFirst", "world", 0.05, 1, false, () => StructureTear.PeelFirst, v => StructureTear.PeelFirst = (float)v,
+            "A tear peels: its first anchor (where the crack started) lets go at this share of Structure.TearSeconds, the hinge's at the end (1: all together).")
+            .Ui("Tear peel start", GStructure, Advanced, "× tear time", 0.05);
         F("Structure.TearHold", "world", 0, 50, false, () => StructureTear.ForceFactor, v => StructureTear.ForceFactor = (float)v,
             "How hard a tearing piece is held at first, in g of its own weight (it eases to nothing over the tear).")
             .Ui("Tear hold", GStructure, Hidden, "g", 0.5);
@@ -205,6 +238,9 @@ public static partial class AeroSettings
         I("Structure.BendMaxBlocks", "world", 1, 5000, false, () => StructureBend.MaxBlocks, v => StructureBend.MaxBlocks = (int)v,
             "The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip, and is not bent.")
             .Ui("Largest bendable part", GStructure, Advanced, "blocks", 10);
+        F("Structure.HingeToCompression", "world", 0, 1, false, () => StructureBend.HingeToCompression, v => StructureBend.HingeToCompression = (float)v,
+            "Where a permanent bend pivots: 1 about the section's most pushed edge (a plastic hinge on the crushed face, the pulled face opening), 0 about the section's centre, or between.")
+            .Ui("Bends fold at the pushed side", GStructure, Advanced, "", 0.05);
         // (the legacy wing-root model, superseded by Structure.Damage: files and API only)
         B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
             "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.")

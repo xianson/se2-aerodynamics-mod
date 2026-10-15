@@ -21,7 +21,7 @@ public static partial class AeroApi
     public static bool TryGetStructureCounters(Keen.VRage.DCS.Components.Entity grid, out int layout, out int evaluation, out int blockCount, out bool externalHeat)
     {
         layout = evaluation = blockCount = 0; externalHeat = false;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return false;
         lock (s.Lock)
         {
@@ -36,7 +36,7 @@ public static partial class AeroApi
     public static int GetStructureBlocks(Keen.VRage.DCS.Components.Entity grid, Keen.VRage.DCS.Components.Entity[] blocks, Vector3[] centresLocal, float[] massKg, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -57,7 +57,7 @@ public static partial class AeroApi
     public static int GetStructureBlockState(Keen.VRage.DCS.Components.Entity grid, float[] utilisation, float[] health, float[] tempK, float[] skinMaxK, float[] heatInW, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -80,7 +80,7 @@ public static partial class AeroApi
     public static int GetStructureBlockLoads(Keen.VRage.DCS.Components.Entity grid, Vector3[] forceLocal, Vector3[] momentLocal, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -103,7 +103,7 @@ public static partial class AeroApi
     public static int GetHeatFaces(Keen.VRage.DCS.Components.Entity grid, Vector3[] centresLocal, Vector3[] normalsLocal, float[] areas, int[] blockIndex, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, true);
+        var s = Watch(grid, ApiGridState.RecFaces);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -126,7 +126,7 @@ public static partial class AeroApi
     public static int GetHeatFaceState(Keen.VRage.DCS.Components.Entity grid, float[] heatInW, float[] skinK, float[] filmCoefficient, out float recoveryK, out int layout)
     {
         recoveryK = 0f; layout = 0;
-        var s = Watch(grid, true);
+        var s = Watch(grid, ApiGridState.RecFaces);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -153,17 +153,23 @@ public static partial class AeroApi
     public static bool SetBlockTemperatures(Keen.VRage.DCS.Components.Entity grid, int layout, float[] tempK, float[] skinMaxK)
     {
         if (tempK == null) return false;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return false;
+        // (the caller's arrays checked before the lock - an O(blocks) scan held the lock the evaluation's ApiHeatOverride and
+        //  ApiPublishStructure take, 2026-10-15 review; under it only the layout and the count are checked again)
+        int n = s.BlockCount;
+        if (layout <= 0 || tempK.Length < n || (skinMaxK != null && skinMaxK.Length < n)) return false;
+        for (int i = 0; i < n; i++) if (!float.IsFinite(tempK[i]) || (skinMaxK != null && !float.IsFinite(skinMaxK[i]))) return false;
         lock (s.Lock)
         {
-            int n = s.BlockCount;
-            if (layout != s.Layout || layout <= 0 || tempK.Length < n || (skinMaxK != null && skinMaxK.Length < n)) return false;
-            for (int i = 0; i < n; i++) if (!float.IsFinite(tempK[i]) || (skinMaxK != null && !float.IsFinite(skinMaxK[i]))) return false;
+            if (layout != s.Layout || s.BlockCount != n) return false;
             s.ExtTempK = ApiGridState.Fit(s.ExtTempK, n); s.ExtSkinK = ApiGridState.Fit(s.ExtSkinK, n);
             Array.Copy(tempK, s.ExtTempK, n);
             Array.Copy(skinMaxK ?? tempK, s.ExtSkinK, n);
             s.ExtLayout = layout; s.ExtStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            // (kept while they apply, then dropped like a record: AeroGridComponent.ApiRelease, 2026-10-15 review)
+            s.Push(ApiGridState.RecExt, s.ExtStamp + (long)(AeroGridComponent.ExternalHeatHold * System.Diagnostics.Stopwatch.Frequency));
+            s.Held[ApiGridState.RecExt] = true;
             return true;
         }
     }
@@ -189,20 +195,34 @@ public static partial class AeroApi
     /// <summary>The newest 512 failures of every grid (an evaluation decides a cut's members together: a big one is many).</summary>
     static readonly SeqRing<StructEvent> _events = new SeqRing<StructEvent>(512);
 
-    /// <summary>Recording starts the first time anyone asks for the queue (GetStructureEventSequence / ReadStructureEvents):
-    /// until then nothing is kept - the ring would otherwise hold up to 512 destroyed grids and blocks alive for nobody
-    /// (2026-10-15 review).</summary>
-    static volatile bool _eventsWanted;
+    /// <summary>Recording runs while someone polls the queue (GetStructureEventSequence / ReadStructureEvents) - from a call
+    /// until EventsIdleSeconds after the last one: otherwise nothing is kept - the ring would hold up to 512 destroyed grids
+    /// and blocks alive for nobody (2026-10-15 review; and once asked it stayed on for the session, into the next world).
+    /// Unkept failures still take their numbers (SeqRing.Skip): a reader back after a pause sees the gap.</summary>
+    static readonly ReaderGate _eventsWanted = new ReaderGate();
+    /// <summary>A reader silent this long (s) stops the recording, the ring dropped (the next call starts it again).</summary>
+    internal const float EventsIdleSeconds = 10f;
 
     internal static void RecordStructureEvent(int kind, Keen.VRage.DCS.Components.Entity grid, Keen.VRage.DCS.Components.Entity block, Vector3 at, Vector3 dir, float value)
     {
-        if (!_eventsWanted) return;
-        _events.Add(new StructEvent { Kind = kind, Grid = grid, Block = block, At = at, Dir = dir, Value = value, Stamp = System.Diagnostics.Stopwatch.GetTimestamp() });
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!_eventsWanted.Open(now, (long)(EventsIdleSeconds * System.Diagnostics.Stopwatch.Frequency), out bool closed))
+        {
+            if (closed) _events.Clear();   // (nobody polling any more: its entities let go)
+            _events.Skip();
+            return;
+        }
+        _events.Add(new StructEvent { Kind = kind, Grid = grid, Block = block, At = at, Dir = dir, Value = value, Stamp = now });
     }
 
-    /// <summary>(version 7) The structure event queue's next sequence number (= every event so far, this session, every
-    /// grid). Read it once to start from now. Any thread.</summary>
-    public static long GetStructureEventSequence() { _eventsWanted = true; return _events.Next; }
+    /// <summary>A world gone (its last settings carrier: AeroWorldSettingsComponent) or a new session: recording off, the
+    /// ring's entities let go - it held the last world's destroyed grids and blocks into the next (2026-10-15 review). The
+    /// numbers go on: a reader's cursor stays valid.</summary>
+    internal static void ResetStructureEvents() { _eventsWanted.Close(); _events.Clear(); }
+
+    /// <summary>(version 7) The structure event queue's next sequence number (= every failure so far, kept or not, every
+    /// grid; it only grows). Read it once to start from now. Any thread.</summary>
+    public static long GetStructureEventSequence() { _eventsWanted.Touch(System.Diagnostics.Stopwatch.GetTimestamp()); return _events.Next; }
 
     /// <summary>(version 7) THE STRUCTURE'S FAILURES since <paramref name="fromSequence"/>, oldest first, across every grid -
     /// as each evaluation decides them (the game removes the blocks on the next simulation tick; one already gone is
@@ -215,7 +235,7 @@ public static partial class AeroApi
     public static int ReadStructureEvents(long fromSequence, long[] sequences, int[] kinds, Keen.VRage.DCS.Components.Entity[] grids, Keen.VRage.DCS.Components.Entity[] blocks,
         Vector3[] pointsLocal, Vector3[] directionsLocal, float[] values, out long nextSequence)
     {
-        _eventsWanted = true;
+        _eventsWanted.Touch(System.Diagnostics.Stopwatch.GetTimestamp());
         int max = int.MaxValue;
         if (sequences != null) max = Math.Min(max, sequences.Length); if (kinds != null) max = Math.Min(max, kinds.Length);
         if (grids != null) max = Math.Min(max, grids.Length); if (blocks != null) max = Math.Min(max, blocks.Length);

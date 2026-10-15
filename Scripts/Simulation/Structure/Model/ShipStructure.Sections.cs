@@ -51,6 +51,9 @@ public sealed partial class ShipStructure
     //  stress kept by its sign - its worst pulled corner against the yield, its worst pushed corner against what its plates
     //  carry buckled - besides the combined utilisation; PieceTension / PieceCompression)
     float[] _mUt, _mUc;
+    // (BUCKLING-LIMITED, 2026-10-15: each piece's compression capacity is its plates' buckled one, not the yield -
+    //  PieceBuckling; StructureFatigue.BucklingFatigueShare)
+    bool[] _mBuck;
     /// <summary>(the fold's pivot, 2026-10-15) each piece's normal stress at its four corners (Pa; 4 x piece + corner: bit 0 u, bit 1 v).</summary>
     float[] _mS4;
     // (each section's TIES: trim crossing its plane - detailing carries no load, so it is no member, but it still joins the
@@ -277,7 +280,7 @@ public sealed partial class ShipStructure
         _mU0 = mU0.ToArray(); _mU1 = mU1.ToArray(); _mV0 = mV0.ToArray(); _mV1 = mV1.ToArray(); _mWhat = mWhat.ToArray();
         _mTa = mTa.ToArray(); _mWa = mWa.ToArray(); _mTb = mTb.ToArray(); _mWb = mWb.ToArray();
         _gPlane = gPlane.ToArray(); _mUtil = new float[_mWhat.Length]; _gUtil = new float[_gA.Length];
-        _mUt = new float[_mWhat.Length]; _mUc = new float[_mWhat.Length]; _mS4 = new float[4 * _mWhat.Length];
+        _mUt = new float[_mWhat.Length]; _mUc = new float[_mWhat.Length]; _mBuck = new bool[_mWhat.Length]; _mS4 = new float[4 * _mWhat.Length];
         _gTieStart = gTs.ToArray(); _gTieCount = gTc.ToArray(); _tieBlock = tieBlock.ToArray(); _tiePoint = tiePoint.ToArray();
         _contactSection = new int[nc]; Array.Fill(_contactSection, -1);
         for (int g = 0; g < _gA.Length; g++) for (int mi = _gMemStart[g]; mi < _gMemStart[g] + _gMemCount[g]; mi++) if (_mWhat[mi] >= 0) _contactSection[_mWhat[mi]] = g;
@@ -341,7 +344,7 @@ public sealed partial class ShipStructure
         if (_gA == null) BuildSections();
         Array.Clear(ContactUtil, 0, ContactUtil.Length); Array.Clear(BlockUtil, 0, BlockUtil.Length);
         Array.Clear(_mUtil, 0, _mUtil.Length); Array.Clear(_gUtil, 0, _gUtil.Length);
-        Array.Clear(_mUt, 0, _mUt.Length); Array.Clear(_mUc, 0, _mUc.Length); Array.Clear(_mS4, 0, _mS4.Length);
+        Array.Clear(_mUt, 0, _mUt.Length); Array.Clear(_mUc, 0, _mUc.Length); Array.Clear(_mBuck, 0, _mBuck.Length); Array.Clear(_mS4, 0, _mS4.Length);
         Array.Clear(_gF, 0, _gF.Length); Array.Clear(_gM, 0, _gM.Length);
         MaxUtil = 0f; MaxContact = -1; MaxBlock = -1; MaxJoint = -1;
         // running totals along each axis (blocks in centre order): force, and moment about the grid origin - a
@@ -447,7 +450,7 @@ public sealed partial class ShipStructure
                     float u2 = MathF.Max(ut, uc);
                     float util = MathF.Sqrt(u2 * u2 + 3f * us * us) / Strength;
                     _mUtil[mi] = util; if (util > _gUtil[g]) _gUtil[g] = util;
-                    _mUt[mi] = ut / Strength; _mUc[mi] = uc / Strength;
+                    _mUt[mi] = ut / Strength; _mUc[mi] = uc / Strength; _mBuck[mi] = comp < BucklingLimitedBelow * strength;
                     if (what >= 0) { if (util > ContactUtil[what]) ContactUtil[what] = util; }
                     else { int b = -what - 1; if (util > BlockUtil[b]) BlockUtil[b] = util; }
                     if (util > MaxUtil) { MaxUtil = util; if (what >= 0) { MaxContact = what; MaxBlock = -1; } else { MaxBlock = -what - 1; MaxContact = -1; } }
@@ -478,6 +481,13 @@ public sealed partial class ShipStructure
     /// plates carry buckled. A member in bending has both (one face pulled, the other pushed).</summary>
     public float PieceTension(int mi) => _mUt != null ? _mUt[mi] : 0f;
     public float PieceCompression(int mi) => _mUc != null ? _mUc[mi] : 0f;
+    /// <summary>The piece's compression capacity is BUCKLING-LIMITED (the last solve): what its plates carry buckled is under
+    /// BucklingLimitedBelow of its yield - a thin wall that buckles and un-buckles every pull (StructureFatigue
+    /// .BucklingFatigueShare). False: a stocky member, crushed only at the yield.</summary>
+    public bool PieceBuckling(int mi) => _mBuck != null && _mBuck[mi];
+    /// <summary>A piece whose buckled capacity is under this share of its yield is buckling-limited (PieceBuckling); within
+    /// it, the yield governs (a stocky member).</summary>
+    public static float BucklingLimitedBelow = 0.95f;
     /// <summary>The piece's governing normal stress is compression (its compression utilisation - against its buckled plates
     /// - over its tension's): light armour's thin walls make most members compression-governed, even those mostly pulled.</summary>
     public bool PieceCompressive(int mi) => PieceCompression(mi) > PieceTension(mi);
@@ -535,6 +545,9 @@ public sealed partial class ShipStructure
     public Vector3 SectionTiePoint(int g, int t) => _tiePoint[_gTieStart[g] + t];
     /// <summary>THE ORGANIC BREAK's noise seed (FractureMath.Step: the grid's id - the game sets it each evaluation; 0 offline).</summary>
     public int Seed;
+    /// <summary>The jagged line's working set for this structure (FractureMath.JagCut; its adjacency and contact index built
+    /// once - they were rebuilt every evaluation that failed a cut, 2026-10-15 review). The structure's own evaluation only.</summary>
+    internal FractureMath.JagScratch Jag;
     /// <summary>A contact's section (-1: none - trim, or not the slices).</summary>
     public int ContactSection(int k) => SectionCount > 0 && k >= 0 && k < _contactSection.Length ? _contactSection[k] : -1;
 }

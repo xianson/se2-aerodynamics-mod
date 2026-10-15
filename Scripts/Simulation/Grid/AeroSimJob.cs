@@ -87,8 +87,10 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void AeroSimJob(AeroGridComponent aero, WorldTransform wt)
     {
-        // (TEARING: something queued or tied - arm this tick's tear job, StructureTear.cs; idle: this one read)
-        if (StructureTear.Work != 0 && aero.IsServerScene) StructureTear.Armed = 1;
+        // (TEARING: something queued or tied - arm this tick's tear job, StructureTear.cs; idle: this one read. Written only when
+        //  not armed yet: every server grid's parallel job wrote the shared word each tick, its cache line bouncing between
+        //  the cores - now longer, through a crack's run, 2026-10-15 review)
+        if (StructureTear.Work != 0 && aero.IsServerScene && System.Threading.Volatile.Read(ref StructureTear.Armed) == 0) StructureTear.Armed = 1;
         long t0 = AeroCost.Start();
         AeroCost.EnterSim();
         try { AeroSimJobCore(aero, wt); } finally { AeroCost.ExitSim(); }

@@ -179,8 +179,13 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
    is `ForceFactor` g shared by them.
 4. **Bends** (`StructureBend`) fold about the cut's most pushed member's edge (`HingeToCompression`).
 
-**Fatigue by sign:** `StructureFatigue.TensilePart` counts tension at the full rate and compression at
-`CompressionFatigueShare` (0.2). Yield wear past 1 is the same either way.
+**Fatigue by sign:** `StructureFatigue.TensilePart` counts tension (and shear) at the full rate; the compression on top
+at `StructureFatigue.CompressionShare(buckling)`: `BucklingFatigueShare` (1, `Structure.BucklingFatigueShare`) for a
+buckling-limited member (`ShipStructure.PieceBuckling`: buckled capacity under `BucklingLimitedBelow` 0.95 of the yield -
+thin walls, most governing members), `CompressionFatigueShare` (0.2) for a stocky, yield-limited one (the user,
+2026-10-15: real ships fatigue as before the split). Yield wear past 1 is the same either way. The break's knobs are
+settings too (`Structure.Crack*`, `Jagged*`, `CrushUtil`, `CrumpleDepth`, `HingeToCompression`, `TearAnchors`,
+`TearPeelFirst`).
 
 Wing root strain (`WingStrainServer.cs`, `Structure.WingStrain`) is a separate, older path, off by default.
 
