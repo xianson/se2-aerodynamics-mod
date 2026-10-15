@@ -545,6 +545,9 @@ public sealed partial class ShipStructure
     public Vector3 SectionTiePoint(int g, int t) => _tiePoint[_gTieStart[g] + t];
     /// <summary>THE ORGANIC BREAK's noise seed (FractureMath.Step: the grid's id - the game sets it each evaluation; 0 offline).</summary>
     public int Seed;
+    /// <summary>The jagged line's working set for this structure (FractureMath.JagCut; its adjacency and contact index built
+    /// once - they were rebuilt every evaluation that failed a cut, 2026-10-15 review). The structure's own evaluation only.</summary>
+    internal FractureMath.JagScratch Jag;
     /// <summary>A contact's section (-1: none - trim, or not the slices).</summary>
     public int ContactSection(int k) => SectionCount > 0 && k >= 0 && k < _contactSection.Length ? _contactSection[k] : -1;
 }

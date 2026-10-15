@@ -27,6 +27,12 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
         AeroSettings.WorldSaved();
     }
 
-    void IInSceneListener.OnAddedToScene() => AeroSettings.CarrierAdded();
-    void IInSceneListener.OnBeforeRemovedFromScene() => AeroSettings.CarrierRemoved();
+    void IInSceneListener.OnAddedToScene() { System.Threading.Interlocked.Increment(ref _carriers); AeroSettings.CarrierAdded(); }
+    void IInSceneListener.OnBeforeRemovedFromScene()
+    {
+        AeroSettings.CarrierRemoved();
+        // (the last carrier gone - the world unloaded: the API's structure events let go of its entities, 2026-10-15 review)
+        if (System.Threading.Interlocked.Decrement(ref _carriers) <= 0) AeroApi.ResetStructureEvents();
+    }
+    static int _carriers;
 }

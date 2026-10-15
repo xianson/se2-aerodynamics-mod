@@ -47,7 +47,10 @@ internal sealed class LastLoadedType
 
     void Refresh(long now)
     {
-        lock (_lock)
+        // (one thread scans; the others go on with the current binding - every thread reaching the expiry queued on the lock
+        //  while it ran AppDomain.GetAssemblies, 2026-10-15 review)
+        if (!Monitor.TryEnter(_lock)) return;
+        try
         {
             if (now < _checkAt) return;
             _checkAt = now + (long)(CheckSeconds * System.Diagnostics.Stopwatch.Frequency);
@@ -65,6 +68,7 @@ internal sealed class LastLoadedType
             Volatile.Write(ref _type, found);
             Interlocked.Increment(ref _gen);
         }
+        finally { Monitor.Exit(_lock); }
     }
 }
 

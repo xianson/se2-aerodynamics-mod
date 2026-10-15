@@ -54,6 +54,11 @@ public static class FractureMath
     // diagnostics (harness aeroget AeroMod.FractureMath.X)
     /// <summary>Cuts planned; members stepped off the plane, stubs left standing, steps put back (a bridge), hinges, crushed.</summary>
     public static int Planned, Steps, StubsLeft, Repairs, Hinges, CrushedMembers;
+    /// <summary>The separation check's passes in the last JagCut (each rebuilds the sets and walks the changed blocks).</summary>
+    public static int LastPasses;
+    /// <summary>The separation check's passes before a cut falls back to the flat line (each pass puts back the stepped
+    /// members at every bridge it found that no other repair of the pass touched; real cuts need 2-3).</summary>
+    public static int MaxRepairPasses = 6;
 
     /// <summary>A member's mode from its tension and compression utilisations (PieceTension, PieceCompression) alone: the
     /// governing one's.</summary>
@@ -151,7 +156,11 @@ public static class FractureMath
     {
         internal ShipStructure For;
         internal int[] AdjStart, AdjOther, BcStart, BcList;
-        internal readonly HashSet<int> D = new(), D0 = new(), Stub = new(), Look = new();
+        /// <summary>Per block, the first of the stepped members at it (a chain through Next: member x 2 + 0 its own block, + 1
+        /// its step's); -1 none - reset after each pass.</summary>
+        internal int[] Head;
+        internal readonly HashSet<int> D = new(), D0 = new(), Stub = new(), Look = new(), Moved = new();
+        internal readonly List<(int a, int b)> Bad = new();
     }
 
     static void Ensure(ShipStructure st, JagScratch sc)
@@ -166,6 +175,7 @@ public static class FractureMath
         var list = new int[start[n]]; var fill = new int[n];
         for (int k = 0; k < nc; k++) { st.ContactBlocks(k, out int a, out int b); list[start[a] + fill[a]++] = k; list[start[b] + fill[b]++] = k; }
         sc.BcStart = start; sc.BcList = list;
+        sc.Head = new int[n]; Array.Fill(sc.Head, -1);
     }
 
     /// <summary>A step from member block o into block t is allowed: another block, of o's own class (not trim), at most
@@ -223,9 +233,13 @@ public static class FractureMath
             if (s < 0 && inner[i] < 0 || s > 0 && outer[i] < 0) s = 0;
             outStep[i] = s;
         }
-        // the check: a step that leaves a bridge the flat cut did not goes back on the plane, until none does
-        int nt = st.SectionTieCount(g);
-        for (int iter = 0; iter <= n + 1; iter++)
+        // the check: a step that leaves a bridge the flat cut did not goes back on the plane, until none does - every bridge
+        // a pass finds whose blocks no repair of the same pass moved (one that did is looked at again next pass: that repair
+        // may have closed it), at most MaxRepairPasses passes, then the flat line (2026-10-15 review: one bridge a pass, up to
+        // n + 1 passes each rebuilding the sets, was O(n^2) a failed cut - 51 passes for a 120-member plate)
+        int nt = st.SectionTieCount(g), maxPasses = Math.Max(MaxRepairPasses, 1);
+        int[] next = null;
+        for (int iter = 0; iter <= maxPasses; iter++)
         {
             sc.D.Clear(); sc.D0.Clear(); sc.Stub.Clear(); sc.Look.Clear();
             for (int t = 0; t < nt; t++) { int tb = st.SectionTieBlock(g, t); sc.D.Add(tb); sc.D0.Add(tb); }
@@ -239,30 +253,50 @@ public static class FractureMath
             foreach (int b in sc.D) if (!sc.D0.Contains(b)) sc.Look.Add(b);
             foreach (int b in sc.D0) if (!sc.D.Contains(b)) sc.Look.Add(b);
             foreach (int b in sc.Stub) sc.Look.Add(b);
-            int bad = -1, bad2 = -1;
+            sc.Bad.Clear();
             foreach (int a in sc.Look)
             {
-                for (int e = sc.AdjStart[a]; e < sc.AdjStart[a + 1] && bad < 0; e++)
+                for (int e = sc.AdjStart[a]; e < sc.AdjStart[a + 1]; e++)
                 {
                     int b = sc.AdjOther[e];
                     bool jag = !sc.D.Contains(a) && !sc.D.Contains(b) && Leaves(st, a, ax, plane, side, sc.Stub) != Leaves(st, b, ax, plane, side, sc.Stub);
                     if (!jag) continue;
                     bool flat = !sc.D0.Contains(a) && !sc.D0.Contains(b) && Leaves(st, a, ax, plane, side, null) != Leaves(st, b, ax, plane, side, null);
-                    if (!flat) { bad = a; bad2 = b; }
+                    if (!flat) { sc.Bad.Add((a, b)); break; }   // (a's first bridge, as one bridge a pass took it)
                 }
-                if (bad >= 0) break;
             }
-            if (bad < 0) break;
-            // (back on the plane: every stepped member whose blocks touch the bridge; none - all of them)
-            Repairs++;
-            bool any = false;
+            LastPasses = iter + 1;
+            if (sc.Bad.Count == 0) break;
+            // (back on the plane: every stepped member whose blocks touch the bridge; none, or out of passes - all of them)
+            bool flatten = iter == maxPasses - 1;
+            sc.Moved.Clear();
+            // (the stepped members by their two blocks, so a bridge finds its members without a walk over all of them)
+            next ??= new int[2 * n];
             for (int i = 0; i < n; i++)
             {
                 if (outStep[i] == 0) continue;
                 int o = st.PieceBlock(m0 + i), t = outStep[i] < 0 ? inner[i] : outer[i];
-                if (o == bad || o == bad2 || t == bad || t == bad2) { outStep[i] = 0; any = true; }
+                next[2 * i] = sc.Head[o]; sc.Head[o] = 2 * i;
+                next[2 * i + 1] = sc.Head[t]; sc.Head[t] = 2 * i + 1;
             }
-            if (!any || iter == n + 1) { for (int i = 0; i < n; i++) outStep[i] = 0; }
+            foreach (var (bad, bad2) in sc.Bad)
+            {
+                if (flatten) break;
+                if (sc.Moved.Contains(bad) || sc.Moved.Contains(bad2)) continue;   // (next pass)
+                Repairs++;
+                bool any = false;
+                for (int pass = 0; pass < 2; pass++)
+                    for (int e = sc.Head[pass == 0 ? bad : bad2]; e >= 0; e = next[e])
+                    {
+                        int i = e >> 1;
+                        if (outStep[i] == 0) continue;
+                        int o = st.PieceBlock(m0 + i), t = outStep[i] < 0 ? inner[i] : outer[i];
+                        outStep[i] = 0; any = true; sc.Moved.Add(o); sc.Moved.Add(t);
+                    }
+                if (!any) flatten = true;
+            }
+            for (int i = 0; i < n; i++) { int o = st.PieceBlock(m0 + i); sc.Head[o] = -1; if (inner[i] >= 0) sc.Head[inner[i]] = -1; if (outer[i] >= 0) sc.Head[outer[i]] = -1; }
+            if (flatten) { for (int i = 0; i < n; i++) outStep[i] = 0; }
         }
         // the blocks and their faces
         int steps = 0;

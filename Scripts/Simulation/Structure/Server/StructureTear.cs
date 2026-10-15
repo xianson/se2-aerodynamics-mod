@@ -88,6 +88,8 @@ public static class StructureTear
         /// <summary>Each anchor's motor and constraint (null: let go), and its end (its share of Steps).</summary>
         public readonly IPositionConstraintMotor[] M = new IPositionConstraintMotor[MaxSlots];
         public readonly IPhysicsConstraint[] C = new IPhysicsConstraint[MaxSlots];
+        /// <summary>Each constraint's HavokConstraint.Destroyed getter, bound to it once (DestroyedOf; null: unreadable).</summary>
+        public readonly Func<bool>[] Dead = new Func<bool>[MaxSlots];
         public readonly float[] End = new float[MaxSlots];
         public float F0; public int Age, Steps, N, Left;
     }
@@ -263,12 +265,13 @@ public static class StructureTear
                 args.SetAxisMotor(ConstraintAxisIdentifier.LinearY, t.M[k]);
                 args.SetAxisMotor(ConstraintAxisIdentifier.LinearZ, t.M[k]);
                 t.C[k] = phys.AllocateConstraint(w.Piece.DEntity, w.Original.DEntity, args);
+                t.Dead[k] = DestroyedOf(t.C[k]);
             }
         }
         catch
         {
             // (half made: what was made goes - both bodies are there, checked above this tick)
-            foreach (var c in t.C) if (c != null && !IsDestroyed(c)) try { phys.DestroyConstraint(c); } catch { }
+            for (int k = 0; k < t.C.Length; k++) { var c = t.C[k]; if (c != null && !IsDestroyed(t, k)) try { phys.DestroyConstraint(c); } catch { } }
             foreach (var m in t.M) if (m != null) try { m.Dispose(); } catch { }
             throw;
         }
@@ -306,8 +309,8 @@ public static class StructureTear
             var m = t.M[k]; if (m == null) continue;
             if (s >= t.End[k])
             {
-                var c = t.C[k]; t.C[k] = null; t.M[k] = null; t.Left--;
-                if (c != null && !IsDestroyed(c)) t.Phys.DestroyConstraint(c);
+                var c = t.C[k]; bool dead = IsDestroyed(t, k); t.C[k] = null; t.Dead[k] = null; t.M[k] = null; t.Left--;
+                if (c != null && !dead) t.Phys.DestroyConstraint(c);
                 m.Dispose();
                 AnchorsPeeled++;
                 Peel = $"{Name(t.Piece)}: anchor {k} let go at {t.Age / 60f:F2} s, {t.Left} of {t.N} holding";
@@ -327,26 +330,37 @@ public static class StructureTear
         if (phys == null || !ReferenceEquals(phys, t.Phys)) return false;
         if (!PhysicsHack.Alive(t.Piece.Data) || !PhysicsHack.Alive(t.Original.Data)) return false;
         if (!phys.HasBody(t.Piece.DEntity) || !phys.HasBody(t.Original.DEntity)) return false;
-        foreach (var c in t.C) if (c != null && IsDestroyed(c)) return false;
+        for (int k = 0; k < t.C.Length; k++) if (t.C[k] != null && IsDestroyed(t, k)) return false;
         return true;
     }
 
     /// <summary>Let go (Usable checked): the constraints destroyed, then the motor disposed (the game's order).</summary>
     static void Release(Tear t)
     {
-        for (int k = 0; k < t.C.Length; k++) { var c = t.C[k]; t.C[k] = null; if (c != null && !IsDestroyed(c)) t.Phys.DestroyConstraint(c); }
+        for (int k = 0; k < t.C.Length; k++) { var c = t.C[k]; bool dead = IsDestroyed(t, k); t.C[k] = null; t.Dead[k] = null; if (c != null && !dead) t.Phys.DestroyConstraint(c); }
         for (int k = 0; k < t.M.Length; k++) { var m = t.M[k]; t.M[k] = null; m?.Dispose(); }
         t.Left = 0;
     }
 
-    static PropertyInfo _destroyed; static bool _destroyedTried;
-    /// <summary>HavokConstraint.Destroyed (internal class, public getter; set when the engine destroyed it with a body).
-    /// Unreadable: false (the alive / body checks still guard).</summary>
-    static bool IsDestroyed(IPhysicsConstraint c)
+    static MethodInfo _destroyed; static bool _destroyedTried;
+    /// <summary>HavokConstraint.Destroyed (internal class, public getter; set when the engine destroyed it with a body) of a
+    /// new constraint, as a delegate bound to it - made once per constraint, called without boxing (2026-10-15 review:
+    /// PropertyInfo.GetValue boxed a bool per call, up to 6 anchors x 8 tears a tick). An open delegate cannot be typed:
+    /// HavokConstraint is internal. Null: unreadable (the alive / body checks still guard).</summary>
+    static Func<bool> DestroyedOf(IPhysicsConstraint c)
     {
-        if (!_destroyedTried) { _destroyedTried = true; _destroyed = c.GetType().GetProperty("Destroyed", BindingFlags.Public | BindingFlags.Instance); if (_destroyed == null) Log.Default?.Info("[AERO-TEAR] HavokConstraint.Destroyed unreadable: alive / body checks only"); }
-        return _destroyed != null && _destroyed.GetValue(c) is bool b && b;
+        if (c == null) return null;
+        if (!_destroyedTried)
+        {
+            _destroyedTried = true;
+            var pi = c.GetType().GetProperty("Destroyed", BindingFlags.Public | BindingFlags.Instance);
+            _destroyed = pi?.PropertyType == typeof(bool) ? pi.GetGetMethod() : null;
+            if (_destroyed == null) Log.Default?.Info("[AERO-TEAR] HavokConstraint.Destroyed unreadable: alive / body checks only");
+        }
+        return _destroyed != null && _destroyed.DeclaringType.IsInstanceOfType(c) ? Delegate.CreateDelegate(typeof(Func<bool>), c, _destroyed, false) as Func<bool> : null;
     }
+    /// <summary>The tear's constraint k destroyed by the engine (false: not, or unreadable).</summary>
+    static bool IsDestroyed(Tear t, int k) { var d = t.Dead[k]; return d != null && d(); }
 }
 
 public partial class AeroGridComponent

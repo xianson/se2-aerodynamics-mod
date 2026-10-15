@@ -31,10 +31,12 @@ public static class AeroDebrisDrag
     public static float DragScale = 0.4f;
     /// <summary>The drag on a piece's tumbling, times this (0: none).</summary>
     public static float SpinDragScale = 1f;
-    /// <summary>Diagnostics (aeroget): piece-steps the drag acted on, and the last step's speed taken off (m/s). Plain
-    /// writes from the parallel job - a counter, not a measure.</summary>
+    /// <summary>Diagnostics (aeroget): piece-steps the drag acted on, and a recent step's speed taken off (m/s). Added per
+    /// job thread, AeroCost.CountBatch at a time, LastDv with each batch (2026-10-15 review: up to 100 pieces' parallel jobs
+    /// wrote both shared words every step - the cache line bounced between the cores, and the counter lost increments).</summary>
     public static int Steps;
     public static float LastDv;
+    [ThreadStatic] static int _tSteps;
 
     /// <summary>After the game's wind push (RangedAffectGenerators: WindUpdate.ApplyForceGroup), before the physics step -
     /// as AeroGridComponent.OnWindUndo.</summary>
@@ -56,7 +58,7 @@ public static class AeroDebrisDrag
         float ws = wind.Speed > 0f && wind.Direction.LengthSquared() > 0.25f ? wind.Speed : 0f;
         Vector3 rel = rb.LinearVelocity - (ws > 0f ? wind.Direction * ws : Vector3.Zero);
         float speed = rel.Length();
-        bool changed = false;
+        bool changed = false; float dvNow = 0f;
         if (speed > 0.05f && DragScale > 0f)
         {
             Vector3 dir = rel / speed;
@@ -65,7 +67,7 @@ public static class AeroDebrisDrag
             if (dv > 0f)
             {
                 Vector3 v = rb.LinearVelocity - dir * dv;
-                if (v.IsValid()) { rb.LinearVelocity = v; changed = true; LastDv = dv; }
+                if (v.IsValid()) { rb.LinearVelocity = v; changed = true; dvNow = dv; }
             }
         }
         Vector3 spin = rb.AngularVelocity;
@@ -77,6 +79,7 @@ public static class AeroDebrisDrag
         }
         if (!changed) return;   // (a piece at rest in still air: its body left unwritten, asleep)
         body.WritableValue = rb;
-        Steps++;
+        AeroCost.Count(ref _tSteps, ref Steps);
+        if (_tSteps == 0 && dvNow > 0f) LastDv = dvNow;   // (with the batch just added)
     }
 }

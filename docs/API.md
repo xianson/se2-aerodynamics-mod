@@ -240,9 +240,12 @@ and a way for **another heat model** (the planned thermal mod) to take the tempe
 ### How version 7 answers
 
 - **Watched, then published.** Aero copies these records for a grid only while someone reads them: the first read of a
-  grid (or `WatchGrid`) starts it, and every read keeps it on for 5 s more. So the **first read answers 0 / `false`**, and
-  the next simulation tick (flight) or structure evaluation (blocks, faces) has the answer. A grid nobody reads costs one
-  null test a tick.
+  record (or `WatchGrid`) starts it, and every read keeps it on for 5 s more. Each record has its own watch - the flight
+  record (flight state, control surfaces, thruster forces), the structure's block state, the heat faces, `GetSurface`'s
+  faces - and a read keeps on only the record it reads. So the **first read of a record answers 0 / `false`**, and
+  the next simulation tick (flight) or structure evaluation (blocks, faces) has the answer. A record nobody has read for
+  10 s (its 5 s, then 5 s more) is dropped - its memory freed - and answers 0 again on its next first read. A grid nobody
+  reads costs one null test a tick.
 - **Buffers are yours.** Every array is the caller's; aero fills `min(array length, count)` and returns the full count, so
   a short array tells you to grow it. Pass `null` for what you do not want. No call allocates (`GetFlightStateNames`
   aside: call it once), none has exception handling on the way, and none hands out aero's own arrays.
@@ -359,7 +362,7 @@ A polled queue across every grid, with sequence numbers: keep the number you rea
 
 | Member | Since | What it gives |
 |---|---|---|
-| `long GetStructureEventSequence()` | 7 | The next event's number (= every event recorded so far this session). Read it once to start from now. Recording starts with the first call to this or `ReadStructureEvents`: failures before any reader asked are not kept. |
+| `long GetStructureEventSequence()` | 7 | The next event's number (= every failure so far, kept or not; it only grows, across worlds too). Read it once to start from now. Recording runs while someone polls: from a call to this or `ReadStructureEvents` until 10 s after the last one; failures outside that are not kept but still take their numbers (a reader back after a pause sees the gap). A world's end drops the kept events (their grids and blocks let go); the numbers go on, so a cursor stays valid. |
 | `int ReadStructureEvents(long fromSequence, long[] sequences, int[] kinds, Entity[] grids, Entity[] blocks, Vector3[] pointsLocal, Vector3[] directionsLocal, float[] values, out long nextSequence)` | 7 | The events since `fromSequence`, oldest first, up to the shortest array you pass; `nextSequence` is where to read next. The newest 512 are kept: a first `sequences[0]` above your `fromSequence` means you missed some. |
 
 | Kind | What | Block | Point (grid-local) | Direction | Value |

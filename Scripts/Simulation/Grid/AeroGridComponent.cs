@@ -244,6 +244,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             _devSessions.Add(session, _devSessions);
         }
         TestTurnGen = 0; TestTurnPitch = TestTurnYaw = TestTurnRoll = 0f;
+        AeroApi.ResetStructureEvents();   // (a new world: the last one's structure events let go - a world with no planet has no carrier to say it went, 2026-10-15 review)
     }
     private int _testTurnGen; private Quaternion _testTurnBase = Quaternion.Identity;
     /// <summary>The allocation's last step: the surfaces it gave inputs to, and how many at their limit.</summary>
