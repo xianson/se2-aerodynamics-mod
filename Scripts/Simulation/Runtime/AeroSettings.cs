@@ -12,14 +12,27 @@ namespace AeroMod;
 ///  - CLIENT (this PC): the visual effects. Saved in %APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.client.cfg.
 /// Both files are polled (~2 s): edit them while playing. Every change takes effect at once - the fields are read each
 /// tick or frame - and a setting marked Rebuild bumps AeroSwitch.Generation (every grid rebuilds from scratch).
-/// Reached by other mods through AeroApi (GetSettings, TryGetSettingInfo, TryGetSetting, SetSetting,
-/// GetSettingsVersion); documented in docs/API.md.
+/// Reached by other mods through AeroApi (GetSettings, TryGetSettingInfo, TryGetSettingUi, TryGetSetting, SetSetting,
+/// GetSettingsVersion, IsSettingForced, CanEditWorldSettings); documented in docs/API.md.
+///
+/// THE UI METADATA (2026-10-15, settings DESIGN.md W1): each setting also carries what a generated settings screen needs -
+/// a player-facing Label, its Group (the section it shows in; registration order is the screen's order: Order), a Tier
+/// (Basic: always shown; Advanced: a collapsed section; Hidden: the files and the API only), a Unit and Step for numbers,
+/// Choices (labels for an int's Min..Max values) and ClientVisible (a world value clients draw from too - nothing
+/// replicates it yet: SE2 2.4's server shares the process). The Orbital Mod's OrbitalSettings.Setting has the same
+/// fields with the same names and types. Never registered: Dev* / Test* / Debug* / Probe* / Trace* / *Log fields
+/// (harness and test switches - Tests/SettingsTests scans for them).
 ///
 /// Multiplayer: SE2 2.4 runs its server in the same process as the client (its networking is a mock), so the world
-/// values ARE the server's. A process that only ever saw a client scene (a future remote client) refuses world sets.
+/// values ARE the server's. A process that only ever saw a client scene (a future remote client) refuses world sets
+/// (CanEditWorld, AeroSettings.Store.cs).
 /// </summary>
 public static partial class AeroSettings
 {
+    /// <summary>Where a setting shows in a settings screen: Basic (always), Advanced (a collapsed section), Hidden (only in
+    /// the .cfg files and the API).</summary>
+    internal enum Tier { Basic, Advanced, Hidden }
+
     internal sealed class Setting
     {
         public string Name, Type, Scope, Doc;
@@ -28,6 +41,29 @@ public static partial class AeroSettings
         public Func<double> Get;
         public Action<double> Set;
         public Func<double, string> Check;   // (a cross-setting rule: why not, or null)
+        // ── the UI metadata (the same fields as OrbitalSettings.Setting) ──
+        /// <summary>The player-facing name, and the screen section it shows in.</summary>
+        public string Label, Group;
+        public Tier Tier;
+        /// <summary>A number's unit ("" none) and a slider's step (0: the UI picks; an int's is 1).</summary>
+        public string Unit = "";
+        public double Step;
+        /// <summary>For an int shown as a choice: a label for each value Min..Max (null: a number).</summary>
+        public string[] Choices;
+        /// <summary>The screen's order (registration order).</summary>
+        public int Order;
+        /// <summary>A world value clients also draw from (the plasma's Mach pair): to be replicated once SE2 can.</summary>
+        public bool ClientVisible;
+
+        /// <summary>The UI metadata, fluently after B / I / F.</summary>
+        public Setting Ui(string label, string group, Tier tier, string unit = "", double step = 0, string[] choices = null)
+        {
+            Label = label; Group = group; Tier = tier; Unit = unit ?? ""; Choices = choices;
+            if (step > 0) Step = step;
+            return this;
+        }
+        /// <summary>Marks a world setting clients draw from too.</summary>
+        public Setting SeenByClients() { ClientVisible = true; return this; }
     }
 
     static readonly List<Setting> _all = new();
@@ -42,134 +78,269 @@ public static partial class AeroSettings
     /// <summary>World settings can be set here: the server runs in this process (or nothing is known yet).</summary>
     public static bool WorldWritable => SawServer || !SawClient;
 
+    // the screen's sections, in order
+    const string GFlight = "Flight model", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
+                 GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality";
+    const Tier Basic = Tier.Basic, Advanced = Tier.Advanced, Hidden = Tier.Hidden;
+
     static AeroSettings()
     {
-        // ── WORLD ──
-        B("Aero.Enabled", "world", false, () => AeroSwitch.Enabled, v => AeroSwitch.Enabled = v,
-            "The whole aero simulation: forces, thrust offsets, block tracking. Off: the game's own flight; on again: every grid rebuilds.");
-        F("Aero.DragMultiplier", "world", 0, 10, false, () => AeroTuning.DragMultiplier, v => AeroTuning.DragMultiplier = (float)v,
-            "The aerodynamic force along the motion (drag), times this.");
-        F("Aero.LiftMultiplier", "world", 0, 10, false, () => AeroTuning.LiftMultiplier, v => AeroTuning.LiftMultiplier = (float)v,
-            "The aerodynamic force across the motion (lift: wings, control surfaces, the hull's own), times this.");
-        B("Aero.ThrustTorque", "world", false, () => ThrustTorque.Enabled, v => ThrustTorque.Enabled = v,
-            "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the older phantom attitude hold.");
-        I("Control.HingeSurfaces", "world", 0, 1, false, () => HingeSurfaces.Mode, v => HingeSurfaces.Mode = (int)v,
-            "Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input (fly-by-wire mixing). 0 none (a player's hinges are theirs), 1 every hinge on a piloted grid.");
-        F("Control.HingeMaxDeflection", "world", 1, 60, false, () => HingeSurfaces.MaxDeflection, v => HingeSurfaces.MaxDeflection = (float)v,
-            "Hinge control surfaces: degrees at full command (the hinge's own limits clamp too).");
-        I("Model.LargeGridCellScale", "world", 1, 4, true, () => SnapshotGridAccessor.LargeGridCellScale, v => SnapshotGridAccessor.LargeGridCellScale = (int)v,
-            "Large-grid surface resolution: 1 = 0.25 m cells (finest, slowest), 2 = 0.5 m, 4 = 1 m. Rebuilds every grid.");
-        F("Entry.OnsetMach", "world", 0.5, 25, false, () => AeroEntryFx.OnsetMach, SetOnsetMach,
-            "Entry heating (the plasma) starts at this Mach number.").Check = v => v + 0.05 >= FullMach() ? "must stay under Entry.FullMach" : null;
-        F("Entry.FullMach", "world", 0.6, 30, false, FullMach, SetFullMach,
-            "Entry heating is full at this Mach number.").Check = v => v <= AeroEntryFx.OnsetMach + 0.05 ? "must stay over Entry.OnsetMach" : null;
-        F("Entry.HeatLag", "world", 0.05, 30, false, () => AeroEntryFx.HeatLag, v => AeroEntryFx.HeatLag = (float)v,
-            "Seconds the hull takes to heat up and cool down (the glow lingers after slowing).");
-        F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,
-            "The most aero may take of a simulation frame (ms); past it, grids not piloted wait a few frames.");
-        I("Perf.Workers", "world", 1, 16, false, () => AeroWork.Workers, v => AeroWork.Workers = (int)v,
-            "Background cores aero may keep busy (hull and force-table builds).");
-        B("Perf.TableCache", "world", false, () => AeroTableCache.Enabled, v => AeroTableCache.Enabled = v,
-            "Keep built force tables for reuse (a grid seen before builds in milliseconds).");
-        I("Perf.TableCacheMB", "world", 16, 4096, false, () => (int)(AeroTableCache.MaxBytes >> 20), v => AeroTableCache.MaxBytes = (long)v << 20,
-            "The force-table cache's size (MB).");
-        B("Perf.LocalUpdates", "world", false, () => AeroGridComponent.LocalUpdates, v => AeroGridComponent.LocalUpdates = v,
-            "Update only the changed part of a hull when blocks change (off: rebuild the whole grid).");
-        I("Perf.ChunksPerUpdate", "world", 1, 64, false, () => AeroGridComponent.ChunksPerUpdate, v => AeroGridComponent.ChunksPerUpdate = (int)v,
-            "Hull chunks updated per pass after a block change.");
-        F("Perf.MinSpeedForUpdates", "world", 0, 1000, false, () => AeroGridComponent.MinSpeedForUpdates, v => AeroGridComponent.MinSpeedForUpdates = (float)v,
-            "Below this speed (m/s) a damaged or edited hull waits before updating its forces.");
-        F("Perf.QuietBeforeFullRebuild", "world", 0.5, 120, false, () => AeroGridComponent.QuietBeforeFullRebuild, v => AeroGridComponent.QuietBeforeFullRebuild = v,
-            "Seconds without block changes before a full rebuild cleans up after local updates.");
-        B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
-            "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.");
-        B("Structure.Loads", "world", false, () => StructureLoads.Enabled, v => StructureLoads.Enabled = v,
-            "Work out the loads in every ship's structure (air, thrust, gyros, its own turning) and its hull's heating, a few times a second in the background. Damage is separate.");
-        B("Structure.Damage", "world", false, () => StructureLoads.Damage, v => StructureLoads.Damage = v,
-            "Overloaded joints of the ship a player flies wear, and break off what hangs from them (pull too many g, whip the ship round too hard). AI ships and wrecks never. On by default.");
-        F("Structure.Strength", "world", 0.1, 100, false, () => ShipStructure.Strength, v => ShipStructure.Strength = (float)v,
-            "Every block's strength, times this (7: an airliner of small blocks yields near 3 g and sheds parts past 4; a light large-block plane yields near 8 g and breaks past 12).");
-        F("Structure.BreakAt", "world", 1.05, 10, false, () => StructureLoads.BreakUtil, v => StructureLoads.BreakUtil = (float)v,
-            "Past its yield a joint wears through over a moment, faster the further over: at this many times its yield load it loses Structure.WearRate of its health a second. It lets go when its health runs out (or at once past Structure.SnapUtil).");
-        F("Structure.WearRate", "world", 0, 100, false, () => StructureLoads.WearPerSecond, v => StructureLoads.WearPerSecond = (float)v,
-            "Health a joint loses per second at Structure.BreakAt (0.45: a hard pull wears a joint through over a second or several; a brief spike only dents it).");
-        F("Structure.SnapUtil", "world", 1.05, 100, false, () => StructureFatigue.SnapUtil, v => StructureFatigue.SnapUtil = (float)v,
-            "A joint snaps at once at this many times its intact yield load (a genuine overload: a collision, a violent whip); below it, it wears through.");
-        B("Structure.BySection", "world", false, () => StructureEval.BySection, v => StructureEval.BySection = v,
-            "A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck).");
-        B("Structure.Fatigue", "world", false, () => StructureFatigue.Enabled, v => StructureFatigue.Enabled = v,
-            "Joints tire under hard flying below their yield too: from Structure.EnduranceUtil of the yield up they lose health slowly, faster the harder they are loaded. Health lost is strength lost, so a tired ship fails at a lower load. Kept in the blocks' health (saved; welding repairs it). Cruising never tires a ship.");
-        F("Structure.FatigueRate", "world", 0, 1, false, () => StructureFatigue.Rate, v => StructureFatigue.Rate = (float)v,
-            "Health a joint loses per second from fatigue held at its yield (0.005: a tenth in 20 s at the yield, in ~40 s at 90%, ~5 min at 70%).");
-        F("Structure.EnduranceUtil", "world", 0, 1, false, () => StructureFatigue.EnduranceUtil, v => StructureFatigue.EnduranceUtil = (float)v,
-            "The endurance limit: joints loaded under this share of their yield never tire.");
-        B("Structure.SplitBlocks", "world", false, () => AeroGridComponent.SplitBlocks, v => AeroGridComponent.SplitBlocks = v,
-            "A joint that fails breaks its block's pieces on the failing side - the block stays, broken, on one side, and the ship parts along the failed face - instead of destroying the whole block (a block of one piece is still destroyed).");
-        B("Structure.ThrustLoads", "world", false, () => StructureEval.ThrustLoads, v => StructureEval.ThrustLoads = v,
-            "Engine thrust loads the structure (engine mounts, and the push through the ship). Off: engines never strain or break a ship.");
-        B("Structure.EntryLoads", "world", false, () => StructureEval.EntryLoads, v => StructureEval.EntryLoads = v,
-            "A re-entry flown on rails by the Orbital mod loads the structure with its braking (up to ~5 g), pressed onto the windward faces as the air would: the nose and heat shield carry it. Off: a railed entry heats the hull but never strains it.");
-        B("Structure.Tear", "world", false, () => StructureTear.Enabled, v => StructureTear.Enabled = v,
-            "A large piece the structure breaks off tears loose over a moment (held at the torn joint, sagging, then free) instead of vanishing off at once. Small bits still pop off.");
-        F("Structure.TearSeconds", "world", 0.1, 10, false, () => StructureTear.TearSeconds, v => StructureTear.TearSeconds = (float)v,
-            "Seconds a large broken-off piece takes to tear loose.");
-        F("Structure.TearMinMass", "world", 0, 1e7, false, () => StructureTear.MinMass, v => StructureTear.MinMass = (float)v,
-            "Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once.");
-        F("Structure.TearHold", "world", 0, 50, false, () => StructureTear.ForceFactor, v => StructureTear.ForceFactor = (float)v,
-            "How hard a tearing piece is held at first, in g of its own weight (it eases to nothing over the tear).");
-        B("Structure.Bends", "world", false, () => StructureBend.Enabled, v => StructureBend.Enabled = v,
-            "An overloaded joint that holds stays bent: the armour outboard of it (a wing, a pod) sets a little the way the load pushed, more the further past its yield, more again after a harder pull. With Structure.Damage.");
-        F("Structure.BendPerUtil", "world", 0, 1, false, () => StructureBend.PerUtil, v => StructureBend.PerUtil = (float)v,
-            "The permanent turn (radians) at a joint per unit of load over its last peak (0.05: a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm just short of breaking).");
-        F("Structure.BendMax", "world", 0, 1, false, () => StructureBend.Max, v => StructureBend.Max = (float)v,
-            "The most any point of the armour is bent in total (m).");
-        I("Structure.BendMaxBlocks", "world", 1, 5000, false, () => StructureBend.MaxBlocks, v => StructureBend.MaxBlocks = (int)v,
-            "The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip, and is not bent.");
-        B("Fx.TornSmoke", "client", false, () => TearSmoke.Enabled, v => TearSmoke.Enabled = v,
-            "A joint the structure breaks smokes and sheds debris for a few seconds, on the ship and on the piece that tears off.");
-        F("Fx.TornSmokeSeconds", "client", 0.5, 20, false, () => TearSmoke.Seconds, v => TearSmoke.Seconds = (float)v,
-            "Seconds a torn joint smokes.");
-        B("Heat.Damage", "world", false, () => StructureLoads.HeatDamage, v => StructureLoads.HeatDamage = v,
-            "Hull blocks hotter than they can take (reentry, very fast low flight) lose health. Heat weakens the structure either way. On by default.");
-        F("Heat.Multiplier", "world", 0, 10, false, () => HullHeat.HeatMultiplier, v => HullHeat.HeatMultiplier = (float)v,
-            "The air's heating of the hull, times this.");
-        B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
-            "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.");
-        F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
-            "Wing strength, times this (1: a light-armour wing 4 blocks long snaps at 40 kPa wing loading; heavy armour 4x).");
+        // ══ WORLD ══
 
-        // ── CLIENT ──
+        // ── flight model ──
+        B("Aero.Enabled", "world", false, () => AeroSwitch.Enabled, v => AeroSwitch.Enabled = v,
+            "The whole aero simulation: forces, thrust offsets, block tracking. Off: the game's own flight; on again: every grid rebuilds.")
+            .Ui("Aerodynamics", GFlight, Basic);
+        F("Aero.DragMultiplier", "world", 0, 10, false, () => AeroTuning.DragMultiplier, v => AeroTuning.DragMultiplier = (float)v,
+            "The aerodynamic force along the motion (drag), times this.")
+            .Ui("Drag strength", GFlight, Basic, "×", 0.05);
+        F("Aero.LiftMultiplier", "world", 0, 10, false, () => AeroTuning.LiftMultiplier, v => AeroTuning.LiftMultiplier = (float)v,
+            "The aerodynamic force across the motion (lift: wings, control surfaces, the hull's own), times this.")
+            .Ui("Lift strength", GFlight, Basic, "×", 0.05);
+        B("Aero.ThrustTorque", "world", false, () => ThrustTorque.Enabled, v => ThrustTorque.Enabled = v,
+            "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the older phantom attitude hold.")
+            .Ui("Off-centre thrust turns ships", GFlight, Basic);
+        B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
+            "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.")
+            .Ui("Wind", GFlight, Basic);
+        I("Control.HingeSurfaces", "world", 0, 1, false, () => HingeSurfaces.Mode, v => HingeSurfaces.Mode = (int)v,
+            "Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input (fly-by-wire mixing). 0 none (a player's hinges are theirs), 1 every hinge on a piloted grid.")
+            .Ui("Hinge control surfaces", GFlight, Basic, choices: new[] { "Off", "Piloted grids" });
+        F("Control.HingeMaxDeflection", "world", 1, 60, false, () => HingeSurfaces.MaxDeflection, v => HingeSurfaces.MaxDeflection = (float)v,
+            "Hinge control surfaces: degrees at full command (the hinge's own limits clamp too).")
+            .Ui("Hinge flap travel", GFlight, Advanced, "°", 1);
+        I("Model.LargeGridCellScale", "world", 1, 4, true, () => SnapshotGridAccessor.LargeGridCellScale, v => SnapshotGridAccessor.LargeGridCellScale = (int)v,
+            "Large-grid surface resolution: 1 = 0.25 m cells (finest, slowest), 2 = 0.5 m, 4 = 1 m. Rebuilds every grid.")
+            .Ui("Hull detail (large grid)", GFlight, Advanced, choices: new[] { "0.25 m (finest)", "0.5 m", "0.75 m", "1 m (fastest)" });
+        B("Aero.GroundEffect", "world", false, () => CompressibleWingModel.GroundEffect, v => CompressibleWingModel.GroundEffect = v,
+            "Ground effect: wings close to the ground (within about a span) get more lift and less drag.")
+            .Ui("Ground effect", GFlight, Advanced);
+        B("Aero.UpperAtmosphere", "world", false, () => AtmosphereTail.Enabled, v => AtmosphereTail.Enabled = v,
+            "The air thins out exponentially past the planet's visible atmosphere edge, so a fast ship meets faint drag there instead of a wall. Off: the game's linear fade, the air ending at the edge.")
+            .Ui("Thin upper air", GFlight, Advanced);
+        F("Control.ThrustTurnRate", "world", 0.1, 3, false, () => ThrustTorque.MaxRate, v => ThrustTorque.MaxRate = (float)v,
+            "The fastest turn (rad/s) thruster steering asks for when turning the ship to the pilot's target.")
+            .Ui("Thruster steering max turn rate", GFlight, Advanced, "rad/s", 0.05);
+
+        // ── structure and damage ──
+        B("Structure.Loads", "world", false, () => StructureLoads.Enabled, v => StructureLoads.Enabled = v,
+            "Work out the loads in every ship's structure (air, thrust, gyros, its own turning) and its hull's heating, a few times a second in the background. Damage is separate.")
+            .Ui("Structural loads", GStructure, Basic).SeenByClients();   // (StructureFeel: the creaks and shake)
+        B("Structure.Damage", "world", false, () => StructureLoads.Damage, v => StructureLoads.Damage = v,
+            "Overloaded joints of the ship a player flies wear, and break off what hangs from them (pull too many g, whip the ship round too hard). AI ships and wrecks never. On by default.")
+            .Ui("Structural damage", GStructure, Basic);
+        F("Structure.Strength", "world", 0.1, 100, false, () => ShipStructure.Strength, v => ShipStructure.Strength = (float)v,
+            "Every block's strength, times this (7: an airliner of small blocks yields near 3 g and sheds parts past 4; a light large-block plane yields near 8 g and breaks past 12).")
+            .Ui("Structural strength", GStructure, Basic, "×", 0.1);
+        B("Structure.Fatigue", "world", false, () => StructureFatigue.Enabled, v => StructureFatigue.Enabled = v,
+            "Joints tire under hard flying below their yield too: from Structure.EnduranceUtil of the yield up they lose health slowly, faster the harder they are loaded. Health lost is strength lost, so a tired ship fails at a lower load. Kept in the blocks' health (saved; welding repairs it). Cruising never tires a ship.")
+            .Ui("Metal fatigue", GStructure, Basic);
+        B("Structure.Tear", "world", false, () => StructureTear.Enabled, v => StructureTear.Enabled = v,
+            "A large piece the structure breaks off tears loose over a moment (held at the torn joint, sagging, then free) instead of vanishing off at once. Small bits still pop off.")
+            .Ui("Slow tearing", GStructure, Basic);
+        B("Structure.Bends", "world", false, () => StructureBend.Enabled, v => StructureBend.Enabled = v,
+            "An overloaded joint that holds stays bent: the armour outboard of it (a wing, a pod) sets a little the way the load pushed, more the further past its yield, more again after a harder pull. With Structure.Damage.")
+            .Ui("Permanent bends", GStructure, Basic);
+        B("Structure.Dents", "world", false, () => AeroGridComponent.Dents, v => AeroGridComponent.Dents = v,
+            "Overloaded armour dents as its joints wear (the game's deformation, more the further over). With Structure.Damage.")
+            .Ui("Dents", GStructure, Basic);
+        B("Structure.SplitBlocks", "world", false, () => AeroGridComponent.SplitBlocks, v => AeroGridComponent.SplitBlocks = v,
+            "A joint that fails breaks its block's pieces on the failing side - the block stays, broken, on one side, and the ship parts along the failed face - instead of destroying the whole block (a block of one piece is still destroyed).")
+            .Ui("Split broken blocks", GStructure, Advanced);
+        B("Structure.BySection", "world", false, () => StructureEval.BySection, v => StructureEval.BySection = v,
+            "A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck).")
+            .Ui("Fail whole sections", GStructure, Advanced);
+        B("Structure.ThrustLoads", "world", false, () => StructureEval.ThrustLoads, v => StructureEval.ThrustLoads = v,
+            "Engine thrust loads the structure (engine mounts, and the push through the ship). Off: engines never strain or break a ship.")
+            .Ui("Engine mount loads", GStructure, Advanced);
+        B("Structure.EntryLoads", "world", false, () => StructureEval.EntryLoads, v => StructureEval.EntryLoads = v,
+            "A re-entry flown on rails by the Orbital mod loads the structure with its braking (up to ~5 g), pressed onto the windward faces as the air would: the nose and heat shield carry it. Off: a railed entry heats the hull but never strains it.")
+            .Ui("Re-entry braking loads", GStructure, Advanced);
+        B("Structure.GyroLoads", "world", false, () => StructureEval.GyroLoads, v => StructureEval.GyroLoads = v,
+            "Gyroscopes' torque loads the structure (their mounts, and the turn through the ship). Off: gyros never strain a ship.")
+            .Ui("Gyro loads", GStructure, Advanced);
+        B("Structure.Contacts", "world", false, () => StructureContactLoads.Enabled, v => StructureContactLoads.Enabled = v,
+            "Collisions and touchdowns load the structure (the contact's push, from the ship's change of momentum). Off: only flight loads it.")
+            .Ui("Impact and landing loads", GStructure, Advanced);
+        F("Structure.GearSturdiness", "world", 0, 5, false, () => AeroGridComponent.GearContactShare, v => AeroGridComponent.GearContactShare = (float)v,
+            "How much of a touchdown's load landing gear takes, times this (1: as any block; higher: gear is sturdier than its block).")
+            .Ui("Landing gear sturdiness", GStructure, Advanced, "×", 0.1);
+        B("Control.RespectStructure", "world", false, () => StructureLoads.SteerRespectsStructure, v => StructureLoads.SteerRespectsStructure = v,
+            "The flight controller limits its own steering to what the structure carries: it holds back before it overstresses the ship.")
+            .Ui("Protective autopilot", GStructure, Advanced);
+        F("Structure.BreakAt", "world", 1.05, 10, false, () => StructureLoads.BreakUtil, v => StructureLoads.BreakUtil = (float)v,
+            "Past its yield a joint wears through over a moment, faster the further over: at this many times its yield load it loses Structure.WearRate of its health a second. It lets go when its health runs out (or at once past Structure.SnapUtil).")
+            .Ui("Wear-through load", GStructure, Advanced, "× yield", 0.05).SeenByClients();   // (StructureFeel: the groans)
+        F("Structure.WearRate", "world", 0, 100, false, () => StructureLoads.WearPerSecond, v => StructureLoads.WearPerSecond = (float)v,
+            "Health a joint loses per second at Structure.BreakAt (0.45: a hard pull wears a joint through over a second or several; a brief spike only dents it).")
+            .Ui("Wear rate", GStructure, Advanced, "/s", 0.05);
+        F("Structure.SnapUtil", "world", 1.05, 100, false, () => StructureFatigue.SnapUtil, v => StructureFatigue.SnapUtil = (float)v,
+            "A joint snaps at once at this many times its intact yield load (a genuine overload: a collision, a violent whip); below it, it wears through.")
+            .Ui("Instant snap load", GStructure, Advanced, "× yield", 0.05);
+        F("Structure.FatigueRate", "world", 0, 1, false, () => StructureFatigue.Rate, v => StructureFatigue.Rate = (float)v,
+            "Health a joint loses per second from fatigue held at its yield (0.005: a tenth in 20 s at the yield, in ~40 s at 90%, ~5 min at 70%).")
+            .Ui("Fatigue speed", GStructure, Advanced, "/s", 0.001);
+        F("Structure.EnduranceUtil", "world", 0, 1, false, () => StructureFatigue.EnduranceUtil, v => StructureFatigue.EnduranceUtil = (float)v,
+            "The endurance limit: joints loaded under this share of their yield never tire.")
+            .Ui("Fatigue-free load", GStructure, Advanced, "× yield", 0.05);
+        F("Structure.TearSeconds", "world", 0.1, 10, false, () => StructureTear.TearSeconds, v => StructureTear.TearSeconds = (float)v,
+            "Seconds a large broken-off piece takes to tear loose.")
+            .Ui("Tear duration", GStructure, Advanced, "s", 0.1);
+        F("Structure.TearMinMass", "world", 0, 1e7, false, () => StructureTear.MinMass, v => StructureTear.MinMass = (float)v,
+            "Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once.")
+            .Ui("Slow-tear minimum mass", GStructure, Advanced, "kg", 100);
+        F("Structure.TearHold", "world", 0, 50, false, () => StructureTear.ForceFactor, v => StructureTear.ForceFactor = (float)v,
+            "How hard a tearing piece is held at first, in g of its own weight (it eases to nothing over the tear).")
+            .Ui("Tear hold", GStructure, Hidden, "g", 0.5);
+        F("Structure.BendPerUtil", "world", 0, 1, false, () => StructureBend.PerUtil, v => StructureBend.PerUtil = (float)v,
+            "The permanent turn (radians) at a joint per unit of load over its last peak (0.05: a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm just short of breaking).")
+            .Ui("Bend amount", GStructure, Advanced, "rad", 0.01);
+        F("Structure.BendMax", "world", 0, 1, false, () => StructureBend.Max, v => StructureBend.Max = (float)v,
+            "The most any point of the armour is bent in total (m).")
+            .Ui("Maximum bend", GStructure, Advanced, "m", 0.01);
+        I("Structure.BendMaxBlocks", "world", 1, 5000, false, () => StructureBend.MaxBlocks, v => StructureBend.MaxBlocks = (int)v,
+            "The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip, and is not bent.")
+            .Ui("Largest bendable part", GStructure, Advanced, "blocks", 10);
+        // (the legacy wing-root model, superseded by Structure.Damage: files and API only)
+        B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
+            "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.")
+            .Ui("Legacy wing strain", GStructure, Hidden);
+        F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
+            "Wing strength, times this (25 by default: real ships' long wings hold ~6 g; at 1 a light-armour wing 4 blocks long snaps at 40 kPa wing loading; heavy armour 4x).")
+            .Ui("Legacy wing strength", GStructure, Hidden, "×", 0.5);
+
+        // ── re-entry heat ──
+        F("Heat.Multiplier", "world", 0, 10, false, () => HullHeat.HeatMultiplier, v => HullHeat.HeatMultiplier = (float)v,
+            "The air's heating of the hull, times this.")
+            .Ui("Re-entry heating", GHeat, Basic, "×", 0.05);
+        B("Heat.Damage", "world", false, () => StructureLoads.HeatDamage, v => StructureLoads.HeatDamage = v,
+            "Hull blocks hotter than they can take (reentry, very fast low flight) lose health. Heat weakens the structure either way. On by default.")
+            .Ui("Heat damage", GHeat, Basic);
+        B("Heat.Scorch", "world", false, () => HeatScorch.Enabled, v => HeatScorch.Enabled = v,
+            "Heat leaves a few large burn marks on the hull where it got hot in a re-entry. Worked out on the server; Fx.ScorchVisible hides them on this PC.")
+            .Ui("Scorch marks", GHeat, Basic).SeenByClients();   // (HeatScorch.Sync: the client stamps them)
+        F("Entry.OnsetMach", "world", 0.5, 25, false, () => AeroEntryFx.OnsetMach, SetOnsetMach,
+            "Entry heating (the plasma) starts at this Mach number.")
+            .Ui("Heating starts at Mach", GHeat, Advanced, "Mach", 0.1).SeenByClients().Check = v => v + 0.05 >= FullMach() ? "must stay under Entry.FullMach" : null;
+        F("Entry.FullMach", "world", 0.6, 30, false, FullMach, SetFullMach,
+            "Entry heating is full at this Mach number.")
+            .Ui("Full heating at Mach", GHeat, Advanced, "Mach", 0.1).SeenByClients().Check = v => v <= AeroEntryFx.OnsetMach + 0.05 ? "must stay over Entry.OnsetMach" : null;
+        F("Entry.HeatLag", "world", 0.05, 30, false, () => AeroEntryFx.HeatLag, v => AeroEntryFx.HeatLag = (float)v,
+            "Seconds the hull takes to heat up and cool down (the glow lingers after slowing).")
+            .Ui("Heat-up / cool-down time", GHeat, Advanced, "s", 0.05).SeenByClients();
+        I("Heat.ScorchSpots", "world", 0, 16, false, () => HeatScorch.MaxSpots, v => HeatScorch.MaxSpots = (int)v,
+            "The most scorch marks one ship gets (the hot faces are gathered into this many spots).")
+            .Ui("Scorch marks per ship", GHeat, Advanced);
+
+        // ── performance (the host's) ──
+        F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,
+            "The most aero may take of a simulation frame (ms); past it, grids not piloted wait a few frames.")
+            .Ui("Aero time budget per frame", GPerf, Advanced, "ms", 0.1);
+        I("Perf.Workers", "world", 1, 16, false, () => AeroWork.Workers, v => AeroWork.Workers = (int)v,
+            "Background cores aero may keep busy (hull and force-table builds).")
+            .Ui("Background threads", GPerf, Advanced);
+        B("Perf.TableCache", "world", false, () => AeroTableCache.Enabled, v => AeroTableCache.Enabled = v,
+            "Keep built force tables for reuse (a grid seen before builds in milliseconds).")
+            .Ui("Reuse force tables", GPerf, Advanced);
+        I("Perf.TableCacheMB", "world", 16, 4096, false, () => (int)(AeroTableCache.MaxBytes >> 20), v => AeroTableCache.MaxBytes = (long)v << 20,
+            "The force-table cache's size (MB).")
+            .Ui("Force-table cache size", GPerf, Advanced, "MB", 16);
+        B("Perf.LocalUpdates", "world", false, () => AeroGridComponent.LocalUpdates, v => AeroGridComponent.LocalUpdates = v,
+            "Update only the changed part of a hull when blocks change (off: rebuild the whole grid).")
+            .Ui("Partial hull updates", GPerf, Advanced);
+        F("Structure.Rate", "world", 1, 20, false, () => StructureLoads.Rate, v => StructureLoads.Rate = (float)v,
+            "Structure evaluations per second of a player's ship (higher: quicker to react, more background work).")
+            .Ui("Structure updates per second", GPerf, Advanced, "Hz", 0.5);
+        I("Perf.ChunksPerUpdate", "world", 1, 64, false, () => AeroGridComponent.ChunksPerUpdate, v => AeroGridComponent.ChunksPerUpdate = (int)v,
+            "Hull chunks updated per pass after a block change.")
+            .Ui("Hull chunks per update", GPerf, Hidden);
+        F("Perf.MinSpeedForUpdates", "world", 0, 1000, false, () => AeroGridComponent.MinSpeedForUpdates, v => AeroGridComponent.MinSpeedForUpdates = (float)v,
+            "Below this speed (m/s) a damaged or edited hull waits before updating its forces.")
+            .Ui("Hull update minimum speed", GPerf, Hidden, "m/s", 1);
+        F("Perf.QuietBeforeFullRebuild", "world", 0.5, 120, false, () => AeroGridComponent.QuietBeforeFullRebuild, v => AeroGridComponent.QuietBeforeFullRebuild = v,
+            "Seconds without block changes before a full rebuild cleans up after local updates.")
+            .Ui("Quiet time before a full rebuild", GPerf, Hidden, "s", 0.5);
+
+        // ══ CLIENT ══
+
+        // ── HUD ──
         B("Hud.StallWarning", "client", false, () => StallWarning.Enabled, v => StallWarning.Enabled = v,
-            "The stall warning, from the whole ship's air force (any shape): STALL when pulling further only loses lift, amber when close to it.");
+            "The stall warning, from the whole ship's air force (any shape): STALL when pulling further only loses lift, amber when close to it.")
+            .Ui("Stall warning", GHud, Basic);
         B("Hud.Loac", "client", false, () => LoacWarning.Enabled, v => LoacWarning.Enabled = v,
-            "The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the attitude you command needs nearly / more than the torque the gyros, thrusters and control surfaces have at this speed (slow, the surfaces lose to the air).");
-        B("Hud.GameStallWarning", "client", false, () => GameStallWarning.On, v => GameStallWarning.On = v,
-            "The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity - it ignores the wings' lift). Off by default: removed.");
+            "The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the attitude you command needs nearly / more than the torque the gyros, thrusters and control surfaces have at this speed (slow, the surfaces lose to the air).")
+            .Ui("Loss-of-control warning", GHud, Basic);
         B("Hud.Mach", "client", false, () => MachHud.On, v => MachHud.On = v,
-            "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying. Off by default: the flight boxes by ALT show it.");
-        // (the airframe you can feel - StructureFeel.cs, 2026-10-14: the structure's load, heard and felt in the seat)
+            "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying. Off by default: the flight boxes by ALT show it.")
+            .Ui("Mach in speed readout", GHud, Basic);
+        B("Hud.GameStallWarning", "client", false, () => GameStallWarning.On, v => GameStallWarning.On = v,
+            "The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity - it ignores the wings' lift). Off by default: removed.")
+            .Ui("Game's own stall text", GHud, Basic);
+
+        // ── feel and audio (the airframe you can feel - StructureFeel.cs, 2026-10-14: the structure's load, heard and felt in the seat) ──
         B("Feel.Creaks", "client", false, () => StructureFeel.Creaks, v => StructureFeel.Creaks = v,
-            "The airframe creaks and groans as the structure is loaded (from 60% of its strength, more and louder toward 100%), and cracks when a block wears or breaks. The ship you are seated in.");
+            "The airframe creaks and groans as the structure is loaded (from 60% of its strength, more and louder toward 100%), and cracks when a block wears or breaks. The ship you are seated in.")
+            .Ui("Airframe creaks", GFeel, Basic);
         F("Feel.CreakVolume", "client", 0, 2, false, () => StructureFeel.Volume, v => StructureFeel.Volume = (float)v,
-            "The creaks' and cracks' volume, times this.");
+            "The creaks' and cracks' volume, times this.")
+            .Ui("Creak volume", GFeel, Basic, "×", 0.05);
         B("Feel.Shake", "client", false, () => StructureFeel.Shake, v => StructureFeel.Shake = v,
-            "The cockpit buzzes as the structure is loaded (from 50% of its strength, noticeable near 100%), with a jolt when a block breaks. The game's own camera shake settings apply.");
+            "The cockpit buzzes as the structure is loaded (from 50% of its strength, noticeable near 100%), with a jolt when a block breaks. The game's own camera shake settings apply.")
+            .Ui("Load shake", GFeel, Basic);
         F("Feel.ShakeScale", "client", 0, 5, false, () => StructureFeel.ShakeScale, v => StructureFeel.ShakeScale = (float)v,
-            "The load shake's strength, times this.");
+            "The load shake's strength, times this.")
+            .Ui("Load shake strength", GFeel, Basic, "×", 0.05);
+        F("Feel.CreakFrom", "client", 0.3, 1, false, () => StructureFeel.CreakFrom, v => StructureFeel.CreakFrom = (float)v,
+            "The creaks start at this share of the structure's strength (0.6: at 60%).")
+            .Ui("Creaks start at load", GFeel, Advanced, "× strength", 0.05);
+
+        // ── visual effects ──
         B("Fx.Effects", "client", false, () => AeroEntryFx.AllEffects, v => AeroEntryFx.AllEffects = v,
-            "Every aero visual effect (plasma, vapour, tip trails, the plasma light). Off: none at all.");
+            "Every aero visual effect (plasma, vapour, tip trails, the plasma light). Off: none at all.")
+            .Ui("Aero visual effects", GFx, Basic);
         B("Fx.FlightField", "client", false, () => FlightField.On, v => FlightField.On = v,
-            "The full flight effects (off: the older single plasma at the nose, no vapour or trails).");
-        B("Fx.Plasma", "client", false, () => FlightField.PlasmaOn, v => FlightField.PlasmaOn = v, "Entry plasma sparks over the hull.");
-        B("Fx.Vapour", "client", false, () => FlightField.VapourOn, v => FlightField.VapourOn = v, "Transonic vapour along the hull's edges.");
-        B("Fx.Tips", "client", false, () => FlightField.TipsOn, v => FlightField.TipsOn = v, "Wing-tip vapour trails.");
-        B("Fx.SpotLight", "client", false, () => FlightField.SpotOn, v => FlightField.SpotOn = v, "The plasma's light on the hull (one shadowed spot light per glowing grid).");
+            "The full flight effects (off: the older single plasma at the nose, no vapour or trails).")
+            .Ui("Full flight effects", GFx, Advanced);
+        B("Fx.Plasma", "client", false, () => FlightField.PlasmaOn, v => FlightField.PlasmaOn = v, "Entry plasma sparks over the hull.")
+            .Ui("Re-entry plasma", GFx, Basic);
+        B("Fx.Vapour", "client", false, () => FlightField.VapourOn, v => FlightField.VapourOn = v, "Transonic vapour along the hull's edges.")
+            .Ui("Transonic vapour", GFx, Basic);
+        B("Fx.Tips", "client", false, () => FlightField.TipsOn, v => FlightField.TipsOn = v, "Wing-tip vapour trails.")
+            .Ui("Wingtip trails", GFx, Basic);
+        B("Fx.SpotLight", "client", false, () => FlightField.SpotOn, v => FlightField.SpotOn = v, "The plasma's light on the hull (one shadowed spot light per glowing grid).")
+            .Ui("Plasma glow light", GFx, Basic);
+        B("Fx.TornSmoke", "client", false, () => TearSmoke.Enabled, v => TearSmoke.Enabled = v,
+            "A joint the structure breaks smokes and sheds debris for a few seconds, on the ship and on the piece that tears off.")
+            .Ui("Smoke from breaks", GFx, Basic);
+        F("Fx.TornSmokeSeconds", "client", 0.5, 20, false, () => TearSmoke.Seconds, v => TearSmoke.Seconds = (float)v,
+            "Seconds a torn joint smokes.")
+            .Ui("Break smoke duration", GFx, Advanced, "s", 0.5);
+        B("Fx.VapourCone", "client", false, () => FlightField.ConeOn, v => FlightField.ConeOn = v,
+            "The transonic shock's vapour cone round the body (experimental: off until tuned).")
+            .Ui("Vapour cone (experimental)", GFx, Advanced);
+        F("Fx.Brightness", "client", 0, 3, false, () => FlightField.Bright, v => FlightField.Bright = (float)v,
+            "The plasma's and glow's brightness, times this.")
+            .Ui("Plasma brightness", GFx, Advanced, "×", 0.05);
+        B("Fx.ScorchVisible", "client", false, () => HeatScorch.Visible, v => HeatScorch.Visible = v,
+            "Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any).")
+            .Ui("Show scorch marks", GFx, Advanced);
+        B("Fx.ThrusterFlamesFollow", "client", false, () => ThrustTorque.FlamesEnabled, v => ThrustTorque.FlamesEnabled = v,
+            "Thruster flames show the share each thruster gives to steering (off: the game's own flames).")
+            .Ui("Thruster flames show attitude thrust", GFx, Advanced);
+        F("Fx.DebrisScale", "client", 0, 3, false, () => TearSmoke.DebrisScale, v => TearSmoke.DebrisScale = (float)v,
+            "The debris a break sheds, times this.")
+            .Ui("Break debris amount", GFx, Advanced, "×", 0.05);
+
+        // ── effects quality ──
         I("Fx.MaxGrids", "client", 1, 32, false, () => FlightField.FlightMax, v => FlightField.FlightMax = (int)v,
-            "Grids with flight effects at once (the nearest to the camera).");
+            "Grids with flight effects at once (the nearest to the camera).")
+            .Ui("Ships with effects", GQuality, Basic);
         F("Fx.Range", "client", 100, 50000, false, () => FlightField.FlightRange, v => FlightField.FlightRange = (float)v,
-            "Distance (m) past which a grid shows no flight effects.");
+            "Distance (m) past which a grid shows no flight effects.")
+            .Ui("Effect distance", GQuality, Basic, "m", 100);
         I("Fx.SpawnPerTick", "client", 1, 200, false, () => FlightField.SpawnPerTick, v => FlightField.SpawnPerTick = (int)v,
-            "Effects started per frame while a grid's effects build up (higher: faster, more hitching).");
+            "Effects started per frame while a grid's effects build up (higher: faster, more hitching).")
+            .Ui("Effect build-up speed", GQuality, Advanced);
     }
 
     // ── the entry heating's Mach pair (stored as heat: OnsetHeat (M / OnsetMach)^3; FullMach is where it is full) ──
@@ -181,6 +352,8 @@ public static partial class AeroSettings
     {
         var s = new Setting { Name = name, Type = type, Scope = scope, Min = min, Max = max, Rebuild = rebuild, Get = get, Set = set, Doc = doc };
         s.Default = get();   // (the field's own initial value)
+        s.Order = _all.Count;
+        if (type != "float") s.Step = 1;
         _all.Add(s); _by[name] = s;
         return s;
     }

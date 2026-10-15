@@ -16,7 +16,13 @@ namespace AeroMod;
 /// </summary>
 public static class HeatScorch
 {
+    /// <summary>The marks at all (AeroSettings "Heat.Scorch", world: the server gathers the spots, clients stamp them).</summary>
     public static bool Enabled = true;
+    /// <summary>This PC draws them (AeroSettings "Fx.ScorchVisible", client).</summary>
+    public static bool Visible = true;
+    /// <summary>A stamp threw: no more marks this session (was Enabled = false - a registered world setting must not be
+    /// switched by a failure, or the save would keep it off).</summary>
+    static volatile bool _failed;
     /// <summary>Spots per ship; faces within JoinMeters of a spot (and facing its way) belong to it.</summary>
     public static int MaxSpots = 4;
     public static float JoinMeters = 4f, MinDiameter = 1.5f, MaxDiameter = 12f, Depth = 2f;
@@ -44,7 +50,7 @@ public static class HeatScorch
 
     internal static void Update(AeroGridComponent g, HullHeat hh, Vector3 airVelLocal, float dt)
     {
-        if (!Enabled || hh == null || hh.FaceCount == 0) return;
+        if (!Enabled || _failed || hh == null || hh.FaceCount == 0) return;
         bool reentry = TestAnyHeat || AeroEntryFx.EntryStateAt(g.Entity, out _, out _) || g.EntryHeat >= AeroEntryFx.OnsetHeat;
         if (!reentry) return;
         if (hh.MaxSkin(out _) < LightK) return;
@@ -119,7 +125,7 @@ public static class HeatScorch
 
     internal static void Sync(AeroEntryFxComponent c, AeroGridComponent server)
     {
-        if (!Enabled || server == null) return;
+        if (!Enabled || !Visible || _failed || server == null) return;
         int ver = System.Threading.Volatile.Read(ref server.ScorchVersion);
         if (ver == c.ScorchVersion) return;
         var spots = System.Threading.Volatile.Read(ref server.ScorchPublished);
@@ -165,7 +171,7 @@ public static class HeatScorch
                 }
                 Status = $"{grid.DebugName}: {spots.Count} spot(s), {Placed} placed, {Missed} missed (no block at the spot)";
             }
-            catch (Exception e) { Status = "scorch failed: " + e.GetType().Name + ": " + e.Message; Enabled = false; }
+            catch (Exception e) { Status = "scorch failed: " + e.GetType().Name + ": " + e.Message; _failed = true; }
         }
     }
 }
