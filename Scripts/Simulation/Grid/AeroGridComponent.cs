@@ -34,6 +34,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // wings it detects, and the task. The active surface, classifier and wings serve the simulation until the swap.
     private ManifoldClassifier _buildManifold;
     private AeroWork.Item _finalizeTask;
+    /// <summary>Bumped by every background build and by a re-add: a build whose number is no longer this one is stale -
+    /// it neither starts nor hands over its results (2026-10-15: a grid removed and re-added mid-build - a teleport - got
+    /// the old worker's table, chunks and wings for the old shape, or its quick table installed on the new model).</summary>
+    private volatile int _buildGen;
     private List<LiftingSurface> _builtWings;
     private PrecomputedShadowMap _builtShadow, _spareShadow;
     private ForceTable _builtTable;
@@ -327,6 +331,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
         // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
         _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
+        _buildGen++;   // (a build still running for the last time in the scene: stale)
 
         _gridAccessor = new Se2GridAccessor(_octree);
         _surface = new SmoothSurfaceProvider();

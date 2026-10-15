@@ -99,12 +99,14 @@ public partial class AeroGridComponent
         foreach (var (lo, hi) in boxes) cellEstimate += (long)(hi.X - lo.X + 1) * (hi.Y - lo.Y + 1) * (hi.Z - lo.Z + 1);
         bool bigBuild = cellEstimate > AeroGc.BigBuildCells;
         if (bigBuild) { AeroGc.Enter(); Log.Default?.Info($"[AERO] big build start: grid {Entity?.DebugName}, ~{cellEstimate} cells (capture {AeroCost.Ms(tb):F0} ms)"); }
+        int gen = ++_buildGen;
         _finalizeTask = AeroWork.Enqueue(() => CachedPriority, () =>
         {
           // (AeroWork: a hundred grids arriving at once queue for its workers)
           var workerPriority = System.Threading.ThreadPriority.BelowNormal;
           try
           {
+            if (gen != _buildGen) return;   // (superseded while queued: a re-add)
             // below the game's own threads: a rebuild must never compete with a frame (the worker's own priority back
             // after - 2026-10-15: it kept Lowest, and every later job on that worker - damage updates - ran at it)
             try { workerPriority = System.Threading.Thread.CurrentThread.Priority; System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Lowest; } catch { }
@@ -117,6 +119,7 @@ public partial class AeroGridComponent
             {
                 foreach (var (a, b) in boxes) cChunks.CountBlock(cChunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); cChunks.SealCounts();
                 surface.ReleaseAll();   // (the swap puts this surface live: empty, as a big grid's is after its build)
+                if (gen != _buildGen) return;
                 _builtWings = cWings; _builtShadow = null; _builtChunks = cChunks; _builtTable = cTable;
                 FromCache = true;
                 _rebuildNote = $"from the table cache in {sw.Elapsed.TotalMilliseconds:F0} ms ({cChunks.ChunkCount} chunks, {cWings.Count} wings)";
@@ -141,21 +144,20 @@ public partial class AeroGridComponent
             AeroCost.FinClassify.Stop(t); t = AeroCost.Start();
             if (detector is ConnectedComponentWingDetector cc) { cc.Manifold = manifold; cc.ManifoldSurface = surface; cc.CellSize = cellGeo.size; cc.CellOffset = cellGeo.offset; }
             detector.Invalidate();
-            _builtWings = detector.Detect(snapshot, surface, blockSize);
+            var wings = detector.Detect(snapshot, surface, blockSize);
             long aWing = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; m0 = m; ms[4] = sw.Elapsed.TotalMilliseconds;
             AeroCost.FinWings.Stop(t); t = AeroCost.Start();
             var shadow = spareShadow ?? new PrecomputedShadowMap();
             shadow.Manifold = manifold;
             // (no 26-direction precompute: the force table bakes its own occlusion; the face loop - only before a
             //  first table - fills the map as it goes)
-            _builtShadow = shadow;
             long aShd = (m = GC.GetAllocatedBytesForCurrentThread()) - m0; ms[5] = sw.Elapsed.TotalMilliseconds;
             // the force table: the faces' forces for every direction (per frame a lookup, whatever the grid's size)
             var builder = RentTableBuilder();
             try
             {
                 var tmp = new LiftingSurfaceModel(builder, liftModel: new CompressibleWingModel());
-                tmp.InstallWings(_builtWings ?? new List<LiftingSurface>());
+                tmp.InstallWings(wings ?? new List<LiftingSurface>());
                 tmp.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
                 tmp.ExcludeWingFaces(builder, surface.Version);
                 if (DampedShadowedDragModel.FlowThroughEngines && engines.Count > 0)
@@ -164,16 +166,18 @@ public partial class AeroGridComponent
                 if (_model.Table == null)
                 {
                     var tq = System.Diagnostics.Stopwatch.StartNew();
-                    _quickTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom, n: 4, nj: 2);
+                    var quick = builder.BuildForceTable(snapshot, surface, manifold, tableCom, n: 4, nj: 2);
+                    if (gen == _buildGen) _quickTable = quick;
                     QuickMs = tq.Elapsed.TotalMilliseconds;
                     if (bigBuild || surface.FaceCount > BigSurfaceFaces) Log.Default?.Info($"[AERO] quick table for grid {Entity?.DebugName}: {QuickMs:F0} ms, {sw.Elapsed.TotalMilliseconds:F0} ms after the build began");
                 }
                 var chunks = new ChunkedTable(8, ChunkSize, new FacePhysics(builder));
-                _builtTable = builder.BuildForceTable(snapshot, surface, manifold, tableCom, chunks: chunks);
+                var table = builder.BuildForceTable(snapshot, surface, manifold, tableCom, chunks: chunks);
                 // (saved before the counts and before anything shares it; small grids build in a moment, not kept)
-                if (cacheKey != null && sw.Elapsed.TotalMilliseconds > CacheAboveMs) AeroTableCache.Save(cacheKey, _builtTable, chunks, _builtWings);
+                if (cacheKey != null && sw.Elapsed.TotalMilliseconds > CacheAboveMs) AeroTableCache.Save(cacheKey, table, chunks, wings);
                 foreach (var (a, b) in boxes) chunks.CountBlock(chunks.KeyOf(new Vector3(a.X + b.X + 1, a.Y + b.Y + 1, a.Z + b.Z + 1) * 0.125f), 1); chunks.SealCounts();
-                _builtChunks = chunks;
+                if (gen != _buildGen) return;   // (stale: a re-add since - the results are the old shape's)
+                _builtWings = wings; _builtShadow = shadow; _builtTable = table; _builtChunks = chunks;
             }
             finally { ReturnTableBuilder(builder); }
             ms[5] = sw.Elapsed.TotalMilliseconds;
