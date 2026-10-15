@@ -55,6 +55,26 @@ static partial class Program
                 Check(worst < 1e-3, $"A4 pooled builder: an engine-less grid after one with intakes, table off a fresh builder's by {worst:F3} (unit q)");
             }
         }
+        // A5: the chunks' face physics (their local updates after damage) are the ship's own - skin friction from its
+        // length - made before the build on a pooled builder, and read back from the table cache.
+        {
+            var pa = Path.Combine(dataDir, "jetliner.boxes"); var pb = Path.Combine(dataDir, "bluefighter.boxes");
+            if (File.Exists(pa) && File.Exists(pb))
+            {
+                var x = Build("jetliner", LoadBoxes(pa)); var yBoxes = LoadBoxes(pb); var y = Build("bluefighter", yBoxes);
+                var pooled = new DampedShadowedDragModel();
+                pooled.BuildForceTable(x.Grid, x.Surface, x.Manifold, x.Com, n: 2, nj: 1);
+                var ch = new ChunkedTable(4, 8f, new FacePhysics(pooled));   // (as the game makes them: before the build)
+                var t = pooled.BuildForceTable(y.Grid, y.Surface, y.Manifold, y.Com, n: 4, nj: 1, chunks: ch);
+                float own = pooled.SkinCf, lengthOne = new FacePhysics(new DampedShadowedDragModel()).Cf;
+                Check(ch.Phys.Cf == own, $"A5 chunk physics after a pooled build: Cf {ch.Phys.Cf:F5}, the ship's {own:F5} (the jetliner's {DampedShadowedDragModel.TurbulentCf(60f):F5}, 1 m {lengthOne:F5})");
+                string key = AeroTableCache.Key(yBoxes, BlockSize, SnapshotGridAccessor.CellScale(BlockSize), new FacePhysics(new DampedShadowedDragModel())) + "a5test";
+                AeroTableCache.Save(key, t, ch, new List<LiftingSurface>());
+                bool ok = AeroTableCache.TryLoad(key, new FacePhysics(new DampedShadowedDragModel()), out _, out var c2, out _);
+                try { File.Delete(Path.Combine(Path.GetTempPath(), "AeroMod", "tables", key + ".bin")); } catch { }
+                Check(ok && c2.Phys.Cf == own, $"A5 chunk physics from the table cache: Cf {(ok ? c2.Phys.Cf : -1f):F5}, the ship's {own:F5}");
+            }
+        }
         return fails;
     }
 }

@@ -13,6 +13,9 @@ public readonly struct FacePhysics
         CdBluff = m.CdBluff; CpMax = m.CpMax; Cf = m.SkinCf; St = m.Streamlining; Square = m.SquareLaw;
         BaseCp = m.Streamlining > 0f ? m.CpBase * (1f - 0.7f * m.Streamlining) : m.CpBase;
     }
+    FacePhysics(in FacePhysics p, float cf) { CdBluff = p.CdBluff; CpMax = p.CpMax; Cf = cf; St = p.St; Square = p.Square; BaseCp = p.BaseCp; }
+    /// <summary>The same, with another skin friction coefficient (a ship's own, ReynoldsSkin: from its length).</summary>
+    public FacePhysics WithCf(float cf) => new FacePhysics(this, cf);
 
     /// <summary>A face (normal n, centre p, reached area a) with the grid moving along v, into acc[o..o+13):
     /// F0 F1 T0 T1 frontal.</summary>
@@ -56,7 +59,9 @@ public sealed class ChunkedTable
 {
     public readonly int N;
     public readonly float ChunkSize;
-    public readonly FacePhysics Phys;
+    /// <summary>The face physics local updates use: the full build's (BuildForceTable sets it - its skin friction is the
+    /// ship's own, from its length), or the saved one (Read).</summary>
+    public FacePhysics Phys;
     readonly Dictionary<long, int> _index = new(LongKey.Comparer);
     // Per chunk, its share of every direction ([slot * 13 + k]), kept in 8 bits with a scale per component (13): a
     // share only feeds deltas against the full-precision total, so its rounding (0.4% of the chunk's own largest
@@ -144,7 +149,7 @@ public sealed class ChunkedTable
     /// block counts are not: they come from the blocks (CountBlock, SealCounts) as after a build.</summary>
     public void Write(System.IO.BinaryWriter w)
     {
-        w.Write(N); w.Write(ChunkSize); w.Write(_q.Count);
+        w.Write(N); w.Write(ChunkSize); w.Write(Phys.Cf); w.Write(_q.Count);
         var keys = new List<long>(_q.Count); for (int i = 0; i < _q.Count; i++) keys.Add(0);
         foreach (var kv in _index) keys[kv.Value] = kv.Key;
         var buf = new byte[Slots * ForceTable.Stride];
@@ -171,9 +176,11 @@ public sealed class ChunkedTable
 
     public static ChunkedTable Read(System.IO.BinaryReader r, FacePhysics phys)
     {
-        int n = r.ReadInt32(); float cs = r.ReadSingle(); int count = r.ReadInt32();
-        if (n < 1 || n > 64 || count < 0 || count > 1 << 22) throw new System.IO.InvalidDataException("chunks");
-        var t = new ChunkedTable(n, cs, phys);
+        int n = r.ReadInt32(); float cs = r.ReadSingle(), cf = r.ReadSingle(); int count = r.ReadInt32();
+        if (n < 1 || n > 64 || count < 0 || count > 1 << 22 || !(cf >= 0f && cf < 1f)) throw new System.IO.InvalidDataException("chunks");
+        // (the ship's own skin friction, as built - 2026-10-15: a loaded table's local updates took the key's physics,
+        //  Cf for a 1 m ship: ~0.0032 where a 30 m ship's is ~0.0019)
+        var t = new ChunkedTable(n, cs, phys.WithCf(cf));
         int len = t.Slots * ForceTable.Stride;
         for (int c = 0; c < count; c++)
         {

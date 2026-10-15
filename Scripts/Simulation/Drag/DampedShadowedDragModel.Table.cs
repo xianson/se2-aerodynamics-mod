@@ -195,6 +195,9 @@ public partial class DampedShadowedDragModel
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _shadowMap.Manifold = manifold;
         EnsureSoA(cache.Faces, cache.Version, manifold);
+        // (the chunks' local updates take this surface's physics - 2026-10-15: they kept what the chunks were made with,
+        //  a pooled builder's previous ship's length, or 1 m before any build: the wrong skin friction after damage)
+        if (chunks != null) chunks.Phys = new FacePhysics(this);
         var table = new ForceTable(n, nj) { SurfaceVersion = cache.Version, BuildCom = com };
         int total = _px.Count;
         float cdBluff = CdBluff, cpMax = CpMax, cf = SkinCf, st = Streamlining;

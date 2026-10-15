@@ -89,8 +89,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float _rcsGeomAir = -1f;
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
-    /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key.</summary>
-    private static readonly FacePhysics TablePhysics = new FacePhysics(new DampedShadowedDragModel());
+    /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key. Read when
+    /// asked: the static switches (SubsonicSquareLaw, ReynoldsSkin) as they are now, not as at type init (2026-10-15).</summary>
+    private static FacePhysics TablePhysics => new FacePhysics(_tablePhysicsModel);
+    private static readonly DampedShadowedDragModel _tablePhysicsModel = new DampedShadowedDragModel();
     /// <summary>Builds shorter than this are not cached (a small grid's: a file costs more than it saves).</summary>
     private const double CacheAboveMs = 40;
     /// <summary>Whether the last build came from the table cache.</summary>
