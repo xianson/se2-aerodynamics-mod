@@ -533,7 +533,7 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Fx.TornSmokeSeconds` | client | float | 4 | 0.5..20 | Break smoke duration · Visual effects · advanced | Seconds a torn joint smokes. |
 | `Fx.VapourCone` | client | bool | false |  | Vapour cone (experimental) · Visual effects · advanced | The transonic shock's vapour cone round the body (experimental: off until tuned). |
 | `Fx.Brightness` | client | float | 1 | 0..3 | Plasma brightness · Visual effects · advanced | The plasma's and glow's brightness, times this. |
-| `Fx.ScorchVisible` | client | bool | true |  | Show scorch marks · Visual effects · advanced | Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). |
+| `Fx.ScorchVisible` | client | bool | true |  | Show scorch marks · Visual effects · advanced | Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). Turning it off stops new marks only: those already placed stay. |
 | `Fx.ThrusterFlamesFollow` | client | bool | true |  | Thruster flames show attitude thrust · Visual effects · advanced | Thruster flames show the share each thruster gives to steering (off: the game's own flames). |
 | `Fx.DebrisScale` | client | float | 1 | 0..3 | Break debris amount · Visual effects · advanced | The debris a break sheds, times this. |
 | `Debris.Drag` | client | bool | true | | Debris drag · Visual effects · advanced | Loose fracture pieces (a broken block's chips, not grids) slow in the air: quadratic drag on their bounding box against the air (the wind taken off, the game's own wind push counted in), and a little on their tumbling. The pieces exist on this PC only. |

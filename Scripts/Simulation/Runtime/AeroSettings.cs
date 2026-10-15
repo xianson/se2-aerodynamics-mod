@@ -326,7 +326,7 @@ public static partial class AeroSettings
             "The plasma's and glow's brightness, times this.")
             .Ui("Plasma brightness", GFx, Advanced, "×", 0.05);
         B("Fx.ScorchVisible", "client", false, () => HeatScorch.Visible, v => HeatScorch.Visible = v,
-            "Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any).")
+            "Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). Turning it off stops new marks only: those already placed stay.")
             .Ui("Show scorch marks", GFx, Advanced);
         B("Fx.ThrusterFlamesFollow", "client", false, () => ThrustTorque.FlamesEnabled, v => ThrustTorque.FlamesEnabled = v,
             "Thruster flames show the share each thruster gives to steering (off: the game's own flames).")
