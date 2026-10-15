@@ -691,6 +691,22 @@ static class Program
         Check(slowE.failAt > 40f && MathF.Abs(slowE.failAt / fastE.failAt - 1f) < 0.03f, $"rate-independent failure: held at 0.9 the root tires through at {slowE.failAt:F2} s at 2 Hz, {fastE.failAt:F2} s at 8 Hz");
         var held = Run(f12, 0.25f, 30f);
         Check(held.failAt > 0.5f, $"progressive: held at 1.15 the root wears through over time - fails at {held.failAt:F2} s, not at once");
+        // (A11, 2026-10-15) a block whose definition removes it at 0.5 fails AT 0.5 - worn under it, the game removed it from
+        // a health write with no split, smoke or tear
+        {
+            s.BreakAt = new float[s.Count]; Array.Fill(s.BreakAt, 0.5f);
+            var health = new float[s.Count]; Array.Fill(health, 1f);
+            float lowest = 1f, failHealth = -1f;
+            for (float t = 0f; t < 30f && failHealth < 0f; t += 0.25f)
+            {
+                for (int i = 0; i < s.Count; i++) { s.Integrity[i] = health[i]; s.ExtForce[i] = f12[i]; }
+                s.SolveFree(Vector3.Zero);
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, damage);
+                foreach (var (b, frac, destroy) in damage) { if (destroy) { failHealth = health[b]; break; } health[b] -= frac; lowest = MathF.Min(lowest, health[b]); }
+            }
+            s.BreakAt = null;
+            Check(failHealth >= 0.5f && lowest > 0.5f - 1e-3f && failHealth < 0.6f, $"own threshold: a block with DestructionThreshold 0.5 wears to {lowest:F3} and fails at {failHealth:F3}, never worn under it");
+        }
         // the snap: past SnapUtil of the intact strength at once; just under it, not in one step
         var over = Run(Loads(StructureFatigue.SnapUtil * 1.05f), 0.05f, 0.05f);
         Check(over.failAt > 0f && over.failAt <= 0.05f + 1e-4f, $"snap: past SnapUtil the joint goes at once ({over.failAt:F2} s)");

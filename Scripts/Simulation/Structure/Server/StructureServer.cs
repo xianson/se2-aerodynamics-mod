@@ -51,6 +51,8 @@ public partial class AeroGridComponent
     {
         public List<int> BoxBlock = new(); public List<Vector3I> Lo = new(), Hi = new();
         public List<float> Mass = new(); public List<int> Mat = new(); public List<string> Names = new();
+        /// <summary>Each block's definition's DestructionThreshold (ShipStructure.BreakAt).</summary>
+        public List<float> BreakAt = new();
         /// <summary>The blocks' mount points in grid cells: block, outward direction (grid axes, unit), the cells' box.</summary>
         public List<(int block, Vector3I dir, Vector3I lo, Vector3I hi)> Mounts = new();
         public List<CubeBlockComponent> Blocks = new();
@@ -240,6 +242,7 @@ public partial class AeroGridComponent
         if (build != null)
         {
             var nst = ShipStructure.Build(build.BoxBlock, build.Lo, build.Hi, build.Mass, build.Mat, build.Mounts);
+            if (build.BreakAt.Count == nst.Count) nst.BreakAt = build.BreakAt.ToArray();
             var nhh = BuildHeat(nst, build, snap);
             if (hh != null && st != null) CarryHeat(st, hh, nst, nhh);
             st = nst; hh = nhh;

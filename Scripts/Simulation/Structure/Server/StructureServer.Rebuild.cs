@@ -68,6 +68,7 @@ public partial class AeroGridComponent
             b.Names.Add(name);
             AddMounts(block, idx, b.Mounts);
             b.Mat.Add(StructMaterial.Classify(name));
+            b.BreakAt.Add(DestructionThreshold(block));
         }
         if (StructureLoads.DumpNext) { StructureLoads.DumpNext = false; DumpStructure(b); }
         return b;
