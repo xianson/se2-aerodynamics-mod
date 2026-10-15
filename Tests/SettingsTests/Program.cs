@@ -17,6 +17,10 @@
 // 9. WORLD UNLOAD: the host file's forced names do not carry over to the next world.
 // 10. NO CODE WRITES: outside the harness (Dev/, harness verb switches) no code writes a setting's field - a runtime state
 //    ("failed, off for the session") is a flag of its own (the Orbital Mod's ProxyAtmospheres, 2026-10-15).
+// 11. FILE POLL (2026-10-15, in a temp folder - never the player's): what the background poll reads is applied only on the
+//    next tick-thread Poll (setters touch tick-thread state); a forced poll applies at once; a world unload discards a
+//    host-file read still waiting. A Set made while the client file is being written stays marked: the next poll writes
+//    it (it was cleared unconditionally and could miss the file).
 global using Keen.VRage.Library.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -332,6 +336,75 @@ static class Program
         Check(files > 50, $"no code writes: {files} files scanned");
     }
 
+    // ── 11. the file poll: read in the background, applied on a tick ──
+    static readonly BindingFlags Priv = BindingFlags.NonPublic | BindingFlags.Static;
+    static void SetStatic(string name, object v) => typeof(AeroSettings).GetField(name, Priv).SetValue(null, v);
+    static void PollFiles() => typeof(AeroSettings).GetMethod("PollFiles", Priv).Invoke(null, new object[] { false });   // (the background task's body)
+    static void TickPoll(bool force = false) { SetStatic("_localNext", 0L); AeroSettings.Poll(force); SetStatic("_pollAt", long.MaxValue); }   // (no background task started)
+    static DateTime _stamp = DateTime.UtcNow.AddHours(1);
+    static void HandEdit(string path, string text) { File.WriteAllText(path, text); File.SetLastWriteTimeUtc(path, _stamp = _stamp.AddMinutes(1)); }
+
+    static void FilePoll()
+    {
+        ResetAll();
+        string dir = Path.Combine(Path.GetTempPath(), "AeroSettingsTests-" + Guid.NewGuid().ToString("N"));
+        SetStatic("_dir", dir);
+        string client = Path.Combine(dir, "AerodynamicsMod.client.cfg"), world = Path.Combine(dir, "AerodynamicsMod.world.cfg");
+        AeroSettings.SawServer = true;
+        SetStatic("_pollAt", long.MaxValue);
+        try
+        {
+            PollFiles(); TickPoll();   // (both files written: defaults; the host file all comments)
+            Check(File.Exists(client) && File.Exists(world) && AeroSettings.FileWhy == "", $"poll: the files written in the temp folder ({AeroSettings.FileWhy})");
+            Check(FlightField.VapourOn, "poll: Fx.Vapour at its default (on)");
+            HandEdit(client, "Fx.Vapour = false" + NL);
+            PollFiles();
+            Check(FlightField.VapourOn, "poll: a hand edit read in the background is not applied there");
+            TickPoll();
+            Check(!FlightField.VapourOn, "poll: the next tick-thread poll applies it");
+            HandEdit(client, "Fx.Vapour = true" + NL);
+            TickPoll(force: true);
+            Check(FlightField.VapourOn, "poll: a forced poll (a world loaded) reads and applies at once");
+            AeroSettings.TryGet("Heat.Multiplier", out double hmDef);
+            HandEdit(world, "Heat.Multiplier = 3" + NL);
+            PollFiles();
+            Check(!AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm0) && hm0 == hmDef, "poll: the host file read in the background is not applied there");
+            TickPoll();
+            Check(AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm1) && hm1 == 3, "poll: the next tick-thread poll applies the host file (forced)");
+            var carriers = typeof(AeroSettings).GetField("_carriers", Priv);
+            carriers.SetValue(null, 1);
+            HandEdit(world, "Heat.Multiplier = 4" + NL);
+            PollFiles();   // (read; the world unloads before a tick applies it)
+            AeroSettings.CarrierRemoved();
+            TickPoll();
+            Check(!AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm2) && hm2 == hmDef, "poll: a world unload discards a host-file read still waiting for a tick");
+            carriers.SetValue(null, 0);
+            // a change made while the client file is written (after the poll took its mark) is not lost
+            var dirtyAt = typeof(AeroSettings).GetField("_clientDirtyAt", Priv);
+            var write = typeof(AeroSettings).GetMethod("WriteClient", Priv);
+            Check(AeroSettings.Set("Fx.Vapour", 0, out _), "poll: a client set");
+            long mark = (long)dirtyAt.GetValue(null);
+            Check(mark != 0, "poll: the set marks the client file for writing");
+            System.Threading.Thread.Sleep(2);   // (the next set's mark a later tick)
+            Check(AeroSettings.Set("Fx.Vapour", 1, out _), "poll: another client set, while the first is written");
+            write.Invoke(null, new object[] { mark });   // (the write of the first mark)
+            Check((long)dirtyAt.GetValue(null) != 0, "poll: a set during the write leaves the file marked");
+            dirtyAt.SetValue(null, 1L);   // (settled: the next poll writes)
+            PollFiles(); TickPoll();
+            Check((long)dirtyAt.GetValue(null) == 0 && File.ReadAllText(client).Contains(NL + "Fx.Vapour = true" + NL), "poll: the next poll writes the set made during the write");
+            Check(AeroSettings.Set("Fx.Vapour", 0, out _), "poll: a client set, not yet settled");
+            write.Invoke(null, new object[] { 0L });   // (the file missing: written, the mark taken was none)
+            Check((long)dirtyAt.GetValue(null) != 0, "poll: writing a missing file leaves a pending set marked");
+            dirtyAt.SetValue(null, 0L);
+        }
+        finally
+        {
+            AeroSettings.SawServer = false;
+            ResetAll();
+            try { Directory.Delete(dir, true); } catch { }   // (this test's own temp folder)
+        }
+    }
+
     // ── 7. denylist ──
     static readonly Regex Deny = new(@"^(Dev|Test|Debug|Probe|Trace)|Log$");
     static void Denylist(string root)
@@ -359,7 +432,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root);
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root); FilePoll();
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
