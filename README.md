@@ -31,6 +31,8 @@ For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLE
   overloaded sections wear, fatigue, fail and split; worn joints bend permanently and dent; large pieces tear off with a
   short hold; creaks, groans and cockpit shake follow the load; smoke at torn edges. The flight controller never
   overloads its own ship.
+- **Debris drag.** The loose chips a broken block throws off (the game's fracture debris, not grids) slow in the air:
+  quadratic drag on their bounding box against the air and the wind, a little on their tumbling (`Debris/`).
 - **Gear and airbrakes.** Retractable gear (0.5 / 1 / 1.5 / 2.5 m wheels) on the vanilla suspension, with doors and
   drag; 3x3x3 clamshell airbrakes that open with the parking brake, opening set by a terminal slider.
 - **Settings.** World settings (forces, entry heating, structure, performance) are saved with the world; host overrides

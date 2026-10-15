@@ -133,6 +133,10 @@ public static class AeroSettings
             "A joint the structure breaks smokes and sheds debris for a few seconds, on the ship and on the piece that tears off.");
         F("Fx.TornSmokeSeconds", "client", 0.5, 20, false, () => TearSmoke.Seconds, v => TearSmoke.Seconds = (float)v,
             "Seconds a torn joint smokes.");
+        B("Debris.Drag", "client", false, () => AeroDebrisDrag.Enabled, v => AeroDebrisDrag.Enabled = v,
+            "Loose fracture pieces (a broken block's chips, not grids) slow in the air: drag on their bounding box against the air and the wind, and a little on their tumbling. The pieces live on this PC only.");
+        F("Debris.DragScale", "client", 0, 10, false, () => AeroDebrisDrag.DragScale, v => AeroDebrisDrag.DragScale = (float)v,
+            "The pieces' drag coefficient on their bounding box (1: a blunt chunk).");
         B("Heat.Damage", "world", false, () => StructureLoads.HeatDamage, v => StructureLoads.HeatDamage = v,
             "Hull blocks hotter than they can take (reentry, very fast low flight) lose health. Heat weakens the structure either way. On by default.");
         F("Heat.Multiplier", "world", 0, 10, false, () => HullHeat.HeatMultiplier, v => HullHeat.HeatMultiplier = (float)v,

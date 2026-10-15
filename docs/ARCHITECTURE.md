@@ -17,6 +17,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Lift/` | Wing detection (`ConnectedComponentWingDetector`), the wing lift model (`CompressibleWingModel`), the whole-ship wrapper (`LiftingSurfaceModel`), the ship's stall (`LiftPeak`), wing root loads (`WingStrain`), ground effect | no |
 | `Atmosphere/` | The air model: layered atmosphere, isentropic / shock relations, the thin upper tail | no |
 | `Components/` | Block-level aero components (`IAeroBlockComponent`): control surfaces, airbrake and gear drag, intakes, scoops, rotors, other mods' drag patches; their registry and factory | mostly no (`BlockComponentFactory` reads blocks) |
+| `Debris/` | Drag on the game's loose fracture debris (not grids): the job (`AeroDebrisDrag`, client scene) and its engine-free step (`DebrisDragMath`, run by `Tests/DebrisTests`) | `AeroDebrisDrag.cs` only |
 | `Air/` | The game's air at a grid: density into a full state (`AtmosphereBridge`), wind (`AeroWind`) | yes |
 | `Grid/` | `AeroGridComponent` (one per grid) and its jobs, the rebuild scheduler, the background work queue, the frame budget | yes |
 | `Propulsion/` | Thrust torque and the aero-aware attitude law (`ThrustTorque`, `ThrustAllocator`, `GyroControl`), the older per-thruster path (`OffsetThrustJob`), thrust-vs-Mach profiles, flames, fuel mass | yes (`ThrustAllocator` is pure) |
@@ -34,7 +35,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Injection/` | Adds the mod's components to the game's prefabs at definition load (`EntityInjector`, `InjectAeroComponents`) | yes |
 
 The engine-free folders (`Core` minus `Se2GridAccessor`, `Surface`, `Shadow`, `Drag`, `Lift`, `Atmosphere`,
-`Structure/Model`, parts of `Components` and `Propulsion/ThrustAllocator.cs`) are compiled as-is by the offline test
+`Structure/Model`, parts of `Components`, `Propulsion/ThrustAllocator.cs` and `Debris/DebrisDragMath.cs`) are compiled as-is by the offline test
 projects in `Tests/`; keep game types out of them.
 
 ## 2. How the mod gets into the game
@@ -59,7 +60,7 @@ exists twice, a **server copy** and a **client copy**, each with its own `AeroGr
 
 | Thread | What runs there |
 |---|---|
-| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
+| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
 | **Aero workers** (`AeroWork`, `Workers` = 2 long-running tasks, highest priority first) | full rebuilds (`AeroGridComponent.StartBackgroundBuild`'s lambda), local chunk updates after damage (`Damage.cs`), structure evaluations (`EvaluateStructure`). They only touch the snapshot they were handed; results are installed on the simulation thread (`FinalizeStaggeredBuild`, `TickLocal`, `TickStructureCore`) |
 | **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch, smoke, creaks, Mach readout, settings poll), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
 | **Thread pool** | `AeroSettings.Poll` reads the settings files off the job threads |
