@@ -176,12 +176,12 @@ answers false there.
 
 ## 8. Cross-mod links
 
-**Aero calls the Orbital mod** (by reflection, no lock of aero's held; `Api/OrbitalLink.cs`, `Fx/AeroEntryFx.cs`):
+**Aero calls the Orbital mod** (by reflection, no lock of aero's held; every lookup in `Api/OrbitalLink.cs`, on the rule in `Api/CrossModLink.cs`: the last loaded copy, bound again after an Orbital reload):
 
 | Call | Used for |
 |---|---|
 | `OrbitalApi.TryGetEntryState2` (fallback `TryGetEntryState`) via `OrbitalLink.TryGetEntryState2` | a railed re-entry's true air velocity, density, temperature and braking: hull heat and entry loads (`TickStructureCore`) |
-| `OrbitalApi.TryGetEntryState` via `AeroEntryFx.EntryStateAt` | the scorch's "is re-entering" test (`HeatScorch.Update`) |
+| `OrbitalApi.TryGetEntryState` via `AeroEntryFx.EntryStateAt` (→ `OrbitalLink.TryGetEntryState`) | the scorch's "is re-entering" test (`HeatScorch.Update`) |
 | `OrbitalApi.TryGetGridEdits` via `OrbitalLink.TryGetGridEdits` | velocity changes Orbital wrote into a grid, taken off the contact balance (`StructureContacts`) |
 
 The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelocityLimit`, read by `SpeedUncapJob` into
@@ -191,7 +191,8 @@ The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelo
 `tools/check_contract.sh` checks the members it uses). The Orbital mod's consumers: its build hints and flight HUD
 (`TryDesign`, `GetTopSpeed(At)`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac`,
 `SetFocusGrid`), its railed entry (`RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`, `PredictHullForces`,
-`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), and its harness (`GetFxConsistency`). The
+`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), the seated ship's failure toast
+(`GetStructureEventSequence`, `ReadStructureEvents`: `StructureAlerts`), and its harness (`GetFxConsistency`). The
 stall and LOAC warnings are computed here and drawn by the Orbital mod's HUD; aero's own HUD pieces are the game's
 thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optional Mach readout (`MachHud`).
 

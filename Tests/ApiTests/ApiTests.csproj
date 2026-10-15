@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The public API's offline checks (Program.cs): its shape from source (Roslyn, syntax only), the event queue, the
-       hull heat's published film. -->
+       hull heat's published film, the cross-mod link's binding rule. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
   </ItemGroup>
@@ -14,5 +14,6 @@
     <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider*.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
     <Compile Include="$(Sim)\Api\SeqRing.cs" />
+    <Compile Include="$(Sim)\Api\CrossModLink.cs" />
   </ItemGroup>
 </Project>

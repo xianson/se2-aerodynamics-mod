@@ -118,53 +118,13 @@ public static class AeroEntryFx
     // Orbital mod flies - per grid, the TRUE air velocity past it (world m/s: its real speed, not the rails' capped one) and
     // the air's density there (kg/m3). The hull heat model heats from these (Sutton-Graves at the true speed), so a railed
     // entry heats, weakens and scorches the hull as a real one. Asked of the Orbital mod's API (OrbitalApi.TryGetEntryState,
-    // by reflection - mods compile apart: a typed delegate bound once, looked up again now and then until found).
-    delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
-    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt; static int _orbitalStateFaults;
-    /// <summary>The wait (s) after the Orbital mod's call threw or did not fit, doubling a fault up to 300 s: a throwing
-    /// delegate was dropped with no wait - an assembly scan and a ~200 ms exception per grid every 0.25 s, 2026-10-15.</summary>
-    static long FaultWait() => (long)(Math.Min(10.0 * (1 << Math.Min(System.Threading.Interlocked.Increment(ref _orbitalStateFaults) - 1, 5)), 300.0) * System.Diagnostics.Stopwatch.Frequency);
+    // by reflection - mods compile apart: bound in OrbitalLink, the one rule for every member of Orbital's aero reads).
+    /// <summary>Diagnostics: why OrbitalApi.TryGetEntryState is (not) bound (OrbitalLink writes it).</summary>
     public static string EntryStateStatus = "not looked up";
 
     /// <summary>A grid's real re-entry state (the Orbital mod's): the true air velocity (world) and density. False: none.</summary>
     internal static bool EntryStateAt(Keen.VRage.DCS.Components.Entity grid, out Vector3 airWorld, out float density)
-    {
-        airWorld = default; density = 0f;
-        if (grid == null) return false;
-        var fn = System.Threading.Volatile.Read(ref _orbitalState);
-        if (fn == null)
-        {
-            long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (now < System.Threading.Volatile.Read(ref _orbitalStateRetryAt)) return false;
-            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + 5 * System.Diagnostics.Stopwatch.Frequency);
-            System.Reflection.MethodInfo mi = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type t; try { t = asm.GetType("OrbitalMod.OrbitalApi"); } catch { continue; }
-                // (by name AND parameter types: an overload added on Orbital's side must never make it ambiguous - API.md)
-                var m = t?.GetMethod("TryGetEntryState", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType() });
-                if (m != null) mi = m;   // (the last loaded copy wins)
-            }
-            if (mi == null) { EntryStateStatus = "OrbitalApi.TryGetEntryState not found (no Orbital mod, or an older one)"; return false; }
-            // (the shape checked first: CreateDelegate throws on a mismatch - the same throw every 5 s, for good)
-            if (!mi.IsStatic || mi.ReturnType != typeof(bool)) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
-            try { fn = (EntryStateFn)Delegate.CreateDelegate(typeof(EntryStateFn), mi); }
-            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
-            System.Threading.Volatile.Write(ref _orbitalState, fn);
-            EntryStateStatus = "bound to OrbitalApi.TryGetEntryState";
-        }
-        try
-        {
-            if (!fn(grid, out airWorld, out density)) return false;
-        }
-        catch (Exception e)
-        {
-            EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name;
-            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, System.Diagnostics.Stopwatch.GetTimestamp() + FaultWait());   // (looked up again after the wait)
-            System.Threading.Volatile.Write(ref _orbitalState, null); return false;
-        }
-        return density > 0f && float.IsFinite(density) && float.IsFinite(airWorld.X + airWorld.Y + airWorld.Z) && airWorld.LengthSquared() > 1f;
-    }
+        => OrbitalLink.TryGetEntryState(grid, out airWorld, out density);
 
     /// <summary>Diagnostics: the registered sources' owners.</summary>
     public static string EntrySources { get { var src = _sources; var n = new string[src.Length]; for (int i = 0; i < n.Length; i++) n[i] = src[i].owner; return string.Join(",", n); } }
