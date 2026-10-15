@@ -677,8 +677,10 @@ public static partial class AeroApi
         lock (_suppressed)
         {
             _suppressed.Remove(grid);
-            // (grids gone from their scenes dropped here: the list kept every grid ever suppressed, 2026-10-15)
-            for (int i = _suppressed.Count - 1; i >= 0; i--) if (!PhysicsHack.Alive(_suppressed[i].Data)) _suppressed.RemoveAt(i);
+            // (grids gone from their scenes dropped here: the list kept every grid ever suppressed, 2026-10-15. Gone = its aero
+            //  left the scene (AeroGridComponent.Live) - not asked of the engine: the list holds both scenes' grids, and the
+            //  caller's thread is one scene's; the other's alive read is the cross-thread read the game's DataGuard asserts on)
+            for (int i = _suppressed.Count - 1; i >= 0; i--) if (!InAScene(_suppressed[i])) _suppressed.RemoveAt(i);
             if (suppress) _suppressed.Add(grid);
             _suppressCount = _suppressed.Count;
         }
@@ -687,14 +689,27 @@ public static partial class AeroApi
     static readonly List<Keen.VRage.DCS.Components.Entity> _suppressed = new();
     static volatile int _suppressCount;
 
-    /// <summary>Whether a client grid's effects are suppressed (it, or a grid within 1 m of it - its server copy).</summary>
-    internal static bool Suppressed(Keen.VRage.DCS.Components.Entity grid, in Vector3D at)
+    /// <summary>A grid whose aero is still in a scene (AeroGridComponent.Live: mod state, any thread). One without aero: kept.</summary>
+    static bool InAScene(Keen.VRage.DCS.Components.Entity e)
+    {
+        foreach (var c in e.Components) if (c is AeroGridComponent a) { lock (AeroGridComponent.Live) return AeroGridComponent.Live.Contains(a); }
+        return true;
+    }
+
+    /// <summary>Whether a client grid's effects are suppressed (it, or its server copy: the grid of the flow record it matched -
+    /// server - or one of its own scene within 1 m of it).</summary>
+    internal static bool Suppressed(Keen.VRage.DCS.Components.Entity grid, in Vector3D at, AeroGridComponent server)
     {
         if (_suppressCount == 0) return false;
+        var se = server?.Entity;
+        var scene = grid.Data.Scene;
         lock (_suppressed)
             foreach (var g in _suppressed)
             {
-                if (g == grid) return true;
+                if (g == grid || (se != null && g == se)) return true;
+                // (only a grid of the caller's own scene is read: the server copy was matched above by its flow record - its
+                //  transform read from here, the client's job, tripped the game's DataGuard, 2026-10-15)
+                if (!ReferenceEquals(g.Data.Scene, scene)) continue;
                 if (PhysicsHack.Alive(g.Data) && (g.Data.GetWorldTransform().Position - at).LengthSquared() < 1.0) return true;
             }
         return false;

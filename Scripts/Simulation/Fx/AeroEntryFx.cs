@@ -511,7 +511,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         var wt = c.Data.GetWorldTransform();
         var p = AeroEntryFx.FindFlow(wt.Position, c.FlowOf, wt.Orientation, grid, c.FlowCopy);   // (into its own copy: no record a frame)
         if (p != null) c.FlowOf = p.Aero;   // (one miss kept the remembered grid: it was cleared, and the next match was not sticky)
-        bool keep = p != null && p.Aero != null && !AeroApi.Suppressed(grid, wt.Position);
+        bool keep = p != null && p.Aero != null && !AeroApi.Suppressed(grid, wt.Position, p.Aero);
         double d = -1;
         if (keep && AeroEntryFx.CameraAt(observers, out var cam))
         {
@@ -561,15 +561,14 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (lines && d >= 0 && d < 150 && (p.Aero?.FxTipOwner ?? false))
         {
             // (client copy vs the server grid it draws for: the same grid should sit on top of itself)
+            // (the server grid's pose as its flow record carries it: the server entity itself, read from here - the client's job -
+            //  was the cross-thread read the game's DataGuard asserts on, 2026-10-15)
             string pair = "";
-            var se = p.Aero.Entity;
-            if (se != null && PhysicsHack.Alive(se.Data))
             {
-                var sw = se.Data.GetWorldTransform();
-                var dq = Quaternion.Normalize(Quaternion.Inverse(sw.Orientation) * wt.Orientation);
+                var dq = Quaternion.Normalize(Quaternion.Inverse(p.Orient) * wt.Orientation);
                 double ang = 2.0 * Math.Acos(Math.Min(1.0, Math.Abs((double)dq.W))) * 180.0 / Math.PI;
-                var cb = BoundingBoxData.Get(grid.Data); var sb = BoundingBoxData.Get(se.Data);
-                pair = $" | client-server {(wt.Position - sw.Position).Length():F1} m {ang:F1} deg, box client {cb.Min}..{cb.Max} server {sb.Min}..{sb.Max}";
+                var cb = BoundingBoxData.Get(grid.Data);
+                pair = $" | client-server {(wt.Position - p.Pos).Length():F1} m {ang:F1} deg, box client {cb.Min}..{cb.Max} server {(p.HasBox ? $"{p.BoxMin}..{p.BoxMax}" : "-")}";
             }
             FlightField.NearTipWhy = $"{c.Flight.TipWhyHere} (cam {d:F0} m){pair} | {c.Flight.Status}";
         }
