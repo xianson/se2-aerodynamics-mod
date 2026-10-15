@@ -39,6 +39,8 @@ using AeroMod;
 // 16. the jagged line (FractureMath.JagCut): a plate's cut over 300 seeds - deterministic, each member at the plane or one
 //     block either side, steps both ways, and every path across the cut broken (the root never joined to the tip); off -
 //     the flat cut's blocks; a failed cut through DamageBySection parts the plate for every seed tried.
+// 17. a failed cut parts by itself (CutWatch, 2026-10-15): the crack and its watch played tick by tick on irregular plates -
+//     pieces that part mid-crack are credited (no bridge on the jagged rule), the watch never forces a cut, the stubs stay.
 static class Program
 {
     static int _fails, _checks;
@@ -1287,6 +1289,115 @@ static class Program
         Check(order, "scorch: every class light under dark, dark under its WeakK");
     }
 
+
+    /// <summary>17. A FAILED CUT PARTS BY ITSELF (2026-10-15, the integration run: the SSTO pulled at Strength 1.5 - "the cut did
+    /// not separate - 28 block(s) still bridging it, destroyed", CutsForced +2): the crack and its watch played tick by tick
+    /// as the server does (StructureServer.Failure: CheckCutSeparated, then StepCracks; the game's split the tick after the
+    /// members let go part the piece) on irregular plates - the organic break's defaults (jagged, the hinge stays). The piece
+    /// often parts MID-CRACK, before its last members (a hinge whose path the others already cut); the watch (CutWatch) must
+    /// credit that split - no bridge left on the jagged rule, the stubs spared - and never force the cut: before, its
+    /// baseline was read at the crack's end, it never saw the split, and its plane's rule destroyed the stubs and their mates
+    /// (2 x stubs) on a cut that had parted.</summary>
+    static void CrackSeparates()
+    {
+        int runs = 0, parted = 0, forced = 0, midCrack = 0, stubbed = 0, plainForce = 0, stubKill = 0;
+        for (int shape = 0; shape < 24; shape++)
+        {
+            int H = 2 + shape % 3, W = 4 + (shape / 3) % 4;
+            var rng = new Random(shape * 7919 + 1);
+            var sh = new TShip();
+            var blk = new int[10, H, W];
+            for (int x = 0; x <= 9; x++) for (int y = 0; y < H; y++) for (int z = 0; z < W; z++)
+            {
+                // (holes beyond the root columns - an irregular section and far side, like a real ship's)
+                if (x >= 2 && x <= 8 && rng.NextDouble() < 0.12) { blk[x, y, z] = -1; continue; }
+                blk[x, y, z] = sh.Block(x, y, z, x == 0 ? 1e9f : SmallMass);
+            }
+            sh.Build();
+            var s = sh.S; int root = blk[0, 0, 0];
+            for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = s.Center[i].X > 0.3f ? new Vector3(0, 100f, 0) : Vector3.Zero; s.ExtMoment[i] = Vector3.Zero; }
+            s.SolveFree(Vector3.Zero);
+            float k = StructureFatigue.SnapUtil * 1.2f / s.MaxUtil;
+            for (int i = 0; i < s.Count; i++) s.ExtForce[i] *= k;
+            s.SolveFree(Vector3.Zero);
+            StructureBend.Adjacency(s, out var a0, out var a1);
+            var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+            for (int seed = 1; seed <= 6; seed++)
+            {
+                s.Seed = seed;
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                if (cuts.Count != 1 || cuts[0].Release == null) continue;
+                var cut = cuts[0]; int side = (cut.Axis == 0 ? cut.Dir.X : cut.Axis == 1 ? cut.Dir.Y : cut.Dir.Z) > 0f ? 1 : -1;
+                float Ax(Vector3 v) => cut.Axis == 0 ? v.X : cut.Axis == 1 ? v.Y : v.Z;
+                // (a far-side block to watch: the farthest out)
+                int far = -1; for (int b = 0; b < s.Count; b++) if ((Ax(s.Center[b]) - cut.Plane) * side > 0f && (far < 0 || (Ax(s.Center[b]) - Ax(s.Center[far])) * side > 0f)) far = b;
+                if (far < 0) continue;
+                var stubs = new HashSet<int>(cut.Stubs ?? Array.Empty<int>());
+                var removed = new bool[s.Count]; var grid = new bool[s.Count];
+                // (this grid: what still joins the root - the game's split takes the rest away)
+                void Grid()
+                {
+                    Array.Clear(grid); var q = new Queue<int>(); q.Enqueue(root); grid[root] = true;
+                    while (q.Count > 0) { int i = q.Dequeue(); for (int e = a0[i]; e < a0[i + 1]; e++) { int j = a1[e]; if (grid[j] || removed[j]) continue; grid[j] = true; q.Enqueue(j); } }
+                }
+                // (the server's Bridges on the model: pairs across the plane in this grid - stubs spared on the jagged rule -
+                //  and, sparing them, what holds a stub from beyond it)
+                int Bridges(bool spare)
+                {
+                    int pairs = 0;
+                    for (int c = 0; c < s.ContactCount; c++)
+                    {
+                        s.ContactPlane(c, out int ax, out float pl); if (ax != cut.Axis || MathF.Abs(pl - cut.Plane) > 1e-3f) continue;
+                        s.ContactBlocks(c, out int ca, out int cb);
+                        if (!grid[ca] || !grid[cb] || spare && (stubs.Contains(ca) || stubs.Contains(cb))) continue;
+                        pairs++;
+                    }
+                    if (spare) foreach (int sb in stubs)
+                        {
+                            if (!grid[sb]) continue;
+                            for (int e = a0[sb]; e < a0[sb + 1]; e++) { int j = a1[e]; if (grid[j] && !stubs.Contains(j) && (Ax(s.Center[j]) - Ax(s.Center[sb])) * side > 0.1f) pairs++; }
+                        }
+                    return pairs;
+                }
+                // the crack, a tick at a time (60 Hz): the watch first, then the releases due; the split the tick after
+                var order = new int[cut.Count]; for (int i = 0; i < cut.Count; i++) order[i] = i;
+                Array.Sort(order, (p, q) => { int r = cut.Release[p].CompareTo(cut.Release[q]); return r != 0 ? r : p.CompareTo(q); });
+                var w = new CutWatch(); w.HasStubs = stubs.Count > 0;
+                int stamp = 0, next = 0; bool armed = false, done = false, splitPending = false, split = false, force = false; float clock = 0f;
+                w.Begin(stamp);
+                for (int tick = 0; tick < 400 && !done; tick++)
+                {
+                    if (splitPending) { stamp++; splitPending = false; Grid(); }   // (the game's split: the far side gone from this grid)
+                    if (armed)
+                    {
+                        if (w.SplitSince(stamp) && Bridges(w.Spare) == 0) { done = true; break; }
+                        if (w.Expired())
+                        {
+                            Grid(); int n = Bridges(w.Spare);
+                            if (n > 0) { force = true; if (w.Stage == 1) plainForce++; }
+                            if (!w.NextStage(stamp, 30)) done = true;
+                        }
+                    }
+                    if (next < cut.Count)
+                    {
+                        if (tick > 0) clock += 1f / 60f;
+                        while (next < cut.Count && cut.Release[order[next]] <= clock + 1e-4f) removed[dmg[cut.First + order[next++]].block] = true;
+                        Grid();
+                        if (!split && !grid[far]) { split = true; splitPending = true; if (next < cut.Count) midCrack++; }
+                        if (next == cut.Count) { w.Finish(stamp, 30); armed = true; }
+                    }
+                }
+                runs++; if (stubs.Count > 0) stubbed++;
+                if (split && !force) parted++;
+                if (force) forced++;
+                // (what the plane's rule would take once parted: the stubs and their mates across the plane)
+                Grid(); if (split) stubKill += Bridges(false);
+            }
+            s.Seed = 0;
+        }
+        Check(runs >= 40 && parted == runs && forced == 0, $"crack separates: every failed cut parts by itself and its watch never forces it ({parted} of {runs} parted, {forced} forced - {plainForce} by the plane's rule)");
+        Check(midCrack > 0 && stubbed > 0 && stubKill > 0, $"crack separates: the pieces parting mid-crack ({midCrack}) are credited - their stubs ({stubbed} cuts) never taken by the plane's rule ({stubKill} pairs it would have)");
+    }
     static int Main()
     {
         Classes();
@@ -1294,7 +1405,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
-        TensionCompression(); BucklingFatigue(); Jagged();
+        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");

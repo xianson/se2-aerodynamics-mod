@@ -19,6 +19,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 | `ContactBalance.cs` | The contact loads' momentum balance (what the physics says held the ship). |
 | `TearMath.cs` | Tearing's maths: the hold's ramp, the anchors over the failed section and each one's release (`PickAnchors`, `AnchorEnd`), cell boxes. |
 | `FractureMath.cs` | How a failed cut lets go (2026-10-15): each member's mode (pulled side tears, pushed side is the hinge, crushed past `CrushUtil`), the crack's release order over `CrackSeconds` (`Plan`), the jagged fracture line a block either side of the plane with its separation check (`JagCut`). |
+| `CutWatch.cs` | A failed cut's separation watch, game-free (2026-10-15): its split-count baseline (the crack's START - a piece that parts mid-crack is credited), ticks and stage (stubs spared, then the plane's rule); the server's `CheckCutSeparated` runs on it. |
 
 ## Server/ - the game side (server scene)
 | File | What |
