@@ -5,6 +5,15 @@ namespace AeroMod;
 // (harness) The structure's input and loads dumped for the offline bench (Tests/data/struct, AeroBench 'replay').
 public partial class AeroGridComponent
 {
+    /// <summary>%TEMP%/AeroMod/struct_{grid name}{ext} (the folder made).</summary>
+    string DumpPath(string ext)
+    {
+        string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AeroMod");
+        System.IO.Directory.CreateDirectory(dir);
+        string safe = string.Concat((Entity?.DebugName ?? "grid").Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_'));
+        return System.IO.Path.Combine(dir, "struct_" + safe + ext);
+    }
+
     /// <summary>(harness: aeroset StructureLoads.DumpLoadsAbove U) the first evaluation over utilisation U: its loads, for the
     /// offline bench to replay on the .struct dumped with DumpNext (same block indices while the grid is not rebuilt).</summary>
     void DumpLoads(StructureEval.Loads L, float util)
@@ -26,10 +35,7 @@ public partial class AeroGridComponent
             }
             for (int k = 0; k < L.ThrBlock.Count; k++) sb.Append("thr ").Append(L.ThrBlock[k]).Append(' ').Append(V(L.ThrF[k])).Append('\n');
             foreach (int b in L.GyroBlock) sb.Append("gyro ").Append(b).Append('\n');
-            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AeroMod");
-            System.IO.Directory.CreateDirectory(dir);
-            string safe = string.Concat((Entity?.DebugName ?? "grid").Select(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' ? ch : '_'));
-            string path = System.IO.Path.Combine(dir, "struct_" + safe + ".loads");
+            string path = DumpPath(".loads");
             System.IO.File.WriteAllText(path, sb.ToString());
             StructureLoads.LastDump = path;
             Log.Default?.Info($"[AERO-STRUCT] dumped the loads at utilisation {util:F2} to {path}");
@@ -59,10 +65,7 @@ public partial class AeroGridComponent
             foreach (var (k, mdir, lo, hi) in b.Mounts)
                 sb.Append("m ").Append(k).Append(' ').Append(mdir.X).Append(' ').Append(mdir.Y).Append(' ').Append(mdir.Z).Append(' ')
                   .Append(lo.X).Append(' ').Append(lo.Y).Append(' ').Append(lo.Z).Append(' ').Append(hi.X).Append(' ').Append(hi.Y).Append(' ').Append(hi.Z).Append('\n');
-            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AeroMod");
-            System.IO.Directory.CreateDirectory(dir);
-            string safe = string.Concat((Entity?.DebugName ?? "grid").Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_'));
-            string path = System.IO.Path.Combine(dir, "struct_" + safe + ".struct");
+            string path = DumpPath(".struct");
             System.IO.File.WriteAllText(path, sb.ToString());
             StructureLoads.LastDump = path;
             Log.Default?.Info($"[AERO-STRUCT] dumped {b.Blocks.Count} blocks to {path}");

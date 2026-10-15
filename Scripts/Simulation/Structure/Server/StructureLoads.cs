@@ -22,15 +22,12 @@ public static class StructureLoads
     public static float DumpLoadsAbove = -1f;
     /// <summary>Hull blocks past their burn temperature lose health. ON by default (2026-10-14, the user).</summary>
     public static bool HeatDamage = true;
-    /// <summary>Evaluations per second of a player's grid (the only ones evaluated; IdleRate, ActiveSpeed, ActiveSpin,
-    /// ActiveSkinK: unused since players' grids only, kept for the settings' sake).</summary>
-    public static float Rate = 4f, IdleRate = 1f;
+    /// <summary>Evaluations per second of a player's grid (the only ones evaluated).</summary>
+    public static float Rate = 4f;
     /// <summary>Seconds a grid stays a player's grid after its pilot's seat last reported it (AeroApi.SetFocusGrid).</summary>
     public static float FocusLinger = 10f;
     /// <summary>Seconds between re-reads of the blocks' health (each a pass over every block on the simulation thread).</summary>
     public static float IntegrityEvery = 2f;
-    /// <summary>What counts as active: airspeed (m/s, in air), spin (rad/s), skin temperature (K).</summary>
-    public static float ActiveSpeed = 15f, ActiveSpin = 0.1f, ActiveSkinK = 340f;
     /// <summary>Evaluations in the background at once, every grid together (aero's own builds are never queued behind
     /// more than this).</summary>
     public static int MaxInFlight = 1;
@@ -56,7 +53,7 @@ public static class StructureLoads
     /// the loads' totals, the solve's time).</summary>
     public static bool Trace;
     // diagnostics (harness aeroget)
-    public static int Evals, Builds, Breaks, Wears, Burns;
+    public static int Evals, Builds, Breaks, Wears;
     /// <summary>COST, over the last second: the simulation thread's time in TickStructure (us per second, every grid), the
     /// background's time evaluating and building (ms per second), evaluations, and grids ticked / evaluated.</summary>
     public static float SimUsPerSec, BgMsPerSec, EvalsPerSec, SimMaxUs;

@@ -21,8 +21,6 @@ public static class HeatScorch
     /// <summary>Spots per ship; faces within JoinMeters of a spot (and facing its way) belong to it.</summary>
     public static int MaxSpots = 4;
     public static float JoinMeters = 4f, MinDiameter = 1.5f, MaxDiameter = 12f, Depth = 2f;
-    /// <summary>A spot is stamped anew only when it grew by this share or darkened.</summary>
-    public static float GrowShare = 0.25f;
     // the game's explosion scorch (DecalInstanceDefinition): dark, lighter
     static readonly Guid DarkDef = new Guid("666f5ef7-ce85-4f25-9518-44a215918c59"), LightDef = new Guid("c8a26f6e-dc09-44c7-ace6-7a854ed89e15");
     public static string Status = "-";

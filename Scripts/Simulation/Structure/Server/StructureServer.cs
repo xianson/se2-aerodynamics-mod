@@ -119,18 +119,15 @@ public partial class AeroGridComponent
         float fast = 1f / MathF.Max(StructureLoads.Rate, 0.1f);
         _stNextAt = fast;
         if (_stClock < fast) return;
-        // only a grid something is happening to: piloted, moving through air, turning, thrusting, or still hot - a parked
-        // or drifting cold grid costs a few compares a tick and nothing in the background
+        // only a grid someone flies: any other costs a few compares a tick and nothing in the background
         // (flown: someone seated in it - AeroApi.SetFocusGrid, the Orbital mod's seat - or steering it by its target)
         bool piloted = System.Diagnostics.Stopwatch.GetTimestamp() < StructFocusUntil || Data.Has<Keen.Game2.Simulation.WorldObjects.Movement.TargetControlData>();
         // ONLY PLAYERS' GRIDS (2026-10-13, the user: "only structural failure for player grids"): the grid a player is
         // flying (AeroApi.SetFocusGrid from their seat, kept FocusLinger s after they leave it; or steered by its target) -
         // AI ships, wrecks and parked grids are never evaluated, never damaged
         bool active = piloted;
-        // (idle: looked at again in a second; active but not piloted: at the idle rate)
-        float slow = 1f / MathF.Max(StructureLoads.IdleRate, 0.05f);
+        // (idle: looked at again in a second)
         if (!active) { _stClock = MathF.Min(_stClock, 2f); _stNextAt = _stClock + 1f; return; }
-        if (!piloted && _stClock < slow) { _stNextAt = slow; return; }
         if (System.Threading.Volatile.Read(ref StructureLoads.InFlight) >= StructureLoads.MaxInFlight) return;   // (next tick)
         float evalDt = MathF.Min(_stClock, 2f); _stClock = 0f;
 
@@ -222,15 +219,6 @@ public partial class AeroGridComponent
             try { EvaluateStructure(st, hh, build, snap); }
             finally { System.Threading.Interlocked.Decrement(ref StructureLoads.InFlight); StructureLoads.AddBg(System.Diagnostics.Stopwatch.GetTimestamp() - tb); }
         });
-    }
-
-    /// <summary>Any thruster pushing this frame (the attitude controller's shares).</summary>
-    bool Thrusting()
-    {
-        var s = LastThrustShares; int n = LastThrustCount;
-        if (s == null) return false;
-        for (int i = 0; i < n && i < s.Length; i++) if (s[i] > 1f) return true;
-        return false;
     }
 
     Dictionary<Entity, int> IndexOf(List<CubeBlockComponent> blocks)

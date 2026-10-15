@@ -28,7 +28,7 @@ public partial class AeroGridComponent
             if (bones == null) return;
             float step = Math.Clamp((util - 1f) * DentPerUtil, 0f, DentMax);
             if (step <= 0f) return;
-            Vector3 d = Vector3.Normalize(dir) * step, unit = new Vector3(127f / MathF.Max(BoneOffsetM, 1e-3f));
+            Vector3 d = Vector3.Normalize(dir) * step; float unit = BoneUnit;
             var bb = b.AABB;
             var lo = bones.BlockToBone(bb.Min); var hi = bones.BlockToBone(bb.Max) + Vector3I.One;
             for (int x = lo.X; x <= hi.X; x++) for (int y = lo.Y; y <= hi.Y; y++) for (int z = lo.Z; z <= hi.Z; z++)
@@ -38,12 +38,7 @@ public partial class AeroGridComponent
                 var total = led.total + d;
                 float len = total.Length();
                 if (len > DentMax) total *= DentMax / len;   // (capped: a dent, not a crater)
-                var units = (total - led.total) * unit + led.frac;
-                var q = new Vector3((int)units.X, (int)units.Y, (int)units.Z);   // (whole steps; the rest carried)
-                _dentLedger[bone] = (total, units - q);
-                if (q == Vector3.Zero) continue;
-                bones.WriteBoneDelta(bone, new Keen.VRage.Library.Mathematics.Vector3B(q));
-                DentWrites++;
+                if (StepBone(bones, _dentLedger, bone, led, total, unit)) DentWrites++;
             }
         }
         catch (Exception e) { Log.Default?.Info($"[AERO-STRUCT] dent failed: {e.Message}"); }
@@ -66,6 +61,23 @@ public partial class AeroGridComponent
     public static int BendMaxBones = 1500;
     /// <summary>Diagnostics: bends applied, skipped (mostly not armour, no bone storage), bones written; the last.</summary>
     public static int BendsApplied, BendsSkipped, BendBoneWrites; public static string BendLast = "-";
+
+    /// <summary>Bone units per metre (a bone's Vector3B: 1/127 of BoneOffsetM).</summary>
+    static float BoneUnit => 127f / MathF.Max(BoneOffsetM, 1e-3f);
+
+    /// <summary>A bone's ledger (dents', bends') moved to its new total (m, grid axes): the whole bone steps since the last
+    /// write written (WriteBoneDelta), the part under one step carried - so a slow dent or bend is not lost to rounding.
+    /// led: its entry before (default if none). True when a step was written.</summary>
+    static bool StepBone(Keen.Game2.Simulation.WorldObjects.BoneStorage.BoneStorageComponent bones, Dictionary<Vector3I, (Vector3 total, Vector3 frac)> ledger,
+        Vector3I bone, (Vector3 total, Vector3 frac) led, Vector3 total, float unit)
+    {
+        var units = (total - led.total) * unit + led.frac;
+        var q = new Vector3((int)units.X, (int)units.Y, (int)units.Z);   // (whole steps; the rest carried)
+        ledger[bone] = (total, units - q);
+        if (q == Vector3.Zero) return false;
+        bones.WriteBoneDelta(bone, new Keen.VRage.Library.Mathematics.Vector3B(q));
+        return true;
+    }
 
     /// <summary>
     /// PERMANENT BENDS, the game side (2026-10-14; the plan: Structure/StructureBend). Rare (a joint passing its last peak):
@@ -90,7 +102,7 @@ public partial class AeroGridComponent
             var bones = Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.BoneStorage.BoneStorageComponent>();
             if (bones == null) { BendsSkipped += _stBends.Count; BendLast = "no bone storage"; return; }
             int perBone = Math.Max(1, bones.BlocksPerBone);
-            float boneM = perBone * TearMath.Cell, unit = 127f / MathF.Max(BoneOffsetM, 1e-3f);
+            float boneM = perBone * TearMath.Cell, unit = BoneUnit;
             int writes = 0;
             foreach (var bend in _stBends)
             {
@@ -120,11 +132,7 @@ public partial class AeroGridComponent
                     if (d.LengthSquared() < 1e-8f) continue;
                     _bendLedger.TryGetValue(bone, out var led);
                     var total = StructureBend.Capped(led.total, d);
-                    var units = (total - led.total) * unit + led.frac;
-                    var q = new Vector3((int)units.X, (int)units.Y, (int)units.Z);   // (whole steps; the rest carried)
-                    _bendLedger[bone] = (total, units - q);
-                    if (q == Vector3.Zero) continue;
-                    bones.WriteBoneDelta(bone, new Keen.VRage.Library.Mathematics.Vector3B(q));
+                    if (!StepBone(bones, _bendLedger, bone, led, total, unit)) continue;
                     writes++; wrote++;
                     float l = total.Length(); if (l > tip) tip = l;
                 }

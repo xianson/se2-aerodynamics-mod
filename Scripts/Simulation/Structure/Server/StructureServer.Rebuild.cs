@@ -10,6 +10,13 @@ namespace AeroMod;
 public partial class AeroGridComponent
 {
     static PropertyInfo _defProp;
+    /// <summary>A block's definition (CubeBlockComponent.Definition, by reflection: its type's base is in VRage.Game - CS0012
+    /// for mod code); null if unreadable. Throws what the read throws (the callers guard).</summary>
+    static object BlockDefinition(CubeBlockComponent b)
+    {
+        _defProp ??= typeof(CubeBlockComponent).GetProperty("Definition", BindingFlags.Public | BindingFlags.Instance);
+        return _defProp?.GetValue(b);
+    }
     // (the per-definition caches hold their definitions weakly: an unloaded session's definitions are not kept alive)
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _defMass = new();
 
@@ -20,8 +27,7 @@ public partial class AeroGridComponent
     {
         try
         {
-            _defProp ??= typeof(CubeBlockComponent).GetProperty("Definition", BindingFlags.Public | BindingFlags.Instance);
-            var d = _defProp?.GetValue(b);
+            var d = BlockDefinition(b);
             if (d != null)
             {
                 lock (_defMass)
@@ -78,8 +84,7 @@ public partial class AeroGridComponent
     {
         try
         {
-            _defProp ??= typeof(CubeBlockComponent).GetProperty("Definition", BindingFlags.Public | BindingFlags.Instance);
-            var d = _defProp?.GetValue(b);
+            var d = BlockDefinition(b);
             if (d == null) return;
             (Vector3I dir, Vector3I lo, Vector3I hi)[] local;
             lock (_defMounts)
@@ -117,8 +122,7 @@ public partial class AeroGridComponent
     {
         try
         {
-            _defProp ??= typeof(CubeBlockComponent).GetProperty("Definition", BindingFlags.Public | BindingFlags.Instance);
-            var d = _defProp?.GetValue(b);
+            var d = BlockDefinition(b);
             if (d != null)
             {
                 lock (_defName)
@@ -135,7 +139,7 @@ public partial class AeroGridComponent
         }
         catch { }
         // (no readable definition name: the definition's type, never the entity's own name - "Root Entity" for many blocks)
-        try { var d = _defProp?.GetValue(b); if (d != null) return d.GetType().Name; } catch { }
+        try { var d = BlockDefinition(b); if (d != null) return d.GetType().Name; } catch { }
         return "block";
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, string> _defName = new();
@@ -145,8 +149,7 @@ public partial class AeroGridComponent
     {
         try
         {
-            _defProp ??= typeof(CubeBlockComponent).GetProperty("Definition", BindingFlags.Public | BindingFlags.Instance);
-            var d = _defProp?.GetValue(b);
+            var d = BlockDefinition(b);
             if (d == null) return 0f;
             lock (_defThreshold)
             {

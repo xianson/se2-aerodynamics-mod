@@ -105,7 +105,7 @@ public partial class AeroGridComponent
                 if (bi < 0 || bi >= _stBlocks.Count || !(loss > 0f)) continue;
                 var b = _stBlocks[bi];
                 if (Gone(b)) continue;
-                float full = b.HealthIntegrity > 1e-3f ? b.AbsoluteHealth / b.HealthIntegrity : 0f;
+                float full = FullHealth(b);
                 float hp = loss * full;
                 if (!(hp > 0f)) continue;
                 // (never under the game's destruction threshold here: a write that would remove the block is a failure's -
@@ -149,5 +149,8 @@ public partial class AeroGridComponent
         if (!ReferenceEquals(b.Grid?.Entity, Entity)) return true;
         return b.HealthIntegrity <= DestructionThreshold(b) + 1e-4f;
     }
+    /// <summary>A block's full health (its definition's MaxHealth is not reachable from mod scripts: its health over its
+    /// integrity; 0 for a block at none).</summary>
+    static float FullHealth(CubeBlockComponent b) => b.HealthIntegrity > 1e-3f ? b.AbsoluteHealth / b.HealthIntegrity : 0f;
     readonly HashSet<CubeBlockComponent> _goneBlocks = new HashSet<CubeBlockComponent>(ReferenceEqualityComparer.Instance);
 }

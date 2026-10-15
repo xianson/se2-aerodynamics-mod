@@ -741,8 +741,6 @@ public sealed partial class ShipStructure
     public float BlockStrength(int b) => StructMaterial.Yield[Mat[b]] * StructMaterial.StrengthAt(Mat[b], TempK[b]) * MathF.Max(Integrity[b], MinIntegrity);
     /// <summary>A cut's contacts (for reports and tests).</summary>
     public IReadOnlyList<int> CutContacts(int cut) => _cutContacts[cut];
-    /// <summary>The tree joint's contact (block i to its parent).</summary>
-    public int JointContact(int i) => Parent[i] < 0 ? -1 : _parentContact[i];
 
     sealed class MinHeap
     {

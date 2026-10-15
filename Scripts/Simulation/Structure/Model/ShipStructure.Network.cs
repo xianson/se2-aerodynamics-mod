@@ -265,7 +265,4 @@ public sealed partial class ShipStructure
             _fixF[i] = new Vector3((float)Fx, (float)Fy, (float)Fz); _fixM[i] = new Vector3((float)Mx, (float)My, (float)Mz);
         }
     }
-
-    /// <summary>A contact's spring load (N; N m about its centre, grid axes) from the last solve: on its B block's side.</summary>
-    public void ContactLoad(int k, out Vector3 force, out Vector3 moment) { force = _springF[k]; moment = _springM[k]; }
 }
