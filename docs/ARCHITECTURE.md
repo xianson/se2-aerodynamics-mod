@@ -202,6 +202,7 @@ client copy in the same process finds its server copy **by pose** (position, ori
 | Scorch spots (`HeatScorch`) | `HeatScorch.Sync` (from `EntryJob`, twice a second while `Fx.Effects` is on, the flight field on or not) | the flow pairing (paired itself when the field has not) |
 | Tear events (`TearSmoke.Publish`, the pose kept fresh by `TearSmoke.ServerPose`) | `TearSmoke.Tick` | `TearSmoke.Pairs` (the event's pose) |
 | Structure utilisation (the server `AeroGridComponent`) | `StructureFeel.Tick` | `DesignProbe.ServerAero` (the poses `DesignProbe.PublishPose` keeps while asked) |
+| Design figures (`DesignSnapshot`: pose, mass, gyros, thrusters, joints; the overlay's block boxes) | `DesignProbe` (`AeroApi` design members, the overlay) | `DesignProbe.ServerAero`; published by `DesignProbe.PublishDesign` while asked |
 
 What the **game** replicates for us: block damage, splits and deformation (written through the game's own systems),
 and `ThrustStallData` (`AeroStallJob` writes it on the server). Settings: world scope saved with the world

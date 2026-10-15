@@ -12,6 +12,10 @@
 // 3. THE SITES (each fixed 2026-10-15): the client never reads the server copy's entity where the server publishes what it
 //    needs - TearSmoke.Pairs (the event's pose), StructureFeel (Live, not alive), the flight job's pair line (the flow record),
 //    AeroApi's suppressed list (the flow record's grid; pruned by Live).
+// 4. THE DESIGN PROBE (2026-10-15): DesignProbe reads a server grid's engine data (transform, mass, gyros, thrusters, block
+//    boxes, joint search) only in the server grid's own step (PublishDesign / PublishPose, called from AeroSimJobCore on the
+//    server scene); every probe works on the snapshots (DesignSnapshot.cs: engine-free - compiled and run here,
+//    DesignSnapshotTests.cs).
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
@@ -114,6 +118,32 @@ static class Program
         var ccc = Method("Blocks/AeroBlockSave.cs", "ChangedClientCopy");
         Check(ccc != null && ccc.ToString().Contains("th.SeenAt") && Text("Grid/AeroGridComponent.Compute.cs").Contains("AeroSurfaceSaved.ClientStep(Data.Scene)"),
             "ChangedClientCopy: the client copies' places from their own step (SeenAt, ClientStep)");
+
+        // ── 4. the design probe: the server grid's engine data on its own step only ──
+        var dp = trees[Path.Combine(sim, "Design", "DesignProbe.cs")];
+        // (the server step's own: PublishDesign, PublishPose, and SeaLevelMax - a thruster's entity, PublishDesign's)
+        var serverStep = new HashSet<string> { "PublishDesign", "PublishPose", "SeaLevelMax" };
+        const string engine = @"\.Data\b|PhysicsHack\.|GetWorldTransform|IsEntityAlive|\.TryGet<|\.Components\b(?!\.)|CaptureBoxes\(|RefreshFxGroup\(|_thrusterCache|ThrusterSnap|LiveMax\(|SeaLevelEfficiency\(|GetTopLevelParent|GetSession";
+        // (code only: the comments name what they no longer do)
+        static string Code(SyntaxNode n) => string.Concat(n.DescendantTokens().Select(t => t.Text));
+        int probes = 0;
+        foreach (var m in dp.DescendantNodes().OfType<MethodDeclarationSyntax>())
+        {
+            string name = m.Identifier.Text, body = Code(m);
+            if (serverStep.Contains(name)) continue;
+            probes++;
+            // (ServerAero reads the caller's own grid - its own scene; the server grids only by their published poses)
+            if (name == "ServerAero") body = Regex.Replace(body, @"PhysicsHack\.Alive\(grid\.Data\)|grid\.Data\.(GetWorldTransform\(\)|TryGet<\w+>)|grid\.Components\b", "");
+            var hit = Regex.Match(body, engine);
+            Check(!hit.Success, $"DesignProbe.{name}: no engine read of a server grid off its step ('{hit.Value}')");
+        }
+        Check(probes >= 15, $"DesignProbe: its probes found ({probes})");
+        Check(Regex.Matches(Code(dp), @"SeaLevelMax\(").Count == 2 && Method("Design/DesignProbe.cs", "PublishDesign").ToString().Contains("SeaLevelMax("),
+            "DesignProbe.SeaLevelMax: called from PublishDesign only");
+        Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene) DesignProbe.PublishDesign(aero, wt);"), "DesignProbe.PublishDesign: called from the server grid's own step");
+        var snapTree = Code(trees[Path.Combine(sim, "Design", "DesignSnapshot.cs")]);
+        Check(!Regex.IsMatch(snapTree, @"Keen\.|Entity|AeroGridComponent"), "DesignSnapshot.cs: engine-free (its engine side lives in DesignProbe.cs)");
+        DesignSnapshotTests.Run(Check);
 
         Console.WriteLine(_fails == 0 ? $"SceneTests: {_checks}/{_checks} passed" : $"SceneTests: {_fails} of {_checks} FAILED");
         return _fails == 0 ? 0 : 1;

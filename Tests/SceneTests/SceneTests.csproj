@@ -6,4 +6,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
   </ItemGroup>
+  <!-- the design probe's snapshots, run as they are (DesignSnapshotTests.cs) -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Design\DesignSnapshot.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
+  </ItemGroup>
 </Project>

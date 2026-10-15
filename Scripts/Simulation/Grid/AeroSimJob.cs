@@ -152,6 +152,7 @@ public partial class AeroGridComponent
         // (torn-edge smoke waiting for its client grid: this server grid's pose, read here on its own thread - TearSmoke.Pairs)
         if (aero.IsServerScene && TearSmoke.Pending != 0) TearSmoke.ServerPose(aero.Entity, wt, linVel, angVel);
         if (aero.IsServerScene) DesignProbe.PublishPose(aero, wt);   // (the same for the design probe's pairing, while it is asked)
+        if (aero.IsServerScene) DesignProbe.PublishDesign(aero, wt);   // (and its figures: mass, thrusters, joints - while it is asked)
         // the air: the grid's velocity less the wind's (AeroWind) - what the aero model, Mach and the effects meet
         aero.LastWind = AeroWind.At(aero.Data);
         Vector3 airVel = linVel - aero.LastWind;
