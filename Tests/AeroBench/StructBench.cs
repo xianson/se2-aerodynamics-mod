@@ -171,7 +171,7 @@ static partial class Program
     {
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => File.Exists(n) ? n : Path.Combine(dir, n + ".struct")).ToArray() : Directory.GetFiles(dir, "*.struct");
-        if (Environment.GetEnvironmentVariable("MOUNTS") != null) ShipStructure.MountJoints = true;   // (the mount joints on, for A/B)
+        if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";   // (MOUNTS=1 / 0: the mount joints on / off, for A/B)
         var sea = new AtmosphereState { Density = 1.225, Pressure = 101325, Temperature = 288, SpeedOfSound = 340 };
         foreach (var f in files)
         {
