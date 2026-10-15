@@ -297,9 +297,25 @@ namespace SettingsUiTests
             Ok("NaN, negative, unknown unit -> the fallback", SettingsModel.LengthSpec(double.NaN, "Pixel", "15") == "15"
                && SettingsModel.LengthSpec(-1, "Pixel", "15") == "15" && SettingsModel.LengthSpec(3, null, "15") == "15");
             Ok("15.5 px: invariant digits", SettingsModel.LengthSpec(15.5, "Pixel", "x") == "15.5");
-            string cols = SettingsModel.RowColumns("15", "516");
-            Ok("a row: label Auto, gap, control, value Auto, the rest *", cols == "Auto,15,516,Auto,*", cols);
-            Ok("the fallbacks are the game's values", SettingsModel.RowColumns(SettingsModel.SpaceWidthFallback, SettingsModel.ValueWidthFallback) == cols);
+            string cols = SettingsModel.RowColumns(300.4, "15", "516");
+            Ok("a row: label (fixed), gap, control, value Auto, the rest *", cols == "300,15,516,Auto,*", cols);
+            Ok("the fallbacks are the game's values", SettingsModel.RowColumns(300, SettingsModel.SpaceWidthFallback, SettingsModel.ValueWidthFallback) == cols);
+
+            Console.WriteLine("-- the label column (one width per section: every control at one x)");
+            var labels = new[] { "Wind", "Off-centre thrust turns ships", "Aerodynamics" };
+            double est = SettingsModel.LabelWidth(labels, null, 20, 32);
+            Ok("estimated: the longest label's characters x 0.55 em + the margins", est == Math.Ceiling(29 * 0.55 * 20 + 32), est.ToString());
+            Ok("no font size: the fallback size", SettingsModel.LabelWidth(labels, null, 0, 32) == est && SettingsModel.LabelWidth(labels, null, double.NaN, 32) == est);
+            Ok("measured: the widest measured + the margins", SettingsModel.LabelWidth(labels, s => s.Length * 10.0, 20, 32) == 29 * 10 + 32);
+            Ok("a failed measurement (NaN, 0) falls back to the estimate for that label",
+               SettingsModel.LabelWidth(labels, s => s == "Wind" ? 40 : double.NaN, 20, 32) == est
+               && SettingsModel.LabelWidth(labels, s => 0, 20, 32) == est);
+            Ok("short labels: the minimum", SettingsModel.LabelWidth(new[] { "Wind" }, null, 20, 32) == SettingsModel.LabelMinWidth);
+            Ok("a very long label: the maximum", SettingsModel.LabelWidth(new[] { new string('x', 200) }, null, 20, 32) == SettingsModel.LabelMaxWidth);
+            Ok("no labels (or nulls): the minimum, no throw", SettingsModel.LabelWidth(null, null, 20, 32) == SettingsModel.LabelMinWidth
+               && SettingsModel.LabelWidth(new string[] { null, "" }, null, 20, 32) == SettingsModel.LabelMinWidth);
+            Ok("negative or infinite margins are ignored", SettingsModel.LabelWidth(labels, s => 300, 20, -5) == 300
+               && SettingsModel.LabelWidth(labels, s => 300, 20, double.PositiveInfinity) == 300);
         }
     }
 }

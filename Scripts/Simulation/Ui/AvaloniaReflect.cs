@@ -249,18 +249,66 @@ public static class AvaloniaReflect
         return v != null && v.GetType().FullName == "Avalonia.Thickness" ? v : Thickness(l, t, r, b);
     }
 
-    /// <summary>Column k of a Grid shares its width with every same-named column under a Grid.IsSharedSizeScope
-    /// (DefinitionBase.SharedSizeGroup): one label column for a whole section.</summary>
-    public static void ShareColumn(object grid, int k, string group)
+    /// <summary>Column k of a Grid set to a fixed width in pixels (ColumnDefinition.Width = new GridLength(px)). False: no
+    /// such column, or GridLength missing.</summary>
+    public static bool ColumnWidth(object grid, int k, double px)
     {
-        if (List(grid, "ColumnDefinitions") is IList defs && k < defs.Count) Set(defs[k], "SharedSizeGroup", group);
+        if (!(List(grid, "ColumnDefinitions") is IList defs) || k >= defs.Count) return false;
+        var gl = Control("GridLength");
+        try { return gl != null && Set(defs[k], "Width", Activator.CreateInstance(gl, px)); } catch { return false; }
     }
 
-    static MethodInfo _sharedScope;
-    /// <summary>Grid.SetIsSharedSizeScope(c, true): the SharedSizeGroup columns below it line up.</summary>
-    public static void SharedSizeScope(object c)
+    static ConstructorInfo _typeface, _formatted;
+    static object _ltr;
+    /// <summary>How wide s is in that TextBlock's font as its styles resolved it (FontFamily / FontStyle / FontWeight /
+    /// FontStretch / FontSize -> new Typeface -> new FormattedText(..).Width). NaN: unreadable (the caller estimates).</summary>
+    public static double TextWidth(object textBlock, string s)
     {
-        try { (_sharedScope ??= Static(Control("Grid"), "SetIsSharedSizeScope"))?.Invoke(null, new object[] { c, true }); } catch { }
+        if (textBlock == null || string.IsNullOrEmpty(s)) return double.NaN;
+        try
+        {
+            if (_formatted == null)
+            {
+                Type tf = BaseType("Avalonia.Media.Typeface"), ft = BaseType("Avalonia.Media.FormattedText");
+                Type fam = BaseType("Avalonia.Media.FontFamily"), sty = BaseType("Avalonia.Media.FontStyle"), wei = BaseType("Avalonia.Media.FontWeight"),
+                     str = BaseType("Avalonia.Media.FontStretch"), dir = BaseType("Avalonia.Media.FlowDirection"), brush = BaseType("Avalonia.Media.IBrush");
+                if (tf == null || ft == null || fam == null || sty == null || wei == null || str == null || dir == null || brush == null) return double.NaN;
+                _typeface = tf.GetConstructor(new[] { fam, sty, wei, str });
+                _ltr = System.Enum.Parse(dir, "LeftToRight");
+                _formatted = ft.GetConstructor(new[] { typeof(string), typeof(System.Globalization.CultureInfo), dir, tf, typeof(double), brush });
+                if (_typeface == null || _formatted == null) { _formatted = null; Miss("no Typeface / FormattedText constructor"); return double.NaN; }
+            }
+            object family = Get(textBlock, "FontFamily"), style = Get(textBlock, "FontStyle"), weight = Get(textBlock, "FontWeight"), stretch = Get(textBlock, "FontStretch");
+            double size = Double(textBlock, "FontSize");
+            if (family == null || style == null || weight == null || stretch == null || !(size > 0)) return double.NaN;
+            var face = _typeface.Invoke(new[] { family, style, weight, stretch });
+            var text = _formatted.Invoke(new[] { s, System.Globalization.CultureInfo.CurrentUICulture, _ltr, face, (object)size, null });
+            return Double(text, "WidthIncludingTrailingWhitespace");
+        }
+        catch { return double.NaN; }
+    }
+
+    static MethodInfo _translate;
+    /// <summary>Where visual's top-left is, in x, inside relativeTo (VisualExtensions.TranslatePoint; both laid out and in
+    /// one tree). NaN: not laid out, not related, or the method is missing.</summary>
+    public static double OffsetX(object visual, object relativeTo)
+    {
+        if (visual == null || relativeTo == null) return double.NaN;
+        try
+        {
+            _translate ??= BaseType("Avalonia.VisualExtensions")?.GetMethod("TranslatePoint", BindingFlags.Public | BindingFlags.Static);
+            var pt = BaseType("Avalonia.Point");
+            if (_translate == null || pt == null) return double.NaN;
+            var p = _translate.Invoke(null, new[] { visual, Activator.CreateInstance(pt, 0.0, 0.0), relativeTo });   // (a Point?: boxed Point or null)
+            return p == null ? double.NaN : Double(p, "X");
+        }
+        catch { return double.NaN; }
+    }
+
+    /// <summary>A public static property's value (Avalonia.Media.TextTrimming.CharacterEllipsis), or null.</summary>
+    public static object StaticValue(string baseTypeFullName, string name)
+    {
+        try { return BaseType(baseTypeFullName)?.GetProperty(name, BindingFlags.Public | BindingFlags.Static)?.GetValue(null); } catch { return null; }
     }
 
     // ── a template part hidden (the game's Slider template shows its raw Value: PART_NumericUpDown) ──
@@ -438,6 +486,18 @@ public static class AvaloniaReflect
             if (List(o, list) is IList l)
                 for (int k = 0; k < l.Count; k++) n += CountTagged(l[k], prefix, depth - 1);
         return n;
+    }
+    /// <summary>The first control under o (as CountTagged walks) whose Tag ends so (ignoring case), or null.</summary>
+    public static object FindTagEnding(object o, string suffix, int depth = 12)
+    {
+        if (o == null || depth < 0 || o is string) return null;
+        if (Get(o, "Tag") is string t && t.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return o;
+        var hit = FindTagEnding(Get(o, "Content"), suffix, depth - 1) ?? FindTagEnding(Get(o, "Child"), suffix, depth - 1);
+        if (hit != null) return hit;
+        foreach (string list in Lists)
+            if (List(o, list) is IList l)
+                for (int k = 0; k < l.Count; k++) if ((hit = FindTagEnding(l[k], suffix, depth - 1)) != null) return hit;
+        return null;
     }
     static readonly string[] Lists = { "Children", "Items" };
 }

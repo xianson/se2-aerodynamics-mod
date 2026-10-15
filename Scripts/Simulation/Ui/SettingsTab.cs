@@ -166,7 +166,7 @@ public static partial class SettingsTab
     static void Drop()
     {
         _screen = _tab = _section = _worldHint = _anchor = null;
-        _rowUi.Clear(); _groupUi.Clear(); _brushes.Clear();
+        _rowUi.Clear(); _groupUi.Clear(); _brushes.Clear(); ClearColumns();
         _seenVersion = int.MinValue; _wasSelected = false;
     }
 
@@ -225,6 +225,7 @@ public static partial class SettingsTab
             if (AvaloniaReflect.Get(children[k], "Tag") is string t && t != NoteTag && string.CompareOrdinal(t, SectionTag) > 0) { at = k; break; }
         children.Insert(at, section);
         _tab = tab; _section = section;
+        FitColumns();   // (the labels styled now that they are in the screen's tree - if not yet laid out, the pump tries again)
         // (the values in before anything reads the controls: a control's own starting value is no edit)
         _seenVersion = SettingsVersion;
         foreach (var u in _rowUi) Show(u);
@@ -261,9 +262,16 @@ public static partial class SettingsTab
     static object BuildSection(object screen)
     {
         _anchor = screen;
-        _rowUi.Clear(); _groupUi.Clear();
+        _rowUi.Clear(); _groupUi.Clear(); ClearColumns();
         Gather(_rows);
         var groups = SettingsModel.Build(_rows);
+        // (one label column for the section, Advanced rows too: estimated from the labels' length now, measured in the
+        //  game's font once they are laid out - FitColumns)
+        _labelMargin = AvaloniaReflect.ThicknessOr(screen, "Margin-Large-Horizontal", 16, 0, 16, 0);   // (the game's rows')
+        _labelMargins = AvaloniaReflect.Double(_labelMargin, "Left") + AvaloniaReflect.Double(_labelMargin, "Right");
+        if (double.IsNaN(_labelMargins)) _labelMargins = 32;
+        foreach (var g in groups) { foreach (var r in g.Basic) _labelTexts.Add(r.Label); foreach (var r in g.Advanced) _labelTexts.Add(r.Label); }
+        _labelW = SettingsModel.LabelWidth(_labelTexts, null, 0, _labelMargins);
         var exp = AvaloniaReflect.New("Expander");
         var body = AvaloniaReflect.New("StackPanel");
         if (exp == null || body == null) return null;
@@ -281,12 +289,16 @@ public static partial class SettingsTab
         AvaloniaReflect.Set(exp, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 8));
         AvaloniaReflect.Set(body, "Tag", BodyTag + SettingsModel.Shown(_rows));
         AvaloniaReflect.Set(body, "Margin", AvaloniaReflect.Thickness(16, 0, 16, 16));
-        AvaloniaReflect.SharedSizeScope(body);   // (one label column for the whole section, its Advanced rows too)
+        _body = body;
         var list = AvaloniaReflect.List(body, "Children");
         if (list == null) return null;
-        var paths = Text("This PC: " + ClientPath + "   ·   Host defaults: " + WorldPath, Muted);
-        AvaloniaReflect.AddClass(paths, SettingsModel.SmallClass);
-        list.Add(paths);
+        // (each path on its own line: one line of both wrapped mid-path)
+        foreach (string path in new[] { "This PC: " + ClientPath, "Host defaults: " + WorldPath })
+        {
+            var line = Text(path, Muted);
+            AvaloniaReflect.AddClass(line, SettingsModel.SmallClass);
+            list.Add(line);
+        }
         _worldHint = Text(SettingsModel.WorldUnsavedHint, Warning);
         AvaloniaReflect.Set(_worldHint, "IsVisible", false);
         AvaloniaReflect.Set(_worldHint, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 0));
@@ -316,7 +328,7 @@ public static partial class SettingsTab
                 hl?.Add(sc);
             }
             list.Add(head);
-            foreach (var r in g.Basic) { var row = MakeRow(r, gu); if (row == null) return null; list.Add(row); }
+            foreach (var r in g.Basic) { var row = MakeRow(r, gu, false); if (row == null) return null; list.Add(row); }
             if (g.Advanced.Count > 0)
             {
                 var adv = AvaloniaReflect.New("Expander");
@@ -332,12 +344,14 @@ public static partial class SettingsTab
                 AvaloniaReflect.Set(adv, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
                 AvaloniaReflect.Set(adv, "HorizontalContentAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
                 var advList = AvaloniaReflect.List(advBody, "Children");
-                foreach (var r in g.Advanced) { var row = MakeRow(r, gu); if (row == null) return null; advList?.Add(row); }
+                int firstAdv = _advGrids.Count;
+                foreach (var r in g.Advanced) { var row = MakeRow(r, gu, true); if (row == null) return null; advList?.Add(row); }
+                if (_advGrids.Count > firstAdv) { _advs.Add(adv); _advFirst.Add(_advGrids[firstAdv]); }
                 AvaloniaReflect.Set(adv, "Content", advBody);
                 list.Add(adv);
             }
             // (the button in the controls' column, a refusal's reason under it: the rows' own grid)
-            var foot = RowGrid();
+            var foot = RowGrid(false);
             var reset = AvaloniaReflect.New("Button");
             if (foot == null || reset == null) return null;
             AvaloniaReflect.Set(foot, "Margin", AvaloniaReflect.Thickness(0, 8, 0, 0));
@@ -381,36 +395,90 @@ public static partial class SettingsTab
         return t;
     }
 
-    /// <summary>A row's grid: SettingsModel.RowColumns (the game's SpaceWidth and ValueWidth) over two rows (the control,
-    /// then its note or lock); the label column shared across the section.</summary>
-    static object RowGrid()
+    /// <summary>A row's grid: SettingsModel.RowColumns (the section's label width, the game's SpaceWidth and ValueWidth) over
+    /// two rows (the control, then its note or lock). Kept for FitColumns: an Advanced row's label column is narrower by the
+    /// Advanced expander's inset, so its control starts where the Basic rows' do.</summary>
+    static object RowGrid(bool advanced)
     {
         var grid = AvaloniaReflect.New("Grid");
         if (grid == null) return null;
-        string cols = SettingsModel.RowColumns(AvaloniaReflect.LengthSpec(_anchor, SettingsModel.SpaceWidthKey, SettingsModel.SpaceWidthFallback),
+        string cols = SettingsModel.RowColumns(advanced ? Math.Max(0, _labelW - _advInset) : _labelW,
+                                               AvaloniaReflect.LengthSpec(_anchor, SettingsModel.SpaceWidthKey, SettingsModel.SpaceWidthFallback),
                                                AvaloniaReflect.LengthSpec(_anchor, SettingsModel.ValueWidthKey, SettingsModel.ValueWidthFallback));
         AvaloniaReflect.Set(grid, "ColumnDefinitions", AvaloniaReflect.Definitions("ColumnDefinitions", cols));
         AvaloniaReflect.Set(grid, "RowDefinitions", AvaloniaReflect.Definitions("RowDefinitions", "Auto,Auto"));
-        AvaloniaReflect.ShareColumn(grid, 0, SettingsModel.LabelGroup);
+        (advanced ? _advGrids : _basicGrids).Add(grid);
         return grid;
+    }
+
+    // ── the label column (one x for every control: the section's fixed label width) ──
+
+    static double _labelW, _labelMargins, _advInset;
+    static object _labelMargin, _body;
+    static bool _labelsFitted, _insetFitted;
+    static readonly List<string> _labelTexts = new List<string>();
+    static readonly List<object> _labels = new List<object>(), _basicGrids = new List<object>(), _advGrids = new List<object>(),
+                                 _advs = new List<object>(), _advFirst = new List<object>();
+
+    static void ClearColumns()
+    {
+        _labelTexts.Clear(); _labels.Clear(); _basicGrids.Clear(); _advGrids.Clear(); _advs.Clear(); _advFirst.Clear();
+        _labelW = SettingsModel.LabelMinWidth; _advInset = 0; _labelsFitted = _insetFitted = false; _body = _labelMargin = null;
+    }
+
+    /// <summary>The label column fitted (UI thread; on attach, then each pump until done): once the labels are laid out
+    /// (styled: the game's font), the widest measured (AvaloniaReflect.TextWidth) is the section's width; once an Advanced
+    /// expander is open, its inset (how far right its rows sit) comes off its rows' label column.</summary>
+    static void FitColumns()
+    {
+        if (!_labelsFitted && _labels.Count > 0)
+        {
+            var first = _labels[0];
+            if (AvaloniaReflect.Double(AvaloniaReflect.Get(first, "Bounds"), "Width") > 0)
+            {
+                _labelsFitted = true;
+                double w = SettingsModel.LabelWidth(_labelTexts, s => AvaloniaReflect.TextWidth(first, s), AvaloniaReflect.Double(first, "FontSize"), _labelMargins);
+                if (Math.Abs(w - _labelW) >= 1) { _labelW = w; ApplyColumns(); }
+            }
+        }
+        if (!_insetFitted && _basicGrids.Count > 0)
+            for (int k = 0; k < _advs.Count; k++)
+            {
+                if (!(AvaloniaReflect.Get(_advs[k], "IsExpanded") is bool open) || !open) continue;
+                if (!(AvaloniaReflect.Double(AvaloniaReflect.Get(_advFirst[k], "Bounds"), "Width") > 0)) continue;
+                double x0 = AvaloniaReflect.OffsetX(_basicGrids[0], _body), x1 = AvaloniaReflect.OffsetX(_advFirst[k], _body);
+                if (double.IsNaN(x0) || double.IsNaN(x1)) continue;
+                _insetFitted = true;
+                double inset = Math.Max(0, Math.Min(SettingsModel.LabelMinWidth / 2, x1 - x0));
+                if (Math.Abs(inset - _advInset) >= 1) { _advInset = inset; ApplyColumns(); }
+                break;
+            }
+    }
+
+    static void ApplyColumns()
+    {
+        foreach (var g in _basicGrids) AvaloniaReflect.ColumnWidth(g, 0, _labelW);
+        foreach (var g in _advGrids) AvaloniaReflect.ColumnWidth(g, 0, Math.Max(0, _labelW - _advInset));
     }
 
     /// <summary>One row: a grid [label | gap | control | value] over [the lock reason or note], in the game's
     /// DescriptionControl (the screen's description panel shows the doc) - a ToolTip when that type is missing.</summary>
-    static object MakeRow(SettingsModel.Row r, GroupUi g)
+    static object MakeRow(SettingsModel.Row r, GroupUi g, bool advanced)
     {
-        var grid = RowGrid();
+        var grid = RowGrid(advanced);
         if (grid == null) return null;
         AvaloniaReflect.Set(grid, "Margin", AvaloniaReflect.Thickness(0, 3, 0, 3));
         var cells = AvaloniaReflect.List(grid, "Children");
         var label = Text(r.Label, 0);
         AvaloniaReflect.AddClass(label, SettingsModel.LabelClass);
         AvaloniaReflect.Set(label, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "NoWrap"));
-        AvaloniaReflect.Set(label, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Right"));
+        // (left in the section's fixed label column, as the game's Options rows; a label over the clamp ends in "...")
+        AvaloniaReflect.Set(label, "TextTrimming", AvaloniaReflect.StaticValue("Avalonia.Media.TextTrimming", "CharacterEllipsis"));
         AvaloniaReflect.Set(label, "VerticalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.VerticalAlignment", "Center"));
-        AvaloniaReflect.Set(label, "Margin", AvaloniaReflect.ThicknessOr(_anchor, "Margin-Large-Horizontal", 16, 0, 16, 0));   // (the game's rows')
+        AvaloniaReflect.Set(label, "Margin", _labelMargin);
         AvaloniaReflect.Place(label, 0, 0);
         cells?.Add(label);
+        _labels.Add(label);
 
         string kind = r.Kind;
         object control;
@@ -476,6 +544,7 @@ public static partial class SettingsTab
     /// <param name="last">The tab is being left or the screen closed: a moved slider applies without waiting.</param>
     static void Pump(bool last = false)
     {
+        if (!_labelsFitted || !_insetFitted) FitColumns();
         if (_seenVersion == int.MinValue) { _seenVersion = SettingsVersion; foreach (var u in _rowUi) Show(u); }   // (after a reset)
         bool canEdit = CanEditWorld();
         string worldPath = WorldPath;
@@ -558,8 +627,8 @@ public static partial class SettingsTab
     /// <summary>open: the Options screen (SharedUIComponent.OpenOptionsScreen, on the UI thread); select: our tab; flip
     /// &lt;setting&gt;: change that row's control as a player would (a switch flipped, the next choice, a slider one step) - the
     /// pump applies it while the tab is selected; close: the screen it opened; expand all|none|section|advanced: this mod's
-    /// expanders open (all: the section and every Advanced; none: all shut; section: the section only; advanced: the
-    /// section and every Advanced, as all); scroll top|bottom|&lt;pixels&gt;|&lt;setting&gt;: the tab's ScrollViewer (a setting:
+    /// expanders open - every mod's section on the tab (all: the sections and every Advanced; none: all shut; section: the
+    /// sections only; advanced: as all); scroll top|bottom|&lt;pixels&gt;|&lt;setting&gt;: the tab's ScrollViewer (a setting:
     /// its row brought into view) - for screenshots of every part; anything else: the last report (a new one is made on the
     /// UI thread's next check - ask again).</summary>
     public static string Dev(string line)
@@ -621,19 +690,26 @@ public static partial class SettingsTab
         return "flip: no row " + name + (_rowUi.Count == 0 ? " (the tab is not attached)" : "");
     }
 
-    /// <summary>This mod's section and its Advanced expanders opened or shut (UI thread).</summary>
+    /// <summary>EVERY section on the tab (each mod's: the harness runs in one mod, the tab is shared - before 2026-10-15
+    /// only this mod's opened) and their Advanced expanders opened or shut (UI thread). By the Tag contract: a section is
+    /// "ModSettings/v1/&lt;ModId&gt;", its Advanced "&lt;section&gt;/advanced/&lt;group&gt;", direct children of its body.</summary>
     static string Expand(string which)
     {
-        if (_section == null) return "expand: the tab is not attached";
-        bool open = which != "none";
-        AvaloniaReflect.Set(_section, "IsExpanded", open);
-        int n = 0;
-        var children = AvaloniaReflect.List(AvaloniaReflect.Get(_section, "Content"), "Children");
-        if (children != null)
+        var sections = AvaloniaReflect.List(_tab != null ? Host(_tab) : null, "Children");
+        if (_section == null || sections == null) return "expand: the tab is not attached";
+        bool open = which != "none", adv = open && which != "section";
+        int ns = 0, n = 0;
+        for (int i = 0; i < sections.Count; i++)
+        {
+            if (!(AvaloniaReflect.Get(sections[i], "Tag") is string st) || st == NoteTag || !st.StartsWith(SettingsModel.TabTag + "/", StringComparison.Ordinal)) continue;
+            AvaloniaReflect.Set(sections[i], "IsExpanded", open); ns++;
+            var children = AvaloniaReflect.List(AvaloniaReflect.Get(sections[i], "Content"), "Children");
+            if (children == null) continue;
             for (int k = 0; k < children.Count; k++)
-                if (AvaloniaReflect.Get(children[k], "Tag") is string t && t.StartsWith(SectionTag + "/advanced/", StringComparison.Ordinal))
-                { AvaloniaReflect.Set(children[k], "IsExpanded", open && which != "section"); n++; }
-        return "expanded " + which + ": section " + (open ? "open" : "shut") + ", " + n + " advanced " + (open && which != "section" ? "open" : "shut");
+                if (AvaloniaReflect.Get(children[k], "Tag") is string t && t.StartsWith(st + "/advanced/", StringComparison.Ordinal))
+                { AvaloniaReflect.Set(children[k], "IsExpanded", adv); n++; }
+        }
+        return "expanded " + which + ": " + ns + " sections " + (open ? "open" : "shut") + ", " + n + " advanced " + (adv ? "open" : "shut");
     }
 
     /// <summary>The tab's ScrollViewer to the top, the bottom, a pixel offset, or a setting's row (UI thread).</summary>
@@ -646,9 +722,9 @@ public static partial class SettingsTab
         if (t == "bottom") return AvaloniaReflect.Call(scroll, "ScrollToEnd") ? "scrolled to the bottom" : "scroll: no ScrollToEnd";
         if (double.TryParse(to, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y))
             return AvaloniaReflect.Set(scroll, "Offset", AvaloniaReflect.Vector(0, y)) ? "scrolled to " + y : "scroll: Offset not set (" + AvaloniaReflect.Why + ")";
-        foreach (var u in _rowUi)
-            if (string.Equals(u.R.Name, to, StringComparison.OrdinalIgnoreCase))
-                return AvaloniaReflect.BringIntoView(u.Control) ? "scrolled to " + u.R.Name : "scroll: BringIntoView failed";
+        // (any section's row: its control's Tag ends "/row/<setting>")
+        var row = AvaloniaReflect.FindTagEnding(Host(_tab), "/row/" + to);
+        if (row != null) return AvaloniaReflect.BringIntoView(row) ? "scrolled to " + to : "scroll: BringIntoView failed";
         return "scroll: top|bottom|<pixels>|<setting> (no row " + to + ")";
     }
 

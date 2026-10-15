@@ -49,10 +49,16 @@ public static class SettingsModel
     /// <summary>The look (2026-10-15, after the first in-game screenshot: a light-grey slab, a raw slider number, a small
     /// centred header): the game's own style classes and resources (its Options views' - AudioView, GraphicsView,
     /// OptionsScreen), each with the value it had in the game's build, used when the lookup fails.
-    /// A row is [label | SpaceWidth | ValueWidth: the control | its value | the rest], the label column one width for the
-    /// whole section (SharedSizeGroup LabelGroup): labels right-aligned against the controls, nothing stretched to the left.</summary>
+    /// A row is [label | SpaceWidth | ValueWidth: the control | its value | the rest], the label column ONE fixed width for
+    /// the whole section (LabelWidth), its Advanced rows too: every control and value starts at the same x.</summary>
     public const string SectionHeaderClass = "OptionTitle", GroupHeaderClass = "SubTitle", LabelClass = "OptionSubTitle",
-                        SmallClass = "Small", BrightClass = "Bright", LabelGroup = "ModSettingsLabel";
+                        SmallClass = "Small", BrightClass = "Bright";
+    /// <summary>The label column (2026-10-15, after the second screenshot: Avalonia's SharedSizeGroup did not line the rows up
+    /// - each control started right after its own label): a fixed width per section, from its widest label measured with the
+    /// game's font (FormattedText), else LabelCharEm x the font size per character; clamped to [LabelMinWidth, LabelMaxWidth]
+    /// (a longer label ends in an ellipsis). LabelFontFallback: the labels' size when it cannot be read (OptionSubTitle's,
+    /// ~11 px a character in the screenshot).</summary>
+    public const double LabelMinWidth = 160, LabelMaxWidth = 480, LabelCharEm = 0.55, LabelFontFallback = 20;
     /// <summary>The game Slider template's value box (its raw Value: our sliders run on a step index), hidden.</summary>
     public const string SliderValuePart = "PART_NumericUpDown";
     public const string SpaceWidthKey = "SpaceWidth", SpaceWidthFallback = "15", ValueWidthKey = "ValueWidth", ValueWidthFallback = "516";
@@ -60,8 +66,27 @@ public static class SettingsModel
     public const string MutedBrushKey = "Interactive-Primary-Disabled", MutedFallback = "Gray", WarningBrushKey = "Warning",
                         WarningFallback = "Goldenrod", ErrorBrushKey = "Error", ErrorFallback = "OrangeRed";
 
-    /// <summary>A row's columns: label (Auto; shared), the gap, the control, the value (Auto), the rest (*).</summary>
-    public static string RowColumns(string space, string value) => "Auto," + space + "," + value + ",Auto,*";
+    /// <summary>A row's columns: label (the section's fixed width), the gap, the control, the value (Auto), the rest (*).</summary>
+    public static string RowColumns(double label, string space, string value)
+        => Math.Round(label).ToString(CultureInfo.InvariantCulture) + "," + space + "," + value + ",Auto,*";
+
+    /// <summary>The section's label column: its widest label plus the label's own margins (margins), clamped. measure: a
+    /// label's width in the game's font (null, or a result not above 0: chars x LabelCharEm x fontSize - LabelFontFallback
+    /// when fontSize is not above 0).</summary>
+    public static double LabelWidth(IList<string> labels, Func<string, double> measure, double fontSize, double margins)
+    {
+        double em = (fontSize > 0 && !double.IsInfinity(fontSize) ? fontSize : LabelFontFallback) * LabelCharEm, widest = 0;
+        if (labels != null)
+            foreach (var s in labels)
+            {
+                if (string.IsNullOrEmpty(s)) continue;
+                double w = measure != null ? measure(s) : double.NaN;
+                if (!(w > 0) || double.IsInfinity(w)) w = s.Length * em;
+                if (w > widest) widest = w;
+            }
+        double m = margins > 0 && !double.IsInfinity(margins) ? margins : 0;
+        return Math.Min(LabelMaxWidth, Math.Max(LabelMinWidth, Math.Ceiling(widest + m)));
+    }
 
     /// <summary>A grid length as a ColumnDefinitions spec piece: Pixel 516 -> "516", Star 0.65 -> "0.65*", Auto -> "Auto";
     /// anything else (NaN, a negative, an unknown unit) -> fallback.</summary>
