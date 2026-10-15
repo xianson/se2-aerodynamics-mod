@@ -183,6 +183,16 @@ static class Program
         Check(doc.Contains($"## Version {version}"), $"docs/API.md has a 'Version {version}' section");
         foreach (var m in members)
             Check(m.name == "Version" || doc.Contains(m.name + "("), $"docs/API.md documents {m.name}");
+        // (A8, 2026-10-15) the readers of lists the simulation thread clears and refills read published copies or take the
+        // list's lock - iterated bare they tore or threw (~200 ms an exception), caught by a try
+        foreach (var (name, live) in new[] { ("GetSurface", "FxSurface"), ("GetThrusters", "_thrusterCache"), ("GetAeroBlocks", "catch"), ("GetAeroBlockState", "catch") })
+        {
+            var m = members.FirstOrDefault(x => x.name == name);
+            if (m.node is not MethodDeclarationSyntax md) { Check(false, $"{name}: declared"); continue; }
+            string body = md.Body?.ToString() ?? "";
+            Check(!md.DescendantNodes().OfType<TryStatementSyntax>().Any() && !body.Contains(live) && (name.StartsWith("GetAero") ? body.Contains("lock (reg.SyncRoot)") : true),
+                $"{name}: reads a published copy or under the list's lock, never the live list in a try");
+        }
         // a new member says its version in its summary
         foreach (var m in members.Where(x => !Frozen.ContainsKey(x.name)))
         {

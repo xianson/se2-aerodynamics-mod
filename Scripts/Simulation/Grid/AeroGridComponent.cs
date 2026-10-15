@@ -67,7 +67,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _seedTries;
     private readonly HashSet<Keen.VRage.DCS.Components.Entity> _thrusterSet = new();
     private int _thrusterSetCount = -1;
-    internal void ThrustersRebuilt() { _thrusterSetCount = -1; _thrusterGen++; }
+    internal void ThrustersRebuilt() { _thrusterSetCount = -1; _thrusterGen++; ThrusterSnap = _thrusterCache.ToArray(); }
+    /// <summary>The thruster list as of its last rebuild, for other threads (AeroApi.GetThrusters): a copy, never changed
+    /// once published (the live _thrusterCache is cleared and refilled in place, 2026-10-15).</summary>
+    internal volatile ThrusterInfo[] ThrusterSnap = Array.Empty<ThrusterInfo>();
     /// <summary>Counts thruster cache rebuilds (ThrustTorque re-keys its published flame shares on a change).</summary>
     internal int _thrusterGen;
     /// <summary>This grid's published flame shares (ThrustTorque.Publish; server copy only).</summary>

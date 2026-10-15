@@ -22,6 +22,11 @@ internal sealed class ApiGridState
     public int SurfCount; public Vector3I[] SurfCell = Array.Empty<Vector3I>(); public float[] SurfCmd = Array.Empty<float>(), SurfDeg = Array.Empty<float>(), SurfLift = Array.Empty<float>(), SurfDrag = Array.Empty<float>();
     public Vector3I[] SurfCellB = Array.Empty<Vector3I>(); public float[] SurfCmdB = Array.Empty<float>(), SurfDegB = Array.Empty<float>(), SurfLiftB = Array.Empty<float>(), SurfDragB = Array.Empty<float>();
     public int ThrCount, ThrGen; public float[] ThrForce = Array.Empty<float>(), ThrForceB = Array.Empty<float>();
+    /// <summary>The hull's exposed faces for AeroApi.GetSurface (simulation thread: AeroGridComponent.PublishApiHull, while
+    /// HullUntil - it read the live face list the simulation thread updates and a rebuild refills, 2026-10-15). -1: none yet.</summary>
+    public long HullUntil, HullAt; public int HullCount = -1, HullVersion = -1; public object HullOf;
+    public Vector3[] HullPos = Array.Empty<Vector3>(), HullNrm = Array.Empty<Vector3>(), HullPosB = Array.Empty<Vector3>(), HullNrmB = Array.Empty<Vector3>();
+    public float[] HullArea = Array.Empty<float>(), HullCp = Array.Empty<float>(), HullAreaB = Array.Empty<float>(), HullCpB = Array.Empty<float>();
 
     // ── the structure (background evaluation: AeroGridComponent.ApiPublishStructure) ──
     /// <summary>The structure the published block order is of (a new one - a rebuild - bumps Layout).</summary>

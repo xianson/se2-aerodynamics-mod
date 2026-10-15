@@ -131,28 +131,27 @@ public static partial class AeroApi
 
     /// <summary>The hull's exposed faces (local): centre (m), outward normal (unit), area (m2), and the pressure coefficient
     /// Cp of the last face-model evaluation (0 where none: a grid on its force table evaluates no faces each tick). Lists
-    /// are cleared first; pass null for any you do not want. Returns the count (0 while the grid is (re)building). Large
-    /// ships have 10^5 faces: call it rarely and keep the lists.</summary>
+    /// are cleared first; pass null for any you do not want. Returns the count (0 while the grid is (re)building, and
+    /// until the grid's next simulation tick after the first call: the faces are published by its tick while they are
+    /// asked for). Large ships have 10^5 faces: call it rarely and keep the lists.</summary>
     public static int GetSurface(Keen.VRage.DCS.Components.Entity grid, List<Vector3> centresLocal, List<Vector3> normalsLocal, List<float> areas, List<float> cp)
     {
         centresLocal?.Clear(); normalsLocal?.Clear(); areas?.Clear(); cp?.Clear();
-        var aero = AeroOf(grid);
-        var surf = aero?.FxSurface;
-        if (surf == null || aero.Rebuilding) return 0;
-        try
+        // (from the faces the grid's tick publishes - AeroGridComponent.PublishApiHull: this read the live face list,
+        //  which the simulation thread updates and a rebuild refills, and tore or threw, 2026-10-15)
+        var s = Watch(grid, false);
+        if (s == null) return 0;
+        long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency);
+        if (until > s.HullUntil) s.HullUntil = until;
+        lock (s.Lock)
         {
-            var faces = surf.Faces;
-            var cps = (aero.FxModel?.InnerModel as DampedShadowedDragModel)?.FaceCp;
-            int n = faces.Count;
+            int n = Math.Max(s.HullCount, 0);
             for (int i = 0; i < n; i++)
             {
-                var f = faces[i];
-                centresLocal?.Add(f.Position); normalsLocal?.Add(f.Normal); areas?.Add(f.Area);
-                cp?.Add(cps != null && i < cps.Count ? cps[i] : 0f);
+                centresLocal?.Add(s.HullPos[i]); normalsLocal?.Add(s.HullNrm[i]); areas?.Add(s.HullArea[i]); cp?.Add(s.HullCp[i]);
             }
             return n;
         }
-        catch (Exception) { centresLocal?.Clear(); normalsLocal?.Clear(); areas?.Clear(); cp?.Clear(); return 0; }   // (rebuilt under us)
     }
 
     /// <summary>How many wings aero detected on the grid (index them 0..count-1 in the calls below).</summary>
@@ -450,20 +449,18 @@ public static partial class AeroApi
         if (aero == null) return 0;
         bool flying = AeroEntryFx.FlowOf(grid, out var p);
         float mach = flying ? p.Mach : 0f; Vector3 travel = flying ? p.TravelLocal : Vector3.Zero;
-        try
+        // (the list as last published - AeroGridComponent.ThrusterSnap, a copy made at each rebuild: the live one is cleared
+        //  and refilled by the simulation thread, iterated bare it tore or threw, 2026-10-15)
+        ThrusterInfo[] cache = aero.ThrusterSnap;
+        int n = cache.Length;
+        for (int i = 0; i < n; i++)
         {
-            var cache = aero._thrusterCache;
-            int n = cache.Count;
-            for (int i = 0; i < n; i++)
-            {
-                var t = cache[i];
-                thrusters?.Add(t.ThrusterEntity);
-                profiles?.Add(t.Profile?.Name ?? "Rocket");
-                effectiveness?.Add(t.Profile == null ? 1f : flying ? (float)t.Profile.Evaluate(mach, travel, t.IntakeDirection) : (float)t.Profile.Evaluate(0.0));
-            }
-            return n;
+            var t = cache[i];
+            thrusters?.Add(t.ThrusterEntity);
+            profiles?.Add(t.Profile?.Name ?? "Rocket");
+            effectiveness?.Add(t.Profile == null ? 1f : flying ? (float)t.Profile.Evaluate(mach, travel, t.IntakeDirection) : (float)t.Profile.Evaluate(0.0));
         }
-        catch (Exception) { thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear(); return 0; }   // (rebuilt under us)
+        return n;
     }
 
     // ── change counters (version 3): cache what you read, read again when a counter moves ──
@@ -508,7 +505,9 @@ public static partial class AeroApi
         kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear();
         var reg = AeroOf(grid)?.Components;
         if (reg == null) return 0;
-        try
+        // (under the registry's lock: the simulation thread clears and refills the list on a rebuild - iterated bare it
+        //  tore or threw, 2026-10-15)
+        lock (reg.SyncRoot)
         {
             var list = reg.Components;
             int n = list.Count;
@@ -519,7 +518,6 @@ public static partial class AeroApi
             }
             return n;
         }
-        catch (Exception) { kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear(); return 0; }   // (changed under us)
     }
 
     /// <summary>An aero block's state on the last tick, as named values (both lists cleared, then filled; units in
@@ -534,8 +532,7 @@ public static partial class AeroApi
         var reg = AeroOf(grid)?.Components;
         if (reg == null) return 0;
         IAeroBlockComponent c = null;
-        try { var list = reg.Components; for (int i = 0; i < list.Count; i++) if (list[i].BlockPosition == cell) { c = list[i]; break; } }
-        catch (Exception) { return 0; }
+        lock (reg.SyncRoot) { var list = reg.Components; for (int i = 0; i < list.Count; i++) if (list[i].BlockPosition == cell) { c = list[i]; break; } }
         switch (c)
         {
             case ControlSurface s: V(names, values, "DeflectionInput", s.DeflectionInput); V(names, values, "MaxDeflection", s.MaxDeflection); V(names, values, "Lift", s.CurrentLift); V(names, values, "Drag", s.CurrentDrag); V(names, values, "AoA", s.EffectiveAoA); break;
