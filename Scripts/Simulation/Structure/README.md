@@ -11,9 +11,9 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. |
 | `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). |
-| `StructureFatigue.cs` | Health loss per utilisation, and the per-grid `Ledger` of loss not yet written to the game. |
+| `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate; compression at `BucklingFatigueShare` 1 for a buckling-limited member, `CompressionFatigueShare` 0.2 for a stocky one: `TensilePart`, `CompressionShare`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
 | `StructureBend.cs` | Permanent bends: which joints set, the far side, the displacement. |
-| `StructMaterial.cs` | Material classes from block names: wall thickness, strength by temperature, burn rate. |
+| `StructMaterial.cs` | Material classes from block names: wall thickness, strength by temperature, burn rate, each class's scorch thresholds (`ScorchAt`). |
 | `HullHeat.cs` | Hull skin / core temperatures from the flow (stagnation heating, radiation, conduction). |
 | `HullHeat.Api.cs` | Each face's film coefficient and the recovery temperature of the last step (the API's heat input for another heat model). |
 | `ContactBalance.cs` | The contact loads' momentum balance (what the physics says held the ship). |
@@ -40,7 +40,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `StructureFeel.cs` | Creaks, groans and cockpit shake with the structure's utilisation. |
 | `TearSmoke.cs` | Smoke and debris at a torn edge (the server publishes, the client grid that pairs plays it). |
-| `HeatScorch.cs` | Re-entry scorch decals: spots gathered on the server, stamped on the client. |
+| `HeatScorch.cs` | Re-entry scorch decals: spots gathered on the server (light / dark by each block class's own heat limits), stamped on the client from the effects job twice a second; a fault waits 10 s (`RetrySeconds`). |
 
 ## Entry points
 - `AeroGridComponent.TickStructure` (end of the sim job, server, after the air's forces are applied) and

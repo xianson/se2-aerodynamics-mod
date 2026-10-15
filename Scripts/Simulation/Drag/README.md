@@ -11,7 +11,6 @@
 | `AeroTableCache.cs` | Built tables on disk by shape (`%TEMP%\AeroMod\tables`), `Version`, `ModelSwitches` |
 | `OrphanChunks.cs` | A broken-off piece flies on its parent's shares until its own build |
 | `IAeroDragModel.cs` | The model interface |
-| `NewtonianDragModel.cs`, `AxisCdDragModel.cs` | Simpler models, never constructed today (`NewtonianDragModel` appears only in a type check in `LiftingSurfaceModel`) |
 
 ## Entry points
 `LiftingSurfaceModel` (`Lift/`) wraps the hull model; `AeroGridComponent.StartBackgroundBuild` builds / loads tables;

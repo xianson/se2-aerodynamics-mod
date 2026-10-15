@@ -9,8 +9,9 @@ block components, and the forces it applies. It is one `partial` class split by 
 | `AeroGridComponent.Damage.cs` | Block-change signal, local chunk updates after damage (`TickLocal`), seeding a broken-off piece |
 | `AeroGridComponent.Compute.cs` | `TryCompute`: rebuild triggers, surface update, wings, the model, components, drag patches |
 | `AeroGridComponent.Surfaces.cs` | Control-surface mixer, allocation for the aero-aware attitude law, trim / axis masks, flap angles |
-| `AeroGridComponent.Attitude.cs` | `AttitudeTarget` (read by ThrustTorque), the unpiloted attitude hold, the SAS torque |
+| `AeroGridComponent.Attitude.cs` | `AttitudeTarget` (read by ThrustTorque), the unpiloted hold (damps the rotation only; no remembered attitude), the SAS torque |
 | `AeroGridComponent.Build.cs` | Full rebuild: scheduler callbacks, the background build (surface, classify, wings, table), the swap |
+| `AeroGridComponent.Api.cs` | The tick's copies for AeroApi version 7 (flight state, surfaces, thruster forces, hull faces for `GetSurface`), published only while read (`Api/ApiGridState.cs`) |
 | `AeroSimJob.cs` | The jobs: `OnAeroSim` (forces, 60 Hz), `OnAttitude` (ThrustTorque), `OnWindUndo` |
 | `AeroDebugDraw.cs` | Render-rate debug draw (pressure, vectors, wings) |
 | `AeroSpeedUncap.cs` | The speed-cap job (reads the physics speed cap for the contact loads; render-submission phase) |
