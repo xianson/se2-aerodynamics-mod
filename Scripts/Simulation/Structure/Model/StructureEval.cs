@@ -115,7 +115,9 @@ public static class StructureEval
             if (w <= 0f || hh.FaceBlock[i] < 0) continue;
             ws.Faces[nf++] = i; cw += hh.FacePosition(i) * w; sw2 += w;
         }
-        cw /= sw2;
+        // (no loaded face - none on a block: no centre; Apply then puts the body's load on the root. It divided by 0: NaN
+        //  loads, 2026-10-15)
+        cw = sw2 > 0f ? cw / sw2 : Vector3.Zero;
         double jxx = 0, jyy = 0, jzz = 0, jxy = 0, jxz = 0, jyz = 0;
         for (int k = 0; k < nf; k++)
         {
@@ -195,7 +197,10 @@ public static class StructureEval
         //  Six passes over every face per Apply - 383k faces on newred_v2, 5.3 ms, two or three Applies an evaluation - and
         //  the same sums in the same order: bit-identical, 2026-10-15)
         var ws = hh != null ? WindOf(hh) : null;
-        float sw = ws != null ? ws.Sum : 0f;
+        // (shared over the LOADED faces' weights - Sum2, the faces on a block: over every face's (Sum) the share of the
+        //  faces on no block - a coarsened heat grid's - was lost, part of the air's load never reached the structure,
+        //  2026-10-15)
+        float sw = ws != null && ws.Count > 0 ? ws.Sum2 : 0f;
         if (sw > 0f && (L.AirVel.LengthSquared() > 1f || entryF.LengthSquared() > 0f))
         {
             Vector3 mDist = Vector3.Zero;

@@ -605,6 +605,22 @@ static class Program
         Check((F - want).Length() < 1e-3f * want.Length(), $"entry braking: the force is the mass x 5 g ({F.Length() / 1e3f:F2} kN of {want.Length() / 1e3f:F2})");
         Check(M.Length() < 1e-3f * want.Length() * 3f, $"entry braking: no net moment ({M.Length():F2} N m)");
         Check(Vector3.Dot(front, want) > 0.99f * want.LengthSquared(), $"entry braking: the nose's faces carry it ({Vector3.Dot(front, want) / want.Length() / 1e3f:F2} kN at the nose)");
+        // (A26, 2026-10-15) windward faces on no block (a coarsened heat grid's) take no share: the whole load still reaches
+        // the blocks; none on a block at all - the root carries it, no NaN
+        {
+            var keep = (int[])h.FaceBlock.Clone();
+            int off = 0;
+            for (int i = 0; i < h.FaceCount; i++) if (h.FaceWind[i] > 0f && (off++ & 1) == 0) h.FaceBlock[i] = -1;
+            h.Wind = null; StructureEval.Apply(s, h, L);
+            Vector3 F2 = Vector3.Zero; for (int i = 0; i < s.Count; i++) F2 += s.ExtForce[i];
+            Check(off > 1 && (F2 - want).Length() < 1e-3f * want.Length(), $"entry braking: half the windward faces on no block - the whole force still on the blocks ({F2.Length() / 1e3f:F2} kN of {want.Length() / 1e3f:F2})");
+            for (int i = 0; i < h.FaceCount; i++) h.FaceBlock[i] = -1;
+            h.Wind = null; StructureEval.Apply(s, h, L);
+            Vector3 F3 = Vector3.Zero; bool finite = true;
+            for (int i = 0; i < s.Count; i++) { F3 += s.ExtForce[i]; finite &= float.IsFinite(s.ExtForce[i].X + s.ExtMoment[i].X + s.ExtForce[i].Y + s.ExtMoment[i].Y + s.ExtForce[i].Z + s.ExtMoment[i].Z); }
+            Check(finite && (F3 - want).Length() < 1e-3f * want.Length(), $"entry braking: no face on a block - finite, on the root ({F3.Length() / 1e3f:F2} kN)");
+            Array.Copy(keep, h.FaceBlock, keep.Length); h.Wind = null; StructureEval.Apply(s, h, L);
+        }
         s.RigidAccel(Vector3.Zero);
         Check((s.Accel - accel).Length() < 1e-3f * accel.Length() && s.AngAccel.Length() < 1e-3f, $"entry braking: the free body decelerates at it, unturned ({s.Accel.Length() / 9.81f:F3} g, {s.AngAccel.Length():E1} rad/s2)");
         s.SolveFree(Vector3.Zero);
