@@ -102,10 +102,12 @@ public partial class AeroGridComponent
         _finalizeTask = AeroWork.Enqueue(() => CachedPriority, () =>
         {
           // (AeroWork: a hundred grids arriving at once queue for its workers)
+          var workerPriority = System.Threading.ThreadPriority.BelowNormal;
           try
           {
-            // below the game's own threads: a rebuild must never compete with a frame
-            try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Lowest; } catch { }
+            // below the game's own threads: a rebuild must never compete with a frame (the worker's own priority back
+            // after - 2026-10-15: it kept Lowest, and every later job on that worker - damage updates - ran at it)
+            try { workerPriority = System.Threading.Thread.CurrentThread.Priority; System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Lowest; } catch { }
             long t = AeroCost.Start(), tStart = t;
             var sw = System.Diagnostics.Stopwatch.StartNew(); var ms = new double[6];
             // a shape seen before (a reloaded world, a pasted blueprint, a copy): its table from disk, no build
@@ -179,7 +181,7 @@ public partial class AeroGridComponent
             AeroCost.FinShadow.Stop(t);
             AeroCost.RebuildAlloc = $"rebuild alloc MB: snapshot {aSnap / 1048576.0:F1} faces {aFaces / 1048576.0:F1} finalize {aFin / 1048576.0:F1} classify {aCls / 1048576.0:F1} wings {aWing / 1048576.0:F1} shadow {aShd / 1048576.0:F1} ({surface.FaceCount} faces)";
           }
-          finally { if (bigBuild) AeroGc.Exit(); }
+          finally { if (bigBuild) AeroGc.Exit(); try { System.Threading.Thread.CurrentThread.Priority = workerPriority; } catch { } }
         });
     }
 

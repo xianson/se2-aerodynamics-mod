@@ -236,7 +236,14 @@ public partial class DampedShadowedDragModel
         for (int c = 0; c < nChunks; c++) { chunks.RawShare(c); if (PressureRecovery) chunks.RawRecShare(c); }   // (made here: the workers below write them in parallel)
         void Worker(TableWork wk)
         {
-            try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
+            // (below the game's threads while it runs, and back after: the helpers are thread-pool threads - 2026-10-15:
+            //  they stayed BelowNormal for the session, starving the game's own pool work under load)
+            var th = System.Threading.Thread.CurrentThread; var was = System.Threading.ThreadPriority.Normal;
+            try { was = th.Priority; th.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
+            try { WorkerCore(wk); } finally { try { th.Priority = was; } catch { } }
+        }
+        void WorkerCore(TableWork wk)
+        {
             var acc = nChunks > 0 ? new double[nChunks * ForceTable.Stride] : null;
             var rec = nChunks > 0 && PressureRecovery ? new double[nChunks * ForceTable.Stride] : null;   // (each chunk's recovered push alone: ChunkedTable.RawRecShare)
             int idx;

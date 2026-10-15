@@ -110,6 +110,24 @@ static partial class Program
                 Check(err[100] < 0.05, $"A6 local update after 10 blocks lost (Bluefighter): off the full build by median {err[100] * 100:F1}% (p95 {err[190] * 100:F1}%)");
             }
         }
+        // A9: a table build leaves the priority of the threads it runs on as it found it (they are thread-pool threads:
+        // the helpers, and here the caller - a pool thread too - runs the same worker).
+        {
+            var pb = Path.Combine(dataDir, "bluefighter.boxes");
+            if (File.Exists(pb))
+            {
+                var y = Build("bluefighter", LoadBoxes(pb));
+                var after = System.Threading.Tasks.Task.Run(() =>
+                {
+                    System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Normal;
+                    ((DampedShadowedDragModel)y.Model.InnerModel).BuildForceTable(y.Grid, y.Surface, y.Manifold, y.Com, n: 2, nj: 1);
+                    var p = System.Threading.Thread.CurrentThread.Priority;
+                    System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.Normal;
+                    return p;
+                }).Result;
+                Check(after == System.Threading.ThreadPriority.Normal, $"A9 table build leaves its thread's priority alone: {after} after (Normal before)");
+            }
+        }
         return fails;
     }
 }
