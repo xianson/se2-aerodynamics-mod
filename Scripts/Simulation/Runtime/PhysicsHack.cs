@@ -276,36 +276,6 @@ public static class PhysicsHack
         return true;
     }
 
-
-    /// <summary>
-    /// Apply linear and angular velocity deltas.
-    ///
-    /// Prefer <see cref="AeroPhysics.ApplyForceAndTorque"/>: it takes a force and moment and
-    /// converts them with the engine's own impulse helpers. This overload survives for callers
-    /// that already hold a velocity delta, and now routes through RigidBodyDataFunctions rather
-    /// than re-deriving I^-1 by hand.
-    /// </summary>
-    public static bool ApplyDeltaVAndTorque(DEntityContext data, Vector3 deltaV, Vector3 torqueLocal, float dt = 1f / 60f, Quaternion? gridOrientation = null)
-    {
-        if (!IsFinite(deltaV) || !IsFinite(torqueLocal))
-            return false;
-
-        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
-        if (Unsafe.IsNullRef(in rb))
-            return false;
-
-        if (deltaV.LengthSquared() > 0f)
-            rb.LinearVelocity += deltaV;
-
-        if (torqueLocal.LengthSquared() > 1e-6f
-            && SafeTryGet<RigidBodyMassProperties>(data, out var mass))
-        {
-            if (SafeGetWorldTransform(data, out var wtLocal))
-                rb.ApplyAngularImpulseLocal(in mass, in wtLocal, torqueLocal * dt);
-        }
-        return true;
-    }
-
     internal static bool IsFinite(Vector3 v) =>
         !float.IsNaN(v.X) && !float.IsNaN(v.Y) && !float.IsNaN(v.Z) &&
         !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);

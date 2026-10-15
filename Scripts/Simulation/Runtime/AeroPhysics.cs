@@ -17,7 +17,7 @@ namespace AeroMod;
 ///
 /// What this replaces, and why the old way was wrong:
 ///
-///   * It re-implemented the engine's angular math. ApplyDeltaVAndTorque computed
+///   * It re-implemented the engine's angular math. PhysicsHack.ApplyDeltaVAndTorque (removed 2026-10-15) computed
 ///     deltaOmega = R * (I^-1 * (R^-1 * tau)) * dt itself, mirroring the principal-axis
 ///     rotation by hand. The engine already ships that exact computation in
 ///     RigidBodyDataFunctions.ApplyAngularImpulseLocal; any divergence between the two was a
