@@ -297,10 +297,11 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         ThrustTorque.PublishGear(aero, grid.Data.GetWorldTransform(), _key, Seq.Progress, compression);
     }
 
-    /// <summary>Harness: every gear's state.</summary>
-    public static string Summary
+    /// <summary>Harness: every gear's state - as the server step built it after the previous read (ServerDevReads,
+    /// 2026-10-15: read from the harness's thread it read the server blocks).</summary>
+    public static string Summary => ServerDevReads.Summary(ServerDevReads.Gears);
+    internal static string BuildSummary()
     {
-        get
         {
             var sb = new System.Text.StringBuilder();
             lock (All)

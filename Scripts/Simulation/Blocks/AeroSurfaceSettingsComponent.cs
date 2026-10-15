@@ -47,23 +47,24 @@ public partial class AeroSurfaceSettingsComponent : Component, IInSceneListener,
     void IInSceneListener.OnAddedToScene() { lock (All) All.Add(this); }
     void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
 
-    /// <summary>Harness (aeroget AeroSurfaceSettingsComponent.Summary): every surface's state, power included.</summary>
-    public static string Summary
+    /// <summary>Harness (aeroget AeroSurfaceSettingsComponent.Summary): every surface's state, power included - as the server
+    /// step built it after the previous read (ServerDevReads: the server blocks are read on its thread, 2026-10-15).</summary>
+    public static string Summary => ServerDevReads.Summary(ServerDevReads.Surfaces);
+
+    /// <summary>Server step only (ServerDevReads.Step): the summary.</summary>
+    internal static string BuildSummary()
     {
-        get
+        var sb = new System.Text.StringBuilder();
+        lock (All)
         {
-            var sb = new System.Text.StringBuilder();
-            lock (All)
+            sb.Append(All.Count).Append(" surfaces");
+            foreach (var s in All)
             {
-                sb.Append(All.Count).Append(" surfaces");
-                foreach (var s in All)
-                {
-                    var p = s.Entity?.TryGet<PowerableBlockComponent>();
-                    sb.Append(" | ").Append(s.Describe()).Append(p == null ? " (no power component)" : $" (enabled {p.Enabled} supplied {p.Supplied} functional {p.Functional})");
-                }
+                var p = s.Entity?.TryGet<PowerableBlockComponent>();
+                sb.Append(" | ").Append(s.Describe()).Append(p == null ? " (no power component)" : $" (enabled {p.Enabled} supplied {p.Supplied} functional {p.Functional})");
             }
-            return sb.ToString();
         }
+        return sb.ToString();
     }
 
     internal string Describe() => $"{(Working ? "working" : "OFF")} pitch {Pitch} yaw {Yaw} roll {Roll} max {_max:F0} trim {_trim:F0}";

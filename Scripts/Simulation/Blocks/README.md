@@ -11,7 +11,7 @@ block definitions and models ship in the companion mod "Aerodynamics Mod Blocks"
 | `AeroSurfaceBlockDetailModel.cs` | Its terminal page |
 | `DetailModelPairing.cs` | Lets a mod `[BlockDetailProvider]` open in the control panel without the replication crash (also used by the thruster's, gear's and airbrake's models) |
 | `ModDetailTypeInfo.cs` | Hand-built member list for a mod panel model (`GetTypeInfo()`) |
-| `AeroPanelProbe.cs` | DEV: opens a surface's panel as the terminal does (`aeroset AeroPanelProbe.Gen n`), `[AERO-PANEL]` PASS / FAIL |
+| `AeroPanelProbe.cs` | DEV: opens a surface's panel as the terminal does (`aeroset AeroPanelProbe.Gen n`), `[AERO-PANEL]` PASS / FAIL (the slider's check: the nearest server settings found on the server step, `ServerDevReads`) |
 | `AeroFlapComponent.cs` | Client: turns a surface's flap subpart to the deflection `ThrustTorque.PublishFlaps` published |
 | `HingeSurfaces.cs` | Vanilla hinges carrying flaps driven as control surfaces (`Control.HingeSurfaces`, off by default) |
 | `AeroGearVariants.cs` | Gear block variants (owned by the gear work: moved here, not edited) |

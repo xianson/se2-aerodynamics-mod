@@ -15,7 +15,8 @@
 // 4. THE DESIGN PROBE (2026-10-15): DesignProbe reads a server grid's engine data (transform, mass, gyros, thrusters, block
 //    boxes, joint search) only in the server grid's own step (PublishDesign / PublishPose, called from AeroSimJobCore on the
 //    server scene); every probe works on the snapshots (DesignSnapshot.cs: engine-free - compiled and run here,
-//    DesignSnapshotTests.cs).
+//    DesignSnapshotTests.cs). The dev reads of the server blocks (the surface / gear / airbrake summaries, the panel probe's
+//    nearest settings) go through ServerDevReads, answered on the server step.
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
@@ -143,6 +144,11 @@ static class Program
         Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene) DesignProbe.PublishDesign(aero, wt);"), "DesignProbe.PublishDesign: called from the server grid's own step");
         var snapTree = Code(trees[Path.Combine(sim, "Design", "DesignSnapshot.cs")]);
         Check(!Regex.IsMatch(snapTree, @"Keen\.|Entity|AeroGridComponent"), "DesignSnapshot.cs: engine-free (its engine side lives in DesignProbe.cs)");
+        // (the dev reads of the server blocks)
+        Check(!Regex.IsMatch(Text("Blocks/AeroPanelProbe.cs"), @"AeroSurfaceSettingsComponent\.All\b"), "AeroPanelProbe: never walks the server settings itself (ServerDevReads.AskNear)");
+        foreach (var (rel, which) in new[] { ("Blocks/AeroSurfaceSettingsComponent.cs", "Surfaces"), ("Integration/AeroGearComponent.cs", "Gears"), ("Integration/AeroAirbrakeComponent.cs", "Airbrakes") })
+            Check(Text(rel).Contains($"public static string Summary => ServerDevReads.Summary(ServerDevReads.{which});"), $"{rel}: Summary is the server step's (ServerDevReads)");
+        Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene && ServerDevReads.Pending != 0) ServerDevReads.Step();"), "ServerDevReads.Step: called from the server grid's own step");
         DesignSnapshotTests.Run(Check);
 
         Console.WriteLine(_fails == 0 ? $"SceneTests: {_checks}/{_checks} passed" : $"SceneTests: {_fails} of {_checks} FAILED");
