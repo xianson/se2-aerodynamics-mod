@@ -499,7 +499,7 @@ public static class PhysicsHack
         }
     }
 
-    // ── Async ray probe state ──
+    // ── Ray probe state ──
     // 2 km (was 200 m: above it the probe said "no ground", so the flight rig never saw its altitude).
     private const float GroundRayLength = 2000f;
 
@@ -509,12 +509,15 @@ public static class PhysicsHack
     /// </summary>
     public sealed class GroundProbe
     {
-        internal Task<Buffer<SweepQueryHit>> Pending;
-        internal bool InFlight;
         internal float Last = -1f;
         internal int Cooldown;
-        internal Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity> Ignore;   // (kept alive while the ray is in flight)
-        internal bool HasIgnore;
+        // (the ray's hit list and ignore list: native heap, grown once and reused by every cast - no allocation per ray.
+        //  Only this grid's sim job touches them. Released when the grid leaves the scene: Release)
+        internal Keen.VRage.Library.Memory.Buffer<SweepQueryHit> Hits;
+        internal Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity> Ignore;
+
+        /// <summary>Free the ray buffers (the grid left the scene; a later cast grows them again).</summary>
+        internal void Release() { Hits.Dispose(); Ignore.Dispose(); }
     }
 
     private static Task<Buffer<SweepQueryHit>> _pendingFwd;
@@ -544,28 +547,30 @@ public static class PhysicsHack
 
     /// <summary>The ground ray ignores the grid itself and what is attached to it (harness: aeroset PhysicsHack.GroundIgnoreSelf 0).</summary>
     public static bool GroundIgnoreSelf = true;
-    /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none, failed; the last reading.</summary>
+    /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none, failed (none since the
+    /// ray went synchronous, 2026-10-15: kept for the harness); the last reading.</summary>
     public static int GroundCasts, GroundHits, GroundMisses, GroundFails;
     public static float GroundLast = -1f;
 
     /// <summary>
-    /// Distance to ground along gravity, via an async physics ray. Fires every few frames and
+    /// Distance to ground along gravity, via a synchronous physics ray. Casts every few frames and
     /// returns the cached value in between. -1 means "no ground found".
     /// </summary>
+    /// <remarks>
+    /// Synchronous since 2026-10-15: CastRayAsync boxed an AsyncStateMachineTask per cast (52 KB/s of garbage in a profile,
+    /// alloc6) and answered a tick late. The sync CastRay is what the async one ran (at SimulationOutputsCollected); here it runs
+    /// in the grid's sim job, GridUpdateOrder.UpdateSystems, which is ordered before the Physics step, so the world is not
+    /// stepping - the game's own jobs cast sync rays the same way (character alignment, auto-targeting, thruster landing fx).
+    /// The hit and ignore lists are the probe's, reused: no GC and no native allocation per ray (stack spans were tried: a list
+    /// that outgrew one spilled to the thread's bump allocator, which asserts on a thread that never set it up). No try/catch
+    /// (hot path); the ignore list is gathered and used in this one call now, where the async one kept it alive across ticks.
+    /// </remarks>
     public static float GetGroundDistance(GroundProbe probe, Vector3D worldPosition, Vector3 gravityDir, Entity grid = null)
     {
         var physics = _physics;   // (read once: a session change re-resolves it from another grid's job)
         if (physics == null || probe == null) return -1f;
 
-        if (TryHarvest(ref probe.Pending, ref probe.InFlight, GroundRayLength, out float d))
-        {
-            probe.Last = d;
-            GroundLast = d;
-            if (d >= 0f) GroundHits++; else GroundMisses++;
-            if (probe.HasIgnore) { probe.Ignore.Dispose(); probe.HasIgnore = false; }
-        }
-
-        if (!probe.InFlight && --probe.Cooldown <= 0)
+        if (--probe.Cooldown <= 0)
         {
             // Sample faster when close to the ground.
             probe.Cooldown = (probe.Last >= 0f && probe.Last < 50f) ? 3 : 10;
@@ -573,32 +578,31 @@ public static class PhysicsHack
             float len = gravityDir.Length();
             if (len < 0.01f) return probe.Last;
 
-            try
-            {
-                var args = new RayCastArgs(in worldPosition, gravityDir / len * GroundRayLength);
-                // (the ray starts at the grid's origin, inside its hull: without this it hit the ship's own belly and
-                //  read a metre or two - ground effect on at any height. The grid and its attached parts are ignored)
-                if (grid != null && !probe.HasIgnore && GroundIgnoreSelf)
-                {
-                    probe.Ignore = new Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity>(Keen.VRage.Library.Memory.Allocator.Pool, "AeroGround");
-                    probe.HasIgnore = true;
-                    try { if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore); } catch { }
-                    probe.Ignore.Add(grid.DEntity);
-                    args.IgnoredEntities = probe.Ignore;
-                }
-                probe.Pending = physics.CastRayAsync(in args, CollisionPreset.Closest);
-                probe.InFlight = true;
-                GroundCasts++;
-            }
-            catch (Exception ex)
-            {
-                // (nothing in flight to harvest: release the ignore list now, or the next cast skips the self-ignore)
-                if (probe.HasIgnore) { try { probe.Ignore.Dispose(); } catch { } probe.HasIgnore = false; }
-                GroundFails++;
-                Log.Default?.Info($"[AERO] Ground ray failed: {ex.Message}");
-            }
+            float d = CastGround(physics, probe, worldPosition, gravityDir / len * GroundRayLength, grid);
+            probe.Last = d;
+            GroundLast = d;
+            GroundCasts++;
+            if (d >= 0f) GroundHits++; else GroundMisses++;
         }
         return probe.Last;
+    }
+
+    /// <summary>One closest-hit ray into the probe's own buffers; the hit distance, or -1 for nothing hit.</summary>
+    private static float CastGround(IPhysics physics, GroundProbe probe, Vector3D origin, Vector3 ray, Entity grid)
+    {
+        probe.Hits.Clear();   // (CastRay appends; the closest-hit merge assumes it started empty)
+        var args = new RayCastArgs(in origin, ray);
+        // (the ray starts at the grid's origin, inside its hull: without this it hit the ship's own belly and
+        //  read a metre or two - ground effect on at any height. The grid and its attached parts are ignored)
+        if (grid != null && GroundIgnoreSelf)
+        {
+            probe.Ignore.Clear();
+            if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore);
+            probe.Ignore.Add(grid.DEntity);
+            args.IgnoredEntities = probe.Ignore;   // (a copy, made after the last grow: never args.Dispose, the probe owns it)
+        }
+        physics.CastRay(probe.Hits, in args, CollisionPreset.Closest);
+        return probe.Hits.Count > 0 ? (float)(probe.Hits[0].Fraction * GroundRayLength) : -1f;
     }
 
     /// <summary>

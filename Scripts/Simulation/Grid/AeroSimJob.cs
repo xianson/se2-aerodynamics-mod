@@ -185,7 +185,7 @@ public partial class AeroGridComponent
             AeroSettings.Poll();          // (the settings files, every ~2 s)
         }
 
-        // ── Ground height (async raycast) ──
+        // ── Ground height (sync raycast, every 3-10 ticks) ──
         if (aero.IsServerScene)
             PhysicsHack.InitGroundSystem(aero.Entity);   // (cheap when unchanged: the server session's physics)
 
