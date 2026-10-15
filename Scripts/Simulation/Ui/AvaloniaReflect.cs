@@ -199,6 +199,140 @@ public static class AvaloniaReflect
         try { return t == null ? null : Activator.CreateInstance(t, spec); } catch { return null; }
     }
 
+    // ── the game's theme (its resources and style classes, not our colours) ──
+
+    static MethodInfo _tryFind;
+    /// <summary>A resource by key as the control would see it (ResourceNodeExtensions.TryFindResource: up its logical tree
+    /// to the screen's and the application's dictionaries - "ValueWidth", "Warning", ...), or null.</summary>
+    public static object Resource(object anchor, string key)
+    {
+        if (anchor == null) return null;
+        try
+        {
+            if (_tryFind == null)
+                foreach (var m in BaseType("Avalonia.Controls.ResourceNodeExtensions")?.GetMethods(BindingFlags.Public | BindingFlags.Static) ?? Array.Empty<MethodInfo>())
+                {
+                    var ps = m.GetParameters();
+                    if (m.Name == "TryFindResource" && ps.Length == 3 && ps[2].ParameterType.IsByRef) { _tryFind = m; break; }
+                }
+            if (_tryFind == null || !_tryFind.GetParameters()[0].ParameterType.IsInstanceOfType(anchor)) return null;
+            var args = new object[] { anchor, key, null };
+            return _tryFind.Invoke(null, args) is bool ok && ok ? args[2] : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>The theme's brush of that key (a brush, or a Color made a SolidColorBrush - the game's dictionaries hold
+    /// both), else Avalonia's named brush (fallback; null: none).</summary>
+    public static object ThemeBrush(object anchor, string key, string fallback)
+    {
+        var v = Resource(anchor, key);
+        var ib = BaseType("Avalonia.Media.IBrush");
+        if (v != null && ib != null && ib.IsInstanceOfType(v)) return v;
+        if (v != null && v.GetType().FullName == "Avalonia.Media.Color")
+            try { return Activator.CreateInstance(BaseType("Avalonia.Media.SolidColorBrush"), v, 1.0); } catch { }
+        return fallback == null ? null : Brush(fallback);
+    }
+
+    /// <summary>A GridLength resource as a ColumnDefinitions spec piece ("516", "0.65*", "Auto"), else fallback.</summary>
+    public static string LengthSpec(object anchor, string key, string fallback)
+    {
+        var v = Resource(anchor, key);
+        if (v == null || v.GetType().Name != "GridLength") return fallback;
+        return SettingsModel.LengthSpec(Get(v, "Value") is double d ? d : double.NaN, Get(v, "GridUnitType")?.ToString(), fallback);
+    }
+
+    /// <summary>A Thickness resource ("Margin-Large-Horizontal"), else the fallback thickness.</summary>
+    public static object ThicknessOr(object anchor, string key, double l, double t, double r, double b)
+    {
+        var v = Resource(anchor, key);
+        return v != null && v.GetType().FullName == "Avalonia.Thickness" ? v : Thickness(l, t, r, b);
+    }
+
+    /// <summary>Column k of a Grid shares its width with every same-named column under a Grid.IsSharedSizeScope
+    /// (DefinitionBase.SharedSizeGroup): one label column for a whole section.</summary>
+    public static void ShareColumn(object grid, int k, string group)
+    {
+        if (List(grid, "ColumnDefinitions") is IList defs && k < defs.Count) Set(defs[k], "SharedSizeGroup", group);
+    }
+
+    static MethodInfo _sharedScope;
+    /// <summary>Grid.SetIsSharedSizeScope(c, true): the SharedSizeGroup columns below it line up.</summary>
+    public static void SharedSizeScope(object c)
+    {
+        try { (_sharedScope ??= Static(Control("Grid"), "SetIsSharedSizeScope"))?.Invoke(null, new object[] { c, true }); } catch { }
+    }
+
+    // ── a template part hidden (the game's Slider template shows its raw Value: PART_NumericUpDown) ──
+
+    static readonly List<string> _hideParts = new List<string>();
+    static MethodInfo _onTemplate;
+
+    /// <summary>Hide that named part of the control's template each time the template is applied (TemplatedControl.
+    /// TemplateApplied; the args' NameScope.Find(part).IsVisible = false). False: no such event.</summary>
+    public static bool HidePart(object control, string part)
+    {
+        try
+        {
+            lock (_hideParts) if (!_hideParts.Contains(part)) _hideParts.Add(part);
+            var ev = control?.GetType().GetEvent("TemplateApplied", BindingFlags.Public | BindingFlags.Instance);
+            if (ev == null) { Miss("no TemplateApplied"); return false; }
+            _onTemplate ??= typeof(AvaloniaReflect).GetMethod(nameof(OnTemplate), BindingFlags.NonPublic | BindingFlags.Static);
+            var d = Delegate.CreateDelegate(ev.EventHandlerType, _onTemplate, false);
+            if (d == null) { Miss("TemplateApplied handler type " + ev.EventHandlerType.Name); return false; }
+            ev.AddEventHandler(control, d);
+            return true;
+        }
+        catch (Exception e) { Miss("TemplateApplied: " + (e.InnerException ?? e).Message); return false; }
+    }
+
+    static void OnTemplate(object sender, EventArgs e)
+    {
+        try
+        {
+            var scope = Get(e, "NameScope");
+            var find = scope?.GetType().GetMethod("Find", new[] { typeof(string) });
+            if (find == null) return;
+            lock (_hideParts)
+                foreach (string p in _hideParts)
+                    if (find.Invoke(scope, new object[] { p }) is object part) Set(part, "IsVisible", false);
+        }
+        catch { }
+    }
+
+    /// <summary>A public instance method with no parameters (ScrollToHome, BringIntoView); false: none, or it threw.</summary>
+    public static bool Call(object o, string name)
+    {
+        try
+        {
+            var m = o?.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            if (m == null) return false;
+            m.Invoke(o, null);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>ControlExtensions.BringIntoView(c): its ScrollViewer scrolls to show it. False: none, or it threw.</summary>
+    public static bool BringIntoView(object c)
+    {
+        try
+        {
+            foreach (var m in Control("ControlExtensions")?.GetMethods(BindingFlags.Public | BindingFlags.Static) ?? Array.Empty<MethodInfo>())
+                if (m.Name == "BringIntoView" && m.GetParameters().Length == 1 && c != null && m.GetParameters()[0].ParameterType.IsInstanceOfType(c))
+                { m.Invoke(null, new[] { c }); return true; }
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>A boxed Avalonia.Vector (a ScrollViewer.Offset).</summary>
+    public static object Vector(double x, double y)
+    {
+        var t = BaseType("Avalonia.Vector");
+        try { return t == null ? null : Activator.CreateInstance(t, x, y); } catch { return null; }
+    }
+
     static MethodInfo _setColumn, _setRow, _setColumnSpan, _setTip;
     /// <summary>Grid.SetColumn / SetRow / SetColumnSpan on a child.</summary>
     public static void Place(object c, int column, int row, int columnSpan = 1)

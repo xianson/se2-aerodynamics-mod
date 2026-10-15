@@ -46,6 +46,35 @@ public static class SettingsModel
     /// <summary>A slider is linear up to this many steps; over it, logarithmic in LogSteps (Scale).</summary>
     public const int MaxSliderSteps = 200, LogSteps = 240;
 
+    /// <summary>The look (2026-10-15, after the first in-game screenshot: a light-grey slab, a raw slider number, a small
+    /// centred header): the game's own style classes and resources (its Options views' - AudioView, GraphicsView,
+    /// OptionsScreen), each with the value it had in the game's build, used when the lookup fails.
+    /// A row is [label | SpaceWidth | ValueWidth: the control | its value | the rest], the label column one width for the
+    /// whole section (SharedSizeGroup LabelGroup): labels right-aligned against the controls, nothing stretched to the left.</summary>
+    public const string SectionHeaderClass = "OptionTitle", GroupHeaderClass = "SubTitle", LabelClass = "OptionSubTitle",
+                        SmallClass = "Small", BrightClass = "Bright", LabelGroup = "ModSettingsLabel";
+    /// <summary>The game Slider template's value box (its raw Value: our sliders run on a step index), hidden.</summary>
+    public const string SliderValuePart = "PART_NumericUpDown";
+    public const string SpaceWidthKey = "SpaceWidth", SpaceWidthFallback = "15", ValueWidthKey = "ValueWidth", ValueWidthFallback = "516";
+    /// <summary>Text brushes: notes and paths (muted), a lock or the unsaved-world hint (warning), a refusal (error).</summary>
+    public const string MutedBrushKey = "Interactive-Primary-Disabled", MutedFallback = "Gray", WarningBrushKey = "Warning",
+                        WarningFallback = "Goldenrod", ErrorBrushKey = "Error", ErrorFallback = "OrangeRed";
+
+    /// <summary>A row's columns: label (Auto; shared), the gap, the control, the value (Auto), the rest (*).</summary>
+    public static string RowColumns(string space, string value) => "Auto," + space + "," + value + ",Auto,*";
+
+    /// <summary>A grid length as a ColumnDefinitions spec piece: Pixel 516 -> "516", Star 0.65 -> "0.65*", Auto -> "Auto";
+    /// anything else (NaN, a negative, an unknown unit) -> fallback.</summary>
+    public static string LengthSpec(double value, string unit, string fallback)
+    {
+        if (unit == "Auto") return "Auto";
+        if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return fallback;
+        string v = value.ToString("R", CultureInfo.InvariantCulture);
+        if (unit == "Pixel") return v;
+        if (unit == "Star") return v + "*";
+        return fallback;
+    }
+
     /// <summary>One registered setting, as the menu needs it (the registry's Info and UiInfo).</summary>
     public sealed class Row
     {

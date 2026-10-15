@@ -165,8 +165,8 @@ public static partial class SettingsTab
     /// <summary>The Options screen closed (or another opened): nothing of it kept.</summary>
     static void Drop()
     {
-        _screen = _tab = _section = _worldHint = null;
-        _rowUi.Clear(); _groupUi.Clear();
+        _screen = _tab = _section = _worldHint = _anchor = null;
+        _rowUi.Clear(); _groupUi.Clear(); _brushes.Clear();
         _seenVersion = int.MinValue; _wasSelected = false;
     }
 
@@ -217,7 +217,7 @@ public static partial class SettingsTab
         if (children == null) return "the Mods tab has no host panel";
         var old = AvaloniaReflect.Tagged(children, SectionTag);
         if (old != null) children.Remove(old);   // (another load of this mod made it: its controls are no longer pumped)
-        var section = BuildSection();
+        var section = BuildSection(screen);
         if (section == null) return "the section could not be built (" + AvaloniaReflect.Why + ")";
         // (sections sorted by Tag after the note: the same order whichever mod came first)
         int at = children.Count;
@@ -245,7 +245,7 @@ public static partial class SettingsTab
         AvaloniaReflect.Set(scroll, "Tag", SettingsModel.TabTag + "/scroll");
         AvaloniaReflect.Set(host, "Tag", HostTag);
         AvaloniaReflect.Set(host, "Margin", AvaloniaReflect.Thickness(0, 0, 24, 24));
-        var note = Text(string.Format(SettingsModel.TabNote, Folder), null);
+        var note = Text(string.Format(SettingsModel.TabNote, Folder), 0);
         AvaloniaReflect.Set(note, "Tag", NoteTag);
         AvaloniaReflect.Set(note, "Margin", AvaloniaReflect.Thickness(0, 0, 0, 12));
         AvaloniaReflect.List(host, "Children")?.Add(note);
@@ -255,34 +255,66 @@ public static partial class SettingsTab
 
     // ── the section ──
 
-    static object BuildSection()
+    /// <summary>The open screen: the theme's resources are looked up from it (UI thread).</summary>
+    static object _anchor;
+
+    static object BuildSection(object screen)
     {
+        _anchor = screen;
         _rowUi.Clear(); _groupUi.Clear();
         Gather(_rows);
         var groups = SettingsModel.Build(_rows);
         var exp = AvaloniaReflect.New("Expander");
         var body = AvaloniaReflect.New("StackPanel");
         if (exp == null || body == null) return null;
-        AvaloniaReflect.Set(exp, "Header", ModTitle);
+        // (the game's "Flat" expander - AudioView's: no body slab of its own, a chevron and the header left-aligned across the
+        //  width, the theme's dark panel and border while open. The default Expander theme drew a light-grey body.)
+        AvaloniaReflect.AddClass(exp, "Flat");
+        var title = Text(ModTitle, 0);
+        AvaloniaReflect.AddClass(title, SettingsModel.SectionHeaderClass);
+        AvaloniaReflect.Set(title, "Margin", AvaloniaReflect.Thickness(8, 4, 0, 4));
+        AvaloniaReflect.Set(exp, "Header", title);
         AvaloniaReflect.Set(exp, "Tag", SectionTag);
         AvaloniaReflect.Set(exp, "IsExpanded", true);
         AvaloniaReflect.Set(exp, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
         AvaloniaReflect.Set(exp, "HorizontalContentAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
         AvaloniaReflect.Set(exp, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 8));
         AvaloniaReflect.Set(body, "Tag", BodyTag + SettingsModel.Shown(_rows));
+        AvaloniaReflect.Set(body, "Margin", AvaloniaReflect.Thickness(16, 0, 16, 16));
+        AvaloniaReflect.SharedSizeScope(body);   // (one label column for the whole section, its Advanced rows too)
         var list = AvaloniaReflect.List(body, "Children");
         if (list == null) return null;
-        list.Add(Text("This PC: " + ClientPath + "   ·   Host defaults: " + WorldPath, "Gray"));
-        _worldHint = Text(SettingsModel.WorldUnsavedHint, "Goldenrod");
+        var paths = Text("This PC: " + ClientPath + "   ·   Host defaults: " + WorldPath, Muted);
+        AvaloniaReflect.AddClass(paths, SettingsModel.SmallClass);
+        list.Add(paths);
+        _worldHint = Text(SettingsModel.WorldUnsavedHint, Warning);
         AvaloniaReflect.Set(_worldHint, "IsVisible", false);
+        AvaloniaReflect.Set(_worldHint, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 0));
         list.Add(_worldHint);
         foreach (var g in groups)
         {
             var gu = new GroupUi { Name = g.Name };
             _groupUi[g.Name] = gu;
-            var head = Text(g.Name + (g.Scope == "world" ? "  -  this world, every player" : g.Scope == "client" ? "  -  this PC" : ""), null);
-            AvaloniaReflect.Set(head, "FontWeight", AvaloniaReflect.EnumValue("Avalonia.Media.FontWeight", "Bold"));
-            AvaloniaReflect.Set(head, "Margin", AvaloniaReflect.Thickness(0, 16, 0, 4));
+            // (the group's name as the screen's own subtitles - its description panel's - with its scope, muted, beside it)
+            var head = AvaloniaReflect.New("StackPanel");
+            if (head == null) return null;
+            AvaloniaReflect.Set(head, "Orientation", AvaloniaReflect.EnumValue("Avalonia.Layout.Orientation", "Horizontal"));
+            AvaloniaReflect.Set(head, "Margin", AvaloniaReflect.Thickness(0, 20, 0, 4));
+            var name = Text(g.Name, 0);
+            AvaloniaReflect.AddClass(name, SettingsModel.GroupHeaderClass);
+            AvaloniaReflect.AddClass(name, SettingsModel.BrightClass);
+            AvaloniaReflect.Set(name, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "NoWrap"));
+            var hl = AvaloniaReflect.List(head, "Children");
+            hl?.Add(name);
+            string scope = g.Scope == "world" ? "this world, every player" : g.Scope == "client" ? "this PC" : null;
+            if (scope != null)
+            {
+                var sc = Text(scope, Muted);
+                AvaloniaReflect.Set(sc, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "NoWrap"));
+                AvaloniaReflect.Set(sc, "VerticalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.VerticalAlignment", "Center"));
+                AvaloniaReflect.Set(sc, "Margin", AvaloniaReflect.Thickness(16, 0, 0, 0));
+                hl?.Add(sc);
+            }
             list.Add(head);
             foreach (var r in g.Basic) { var row = MakeRow(r, gu); if (row == null) return null; list.Add(row); }
             if (g.Advanced.Count > 0)
@@ -291,9 +323,12 @@ public static partial class SettingsTab
                 var advBody = AvaloniaReflect.New("StackPanel");
                 if (adv == null || advBody == null) return null;
                 AvaloniaReflect.AddClass(adv, "Flat");   // (the game's own look for an inner expander: AudioView)
-                AvaloniaReflect.Set(adv, "Header", "Advanced");
+                var advHead = Text("Advanced", 0);
+                AvaloniaReflect.AddClass(advHead, SettingsModel.LabelClass);
+                AvaloniaReflect.Set(adv, "Header", advHead);
                 AvaloniaReflect.Set(adv, "Tag", SectionTag + "/advanced/" + g.Name);
                 AvaloniaReflect.Set(adv, "IsExpanded", SettingsModel.AdvancedExpanded);
+                AvaloniaReflect.Set(adv, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 4));
                 AvaloniaReflect.Set(adv, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
                 AvaloniaReflect.Set(adv, "HorizontalContentAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
                 var advList = AvaloniaReflect.List(advBody, "Children");
@@ -301,17 +336,19 @@ public static partial class SettingsTab
                 AvaloniaReflect.Set(adv, "Content", advBody);
                 list.Add(adv);
             }
-            var foot = AvaloniaReflect.New("StackPanel");
+            // (the button in the controls' column, a refusal's reason under it: the rows' own grid)
+            var foot = RowGrid();
             var reset = AvaloniaReflect.New("Button");
             if (foot == null || reset == null) return null;
-            AvaloniaReflect.Set(foot, "Orientation", AvaloniaReflect.EnumValue("Avalonia.Layout.Orientation", "Horizontal"));
-            AvaloniaReflect.Set(foot, "Margin", AvaloniaReflect.Thickness(0, 6, 0, 0));
+            AvaloniaReflect.Set(foot, "Margin", AvaloniaReflect.Thickness(0, 8, 0, 0));
             AvaloniaReflect.Set(reset, "Content", "Reset to defaults");
             AvaloniaReflect.Set(reset, "Tag", ResetTag + g.Name);
+            AvaloniaReflect.Set(reset, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Left"));
             if (!AvaloniaReflect.HookClick(reset)) return null;
-            gu.Reason = Text("", "OrangeRed");
-            AvaloniaReflect.Set(gu.Reason, "VerticalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.VerticalAlignment", "Center"));
-            AvaloniaReflect.Set(gu.Reason, "Margin", AvaloniaReflect.Thickness(16, 0, 0, 0));
+            AvaloniaReflect.Place(reset, 2, 0);
+            gu.Reason = Text("", Error);
+            AvaloniaReflect.Set(gu.Reason, "Margin", AvaloniaReflect.Thickness(0, 4, 0, 0));
+            AvaloniaReflect.Place(gu.Reason, 2, 1, 2);
             var fl = AvaloniaReflect.List(foot, "Children");
             fl?.Add(reset); fl?.Add(gu.Reason);
             list.Add(foot);
@@ -321,42 +358,74 @@ public static partial class SettingsTab
         return exp;
     }
 
-    /// <summary>A text line (wrapping; brush: one of Avalonia's named brushes, or null for the theme's).</summary>
-    static object Text(string s, string brush)
+    // (the text brushes: the theme's, looked up once per screen; Avalonia's named brush if the theme has none)
+    const int Muted = 1, Warning = 2, Error = 3;
+    static readonly Dictionary<int, object> _brushes = new Dictionary<int, object>();
+    static object ThemeBrush(int which)
+    {
+        if (_brushes.TryGetValue(which, out var b)) return b;
+        b = which == Warning ? AvaloniaReflect.ThemeBrush(_anchor, SettingsModel.WarningBrushKey, SettingsModel.WarningFallback)
+          : which == Error ? AvaloniaReflect.ThemeBrush(_anchor, SettingsModel.ErrorBrushKey, SettingsModel.ErrorFallback)
+          : AvaloniaReflect.ThemeBrush(_anchor, SettingsModel.MutedBrushKey, SettingsModel.MutedFallback);
+        if (b != null) _brushes[which] = b;
+        return b;
+    }
+
+    /// <summary>A text line (wrapping; brush: Muted / Warning / Error, or 0 for the theme's text colour).</summary>
+    static object Text(string s, int brush)
     {
         var t = AvaloniaReflect.New("TextBlock");
         AvaloniaReflect.Set(t, "Text", s);
         AvaloniaReflect.Set(t, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "Wrap"));
-        if (brush != null) AvaloniaReflect.Set(t, "Foreground", AvaloniaReflect.Brush(brush));
+        if (brush != 0) AvaloniaReflect.Set(t, "Foreground", ThemeBrush(brush));
         return t;
+    }
+
+    /// <summary>A row's grid: SettingsModel.RowColumns (the game's SpaceWidth and ValueWidth) over two rows (the control,
+    /// then its note or lock); the label column shared across the section.</summary>
+    static object RowGrid()
+    {
+        var grid = AvaloniaReflect.New("Grid");
+        if (grid == null) return null;
+        string cols = SettingsModel.RowColumns(AvaloniaReflect.LengthSpec(_anchor, SettingsModel.SpaceWidthKey, SettingsModel.SpaceWidthFallback),
+                                               AvaloniaReflect.LengthSpec(_anchor, SettingsModel.ValueWidthKey, SettingsModel.ValueWidthFallback));
+        AvaloniaReflect.Set(grid, "ColumnDefinitions", AvaloniaReflect.Definitions("ColumnDefinitions", cols));
+        AvaloniaReflect.Set(grid, "RowDefinitions", AvaloniaReflect.Definitions("RowDefinitions", "Auto,Auto"));
+        AvaloniaReflect.ShareColumn(grid, 0, SettingsModel.LabelGroup);
+        return grid;
     }
 
     /// <summary>One row: a grid [label | gap | control | value] over [the lock reason or note], in the game's
     /// DescriptionControl (the screen's description panel shows the doc) - a ToolTip when that type is missing.</summary>
     static object MakeRow(SettingsModel.Row r, GroupUi g)
     {
-        var grid = AvaloniaReflect.New("Grid");
+        var grid = RowGrid();
         if (grid == null) return null;
-        AvaloniaReflect.Set(grid, "ColumnDefinitions", AvaloniaReflect.Definitions("ColumnDefinitions", "*,24,360,170"));
-        AvaloniaReflect.Set(grid, "RowDefinitions", AvaloniaReflect.Definitions("RowDefinitions", "Auto,Auto"));
         AvaloniaReflect.Set(grid, "Margin", AvaloniaReflect.Thickness(0, 3, 0, 3));
         var cells = AvaloniaReflect.List(grid, "Children");
-        var label = Text(r.Label, null);
-        AvaloniaReflect.AddClass(label, "OptionSubTitle");
+        var label = Text(r.Label, 0);
+        AvaloniaReflect.AddClass(label, SettingsModel.LabelClass);
+        AvaloniaReflect.Set(label, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "NoWrap"));
         AvaloniaReflect.Set(label, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Right"));
         AvaloniaReflect.Set(label, "VerticalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.VerticalAlignment", "Center"));
+        AvaloniaReflect.Set(label, "Margin", AvaloniaReflect.ThicknessOr(_anchor, "Margin-Large-Horizontal", 16, 0, 16, 0));   // (the game's rows')
         AvaloniaReflect.Place(label, 0, 0);
         cells?.Add(label);
 
         string kind = r.Kind;
         object control;
-        if (kind == "bool") control = AvaloniaReflect.New(SettingsModel.BoolControl) ?? AvaloniaReflect.New("CheckBox");
+        if (kind == "bool")
+        {
+            control = AvaloniaReflect.New(SettingsModel.BoolControl) ?? AvaloniaReflect.New("CheckBox");
+            AvaloniaReflect.Set(control, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Left"));
+        }
         else if (kind == "choice")
         {
             control = AvaloniaReflect.New("ComboBox");
             var items = AvaloniaReflect.List(control, "Items");
             if (items == null) return null;
             foreach (var c in r.Choices) items.Add(c);
+            // (the controls' column wide, as the sliders: one edge for every control)
             AvaloniaReflect.Set(control, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Stretch"));
         }
         else
@@ -369,6 +438,9 @@ public static partial class SettingsTab
             AvaloniaReflect.Set(control, "LargeChange", (double)Math.Max(1, steps / 10));
             AvaloniaReflect.Set(control, "TickFrequency", 1.0);
             AvaloniaReflect.Set(control, "IsSnapToTickEnabled", true);
+            // (the game's Slider template shows its raw Value - here a step index - in PART_NumericUpDown: hidden; the
+            //  value column shows the setting's value)
+            AvaloniaReflect.HidePart(control, SettingsModel.SliderValuePart);
         }
         if (control == null) return null;
         AvaloniaReflect.Set(control, "Tag", RowTag + r.Name);
@@ -379,15 +451,16 @@ public static partial class SettingsTab
         object value = null;
         if (kind == "number")
         {
-            value = Text("", null);
+            value = Text("", 0);
+            AvaloniaReflect.Set(value, "TextWrapping", AvaloniaReflect.EnumValue("Avalonia.Media.TextWrapping", "NoWrap"));
             AvaloniaReflect.Set(value, "VerticalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.VerticalAlignment", "Center"));
-            AvaloniaReflect.Set(value, "Margin", AvaloniaReflect.Thickness(12, 0, 0, 0));
+            AvaloniaReflect.Set(value, "Margin", AvaloniaReflect.Thickness(16, 0, 0, 0));
             AvaloniaReflect.Place(value, 3, 0);
             cells?.Add(value);
         }
-        var sub = Text(r.Note ?? "", "Gray");
+        var sub = Text(r.Note ?? "", Muted);
         AvaloniaReflect.Set(sub, "IsVisible", r.Note != null);
-        AvaloniaReflect.Place(sub, 2, 1, 2);
+        AvaloniaReflect.Place(sub, 2, 1, 3);
         cells?.Add(sub);
 
         _rowUi.Add(new RowUi { R = r, E = new SettingsModel.Edit(kind == "number"), G = g, Control = control, Value = value, Sub = sub });
@@ -417,7 +490,7 @@ public static partial class SettingsTab
                 AvaloniaReflect.Set(u.Control, "IsEnabled", reason == null);
                 string sub = reason ?? r.Note;
                 AvaloniaReflect.Set(u.Sub, "Text", sub ?? "");
-                AvaloniaReflect.Set(u.Sub, "Foreground", AvaloniaReflect.Brush(reason != null ? "Goldenrod" : "Gray"));
+                AvaloniaReflect.Set(u.Sub, "Foreground", ThemeBrush(reason != null ? Warning : Muted));
                 AvaloniaReflect.Set(u.Sub, "IsVisible", sub != null);
             }
             double read = ReadControl(u);
@@ -484,8 +557,11 @@ public static partial class SettingsTab
 
     /// <summary>open: the Options screen (SharedUIComponent.OpenOptionsScreen, on the UI thread); select: our tab; flip
     /// &lt;setting&gt;: change that row's control as a player would (a switch flipped, the next choice, a slider one step) - the
-    /// pump applies it while the tab is selected; close: the screen it opened; anything else: the last report (a new one is
-    /// made on the UI thread's next check - ask again).</summary>
+    /// pump applies it while the tab is selected; close: the screen it opened; expand all|none|section|advanced: this mod's
+    /// expanders open (all: the section and every Advanced; none: all shut; section: the section only; advanced: the
+    /// section and every Advanced, as all); scroll top|bottom|&lt;pixels&gt;|&lt;setting&gt;: the tab's ScrollViewer (a setting:
+    /// its row brought into view) - for screenshots of every part; anything else: the last report (a new one is made on the
+    /// UI thread's next check - ask again).</summary>
     public static string Dev(string line)
     {
         var shared = _shared;
@@ -512,6 +588,12 @@ public static partial class SettingsTab
                 return AvaloniaReflect.Post(() => Status = Flip(name)) ? "flipping " + name + " (see the status)" : "no UI dispatcher";
             case "close":
                 return AvaloniaReflect.Post(() => { try { _devHandle?.Dispose(); } catch { } _devHandle = null; }) ? "closing" : "no UI dispatcher";
+            case "expand":
+                string which = w.Length > 1 ? w[1].Trim().ToLowerInvariant() : "all";
+                return AvaloniaReflect.Post(() => Status = Expand(which)) ? "expanding " + which + " (see the status)" : "no UI dispatcher";
+            case "scroll":
+                string to = w.Length > 1 ? w[1].Trim() : "top";
+                return AvaloniaReflect.Post(() => Status = Scroll(to)) ? "scrolling to " + to + " (see the status)" : "no UI dispatcher";
             default:
                 _reportWanted = true;
                 return (Report.Length > 0 ? Report : "(no report yet - ask again)") + " | status: " + Status;
@@ -537,6 +619,37 @@ public static partial class SettingsTab
             return "flipped " + u.R.Name + " (control " + c + " -> " + ReadControl(u) + ")";
         }
         return "flip: no row " + name + (_rowUi.Count == 0 ? " (the tab is not attached)" : "");
+    }
+
+    /// <summary>This mod's section and its Advanced expanders opened or shut (UI thread).</summary>
+    static string Expand(string which)
+    {
+        if (_section == null) return "expand: the tab is not attached";
+        bool open = which != "none";
+        AvaloniaReflect.Set(_section, "IsExpanded", open);
+        int n = 0;
+        var children = AvaloniaReflect.List(AvaloniaReflect.Get(_section, "Content"), "Children");
+        if (children != null)
+            for (int k = 0; k < children.Count; k++)
+                if (AvaloniaReflect.Get(children[k], "Tag") is string t && t.StartsWith(SectionTag + "/advanced/", StringComparison.Ordinal))
+                { AvaloniaReflect.Set(children[k], "IsExpanded", open && which != "section"); n++; }
+        return "expanded " + which + ": section " + (open ? "open" : "shut") + ", " + n + " advanced " + (open && which != "section" ? "open" : "shut");
+    }
+
+    /// <summary>The tab's ScrollViewer to the top, the bottom, a pixel offset, or a setting's row (UI thread).</summary>
+    static string Scroll(string to)
+    {
+        var scroll = AvaloniaReflect.Get(_tab, "Content");
+        if (scroll == null) return "scroll: the tab is not attached";
+        string t = to.ToLowerInvariant();
+        if (t == "top") return AvaloniaReflect.Call(scroll, "ScrollToHome") ? "scrolled to the top" : "scroll: no ScrollToHome";
+        if (t == "bottom") return AvaloniaReflect.Call(scroll, "ScrollToEnd") ? "scrolled to the bottom" : "scroll: no ScrollToEnd";
+        if (double.TryParse(to, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y))
+            return AvaloniaReflect.Set(scroll, "Offset", AvaloniaReflect.Vector(0, y)) ? "scrolled to " + y : "scroll: Offset not set (" + AvaloniaReflect.Why + ")";
+        foreach (var u in _rowUi)
+            if (string.Equals(u.R.Name, to, StringComparison.OrdinalIgnoreCase))
+                return AvaloniaReflect.BringIntoView(u.Control) ? "scrolled to " + u.R.Name : "scroll: BringIntoView failed";
+        return "scroll: top|bottom|<pixels>|<setting> (no row " + to + ")";
     }
 
     /// <summary>The tab as it is: found or not, its sections (each: rows counted by Tag / rows it says it shows), this mod's

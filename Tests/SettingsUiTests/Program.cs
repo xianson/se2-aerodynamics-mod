@@ -43,6 +43,7 @@ namespace SettingsUiTests
             Locks(rows);
             Edits();
             Texts();
+            Looks();
             Console.WriteLine($"\n{_passed} passed, {_failed} failed");
             return _failed == 0 ? 0 : 1;
         }
@@ -285,6 +286,20 @@ namespace SettingsUiTests
             var empty = new SettingsModel.Row { Name = "e", Type = "float", Min = 5, Max = 5 };
             SettingsModel.Scale(empty, out _, out int en);
             Ok("an empty range: no steps, no throw", en == 0 && SettingsModel.FromIndex(empty, 0) == 5 && SettingsModel.ToIndex(empty, 5) == 0);
+        }
+
+        static void Looks()
+        {
+            Console.WriteLine("-- the look (the game's resources as grid lengths)");
+            Ok("Pixel 516 -> 516", SettingsModel.LengthSpec(516, "Pixel", "x") == "516");
+            Ok("Star 0.65 -> 0.65*", SettingsModel.LengthSpec(0.65, "Star", "x") == "0.65*");
+            Ok("Auto -> Auto", SettingsModel.LengthSpec(1, "Auto", "x") == "Auto");
+            Ok("NaN, negative, unknown unit -> the fallback", SettingsModel.LengthSpec(double.NaN, "Pixel", "15") == "15"
+               && SettingsModel.LengthSpec(-1, "Pixel", "15") == "15" && SettingsModel.LengthSpec(3, null, "15") == "15");
+            Ok("15.5 px: invariant digits", SettingsModel.LengthSpec(15.5, "Pixel", "x") == "15.5");
+            string cols = SettingsModel.RowColumns("15", "516");
+            Ok("a row: label Auto, gap, control, value Auto, the rest *", cols == "Auto,15,516,Auto,*", cols);
+            Ok("the fallbacks are the game's values", SettingsModel.RowColumns(SettingsModel.SpaceWidthFallback, SettingsModel.ValueWidthFallback) == cols);
         }
     }
 }
