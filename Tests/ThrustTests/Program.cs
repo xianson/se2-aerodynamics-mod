@@ -711,6 +711,23 @@ static class Program
         static string s(Vector3 v) => $"({v.X / 1e6f:F2} {v.Y / 1e6f:F2} {v.Z / 1e6f:F2}) MN";
     }
 
+    /// <summary>A thruster's torque arm (OffsetThrustJob's cache, Core/CellCoords): its block centre as the game has it -
+    /// CubeGridCoords.GridToLocal(AABB).Center, cell i centred at 0.25 i. (2026-10-15: (min + max + 1) / 2 cells put every
+    /// thruster 0.125 m off on each axis: a symmetric ship thrusting 2 MN along -Z took a fake 250 kN m couple.)</summary>
+    static void CellCentreChecks()
+    {
+        // the game's: GridToLocal(BoundingBoxI) = (min x 0.25 - 0.125, max x 0.25 + 0.125), its centre
+        static Vector3 Game(Vector3I lo, Vector3I hi) => ((new Vector3(lo.X, lo.Y, lo.Z) * 0.25f - new Vector3(0.125f)) + (new Vector3(hi.X, hi.Y, hi.Z) * 0.25f + new Vector3(0.125f))) * 0.5f;
+        var boxes = new[] { (new Vector3I(0, 0, 0), new Vector3I(0, 0, 0)), (new Vector3I(-5, 2, 7), new Vector3I(4, 11, 16)), (new Vector3I(-9, -9, -9), new Vector3I(-8, -2, 0)) };
+        foreach (var (lo, hi) in boxes)
+            Check((CellCoords.BlockCentre(lo, hi) - Game(lo, hi)).Length() < 1e-5f, $"cell centre: block {lo}..{hi} at {CellCoords.BlockCentre(lo, hi)}, the game's {Game(lo, hi)}");
+        // two large thrusters mirrored about the centre of mass (a 1-cell block at the origin's centre: (0,0,0)), 1 MN each along -Z
+        var a = CellCoords.BlockCentre(new Vector3I(-14, -4, 10), new Vector3I(-5, 4, 19));
+        var b = CellCoords.BlockCentre(new Vector3I(5, -4, 10), new Vector3I(14, 4, 19));
+        var couple = Vector3.Cross(a, new Vector3(0, 0, -1e6f)) + Vector3.Cross(b, new Vector3(0, 0, -1e6f));
+        Check(couple.Length() < 1f, $"cell centre: mirrored thrusters make no couple ({couple.Length() / 1000f:F0} kN m)");
+    }
+
     static int Main(string[] args)
     {
         _verbose = args.Contains("verbose");
@@ -729,6 +746,7 @@ static class Program
         Console.WriteLine("1. allocator");
         AllocatorChecks();
         ControlAuditChecks();
+        CellCentreChecks();
         Console.WriteLine("2. flight (60 Hz, the game's target gyros + the mod's thruster steering)");
         FlightChecks();
         Console.WriteLine("3. real ships (Tests/data/*.flight, dumped from the game)");

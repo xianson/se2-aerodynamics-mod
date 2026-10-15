@@ -15,8 +15,8 @@ public struct ThrusterInfo
 {
     public Entity ThrusterEntity;
     public Component ThrusterComponent; // ThrusterComponent instance (for reading/writing override)
-    public Vector3 GridLocalPosition;  // block center in grid-local space (meters) — physics formula
-    public Vector3 DrawPosition;       // block center for debug draw (cell-center formula, matches aero components)
+    public Vector3 GridLocalPosition;  // block center in grid-local space (meters): CellCoords.BlockCentre, the game's
+    public Vector3 DrawPosition;       // block center for debug draw (the same point since 2026-10-15)
     public Vector3 ThrustDirection;    // unit vector in grid-local space (direction force pushes the ship)
     public float MaxPower;             // Newtons (impulse per frame = MaxPower / 60)
     public ThrustProfile Profile;      // Mach-dependent thrust scaling (null = rocket/flat)
