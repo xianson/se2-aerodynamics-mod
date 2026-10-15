@@ -21,5 +21,5 @@
 ## Threading
 Everything here is called from the simulation threads, many grids at once (the settings poll also from the client
 effects job) - statics are interlocked or
-locked. `AeroSettings.Poll` reads the settings files off the job threads (a pool task). `AeroCost` is thread-safe.
+locked. `AeroSettings.Poll` reads the settings files off the job threads (a pool task); what it read is applied by the next job's poll. `AeroCost` is thread-safe.
 Harnesses read and set these statics by name (`aeroget` / `aeroset`): do not rename them.

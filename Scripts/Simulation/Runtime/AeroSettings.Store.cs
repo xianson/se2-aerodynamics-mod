@@ -234,6 +234,7 @@ public static partial class AeroSettings
         _worldFileAt = DateTime.MinValue;
         _forced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // (the next world's apply of the host file sets them again)
         _worldUnsaved = false;
+        System.Threading.Volatile.Write(ref _readWorld, null);   // (nor a read of it still waiting for a tick)
     }
 
     // ── the files (~2 s poll from the aero jobs; never a throw per tick: a failing file is left alone) ──
@@ -252,8 +253,10 @@ public static partial class AeroSettings
     /// a profile: 6 ms/s of the simulation's threads was this poll's file system calls - the folder made, each file's
     /// existence and time asked separately - every 2 s from whichever aero job came first). Now one background task at a
     /// time does it (a poll due while one runs is skipped: the next comes 2 s later), with one look per file (FileInfo: there
-    /// and when written together) and the folder made only to write into it. A forced poll (a world's settings carrier
-    /// added) still reads at once, on its caller's thread, as before.</summary>
+    /// and when written together) and the folder made only to write into it. What it read is applied HERE, on the next job
+    /// that polls (2026-10-15, a review: the task applied it itself, so the setters ran on a pool thread - they touch the
+    /// jobs' state; the Orbital Mod's poll does the same). A forced poll (a world's settings carrier added) still reads and
+    /// applies at once, on its caller's thread, as before.</summary>
     internal static void Poll(bool force = false)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -262,12 +265,13 @@ public static partial class AeroSettings
         //  cache line read by all of them cost ~5 ms/s in a profile, 2026-10-15)
         if (!force && now < _localNext) return;
         _localNext = now + System.Diagnostics.Stopwatch.Frequency / 4;
+        ApplyRead();   // (the last background read, if any)
         long due = System.Threading.Interlocked.Read(ref _pollAt);
         if (!force && now < due) return;
         if (System.Threading.Interlocked.CompareExchange(ref _pollAt, now + 2 * System.Diagnostics.Stopwatch.Frequency, due) != due && !force) return;
         GameStallWarning.Apply();   // (the game's stall warning: removed unless Hud.GameStallWarning)
         if (_fileFails >= 3) return;
-        if (force) { PollFiles(true); return; }
+        if (force) { PollFiles(true); ApplyRead(); return; }
         if (System.Threading.Interlocked.CompareExchange(ref _polling, 1, 0) != 0) return;
         try { System.Threading.Tasks.Task.Factory.StartNew(_pollTask, System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.None, System.Threading.Tasks.TaskScheduler.Default); }
         catch { System.Threading.Volatile.Write(ref _polling, 0); }
@@ -276,8 +280,22 @@ public static partial class AeroSettings
     [ThreadStatic] static long _localNext;
     static readonly object _filesLock = new object();
     static readonly Action _pollTask = () => { try { PollFiles(false); } finally { System.Threading.Volatile.Write(ref _polling, 0); } };
+    /// <summary>A file's text read by the poll, waiting for a job to apply it (null: none).</summary>
+    static string _readClient, _readWorld;
 
-    /// <summary>The files themselves (one poll at a time: the lock - a forced poll may meet a background one).</summary>
+    /// <summary>A job's poll: the text the background poll read, applied (the client file's values; the host file's, which
+    /// become the forced names).</summary>
+    static void ApplyRead()
+    {
+        if (System.Threading.Volatile.Read(ref _readClient) == null && System.Threading.Volatile.Read(ref _readWorld) == null) return;
+        string client = System.Threading.Interlocked.Exchange(ref _readClient, null);
+        if (client != null) Apply(client, "client");
+        string world = System.Threading.Interlocked.Exchange(ref _readWorld, null);
+        if (world != null) ApplyHostFile(world);
+    }
+
+    /// <summary>The files themselves (one poll at a time: the lock - a forced poll may meet a background one). Writes the
+    /// client file when an API change has settled (1 s) or it is missing; otherwise reads what was edited, for ApplyRead.</summary>
     static void PollFiles(bool force)
     {
         lock (_filesLock)
@@ -305,7 +323,7 @@ public static partial class AeroSettings
                 else
                 {
                     var at = client.LastWriteTimeUtc;
-                    if (at != _clientFileAt) { _clientFileAt = at; Apply(File.ReadAllText(ClientPath), "client"); }
+                    if (at != _clientFileAt) { _clientFileAt = at; System.Threading.Volatile.Write(ref _readClient, File.ReadAllText(ClientPath)); }
                 }
                 // world: the host's overrides (only where the server runs)
                 if (SawServer || force)
@@ -313,7 +331,7 @@ public static partial class AeroSettings
                     var world = new FileInfo(WorldPath);
                     if (!world.Exists) { Directory.CreateDirectory(Folder); File.WriteAllText(WorldPath, WorldHeader + Commented(Text("world", all: true))); world.Refresh(); }
                     var at = world.LastWriteTimeUtc;
-                    if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; ApplyHostFile(File.ReadAllText(WorldPath)); }
+                    if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; System.Threading.Volatile.Write(ref _readWorld, File.ReadAllText(WorldPath)); }
                 }
                 FileWhy = "";
             }
