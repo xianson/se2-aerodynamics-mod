@@ -3,7 +3,7 @@ using System;
 namespace AeroMod;
 
 /// <summary>
-/// THE CONTACT LOADS' MOMENTUM BALANCE - pure, no game (2026-10-14; Integration/StructureContacts runs exactly this, the
+/// THE CONTACT LOADS' MOMENTUM BALANCE - pure, no game (2026-10-14; Structure/Server/StructureContacts runs exactly this, the
 /// offline StructureTests 'balance under edits' check it on synthetic ticks). Between two reads (each before the physics
 /// step) the grid's velocity changed by: the last read's extra force and gravity, the step's contacts (what we want), the
 /// physics' own speed clamp, this tick's thrust and air (put in before the read) - and whatever ANOTHER MOD wrote into the

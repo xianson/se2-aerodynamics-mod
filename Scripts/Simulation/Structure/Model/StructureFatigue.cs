@@ -5,7 +5,7 @@ namespace AeroMod;
 
 /// <summary>
 /// FATIGUE AND PROGRESSIVE FAILURE (2026-10-14, the user: "i'd definitely like to see things fatigue more, failure is very
-/// sudden rn") - game-free (the evaluation: StructureEval.Damage; the game side: Integration/StructureServer.cs
+/// sudden rn") - game-free (the evaluation: StructureEval.Damage; the game side: Structure/Server/StructureServer.cs
 /// ApplyStructureDamage; offline-tested in Tests/StructureTests 'Fatigue' and AeroBench 'fail').
 ///
 /// A joint loses HEALTH (the block's integrity, which is its strength: ShipStructure.BlockStrength) at a rate set by its

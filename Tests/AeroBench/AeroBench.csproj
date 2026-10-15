@@ -12,6 +12,6 @@
     <Compile Include="$(Sim)\Components\ComponentForceResult.cs" />
     <Compile Include="$(Sim)\Components\LocalAeroConditions.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
-    <Compile Include="$(Sim)\Structure\*.cs" />
+    <Compile Include="$(Sim)\Structure\Model\*.cs" />
   </ItemGroup>
 </Project>

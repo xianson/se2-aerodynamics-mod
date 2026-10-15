@@ -2,7 +2,7 @@
 namespace AeroMod;
 
 /// <summary>
-/// TEARING's game-free part (2026-10-14; the game side: Integration/StructureTear.cs - offline-tested in Tests/TearTests):
+/// TEARING's game-free part (2026-10-14; the game side: Structure/Server/StructureTear.cs - offline-tested in Tests/TearTests):
 /// the hold's ramp over the tear, where a broken block was and how far a split-off piece is from it, and the three anchors
 /// a torn piece hangs from (the joint, and two points spread across it - their lever arms hold its turning).
 /// </summary>

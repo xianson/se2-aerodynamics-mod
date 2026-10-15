@@ -5,7 +5,7 @@ namespace AeroMod;
 
 /// <summary>
 /// PERMANENT BENDS (2026-10-14, the user: "an overloaded wing stays bent: tip a bit droopy or twisted after a hard pull - you
-/// see you pushed it too far without breaking it") - the game-free part (the game side: Integration/StructureServer.cs
+/// see you pushed it too far without breaking it") - the game-free part (the game side: Structure/Server/StructureServer.cs
 /// ApplyBends; offline-tested in Tests/StructureTests 'Bends').
 ///
 /// A joint past its yield (utilisation over 1, not broken) takes a PERMANENT SET: the structure outboard of it - the slice's
@@ -57,8 +57,6 @@ public static class StructureBend
         public Vector3 Joint, Rot; public int Axis, Side; public float Plane, Util;
         public readonly List<int> Blocks = new();
     }
-
-    static float C(Vector3 v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
 
     /// <summary>A joint's key across rebuilds: its patch's centre (1/8 m) and axis.</summary>
     public static long Key(Vector3 p, int axis) =>
@@ -131,7 +129,7 @@ public static class StructureBend
             if (!nested && outBends.Count >= MaxJoints) continue;   // (left for the next evaluation: its peak not taken)
             if (peaks != null) peaks[key] = u;   // (this peak taken, bent or not: a too-big far side is not looked at again for it)
             if (nested) { Nested++; continue; }
-            int side = C(st.Center[ob], ax) >= plane ? 1 : -1;
+            int side = ShipStructure.C(st.Center[ob], ax) >= plane ? 1 : -1;
             if (adjStart == null) Adjacency(st, out adjStart, out adjOther);
             var b = new Bend { Joint = J, Axis = ax, Plane = plane, Side = side, Util = u };
             if (!FarSide(st, ob, ax, plane, side, adjStart, adjOther, MaxBlocks, b.Blocks)) { TooBig++; continue; }
@@ -164,7 +162,7 @@ public static class StructureBend
             for (int e = adjStart[i]; e < adjStart[i + 1]; e++)
             {
                 int j = adjOther[e];
-                if ((C(st.Center[j], ax) - plane) * side <= 0f || !seen.Add(j)) continue;
+                if ((ShipStructure.C(st.Center[j], ax) - plane) * side <= 0f || !seen.Add(j)) continue;
                 q.Enqueue(j);
             }
         }
@@ -186,7 +184,7 @@ public static class StructureBend
     /// plane (nothing on it or behind it).</summary>
     public static Vector3 Displacement(Bend b, Vector3 p)
     {
-        float h = (C(p, b.Axis) - b.Plane) * b.Side;
+        float h = (ShipStructure.C(p, b.Axis) - b.Plane) * b.Side;
         if (!(h > 0f)) return Vector3.Zero;
         float s = Ramp > 1e-4f ? MathF.Min(1f, h / Ramp) : 1f;
         return Vector3.Cross(b.Rot, p - b.Joint) * s;

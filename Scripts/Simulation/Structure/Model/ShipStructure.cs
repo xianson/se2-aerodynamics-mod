@@ -28,7 +28,7 @@ namespace AeroMod;
 /// Mv u/Ivv), the shear (V over half the area, the torque on the cut's outline by Bredt), von Mises; ContactUtil =
 /// that over the weaker block's yield x its StrengthAt(temperature) x Strength (the world's multiplier). 1: yield.
 /// The game side tires the outboard block from the endurance limit, wears it past 1 and breaks it when its health is out
-/// (Structure/StructureFatigue; 2026-10-14) - per CUT on the slices: every member of an overloaded cut together, and the
+/// (Structure/Model/StructureFatigue; 2026-10-14) - per CUT on the slices: every member of an overloaded cut together, and the
 /// whole cut fails at once (StructureEval.DamageBySection, 2026-10-15).
 ///
 /// Simplifications: the tree is one path per block (it prefers whole-face contacts: a pinhole is routed round when it
@@ -138,7 +138,8 @@ public sealed partial class ShipStructure
     public Vector3 ResidualForce, ResidualMoment;
     public Vector3 Accel, AngAccel;
 
-    static float C(Vector3 v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
+    /// <summary>A vector's component on axis a (0 X, 1 Y, 2 Z).</summary>
+    internal static float C(Vector3 v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
     static Vector3 Axis(int a) => a == 0 ? Vector3.UnitX : a == 1 ? Vector3.UnitY : Vector3.UnitZ;
 
     /// <summary>The structure of these blocks. boxes: (block index, cell min, cell max) - inclusive 0.25 m cells, cell i
@@ -296,7 +297,7 @@ public sealed partial class ShipStructure
     }
 
     List<Contact> _contacts;
-    static int Ci(Vector3I v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
+    internal static int Ci(Vector3I v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
     IReadOnlyList<int> _boxBlock; IReadOnlyList<Vector3I> _boxLo, _boxHi;
     Dictionary<long, int> _bucketId; int[] _bkStart, _bkBox;
     /// <summary>The wings' cells' blocks found by BlockAt (StructureEval.WingBlocksOf: one evaluation at a time uses it).</summary>
@@ -741,8 +742,6 @@ public sealed partial class ShipStructure
     public float BlockStrength(int b) => StructMaterial.Yield[Mat[b]] * StructMaterial.StrengthAt(Mat[b], TempK[b]) * MathF.Max(Integrity[b], MinIntegrity);
     /// <summary>A cut's contacts (for reports and tests).</summary>
     public IReadOnlyList<int> CutContacts(int cut) => _cutContacts[cut];
-    /// <summary>The tree joint's contact (block i to its parent).</summary>
-    public int JointContact(int i) => Parent[i] < 0 ? -1 : _parentContact[i];
 
     sealed class MinHeap
     {
