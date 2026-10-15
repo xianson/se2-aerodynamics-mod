@@ -189,12 +189,20 @@ public static partial class AeroApi
     /// <summary>The newest 512 failures of every grid (an evaluation decides a cut's members together: a big one is many).</summary>
     static readonly SeqRing<StructEvent> _events = new SeqRing<StructEvent>(512);
 
+    /// <summary>Recording starts the first time anyone asks for the queue (GetStructureEventSequence / ReadStructureEvents):
+    /// until then nothing is kept - the ring would otherwise hold up to 512 destroyed grids and blocks alive for nobody
+    /// (2026-10-15 review).</summary>
+    static volatile bool _eventsWanted;
+
     internal static void RecordStructureEvent(int kind, Keen.VRage.DCS.Components.Entity grid, Keen.VRage.DCS.Components.Entity block, Vector3 at, Vector3 dir, float value)
-        => _events.Add(new StructEvent { Kind = kind, Grid = grid, Block = block, At = at, Dir = dir, Value = value, Stamp = System.Diagnostics.Stopwatch.GetTimestamp() });
+    {
+        if (!_eventsWanted) return;
+        _events.Add(new StructEvent { Kind = kind, Grid = grid, Block = block, At = at, Dir = dir, Value = value, Stamp = System.Diagnostics.Stopwatch.GetTimestamp() });
+    }
 
     /// <summary>(version 7) The structure event queue's next sequence number (= every event so far, this session, every
     /// grid). Read it once to start from now. Any thread.</summary>
-    public static long GetStructureEventSequence() => _events.Next;
+    public static long GetStructureEventSequence() { _eventsWanted = true; return _events.Next; }
 
     /// <summary>(version 7) THE STRUCTURE'S FAILURES since <paramref name="fromSequence"/>, oldest first, across every grid -
     /// as each evaluation decides them (the game removes the blocks on the next simulation tick; one already gone is
@@ -207,6 +215,7 @@ public static partial class AeroApi
     public static int ReadStructureEvents(long fromSequence, long[] sequences, int[] kinds, Keen.VRage.DCS.Components.Entity[] grids, Keen.VRage.DCS.Components.Entity[] blocks,
         Vector3[] pointsLocal, Vector3[] directionsLocal, float[] values, out long nextSequence)
     {
+        _eventsWanted = true;
         int max = int.MaxValue;
         if (sequences != null) max = Math.Min(max, sequences.Length); if (kinds != null) max = Math.Min(max, kinds.Length);
         if (grids != null) max = Math.Min(max, grids.Length); if (blocks != null) max = Math.Min(max, blocks.Length);

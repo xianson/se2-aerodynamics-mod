@@ -288,9 +288,9 @@ public partial class AeroGridComponent
         for (int b = 0; b < n; b++) { int m = st.Mat[b]; float s = (hh.BlockSkinMaxK[b] - StructMaterial.SoftenK[m]) / (StructMaterial.BurnK[m] - StructMaterial.SoftenK[m]); if (s > share) share = s; }
         StructMaxUtil = st.MaxUtil; StructMaxSkinK = maxSkin; StructHeatShare = Math.Clamp(share, 0f, 1f);
         StructWorst = st.MaxContact >= 0 ? $"contact {st.MaxContact} at {st.ContactPoint(st.MaxContact) - com}" : st.MaxBlock >= 0 ? $"block {st.MaxBlock} at {st.Center[st.MaxBlock] - com}" : "-";
-        ApiPublishStructure(st, hh, build?.Blocks ?? _stBlocks);   // (the public API's failures and block state: StructureServer.Api.cs)
         StructureLoads.Evals++;
         StructureLoads.LastEvalMs = (float)System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        ApiPublishStructure(st, hh, build?.Blocks ?? _stBlocks);   // (the public API's failures and block state: StructureServer.Api.cs; after the timing, so LastEvalMs stays comparable)
         if (st.MaxUtil > StructureLoads.SeenMaxUtil) { StructureLoads.SeenMaxUtil = st.MaxUtil; StructureLoads.LastWorst = $"{Entity?.DebugName}: {st.MaxUtil:F2} {StructWorst}"; }
         if (maxSkin > StructureLoads.SeenMaxSkin) StructureLoads.SeenMaxSkin = maxSkin;
         if (StructureLoads.Trace && snap.Piloted)
