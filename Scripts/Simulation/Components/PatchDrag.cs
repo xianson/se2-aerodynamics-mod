@@ -1,4 +1,4 @@
-#pragma warning disable
+#pragma warning disable CS0649, CS8632, CS1591, CS1573, CS1570, CS1574, CS0419, CS1734
 namespace AeroMod;
 
 /// <summary>One drag patch's force (AeroApi.SetDrag; pure): q at the point x CdA, against the point's travel - for a flat

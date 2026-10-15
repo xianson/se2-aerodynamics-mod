@@ -1,7 +1,7 @@
 using System;
 using Keen.VRage.Core;
 
-#pragma warning disable
+#pragma warning disable CS0649, CS8632, CS1591, CS1573, CS1570, CS1574, CS0419, CS1734
 namespace AeroMod;
 
 /// <summary>
