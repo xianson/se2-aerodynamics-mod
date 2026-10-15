@@ -23,6 +23,7 @@ public static class AeroPanelProbe
     /// <summary>Client: from a surface block's flap job (once per Gen).</summary>
     internal static void Tick(Entity clientBlock)
     {
+        if (_check != null) { Check(); return; }
         if (_pending != null) { Poll(); return; }
         if (Gen == _ran || clientBlock == null) return;
         _ran = Gen;
@@ -97,7 +98,7 @@ public static class AeroPanelProbe
     static void Finish(List<BlockDetailModel> got)
     {
         var block = _block;
-        bool ok = false;
+        bool surface = false;
         foreach (var m in got)
         {
             object mo = m;   // (as IAccessible through object: its INotifyPropertyChanged base is not a mod reference)
@@ -107,29 +108,29 @@ public static class AeroPanelProbe
             if (m is AeroSurfaceBlockDetailModel s)
             {
                 bool listed = names.Contains("Pitch") && names.Contains("MaxDeflection") && names.Contains("Trim");
-                float was = s.MaxDeflection;
+                _was = s.MaxDeflection;
                 s.MaxDeflection = 27f;
-                var settings = AllSettingsNear(block);
-                bool reached = settings != null && Math.Abs(settings.MaxDeflection - 27f) < 1e-3f;
-                s.MaxDeflection = was;
-                Say($"surface model: members listed {listed}, slider reaches the block {reached} ({settings?.Describe() ?? "no settings"})");
-                ok = listed && reached && mode != null;
+                // (the server settings of the block nearest this client block - found by the server's own step: walking the
+                //  server components' transforms from here, the client's flap job, was a cross-thread read, 2026-10-15)
+                ServerDevReads.AskNear(block.Data.GetWorldTransform().Position);
+                _check = s; _listed = listed; _modeOk = mode != null; _checkSince = Environment.TickCount64;
+                surface = true;
             }
         }
-        Say(ok ? "PASS control surface panel" : "FAIL control surface panel");
+        if (!surface) Say("FAIL control surface panel");
     }
 
-    /// <summary>The server settings of the block nearest this client block (in process: the same world).</summary>
-    static AeroSurfaceSettingsComponent AllSettingsNear(Entity clientBlock)
+    // (the slider's check, a step later: the server's answer - Check, from Tick)
+    static AeroSurfaceBlockDetailModel _check; static float _was; static bool _listed, _modeOk; static long _checkSince;
+
+    static void Check()
     {
-        var at = clientBlock.Data.GetWorldTransform().Position; AeroSurfaceSettingsComponent best = null; double bd = 2.0;
-        lock (AeroSurfaceSettingsComponent.All)
-            foreach (var s in AeroSurfaceSettingsComponent.All)
-            {
-                if (s.Entity == null) continue;
-                double d = (s.Entity.Data.GetWorldTransform().Position - at).Length();
-                if (d < bd) { bd = d; best = s; }
-            }
-        return best;
+        bool answered = ServerDevReads.NearAnswer(out bool found, out float max, out string what);
+        if (!answered && Environment.TickCount64 - _checkSince < 5000) return;
+        bool reached = found && Math.Abs(max - 27f) < 1e-3f;
+        _check.MaxDeflection = _was;
+        Say($"surface model: members listed {_listed}, slider reaches the block {reached} ({(answered ? what ?? "no settings" : "no answer from the server step in 5 s")})");
+        Say(_listed && reached && _modeOk ? "PASS control surface panel" : "FAIL control surface panel");
+        _check = null;
     }
 }

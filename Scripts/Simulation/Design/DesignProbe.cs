@@ -16,6 +16,9 @@ namespace AeroMod;
 ///    Mach) against the drag, the speed where they meet.
 /// Pure reads of the grid's current shape; client callers are paired with the server copy (position, orientation and
 /// bounds), as the flame code pairs them. Sea level: 1.225 kg/m3, 340.3 m/s.
+/// What the probes need of the server grid's engine data (pose, mass, gyros, thrusters, joints, block boxes) comes from its
+/// DesignSnapshot, taken by its own step while it is asked (PublishDesign; DesignSnapshot.cs) - never read here from the
+/// caller's thread (2026-10-15 scene audit). The first ask after a quiet spell answers "not ready" (no table / NaN / 0).
 /// </summary>
 internal static class DesignProbe
 {
@@ -76,80 +79,107 @@ internal static class DesignProbe
     //    hinges, pistons, connectors - AeroGridComponent.FxGroup, the server's connection search once a second), each
     //    member's figures turned into the aimed grid's axes and summed: forces, torques about the ship's centre of mass,
     //    thrust, mass, the overlay's faces, the control torque. Everything below the per-grid helpers works on a ship.
-    internal sealed class Member { public AeroGridComponent A; public WorldTransform W; }
-    internal sealed class Ship { public AeroGridComponent Root; public WorldTransform RW; public List<Member> M = new(); public long At; }
-    static readonly Dictionary<AeroGridComponent, Ship> _ships = new();
+    //    (From the members' DesignSnapshots only - each server grid's own step reads its engine data while the probe asks,
+    //    PublishDesign: the callers are the client's frame and background threads, and their reads of the server grid's
+    //    transform, mass, thrusters and joint search were the cross-thread reads the game's DataGuard asserts on, 2026-10-15)
+    static readonly Dictionary<AeroGridComponent, DesignShip> _ships = new();
+    static long Freq => System.Diagnostics.Stopwatch.Frequency;
 
-    internal static Ship ShipOf(AeroGridComponent root)
+    /// <summary>The ship aimed at root (a server grid), from the snapshots. Null: no snapshot fresh yet - the first ask after a
+    /// quiet spell (the next step publishes one: ask again), the grid gone, or its aero not stepping (switched off).</summary>
+    internal static DesignShip ShipOf(AeroGridComponent root)
     {
         if (root?.Entity == null) return null;
-        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = Freq;
+        root.DesignWatch.Ask(now, f);
         lock (_ships)
-            if (_ships.TryGetValue(root, out var cached) && now - cached.At < System.Diagnostics.Stopwatch.Frequency / 4) return cached;
-        root.RefreshFxGroup();
-        var sh = new Ship { Root = root, RW = root.Entity.Data.GetWorldTransform(), At = now };
-        sh.M.Add(new Member { A = root, W = sh.RW });
-        foreach (var a in root.FxGroup)
+            if (_ships.TryGetValue(root, out var cached) && now - cached.At < f / 4) return cached;
+        var rs = root.DesignWatch.Fresh(now, f);
+        if (rs == null || !InScene(root)) return null;
+        var sh = new DesignShip { Root = root, At = now };
+        sh.Add(root, rs);
+        int gn = rs.Group?.Length ?? 0;
+        for (int gi = 0; gi < gn; gi++)
         {
-            if (a == null || ReferenceEquals(a, root) || a.Entity == null || !a.IsServerScene || !PhysicsHack.Alive(a.Entity.Data)) continue;
-            sh.M.Add(new Member { A = a, W = a.Entity.Data.GetWorldTransform() });
+            var a = rs.Group[gi];
+            if (a == null || ReferenceEquals(a, root) || a.Entity == null || !a.IsServerScene || !InScene(a)) continue;
+            a.DesignWatch.Ask(now, f);
+            var ms = a.DesignWatch.Fresh(now, f);
+            // (a subgrid's first snapshot not in yet - asked just now: the whole ship is not ready, not one without it)
+            if (ms == null) { if (root.DesignWatch.Settling(now, f)) return null; continue; }
+            sh.Add(a, ms);
         }
         lock (_ships) if (InScene(root)) _ships[root] = sh;
         return sh;
     }
-    static Vector3 ToRootDir(Ship s, Member m, Vector3 d) => ReferenceEquals(m.A, s.Root) ? d : WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(d, m.W), s.RW);
-    static Vector3 ToMemberDir(Ship s, Member m, Vector3 d) => ReferenceEquals(m.A, s.Root) ? d : WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(d, s.RW), m.W);
-    static Vector3 ToRootPoint(Ship s, Member m, Vector3 p) => ReferenceEquals(m.A, s.Root) ? p
-        : WorldTransform.TransformDirectionInv((Vector3)(WorldTransform.Transform((Vector3D)p, in m.W) - s.RW.Position), s.RW);
+
+    /// <summary>Server, a grid's own step (AeroSimJobCore, beside PublishPose): its DesignSnapshot while the probe asks (at
+    /// most 4 a second; nothing otherwise: one read), and the overlay's block boxes when it asks for a shape.</summary>
+    internal static void PublishDesign(AeroGridComponent aero, in WorldTransform wt)
+    {
+        var w = aero.DesignWatch;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = Freq;
+        if (!w.On(now)) return;
+        if (w.BoxesDue(out long key)) w.PublishBoxes(key, aero.CaptureBoxes());
+        if (!w.Due(now, f)) return;
+        aero.RefreshFxGroup();   // (the joint search, here on the server grid's own thread - it ran from the caller's)
+        var s = new DesignSnapshot { At = now, Pos = wt.Position, Orient = wt.Orientation, Group = aero.FxGroup };
+        s.HasMass = PhysicsHack.TryGetMassProperties(aero.Data, out s.Mass, out s.Com);
+        s.GyroMax = PhysicsHack.TryGetGyroMaxTorque(aero.Data);
+        var cache = aero._thrusterCache;
+        int n = cache.Count;
+        if (n > 0)
+        {
+            s.ThrPos = new Vector3[n]; s.ThrDir = new Vector3[n]; s.ThrSeaMax = new float[n]; s.ThrProfile = new ThrustProfile[n];
+            for (int i = 0; i < n; i++)
+            {
+                var t = cache[i];
+                s.ThrPos[i] = t.GridLocalPosition; s.ThrDir[i] = t.ThrustDirection; s.ThrSeaMax[i] = SeaLevelMax(t);
+                s.ThrProfile[i] = OffsetThrustJob.AppliedProfile(t);   // (the profile the simulation applies: none by default)
+            }
+        }
+        w.Snap = s;
+    }
 
     /// <summary>The ship's mass (kg) and centre of mass (the aimed grid's axes).</summary>
-    internal static float ShipMass(Ship s, out Vector3 com)
+    internal static float ShipMass(DesignShip s, out Vector3 com)
     {
-        com = default; float total = 0f; Vector3 moment = Vector3.Zero;
-        if (s == null) return 0f;
-        foreach (var m in s.M)
-        {
-            if (!PhysicsHack.TryGetMassProperties(m.A.Data, out float mass, out var c) || !(mass > 0f)) continue;
-            total += mass; moment += ToRootPoint(s, m, c) * mass;
-        }
-        if (total > 0f) com = moment / total;
-        return total;
+        com = default;
+        return s == null ? 0f : s.Mass(out com);
     }
 
     /// <summary>The ship's air force and torque about its centre of mass (the aimed grid's axes): each member's (Forces) in
     /// its own flow, turned and summed. False: the aimed grid has no table yet; a member without one is left out.</summary>
-    internal static bool ShipForces(Ship s, Vector3 travelRoot, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
+    internal static bool ShipForces(DesignShip s, Vector3 travelRoot, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
     {
         force = torque = default; frontal = 0f;
         ShipMass(s, out com);
         if (s == null) return false;
         bool any = false;
-        foreach (var m in s.M)
+        for (int m = 0; m < s.S.Count; m++)
         {
-            if (!Forces(m.A, ToMemberDir(s, m, travelRoot), mach, rho, sos, out var f, out var t, out var c, out float fr))
+            if (!Forces(s.A[m], s.S[m], s.ToMemberDir(m, travelRoot), mach, rho, sos, out var f, out var t, out var c, out float fr))
             {
-                if (ReferenceEquals(m.A, s.Root)) return false;
+                if (m == 0) return false;
                 continue;
             }
-            var fR = ToRootDir(s, m, f);
-            force += fR; torque += ToRootDir(s, m, t) + Vector3.Cross(ToRootPoint(s, m, c) - com, fR); frontal += fr; any = true;
+            var fR = s.ToRootDir(m, f);
+            force += fR; torque += s.ToRootDir(m, t) + Vector3.Cross(s.ToRootPoint(m, c) - com, fR); frontal += fr; any = true;
         }
         return any;
     }
 
-    /// <summary>The ship's air force and torque (about its centre of mass) moving along travelLocal at this Mach, sea-level
-    /// air unless given. False: no force table yet (asked for).</summary>
-    internal static bool Forces(AeroGridComponent aero, Vector3 travelLocal, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
+    /// <summary>A grid's air force and torque (about its centre of mass: its snapshot's, else the table's) moving along
+    /// travelLocal at this Mach, sea-level air unless given. False: no force table yet (asked for).</summary>
+    internal static bool Forces(AeroGridComponent aero, DesignSnapshot snap, Vector3 travelLocal, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
     {
         force = torque = com = default; frontal = 0f;
         // (a grid just split or removed: its entity gone under the build hints' feet - a null reference here faulted
-        //  BuildHints.Draw mid-pull, 2026-10-13)
-        if (aero?.Entity == null) return false;
-        var dd = aero.Data;
-        if (dd.Scene == null || !dd.Scene.IsEntityAlive(dd.Entity)) return false;
+        //  BuildHints.Draw mid-pull, 2026-10-13. Gone: out of Live - not asked of the engine from here, 2026-10-15)
+        if (aero?.Entity == null || snap == null || !InScene(aero)) return false;
         var model = aero.FxModel; var table = model?.Table;
-        if (table == null || model.InnerModel is not DampedShadowedDragModel) { if (aero != null) aero.EntryWantsTable = true; return false; }
-        com = aero.Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) ? mp.CenterOfMass : table.BuildCom;
+        if (table == null || model.InnerModel is not DampedShadowedDragModel) { aero.EntryWantsTable = true; return false; }
+        com = snap.HasMass ? snap.Com : table.BuildCom;
         return ForcesAt(aero, travelLocal, mach, rho, sos, com, out force, out torque, out frontal);
     }
 
@@ -182,6 +212,7 @@ internal static class DesignProbe
         return float.IsFinite(force.X + force.Y + force.Z + torque.X + torque.Y + torque.Z);
     }
 
+
     /// <summary>Everything the build hints show for one flow direction (grid-local, the way the ship travels).</summary>
     internal static bool Probe(AeroGridComponent aero, Vector3 travelLocal, float mach, out Vector3 cop, out Vector3 force, out Vector3 torque,
         out float stabA, out float stabB, out float streamlining)
@@ -212,47 +243,17 @@ internal static class DesignProbe
     }
 
     /// <summary>The thrust along a direction at sea level and a Mach (N): each thruster pushing that way, at its live
-    /// maximum x its class's sea-level efficiency x its profile at the Mach, by how much it points that way.</summary>
+    /// maximum x its class's sea-level efficiency x its profile at the Mach, by how much it points that way (the ship's:
+    /// DesignShip.ThrustAlong, from the snapshots). 0: no snapshot yet.</summary>
     internal static float ThrustAlong(AeroGridComponent aero, Vector3 dirLocal, float mach, out Vector3 centre)
     {
-        // (the ship's: each member's thrusters along the direction turned into its axes, their centre back into the aimed grid's)
-        var s = ShipOf(aero);
-        if (s != null && s.M.Count > 1)
-        {
-            float sum = 0f; Vector3 moment = Vector3.Zero;
-            foreach (var m in s.M)
-            {
-                float f = ThrustAlongOne(m.A, ToMemberDir(s, m, dirLocal), mach, out var c);
-                if (f > 0f) { sum += f; moment += ToRootPoint(s, m, c) * f; }
-            }
-            centre = sum > 0f ? moment / sum : default;
-            return sum;
-        }
-        return ThrustAlongOne(aero, dirLocal, mach, out centre);
-    }
-
-    static float ThrustAlongOne(AeroGridComponent aero, Vector3 dirLocal, float mach, out Vector3 centre)
-    {
         centre = default;
-        var cache = aero?._thrusterCache; if (cache == null) return 0f;
-        var dHat = Vector3.Normalize(dirLocal);
-        float sum = 0f; Vector3 moment = Vector3.Zero;
-        for (int i = 0; i < cache.Count; i++)
-        {
-            var t = cache[i];
-            float along = Vector3.Dot(t.ThrustDirection, dHat);
-            if (along < 0.5f) continue;
-            var ap = OffsetThrustJob.AppliedProfile(t);   // (the profile the simulation applies: none by default)
-            float prof = ap == null ? 1f : (float)ap.Evaluate(mach);
-            float f = SeaLevelMax(t) * Math.Max(0f, prof) * along;
-            sum += f; moment += t.GridLocalPosition * f;
-        }
-        if (sum > 0f) centre = moment / sum;
-        return sum;
+        var s = ShipOf(aero);
+        return s == null ? 0f : s.ThrustAlong(dirLocal, mach, out centre);
     }
 
     /// <summary>A thruster's maximum at sea level (N): its live maximum (its definition's when unreadable) x its class's
-    /// sea-level efficiency.</summary>
+    /// sea-level efficiency. (Server, the grid's own step: PublishDesign - it reads the thruster's entity.)</summary>
     static float SeaLevelMax(in ThrusterInfo t)
     {
         float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
@@ -278,16 +279,16 @@ internal static class DesignProbe
             pos.Clear(); nrm.Clear(); area.Clear(); cp.Clear();
             why = "not built";
             if (s != null)
-                foreach (var m in s.M)
+                for (int m = 0; m < s.S.Count; m++)
                 {
-                    var ov = OverlayOf(m.A, out string w1);
-                    if (ReferenceEquals(m.A, s.Root)) why = w1;
+                    var ov = OverlayOf(s.A[m], out string w1);
+                    if (m == 0) why = w1;
                     if (ov == null) continue;
                     lock (_pressureWork)
                         try
                         {
-                            int k = ov.Model.FacePressures(ov.Surface, ov.Manifold, ToMemberDir(s, m, travelLocal), mach, _pressureWork, _mp, _mn, _ma, _mc, Math.Max(1, max / s.M.Count));
-                            for (int i = 0; i < k; i++) { pos.Add(ToRootPoint(s, m, _mp[i])); nrm.Add(ToRootDir(s, m, _mn[i])); area.Add(_ma[i]); cp.Add(_mc[i]); }
+                            int k = ov.Model.FacePressures(ov.Surface, ov.Manifold, s.ToMemberDir(m, travelLocal), mach, _pressureWork, _mp, _mn, _ma, _mc, Math.Max(1, max / s.S.Count));
+                            for (int i = 0; i < k; i++) { pos.Add(s.ToRootPoint(m, _mp[i])); nrm.Add(s.ToRootDir(m, _mn[i])); area.Add(_ma[i]); cp.Add(_mc[i]); }
                         }
                         catch (Exception e) { why = "threw " + e.GetType().Name + ": " + e.Message; }
                 }
@@ -320,10 +321,14 @@ internal static class DesignProbe
         bool settled = now - st.KeySince > System.Diagnostics.Stopwatch.Frequency;
         if (!st.Building && st.BuiltKey != st.WantKey && (settled || st.Ready == null))
         {
-            var boxes = aero.CaptureBoxes();
+            // (the block boxes as the server grid's own step reads them - PublishDesign, asked here: CaptureBoxes walks the grid's
+            //  blocks, and it ran on the caller's thread - the client's frame - 2026-10-15. Until they are in: the faces so far)
+            var got = aero.DesignWatch.BoxesFor(st.WantKey);
+            if (got == null) { why = st.Ready != null ? "ok" : "reading the overlay's blocks"; return st.Ready; }
+            var boxes = got.List;
             long cells = 0; foreach (var (lo, hi) in boxes) cells += (long)(hi.X - lo.X + 1) * (hi.Y - lo.Y + 1) * (hi.Z - lo.Z + 1);
             if (boxes.Count == 0) { why = "no blocks"; return st.Ready; }
-            if (cells > OverlayMaxCells) { why = $"too big for the overlay ({cells:N0} cells)"; st.BuiltKey = st.WantKey; return null; }
+            if (cells > OverlayMaxCells) { why = $"too big for the overlay ({cells:N0} cells)"; st.BuiltKey = st.WantKey; aero.DesignWatch.ReleaseBoxes(got); return null; }
             st.Building = true; long building = st.WantKey; float bs = aero.FxBlockSize > 0f ? aero.FxBlockSize : 2.5f;
             AeroWork.Enqueue(() => 0f, () =>
             {
@@ -337,7 +342,7 @@ internal static class DesignProbe
                     st.Ready = new Overlay { Model = new DampedShadowedDragModel(), Surface = surf, Manifold = man, Key = building };
                 }
                 catch (Exception e) { Log.Default?.Info($"[AERO] drag overlay build failed: {e.GetType().Name}: {e.Message}"); }
-                finally { st.BuiltKey = building; st.Building = false; }
+                finally { st.BuiltKey = building; st.Building = false; aero.DesignWatch.ReleaseBoxes(got); }
             });
         }
         why = st.Ready != null ? "ok" : st.Building ? "building the overlay's faces" : "not built";
@@ -374,22 +379,10 @@ internal static class DesignProbe
         float gyro = 0f, hold = float.MaxValue;
         foreach (var a in new[] { a1, a2 })
         {
-            float pos = 0f, neg = 0f;
-            foreach (var m in s.M)
-            {
-                var cache = m.A._thrusterCache; if (cache == null) continue;
-                for (int i = 0; i < cache.Count; i++)
-                {
-                    var t = cache[i];
-                    float max = SeaLevelMax(t);
-                    var r = ToRootPoint(s, m, t.GridLocalPosition) - com;
-                    float tq = Vector3.Dot(Vector3.Cross(r, ToRootDir(s, m, t.ThrustDirection) * max), a);
-                    if (tq > 0f) pos += tq; else neg -= tq;
-                }
-            }
+            s.ThrustHold(a, com, out float pos, out float neg);
             hold = Math.Min(hold, Math.Min(pos, neg));
         }
-        foreach (var m in s.M) { float g = PhysicsHack.TryGetGyroMaxTorque(m.A.Data); if (g > 0f) gyro += g; }
+        gyro = s.GyroMax();
         return (gyro + (hold == float.MaxValue ? 0f : hold)) / air;
     }
 
@@ -434,11 +427,24 @@ internal static class DesignProbe
     /// background ForcesAt finishing after the grid left put its entries back after Forget, and they kept the grid (and its
     /// tables) alive for the session, 2026-10-15. (Live loses it before Forget takes the lock: no entry slips in after.)</summary>
     internal static bool InScene(AeroGridComponent a) { lock (AeroGridComponent.Live) return AeroGridComponent.Live.Contains(a); }
-    internal static void Forget(AeroGridComponent aero) { lock (_wingModels) _wingModels.Remove(aero); lock (_overlays) _overlays.Remove(aero); lock (_ships) _ships.Remove(aero); }
+    internal static void Forget(AeroGridComponent aero) { aero.DesignWatch.Snap = null; System.Threading.Volatile.Write(ref aero.DesignWatch.BoxesPub, null); lock (_wingModels) _wingModels.Remove(aero); lock (_overlays) _overlays.Remove(aero); lock (_ships) _ships.Remove(aero); }
 }
 
 public partial class AeroGridComponent
 {
     /// <summary>This server grid's pose for DesignProbe.ServerAero (DesignProbe.PublishPose, its own step; locked on itself).</summary>
     internal readonly DesignProbe.Pose DesignPose = new();
+    /// <summary>This server grid's design watch and snapshot (DesignProbe.PublishDesign, its own step; ShipOf reads it).</summary>
+    internal readonly DesignWatch DesignWatch = new();
+}
+
+/// <summary>The engine side of a snapshot: the grids jointed to it (its FxGroup, on its step).</summary>
+internal sealed partial class DesignSnapshot { public AeroGridComponent[] Group; }
+
+/// <summary>The engine side of a ship: each member's aero (index 0: the aimed grid), parallel to its snapshots.</summary>
+internal sealed partial class DesignShip
+{
+    public AeroGridComponent Root;
+    public readonly List<AeroGridComponent> A = new();
+    public void Add(AeroGridComponent a, DesignSnapshot s) { A.Add(a); S.Add(s); }
 }

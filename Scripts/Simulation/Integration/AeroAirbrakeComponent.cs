@@ -81,10 +81,11 @@ public partial class AeroAirbrakeComponent : Component, IInSceneListener, IAirbr
         if (aero != null && a._hasKey) ThrustTorque.PublishGear(aero, grid.Data.GetWorldTransform(), a._key, a.OpeningDeg, 0f);
     }
 
-    /// <summary>Harness (aeroget AeroAirbrakeComponent.Summary).</summary>
-    public static string Summary
+    /// <summary>Harness (aeroget AeroAirbrakeComponent.Summary) - as the server step built it after the previous read
+    /// (ServerDevReads, 2026-10-15: read from the harness's thread it read the server blocks).</summary>
+    public static string Summary => ServerDevReads.Summary(ServerDevReads.Airbrakes);
+    internal static string BuildSummary()
     {
-        get
         {
             var sb = new System.Text.StringBuilder();
             lock (All)
