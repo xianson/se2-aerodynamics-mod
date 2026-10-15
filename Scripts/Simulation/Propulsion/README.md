@@ -12,7 +12,7 @@ Where the game's thrust acts, how thrusters and gyros steer, thrust-vs-Mach curv
 | `EngineOverrides.cs` | The engine write that needs reflection: the protected `Component.SetData<T>` (thrust override / control data). |
 | `AeroFlameComponent.cs` | Client: each thruster's flame drawn at its published share. |
 | `AeroFuelMassComponent.cs` | Hydrogen tank fuel adds mass (`IDynamicMassProvider`). |
-| `AeroThrustSettingsComponent.cs`, `AeroThrustBlockDetailModel.cs` | Per-thruster attitude authority (`AttitudeFraction`, saved with the world as `thrust x y z f` lines by `AeroSurfaceSaved`) and its terminal slider - the slider is off for now (`[BlockDetailProvider]` commented out: it crashed the control panel), so every thruster is at 0.5. |
+| `AeroThrustSettingsComponent.cs`, `AeroThrustBlockDetailModel.cs` | Per-thruster attitude authority (`AttitudeFraction`, saved with the block when off 0.5: `Blocks/AeroBlockSave.cs`) and its terminal slider - the slider is off for now (`[BlockDetailProvider]` commented out: it crashed the control panel), so every thruster is at 0.5. |
 
 ## Entry points
 - `ThrustTorque.Apply` (`AeroGridComponent.AttitudeJob`, after the game's grid systems, before physics).

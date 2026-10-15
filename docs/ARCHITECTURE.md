@@ -48,11 +48,11 @@ projects in `Tests/`; keep game types out of them.
 | Prefab has | Gets |
 |---|---|
 | `CubeGridComponent` (every grid, server and client) | `AeroGridComponent`, `AeroEntryFxComponent` |
-| `ThrusterComponent` | `AeroThrustSettingsComponent` (per-thruster attitude authority) |
+| `ThrusterComponent` | `AeroThrustSettingsComponent` (per-thruster attitude authority; saved with the block, section 11) |
 | `ThrusterEffectsComponent` (client thruster), with `EntityInjector.InjectFlames` | `AeroFlameComponent` |
 | `ResourceContainerComponent` (tanks) | `AeroFuelMassComponent` |
 | `DiscoverablePlanetComponent` (server planets) | `AeroWorldSettingsComponent` (carries the world settings in the save) |
-| the mod's control-surface / gear / airbrake prefabs (`AeroBlockGuids`) | `AeroSurfaceSettingsComponent` / `AeroFlapComponent`, `AeroGearComponent` / `AeroGearAnimComponent`, `AeroAirbrakeComponent` / `AeroAirbrakeAnimComponent` (server / client) |
+| the mod's control-surface / gear / airbrake prefabs (`AeroBlockGuids`) | `AeroSurfaceSettingsComponent` / `AeroFlapComponent`, `AeroGearComponent` / `AeroGearAnimComponent`, `AeroAirbrakeComponent` / `AeroAirbrakeAnimComponent` (server / client; the server ones saved with the block, section 11) |
 
 ## 3. Scenes and threads
 
@@ -255,7 +255,9 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SettingsTests` (the settings
   registry: metadata, text round trip, groups, host-file forcing, authority, denylist, dev writes never saved, the
   background poll), `SettingsUiTests` (the menu's model over the real registry; `-- dump` prints the menu), `ApiTests`
-  (the API's shape, the event ring, the cross-mod binding). They compile the engine-free folders by path.
+  (the API's shape, the event ring, the cross-mod binding), `BlockSaveTests` (the blocks' save keys, the old lines'
+  reader and migration, the engine serializer round trip with no mod assembly loaded). They compile the engine-free
+  folders by path.
 - **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `D:\aero\tools\ModCheck`)
   then every suite. AeroBench's gate also hashes the table-building sources (`Tests/table_sources.txt`): a change there
   must bump `AeroTableCache.Version` (or re-record the hash for a pure refactor: `dotnet run -- tablehash`).
@@ -280,3 +282,41 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   slider's edit applies once it holds still), reset per group (`ResetGroup`), refusal reasons shown. The shared files are
   the Orbital mod's (`tools/sync_settings_ui.sh` there writes them, its `check_contract.sh` checks the copies); edit them
   there. API: `docs/API.md` version 8 and Settings.
+
+## 11. What the save holds
+
+Everything aero saves is on the **engine's** `EntityNameSessionComponentObjectBuilder` (a string -> Entity map), never a
+builder type of the mod's: a world file is a binary archive whose type table names every builder type, and with the mod
+removed a mod type is missing and the reader throws - the world would not load (object-builder feasibility, 2026-10-15).
+The engine type is always there, so a world saved with the mod still loads without it.
+
+| What | Where | Key (value: the entity itself) |
+|---|---|---|
+| World settings (values off their default) | `AeroWorldSettingsComponent` on each server planet, component id `ae205e77-1a65-4c0d-9b1e-0000000000a5` | `aero-settings:<name = value lines>` |
+| Control surface: pitch / yaw / roll, max deflection, trim | `AeroSurfaceSettingsComponent` on the block, id `...b1` | `aero-surface:1 p y r max trim` (every surface) |
+| Gear: down / up, Airshock | `AeroGearComponent` on the block, id `...b2` | `aero-gear:1 down airshock` (every gear) |
+| Airbrake: max opening | `AeroAirbrakeComponent` on the block, id `...b3` | `aero-airbrake:1 max` (every airbrake) |
+| Thruster: attitude fraction | `AeroThrustSettingsComponent` on the block, id `...b4` | `aero-thrust:1 f` (only off the default 0.5) |
+
+- **The blocks' keys** (since 2026-10-15; `Blocks/AeroBlockSave.cs`, the text in `Blocks/AeroBlockSaveForm.cs`, pure):
+  each component is injected with a fixed component id and the builder (`InjectAeroComponents`); its `[Init]` reads the
+  key, its `[Serializer]` writes a fresh map. Saved with the block, they follow it through a moved grid, blueprints,
+  copy-paste and splits. A later format appends values (readers take what they know from any format >= 1).
+- **Older saves** held the blocks' state as `surface / gear / airbrake / thrust x y z ...` lines after the world settings,
+  matched back to the nearest block by world position (`AeroSurfaceSaved`). They are still READ: the block has no slot for
+  the new id, the engine's composite migration inserts the prefab default (an empty map), the block keeps its defaults and
+  the old line claims it as before (within 1 m, 0.1 m for thrusters; dropped after 60 s). A block restored from its own key
+  is never claimed. Nothing writes the lines any more, so the first save after loading an old world converts it.
+  **Remove the reader** (`AeroSurfaceSaved`'s line lists, `Load`, the legacy loops of `ApplyPending`,
+  `AeroBlockSaveForm.ParseLegacy`) once one release has shipped with the block keys; a world last saved before that release
+  would then load with its aero blocks at their defaults. Airshock was never in the old lines: an old save's gears start
+  with it on (the default).
+- **Server and client.** The server's entities are what is saved. Surfaces, gears and airbrakes exist on the server only;
+  their terminals are handed the server object (`DetailModelPairing`), so the client-side terminal shows the restored
+  state. Thrusters exist in both scenes: a server thruster restored from its key passes the value to its client-scene
+  copy by position (`AeroSurfaceSaved.Follow`, within 0.1 m, as the old lines did), unless the copy's own builder brought
+  it; at save, a server copy at the default writes a changed client copy's value (the old lines' order).
+- **The mod removed:** the thruster's slot is dropped by the composite migration (`EOBUpdateContext`: Removes) and the
+  mod's own blocks are pruned with their definitions, as before; nothing of the mod's is in the type table. Checked
+  offline by `Tests/BlockSaveTests` (binary + Brotli and JSON through the engine serializer, no mod assembly in the type
+  context).

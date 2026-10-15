@@ -73,7 +73,8 @@ public class InjectAeroComponents : Injections
 
         if (hasThruster)
         {
-            Add(entity, typeof(AeroThrustSettingsComponent));
+            // (2026-10-15: a fixed id and the engine's builder - its attitude fraction is saved with the block, AeroBlockSave)
+            Add(entity, AeroBlockSave.Info(typeof(AeroThrustSettingsComponent), AeroBlockSave.ThrustId));
 
             if (_thrusterCount < 3)
                 Log.Default?.Info($"[AERO] Injected AeroThrustSettingsComponent into thruster prefab #{_thrusterCount}");
@@ -98,20 +99,20 @@ public class InjectAeroComponents : Injections
         // their server prefabs: the terminal's settings (axes, max deflection, trim), read by the grid's control
         if (AeroBlockGuids.SurfaceServerPrefabs.Contains(entity.Guid))
         {
-            Add(entity, typeof(AeroSurfaceSettingsComponent));
+            Add(entity, AeroBlockSave.Info(typeof(AeroSurfaceSettingsComponent), AeroBlockSave.SurfaceId));   // (saved with the block)
             Log.Default?.Info($"[AERO] Injected AeroSurfaceSettingsComponent into control surface server prefab '{entity.DebugName}'");
         }
 
         // the retractable gears: the server drives the gear (its vanilla wheel made and unmade), the client animates it
         if (AeroBlockGuids.GearServerPrefabs.Contains(entity.Guid))
         {
-            Add(entity, typeof(AeroGearComponent));
+            Add(entity, AeroBlockSave.Info(typeof(AeroGearComponent), AeroBlockSave.GearId));   // (saved with the block)
             Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
         }
         // the 3x3x3 airbrakes: the server opens them on the parking signal, the client turns their leaves
         if (AeroBlockGuids.AirbrakeServerPrefabs.Contains(entity.Guid))
         {
-            Add(entity, typeof(AeroAirbrakeComponent));
+            Add(entity, AeroBlockSave.Info(typeof(AeroAirbrakeComponent), AeroBlockSave.AirbrakeId));   // (saved with the block)
             Log.Default?.Info($"[AERO] Injected AeroAirbrakeComponent into airbrake server prefab '{entity.DebugName}'");
         }
         if (AeroBlockGuids.AirbrakeClientPrefabs.Contains(entity.Guid))

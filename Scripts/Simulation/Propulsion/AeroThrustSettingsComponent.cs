@@ -10,8 +10,8 @@ namespace AeroMod;
 ///
 /// Value is read by OffsetThrustJob each physics frame.
 /// Value is set via the terminal slider (AeroThrustBlockDetailModel).
-/// Saved with the world (AeroSurfaceSaved: "thrust x y z fraction", only those off the default; 2026-10-15, settings
-/// DESIGN.md W5(d) - it was lost on every load).
+/// Saved with the block, only off the default (AeroBlockSave, 2026-10-15; settings DESIGN.md W5(d) - it was lost on every
+/// load; the first fix's "thrust x y z fraction" lines in the world's settings text are still read: AeroSurfaceSaved).
 /// </summary>
 [WhenSimulated]
 public partial class AeroThrustSettingsComponent : Component, IInSceneListener
@@ -39,12 +39,4 @@ public partial class AeroThrustSettingsComponent : Component, IInSceneListener
     }
 
     void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
-
-    /// <summary>One line of the save: "x y z fraction" (world position of the block, its attitude fraction).</summary>
-    internal string SaveLine()
-    {
-        var p = Entity.Data.GetWorldTransform().Position;
-        var c = System.Globalization.CultureInfo.InvariantCulture;
-        return string.Join(" ", p.X.ToString("R", c), p.Y.ToString("R", c), p.Z.ToString("R", c), AttitudeFraction.ToString("R", c));
-    }
 }

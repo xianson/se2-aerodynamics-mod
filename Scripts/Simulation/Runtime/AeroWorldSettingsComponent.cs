@@ -22,7 +22,8 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
     private void SerializeSettings(EntityNameSessionComponentObjectBuilder ob)
     {
         ob.NamedEntities = new Dictionary<string, Keen.VRage.DCS.Components.Entity>();
-        string text = AeroSettings.Text("world", all: false) + AeroSurfaceSaved.Text();
+        // (the blocks' state is saved with each block since 2026-10-15 - AeroBlockSave; no more position-matched lines here)
+        string text = AeroSettings.Text("world", all: false);
         if (text.Length > 0 && Entity != null) ob.NamedEntities[AeroSettings.SaveKey + text] = Entity;
         AeroSettings.WorldSaved();
     }

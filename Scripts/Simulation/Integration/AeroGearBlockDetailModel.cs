@@ -18,7 +18,7 @@ namespace AeroMod;
 public class AeroGearBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroGearBlockDetailModel>(
-        "Retractable gear: extend or retract it.", nameof(CanExtend), nameof(CanRetract));
+        "Retractable gear: extend or retract it; Airshock softens the touchdown.", nameof(CanExtend), nameof(CanRetract), nameof(Airshock));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
 
     [Keen.VRage.DCS.Annotations.Component]
@@ -48,6 +48,10 @@ public class AeroGearBlockDetailModel : BlockDetailModel
     [Button(null)]
     [HideInInspector]
     public void ToggleGear() { _gear?.Toggle(); Changed(); }
+
+    /// <summary>SE1's Airshock: the suspension goes stiff and fully damped just before touchdown (AeroGearComponent.Airshock).</summary>
+    [Label("Airshock")]
+    public bool Airshock { get => _gear?.AirshockEnabled ?? true; set { if (_gear != null) _gear.AirshockEnabled = value; } }
 
     void Changed() { OnPropertyChanged(nameof(CanExtend)); OnPropertyChanged(nameof(CanRetract)); }
 }
