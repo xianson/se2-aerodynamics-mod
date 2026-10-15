@@ -895,6 +895,19 @@ static class Program
         Check(snap2.breaks.Count == 1 && snap2.breaks[0].cuts == 1, $"neck: two cuts allowed, still one cut - the next is inside what leaves ({(snap2.breaks.Count > 0 ? snap2.breaks[0].cuts : 0)} cuts)");
     }
 
+    /// <summary>(A31, 2026-10-15) the scorch thresholds follow each class's own heat limits (StructMaterial.ScorchAt):
+    /// armour's are the knobs themselves; a heat shield is not scorched below its own softening.</summary>
+    static void ScorchThresholds()
+    {
+        StructMaterial.ScorchAt(StructMaterial.Armor, 700f, 950f, out float la, out float da);
+        Check(MathF.Abs(la - 700f) < 1e-3f && MathF.Abs(da - 950f) < 1e-3f, $"scorch: armour at the knobs ({la:F0} / {da:F0} K)");
+        StructMaterial.ScorchAt(StructMaterial.HeatShield, 700f, 950f, out float ls, out float ds);
+        Check(ls >= StructMaterial.SoftenK[StructMaterial.HeatShield] && ds > ls && ds < StructMaterial.WeakK[StructMaterial.HeatShield], $"scorch: a heat shield from its own softening ({ls:F0} / {ds:F0} K, softens at {StructMaterial.SoftenK[StructMaterial.HeatShield]:F0})");
+        bool order = true;
+        for (int m = 0; m < StructMaterial.Count; m++) { StructMaterial.ScorchAt(m, 700f, 950f, out float l, out float d); order &= l > 0f && d > l && d < StructMaterial.WeakK[m]; }
+        Check(order, "scorch: every class light under dark, dark under its WeakK");
+    }
+
     static int Main()
     {
         Classes();
@@ -903,7 +916,7 @@ static class Program
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
         BalanceUnderEdits(); EntryBraking();
-        HeatBalance(); BluntVsSharp(); Cooling();
+        HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
         return _fails == 0 ? 0 : 1;
     }

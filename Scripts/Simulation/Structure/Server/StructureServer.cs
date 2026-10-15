@@ -62,6 +62,8 @@ public partial class AeroGridComponent
     ShipStructure _st; HullHeat _hh;
     /// <summary>The scorch spots (HeatScorch): the working list (this thread), and the copy published to the client.</summary>
     internal readonly List<HeatScorch.Spot> ScorchSpots = new();
+    /// <summary>The structure _hh was built with (HeatScorch: its faces' blocks' classes; simulation thread).</summary>
+    internal ShipStructure StructureForScorch => _st;
     internal List<HeatScorch.Spot> ScorchPublished; internal int ScorchVersion;
     float _scorchClock;
     List<CubeBlockComponent> _stBlocks;

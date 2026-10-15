@@ -31,6 +31,8 @@ public static class HeatScorch
     public sealed class Spot
     {
         public Vector3 Center, Normal; public float Radius, PeakK; public int Faces;   // (PeakK: the spot's hottest skin, K)
+        /// <summary>A face of it went past its own material's dark threshold (StructMaterial.ScorchAt).</summary>
+        public bool Dark;
         /// <summary>The hottest face's point and normal: a real hull point, where the mark is stamped.</summary>
         public Vector3 HotPos, HotNormal;
     }
@@ -40,21 +42,39 @@ public static class HeatScorch
     //  of some glow". The hull heat model's skin temperatures - which a railed entry now heats too, from the Orbital mod's
     //  entry STATE (the true air speed and density: AeroApi.RegisterEntryState) - and only while the ship is in a re-entry:
     //  the Orbital mod's entry state, or the ship's own hypersonic heating past the glow's onset. Ordinary flight never.)
-    /// <summary>Skin temperature (K) a face must reach to scorch light / dark (a real entry's nose: ~1000 K).</summary>
+    /// <summary>Skin temperature (K) a face must reach to scorch light / dark (a real entry's nose: ~1000 K) - ARMOUR's; every
+    /// other block class's moved with its own softening (StructMaterial.ScorchAt, 2026-10-15: a heat shield, softening at
+    /// 1300 K, showed dark scorch at 950).</summary>
     public static float LightK = 700f, DarkK = 950f;
+    // (each class's thresholds for the current LightK / DarkK, and the lowest light one: worked out again when those move)
+    static readonly float[] _light = new float[StructMaterial.Count], _dark = new float[StructMaterial.Count];
+    static float _forLight = -1f, _forDark = -1f, _minLight;
+    static void Thresholds()
+    {
+        if (_forLight == LightK && _forDark == DarkK) return;
+        float min = float.MaxValue;
+        for (int m = 0; m < StructMaterial.Count; m++) { StructMaterial.ScorchAt(m, LightK, DarkK, out _light[m], out _dark[m]); min = MathF.Min(min, _light[m]); }
+        _minLight = min; _forLight = LightK; _forDark = DarkK;
+    }
 
     internal static void Update(AeroGridComponent g, HullHeat hh, Vector3 airVelLocal, float dt)
     {
         if (!Enabled || hh == null || hh.FaceCount == 0) return;
         bool reentry = TestAnyHeat || AeroEntryFx.EntryStateAt(g.Entity, out _, out _) || g.EntryHeat >= AeroEntryFx.OnsetHeat;
         if (!reentry) return;
-        if (hh.MaxSkin(out _) < LightK) return;
+        Thresholds();
+        if (hh.MaxSkin(out _) < _minLight) return;
         var spots = g.ScorchSpots;   // (this thread's own working list; published as a copy)
         bool changed = false;
+        var st = g.StructureForScorch; var mats = st?.Mat;   // (the faces' blocks' classes: the structure the hull was built with)
         for (int i = 0; i < hh.FaceCount; i++)
         {
             float t = hh.FaceT[i];
-            if (!(t >= LightK)) continue;
+            if (!(t >= _minLight)) continue;
+            int fb = hh.FaceBlock[i];
+            int mat = mats != null && fb >= 0 && fb < mats.Length ? mats[fb] : StructMaterial.Armor;
+            if (!(t >= _light[mat])) continue;
+            bool hotDark = t >= _dark[mat];
             Vector3 p = hh.FacePosition(i), n = hh.FaceNormal(i);
             Spot best = null; float bd = float.MaxValue;
             foreach (var sp in spots)
@@ -69,7 +89,7 @@ public static class HeatScorch
                     // (the nearest spot takes it, whichever way it faces: a few large marks)
                     foreach (var sp in spots) { float d = Vector3.Distance(sp.Center, p); if (d < bd) { bd = d; best = sp; } }
                 }
-                else { spots.Add(new Spot { Center = p, Normal = n, Radius = 0f, PeakK = t, Faces = 1, HotPos = p, HotNormal = n }); changed = true; continue; }
+                else { spots.Add(new Spot { Center = p, Normal = n, Radius = 0f, PeakK = t, Faces = 1, HotPos = p, HotNormal = n, Dark = hotDark }); changed = true; continue; }
             }
             // (grows to reach the face - its centre moving a little toward it - never shrinks; darkens to its peak)
             float need = Vector3.Distance(best.Center, p);
@@ -79,17 +99,14 @@ public static class HeatScorch
                 best.Center += (p - best.Center) * (grow / MathF.Max(need, 1e-3f));
                 best.Radius += grow; changed = true;
             }
-            if (t > best.PeakK)
-            {
-                bool darker = best.PeakK < DarkK && t >= DarkK;
-                best.PeakK = t; best.HotPos = p; best.HotNormal = n; if (darker) changed = true;
-            }
+            if (hotDark && !best.Dark) { best.Dark = true; changed = true; }
+            if (t > best.PeakK) { best.PeakK = t; best.HotPos = p; best.HotNormal = n; }
             best.Normal = Vector3.Normalize(best.Normal * best.Faces + n); best.Faces++;
         }
         if (changed)
         {
             var copy = new List<Spot>(spots.Count);
-            foreach (var sp in spots) copy.Add(new Spot { Center = sp.Center, Normal = sp.Normal, Radius = sp.Radius, PeakK = sp.PeakK, Faces = sp.Faces, HotPos = sp.HotPos, HotNormal = sp.HotNormal });
+            foreach (var sp in spots) copy.Add(new Spot { Center = sp.Center, Normal = sp.Normal, Radius = sp.Radius, PeakK = sp.PeakK, Faces = sp.Faces, HotPos = sp.HotPos, HotNormal = sp.HotNormal, Dark = sp.Dark });
             System.Threading.Volatile.Write(ref g.ScorchPublished, copy);
             System.Threading.Interlocked.Increment(ref g.ScorchVersion);
         }
@@ -153,7 +170,7 @@ public static class HeatScorch
                     var s = spots[i];
                     float dia = Math.Clamp(2f * s.Radius + 1f, MinDiameter, MaxDiameter);
                     int step = 0; while (step < Steps.Length - 1 && Steps[step + 1] <= dia) step++;
-                    bool dark = s.PeakK >= DarkK;
+                    bool dark = s.Dark;
                     if (i < c.ScorchStamped.Count && c.ScorchStamped[i].step >= step && (c.ScorchStamped[i].dark || !dark)) continue;   // (no bigger, no darker: kept)
                     var n = s.HotNormal.LengthSquared() > 1e-6f ? Vector3.Normalize(s.HotNormal) : Vector3.Up;
                     // (on the BLOCK at the hot face, in its own frame - as the game's projectile hits are placed. Through the grid
