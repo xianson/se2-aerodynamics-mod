@@ -196,6 +196,13 @@ static class Program
             Check(!md.DescendantNodes().OfType<TryStatementSyntax>().Any() && !body.Contains(live) && (name.StartsWith("GetAero") ? body.Contains("lock (reg.SyncRoot)") : true),
                 $"{name}: reads a published copy or under the list's lock, never the live list in a try");
         }
+        // (2026-10-15 review) GetSurface fills the caller's lists after the grid's API lock, never inside it: 4 x 10^5 List.Adds
+        // with LOH growth held the lock the grid's simulation tick waits on
+        {
+            var m = members.FirstOrDefault(x => x.name == "GetSurface");
+            var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
+            Check(locks.Count > 0 && locks.All(l => !l.Statement.ToString().Contains(".Add(")), "GetSurface: no List.Add under the grid's API lock (copied out, added after)");
+        }
         // a new member says its version in its summary
         foreach (var m in members.Where(x => !Frozen.ContainsKey(x.name)))
         {

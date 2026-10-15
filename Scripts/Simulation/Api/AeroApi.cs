@@ -143,15 +143,36 @@ public static partial class AeroApi
         if (s == null) return 0;
         long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency);
         if (until > s.HullUntil) s.HullUntil = until;
+        // (copied out under the lock - four block copies - and added to the lists after it: 4 x 10^5 List.Adds, with the lists'
+        //  growth on the large-object heap, held the grid's API lock its simulation tick waits on, 2026-10-15 review)
+        int hint = Math.Max(s.HullCount, 1);
+        Reserve(centresLocal, hint); Reserve(normalsLocal, hint); Reserve(areas, hint); Reserve(cp, hint);
+        // (the buffers rented before the lock at the count seen now; re-rented under it only if a new publish grew it)
+        Vector3[] pos = centresLocal != null ? System.Buffers.ArrayPool<Vector3>.Shared.Rent(hint) : null, nrm = normalsLocal != null ? System.Buffers.ArrayPool<Vector3>.Shared.Rent(hint) : null;
+        float[] area = areas != null ? System.Buffers.ArrayPool<float>.Shared.Rent(hint) : null, cps = cp != null ? System.Buffers.ArrayPool<float>.Shared.Rent(hint) : null;
+        int n;
         lock (s.Lock)
         {
-            int n = Math.Max(s.HullCount, 0);
-            for (int i = 0; i < n; i++)
-            {
-                centresLocal?.Add(s.HullPos[i]); normalsLocal?.Add(s.HullNrm[i]); areas?.Add(s.HullArea[i]); cp?.Add(s.HullCp[i]);
-            }
-            return n;
+            n = Math.Max(s.HullCount, 0);
+            if (pos != null) Array.Copy(s.HullPos, pos = RentFit(pos, n), n);
+            if (nrm != null) Array.Copy(s.HullNrm, nrm = RentFit(nrm, n), n);
+            if (area != null) Array.Copy(s.HullArea, area = RentFit(area, n), n);
+            if (cps != null) Array.Copy(s.HullCp, cps = RentFit(cps, n), n);
         }
+        if (pos != null) { Reserve(centresLocal, n); for (int i = 0; i < n; i++) centresLocal.Add(pos[i]); System.Buffers.ArrayPool<Vector3>.Shared.Return(pos); }
+        if (nrm != null) { Reserve(normalsLocal, n); for (int i = 0; i < n; i++) normalsLocal.Add(nrm[i]); System.Buffers.ArrayPool<Vector3>.Shared.Return(nrm); }
+        if (area != null) { Reserve(areas, n); for (int i = 0; i < n; i++) areas.Add(area[i]); System.Buffers.ArrayPool<float>.Shared.Return(area); }
+        if (cps != null) { Reserve(cp, n); for (int i = 0; i < n; i++) cp.Add(cps[i]); System.Buffers.ArrayPool<float>.Shared.Return(cps); }
+        return n;
+    }
+
+    static void Reserve<T>(List<T> list, int n) { if (list != null && list.Capacity < n) list.Capacity = n; }
+    /// <summary>A rented buffer that holds n (the old one back to the pool when it does not).</summary>
+    static T[] RentFit<T>(T[] rented, int n)
+    {
+        if (rented.Length >= n) return rented;
+        System.Buffers.ArrayPool<T>.Shared.Return(rented);
+        return System.Buffers.ArrayPool<T>.Shared.Rent(n);
     }
 
     /// <summary>How many wings aero detected on the grid (index them 0..count-1 in the calls below).</summary>
