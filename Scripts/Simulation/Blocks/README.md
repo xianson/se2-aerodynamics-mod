@@ -6,7 +6,8 @@ block definitions and models ship in the companion mod "Aerodynamics Mod Blocks"
 
 | File | What |
 |---|---|
-| `AeroSurfaceSettingsComponent.cs` | A 3x3x1 control surface's settings (server); `AeroSurfaceSaved` keeps them in the world's aero settings text |
+| `AeroSurfaceSettingsComponent.cs` | A 3x3x1 control surface's settings (server); `AeroSurfaceSaved`: the old position-matched save lines, read only (one release), and the thrusters' client-copy follow |
+| `AeroBlockSave.cs`, `AeroBlockSaveForm.cs` | Per-block saved data (2026-10-15): the surface, gear, airbrake and thruster components' `[Init]` / `[Serializer]` on the engine's `EntityNameSessionComponentObjectBuilder` (fixed component ids), and the keys' text + the old lines' reader (pure: `Tests/BlockSaveTests`). `docs/ARCHITECTURE.md` section 11 |
 | `AeroSurfaceBlockDetailModel.cs` | Its terminal page |
 | `DetailModelPairing.cs` | Lets a mod `[BlockDetailProvider]` open in the control panel without the replication crash (also used by the thruster's, gear's and airbrake's models) |
 | `ModDetailTypeInfo.cs` | Hand-built member list for a mod panel model (`GetTypeInfo()`) |
@@ -17,7 +18,8 @@ block definitions and models ship in the companion mod "Aerodynamics Mod Blocks"
 
 ## Entry points
 - Injected by `InjectAeroComponents` (`AeroBlockGuids.SurfaceServerPrefabs` / `FlapClientPrefabs`).
-- `AeroSurfaceSaved.ApplyPending` (`TryCompute`, server), `AeroSurfaceSaved.Text` (`AeroWorldSettingsComponent` save).
+- `AeroSurfaceSaved.ApplyPending` (`TryCompute`, server); `AeroSurfaceSaved.Load` (`AeroSettings.WorldLoaded`).
+- The blocks' `[Init]` / `[Serializer]` (`AeroBlockSave.cs`): the game's entity load / save.
 - `HingeSurfaces.Drive` (`AeroGridComponent.Surfaces.cs`); `AeroFlapComponent`'s job (`OnAeroFlap`), which also ticks `AeroPanelProbe`.
 
 ## Threading

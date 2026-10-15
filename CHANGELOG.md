@@ -60,6 +60,13 @@ fly.
 
 ### Changed behaviour you will feel
 
+- **Block settings are saved with the block.** A control surface's axes, max deflection and trim, a gear's down / up and
+  its **Airshock** switch (new: it was not saved before), an airbrake's max opening and a thruster's attitude share now
+  live in each block's own saved data instead of lines matched to blocks by world position. They survive a grid that
+  moved between save and load and come along with blueprints, copy-paste and splits. Old saves load as before (their
+  lines are still read for this release) and convert on their first save. A world saved with the mod still loads with
+  the mod removed (only the game's own data types are used). (`Blocks/AeroBlockSave.cs`)
+
 - **Wing detection fixed - bigger planes have bigger wings.** Coplanar wings were merged using another wing's span
   (from four wings on). Pelican main wing span **17 -> 23 m** (its real width), aspect ratio 3.2 -> 5.8: lift at 6 deg
   276 -> **366 kN (+33%)**, stall at ~8 deg instead of ~10, peak L/D 4.9 -> 5.1. Jetliner: its two fin skins are one fin
@@ -159,6 +166,11 @@ fly.
 - Settings docs fixed: `Structure.WingStrength` default 25 (said 1), `Fx.SpawnPerTick` 48 (said 12). (59e773e)
 
 ### For modders
+
+- **Fixed component ids for the saving block components** (2026-10-15): `AeroSurfaceSettingsComponent`
+  `ae205e77-1a65-4c0d-9b1e-0000000000b1`, `AeroGearComponent` `...b2`, `AeroAirbrakeComponent` `...b3`,
+  `AeroThrustSettingsComponent` `...b4` (on every thruster prefab), each with the engine's
+  `EntityNameSessionComponentObjectBuilder`. Their save keys: `docs/ARCHITECTURE.md` section 11.
 
 - **AeroApi version 8** (was 6). Members only added; versions 2-6 unchanged (checked by `Tests/ApiTests`). Reference:
   `docs/API.md`.
