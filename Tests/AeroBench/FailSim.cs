@@ -218,6 +218,8 @@ static partial class Program
         Knob("SNAP_UTIL", v => StructureFatigue.SnapUtil = v);
         // (2026-10-15, the organic break's A/B: COMP_SHARE 1 - fatigue blind to the sign, as before - BUCK_SHARE the
         //  buckling-limited members' (1 by default); JAGGED 0 - the flat cut)
+        // (MOUNTS=1 / MOUNTS=0: the mount-point joints on / off, for A/B - as in 'struct')
+        if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";
         Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("BUCK_SHARE", v => StructureFatigue.BucklingFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();

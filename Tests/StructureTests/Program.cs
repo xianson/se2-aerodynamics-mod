@@ -438,7 +438,7 @@ static class Program
     static void Mounts()
     {
         bool was = ShipStructure.MountJoints; ShipStructure.MountJoints = true;
-        try { MountsCore(); } finally { ShipStructure.MountJoints = was; }
+        try { MountsCore(); MountedVsTouching(); } finally { ShipStructure.MountJoints = was; }
     }
 
     static void MountsCore()
@@ -461,6 +461,85 @@ static class Program
         Check(s.ContactCount == 1 && s.Components == 1 && MathF.Abs(s.JArea[s.Root == 0 ? 1 : 0] - 2 * 0.0625f) < 1e-6f, $"mounts: half the face mated - the joint is those 2 cells ({(s.ContactCount > 0 ? s.JArea[s.Root == 0 ? 1 : 0] : 0f):F4} m2)");
         s = Pair(2).S;
         Check(s.ContactCount == 1 && s.UnmountedContacts == 1, "mounts: a block with no mount data keeps its touching faces");
+    }
+
+    /// <summary>Mounted vs touching-only joints (2026-10-15, the default's A/B): a fully mated face is the touching face - the
+    /// same joint, the same utilisation as without mount data or with MountJoints off; half mated is weaker; mounts that do
+    /// not meet (the wrong layer, beside each other, the same way) join nothing; with MountJoints off the mount data is
+    /// ignored (every touching face, as before); the SSTO's wing root - armour mated to armour, and against a tank's side
+    /// that has no mounts there - holds through the mated pair only.</summary>
+    static void MountedVsTouching()
+    {
+        // a heavy root (x -2..-1) and a small cube (x 0..1) touching across x -1|0; b's -x mount by kind
+        ShipStructure Pair(int kind)
+        {
+            var sh = new TShip();
+            int a = sh.Cells(1e6f, StructMaterial.Armor, (V(-2, 0, 0), V(-1, 1, 1)));
+            int b = sh.Cells(SmallMass, StructMaterial.Armor, (V(0, 0, 0), V(1, 1, 1)));
+            if (kind >= 0) sh.Mount(a, V(1, 0, 0), V(-1, 0, 0), V(-1, 1, 1));    // a: its whole +x face
+            if (kind == 1) sh.Mount(b, V(-1, 0, 0), V(0, 0, 0), V(0, 1, 1));   // b: its whole -x face
+            if (kind == 2) sh.Mount(b, V(-1, 0, 0), V(0, 0, 0), V(0, 0, 1));   // b: half of it
+            if (kind == 3) sh.Mount(b, V(-1, 0, 0), V(1, 0, 0), V(1, 1, 1));   // b: looking -x, but a layer in (not at the face)
+            if (kind == 4) sh.Mount(b, V(1, 0, 0), V(0, 0, 0), V(0, 1, 1));    // b: at the face, looking +x (the same way as a's)
+            if (kind == 5) { sh.Mount(a, V(1, 0, 0), V(-1, 0, 0), V(-1, 0, 1)); sh.Mounts.RemoveAt(0); sh.Mount(b, V(-1, 0, 0), V(0, 1, 0), V(0, 1, 1)); }   // beside each other
+            return sh.Build().S;
+        }
+        float Util(ShipStructure st) { Array.Clear(st.ExtForce); st.ExtForce[1] = new Vector3(0, 5000f, 0); st.SolveFree(Vector3.Zero); return st.MaxUtil; }
+        float A(ShipStructure st) => st.ContactCount > 0 ? st.JArea[st.Root == 0 ? 1 : 0] : 0f;
+        var touch = Pair(-1); float uT = Util(touch);   // no mount data at all: every touching face
+        var full = Pair(1); float uF = Util(full);
+        Check(full.HasMounts && full.MatedContacts == 1 && full.Components == 1 && MathF.Abs(A(full) - 4 * 0.0625f) < 1e-6f && MathF.Abs(uF / uT - 1f) < 1e-4f,
+            $"mounted vs touching: a fully mated face is the touching face ({A(full):F4} m2; utilisation {uF:F4} vs {uT:F4})");
+        var half = Pair(2); float uH = Util(half);
+        Check(half.Components == 1 && MathF.Abs(A(half) - 2 * 0.0625f) < 1e-6f && uH > 1.3f * uF, $"mounted vs touching: half mated is weaker (utilisation {uH:F4} vs {uF:F4} whole)");
+        foreach (var (kind, what) in new[] { (3, "a layer in"), (4, "looking the same way"), (5, "beside each other") })
+        {
+            var st = Pair(kind);
+            Check(st.ContactCount == 0 && st.Components == 2 && st.UnmatedContacts == 1, $"mounted vs touching: mounts {what} join nothing ({st.ContactCount} contacts, {st.Components} pieces)");
+        }
+        // MountJoints off: the mount data ignored - the touching face whole, even where nothing is mated
+        ShipStructure.MountJoints = false;
+        try
+        {
+            var off = Pair(4); float uO = Util(off);
+            Check(!off.HasMounts && off.ContactCount == 1 && off.Components == 1 && MathF.Abs(A(off) - 4 * 0.0625f) < 1e-6f && MathF.Abs(uO / uT - 1f) < 1e-4f,
+                $"mounted vs touching: MountJoints off - every touching face, as without mount data (utilisation {uO:F4} vs {uT:F4})");
+        }
+        finally { ShipStructure.MountJoints = true; }
+
+        // the SSTO's wing root (ssto_m.struct, x 164|165): a heavy fuselage of an armour block (mounts all round) and a tank
+        // (its mounts on its ends only); a 4-block armour wing along +x whose root block touches both - the root's face against
+        // the armour mated, against the tank's side not
+        ShipStructure Root(bool mounts, out int wingRoot)
+        {
+            var sh = new TShip();
+            int arm = sh.Block(0, 0, 0, 1e6f);
+            int tank = sh.Block(0, 1, 0, 1e6f);
+            sh.Block(-1, 0, 0, 1e6f, 1, 2, 1);   // (the fuselage behind them: one piece with both)
+            wingRoot = sh.Block(1, 0, 0, SmallMass, 1, 2, 1);   // two blocks tall: against the armour (y 0..1) and the tank (y 2..3)
+            for (int x = 2; x <= 4; x++) sh.Block(x, 0, 0, SmallMass, 1, 2, 1);
+            if (mounts)
+            {
+                for (int i = 0; i < sh.Mass.Count; i++)
+                {
+                    var lo = sh.Lo[i]; var hi = sh.Hi[i];
+                    foreach (var d in new[] { V(1, 0, 0), V(-1, 0, 0), V(0, 1, 0), V(0, -1, 0), V(0, 0, 1), V(0, 0, -1) })
+                    {
+                        if (i == tank && d.X != 0) continue;   // (a tank: no mounts on its sides)
+                        var fl = lo; var fh = hi;
+                        if (d.X > 0) fl.X = hi.X; else if (d.X < 0) fh.X = lo.X; else if (d.Y > 0) fl.Y = hi.Y; else if (d.Y < 0) fh.Y = lo.Y; else if (d.Z > 0) fl.Z = hi.Z; else fh.Z = lo.Z;
+                        sh.Mount(i, d, fl, fh);
+                    }
+                }
+            }
+            return sh.Build().S;
+        }
+        float RootUtil(ShipStructure st, int wr) { Array.Clear(st.ExtForce); for (int i = wr; i < st.Count; i++) st.ExtForce[i] = new Vector3(0, 0, 300f); st.SolveFree(Vector3.Zero); return st.JUtil[wr]; }
+        var rOff = Root(false, out int w0); var rOn = Root(true, out int w1);
+        float uOff = RootUtil(rOff, w0), uOn = RootUtil(rOn, w1);
+        Check(rOn.Components == 1 && rOn.UnmatedContacts >= 1 && MathF.Abs(rOn.JArea[w1] - 4 * 0.0625f) < 1e-6f && MathF.Abs(rOff.JArea[w0] - 4 * 0.0625f) < 1e-6f,
+            $"mounted vs touching: the wing root holds by the armour alone (joined, {rOn.UnmatedContacts} touching contact(s) dropped)");
+        Check(uOn > 1.2f * uOff, $"mounted vs touching: without the tank's side the root is weaker - utilisation {uOn:F3} vs {uOff:F3} touching");
     }
 
     /// <summary>11. PERMANENT BENDS (StructureBend, 2026-10-14): a 10 m wing of 0.5 m blocks off a fixed root, lifted past its
