@@ -8,7 +8,8 @@ namespace AeroMod;
 /// (AeroGridComponent.ApiStateFor); each record filled only while someone reads it (its watch window, Stopwatch ticks:
 /// ApiGridState.Watch.cs): a grid nobody asks about costs one null test a tick.
 /// The writers (the simulation thread for the tick record, the structure's background evaluation for the rest) fill the
-/// spare ("back") arrays outside the lock and swap them in under it; readers copy out under it. Arrays only grow.
+/// spare ("back") arrays outside the lock and swap them in under it; readers copy out under it. Arrays grow to the count;
+/// a record's arrays are dropped ReleaseSeconds after its window closed (Release; AeroGridComponent.ApiRelease).
 /// </summary>
 internal sealed partial class ApiGridState
 {
@@ -50,8 +51,42 @@ internal sealed partial class ApiGridState
     // ── another heat model's block temperatures (AeroApi.SetBlockTemperatures; read by the evaluation: ApiHeatOverride) ──
     public int ExtLayout = -1; public long ExtStamp; public float[] ExtTempK = Array.Empty<float>(), ExtSkinK = Array.Empty<float>();
 
-    /// <summary>a, if it holds n, else a new array of at least n (only grows; never shrinks).</summary>
-    public static T[] Fit<T>(T[] a, int n) => a.Length >= n ? a : new T[Math.Max(n, a.Length * 2)];
+    /// <summary>a, if it holds n, else a new array of exactly n (the counts change only with the layout or the surface:
+    /// doubling over-allocated up to 2x on the large-object heap, 2026-10-15 review).</summary>
+    public static T[] Fit<T>(T[] a, int n) => a.Length >= n ? a : new T[n];
+
+    /// <summary>(under Lock, its writer not running: AeroGridComponent.ApiRelease) Drop a record's arrays - front and back -
+    /// and mark it unpublished, so a read answers 0 as a first read does until its writer publishes it again.</summary>
+    public void Release(int rec)
+    {
+        switch (rec)
+        {
+            case RecFlight:
+                FlightStamp = 0; SurfCount = 0; ThrCount = 0;
+                SurfCell = SurfCellB = Array.Empty<Vector3I>();
+                SurfCmd = SurfCmdB = SurfDeg = SurfDegB = SurfLift = SurfLiftB = SurfDrag = SurfDragB = ThrForce = ThrForceB = Array.Empty<float>();
+                break;
+            case RecHull:
+                HullCount = -1; HullVersion = -1; HullOf = null; HullAt = 0;
+                HullPos = HullNrm = HullPosB = HullNrmB = Array.Empty<Vector3>();
+                HullArea = HullCp = HullAreaB = HullCpB = Array.Empty<float>();
+                break;
+            case RecStruct:
+                StateLayout = -1;
+                Util = Health = TempK = SkinK = HeatW = UtilB = HealthB = TempKB = SkinKB = HeatWB = Array.Empty<float>();
+                LoadF = LoadM = LoadFB = LoadMB = Array.Empty<Vector3>();
+                break;
+            case RecFaces:
+                FaceLayout = -1; FaceCount = 0;
+                FacePos = FaceNrm = Array.Empty<Vector3>(); FaceArea = Array.Empty<float>(); FaceBlock = Array.Empty<int>();
+                FaceHeatW = FaceSkinK = FaceFilm = FaceHeatWB = FaceSkinKB = FaceFilmB = Array.Empty<float>();
+                break;
+            case RecExt:
+                ExtLayout = -1; ExtTempK = ExtSkinK = Array.Empty<float>();
+                break;
+        }
+        Held[rec] = false;
+    }
 
     public static void Swap<T>(ref T[] a, ref T[] b) { T[] t = a; a = b; b = t; }
 }

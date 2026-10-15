@@ -243,8 +243,9 @@ and a way for **another heat model** (the planned thermal mod) to take the tempe
   record (or `WatchGrid`) starts it, and every read keeps it on for 5 s more. Each record has its own watch - the flight
   record (flight state, control surfaces, thruster forces), the structure's block state, the heat faces, `GetSurface`'s
   faces - and a read keeps on only the record it reads. So the **first read of a record answers 0 / `false`**, and
-  the next simulation tick (flight) or structure evaluation (blocks, faces) has the answer. A grid nobody reads costs one
-  null test a tick.
+  the next simulation tick (flight) or structure evaluation (blocks, faces) has the answer. A record nobody has read for
+  10 s (its 5 s, then 5 s more) is dropped - its memory freed - and answers 0 again on its next first read. A grid nobody
+  reads costs one null test a tick.
 - **Buffers are yours.** Every array is the caller's; aero fills `min(array length, count)` and returns the full count, so
   a short array tells you to grow it. Pass `null` for what you do not want. No call allocates (`GetFlightStateNames`
   aside: call it once), none has exception handling on the way, and none hands out aero's own arrays.

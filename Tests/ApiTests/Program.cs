@@ -361,6 +361,41 @@ static class Program
         var s3 = new ApiGridState();
         s3.Push(ApiGridState.RecHull, t + w);
         Check(s3.TickWatched(t) && !s3.On(ApiGridState.RecFlight, t), "watch: a GetSurface read runs the tick for the hull's faces only");
+
+        // releasing (2026-10-15 review: the arrays were kept for the life of the grid, ~12-15 MB on a big ship)
+        long f = System.Diagnostics.Stopwatch.Frequency, rel = (long)(ApiGridState.ReleaseSeconds * f);
+        var a = new ApiGridState();
+        Check(ApiGridState.Fit(new float[10], 1000).Length == 1000 && ApiGridState.Fit(new float[10], 4).Length == 10, "release: Fit grows to exactly the count, never doubles");
+        a.Push(ApiGridState.RecStruct, t + w);
+        int n = 50_000;
+        lock (a.Lock)
+        {
+            a.Layout = 3; a.BlockCount = n; a.StateLayout = 3;
+            a.Util = new float[n]; a.UtilB = new float[n]; a.Health = new float[n]; a.LoadF = new Vector3[n]; a.LoadMB = new Vector3[n];
+            a.Held[ApiGridState.RecStruct] = true;
+        }
+        Check(!a.Due(ApiGridState.RecStruct, t) && !a.Due(ApiGridState.RecStruct, t + w) && !a.Due(ApiGridState.RecStruct, t + w + rel - 1),
+            "release: kept while watched and for ReleaseSeconds after the window closed");
+        Check(a.Due(ApiGridState.RecStruct, t + w + rel) && !a.Due(ApiGridState.RecFlight, t + w + rel), "release: due after that - only a record that holds arrays");
+        Check(a.TickWatched(t + w + rel), "release: the tick runs while a record holds arrays (it drops them)");
+        lock (a.Lock) a.Release(ApiGridState.RecStruct);
+        Check(a.Util.Length == 0 && a.UtilB.Length == 0 && a.Health.Length == 0 && a.LoadF.Length == 0 && a.LoadMB.Length == 0, "release: the block state's arrays dropped, front and back");
+        Check(a.StateLayout == -1 && a.Layout == 3 && a.BlockCount == n, "release: the state reads 0 until published again (StateLayout); the layout kept");
+        Check(!a.AnyHeld && !a.Due(ApiGridState.RecStruct, t + 10 * w) && !a.TickWatched(t + 10 * w), "release: nothing held, the tick idle again");
+        var h = new ApiGridState();
+        lock (h.Lock)
+        {
+            h.HullCount = n; h.HullPos = new Vector3[n]; h.HullCpB = new float[n]; h.HullOf = new object(); h.HullVersion = 2; h.Held[ApiGridState.RecHull] = true;
+            h.FlightStamp = 123; h.SurfCount = 2; h.SurfCmd = new float[2]; h.ThrCount = 3; h.ThrForce = new float[3]; h.Held[ApiGridState.RecFlight] = true;
+            h.FaceLayout = 1; h.FaceCount = n; h.FacePos = new Vector3[n]; h.FaceFilmB = new float[n]; h.Held[ApiGridState.RecFaces] = true;
+            h.ExtLayout = 1; h.ExtTempK = new float[n]; h.Held[ApiGridState.RecExt] = true;
+            for (int r = 0; r < ApiGridState.RecCount; r++) h.Release(r);
+        }
+        Check(h.HullCount == -1 && h.HullOf == null && h.HullVersion == -1 && h.HullPos.Length == 0 && h.HullCpB.Length == 0, "release: the hull's faces dropped (GetSurface answers 0 until the next publish)");
+        Check(h.FlightStamp == 0 && h.SurfCount == 0 && h.ThrCount == 0 && h.SurfCmd.Length == 0 && h.ThrForce.Length == 0 && h.Flight.Length == AeroApi.FlightStateLength,
+            "release: the tick record unpublished (GetFlightState answers 0 as on a first read)");
+        Check(h.FaceLayout == -1 && h.FaceCount == 0 && h.FacePos.Length == 0 && h.FaceFilmB.Length == 0, "release: the heat faces dropped");
+        Check(h.ExtLayout == -1 && h.ExtTempK.Length == 0 && !h.AnyHeld, "release: another model's temperatures dropped");
     }
 
     static int Main(string[] args)

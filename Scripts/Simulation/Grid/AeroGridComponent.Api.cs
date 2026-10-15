@@ -35,6 +35,21 @@ public partial class AeroGridComponent
         // (each record while its own reader reads it: GetSurface alone no longer copies the flight record, 2026-10-15 review)
         if (s.On(ApiGridState.RecFlight, now)) PublishApiFlight(s, airVel, linVel, appliedF, appliedT, gravity, wt);
         if (s.On(ApiGridState.RecHull, now)) PublishApiHull(s, now);
+        if (s.AnyHeld) ApiRelease(s, now);
+    }
+
+    /// <summary>(simulation thread) Drop the arrays of every record nobody has read for WatchSeconds + ReleaseSeconds
+    /// (ApiGridState.Release, 2026-10-15 review: they were kept for the life of the grid - ~12-15 MB on a big ship). The tick
+    /// record's and the hull's writer is this thread; the structure's and the heat faces' is the background evaluation,
+    /// which this thread starts (TickStructureCore): dropped only while none runs.</summary>
+    void ApiRelease(ApiGridState s, long now)
+    {
+        bool evalIdle = _stJob == null || _stJob.IsCompleted;
+        for (int r = 0; r < ApiGridState.RecCount; r++)
+        {
+            if (!s.Due(r, now) || (!evalIdle && (r == ApiGridState.RecStruct || r == ApiGridState.RecFaces))) continue;
+            lock (s.Lock) if (s.Due(r, now)) s.Release(r);
+        }
     }
 
     void PublishApiFlight(ApiGridState s, Vector3 airVel, Vector3 linVel, Vector3 appliedF, Vector3 appliedT, Vector3 gravity, in WorldTransform wt)
@@ -98,6 +113,7 @@ public partial class AeroGridComponent
             ApiGridState.Swap(ref s.SurfCell, ref s.SurfCellB); ApiGridState.Swap(ref s.SurfCmd, ref s.SurfCmdB); ApiGridState.Swap(ref s.SurfDeg, ref s.SurfDegB);
             ApiGridState.Swap(ref s.SurfLift, ref s.SurfLiftB); ApiGridState.Swap(ref s.SurfDrag, ref s.SurfDragB); s.SurfCount = ns;
             ApiGridState.Swap(ref s.ThrForce, ref s.ThrForceB); s.ThrCount = nt; s.ThrGen = _thrusterGen;
+            s.Held[ApiGridState.RecFlight] = true;
         }
     }
 
@@ -127,7 +143,7 @@ public partial class AeroGridComponent
         {
             ApiGridState.Swap(ref s.HullPos, ref s.HullPosB); ApiGridState.Swap(ref s.HullNrm, ref s.HullNrmB);
             ApiGridState.Swap(ref s.HullArea, ref s.HullAreaB); ApiGridState.Swap(ref s.HullCp, ref s.HullCpB);
-            s.HullCount = n;
+            s.HullCount = n; s.Held[ApiGridState.RecHull] = true;
         }
         s.HullOf = _staggeredBuildActive ? null : surf; s.HullVersion = surf?.Version ?? -1; s.HullAt = now;
     }

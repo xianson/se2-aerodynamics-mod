@@ -100,6 +100,7 @@ public partial class AeroGridComponent
                 if (fp != null) { s.FacePos = fp; s.FaceNrm = fn; s.FaceArea = fa; s.FaceBlock = fb; s.FaceLayout = s.Layout; }
                 s.FaceCount = nf; s.RecoveryK = hh.LastRecoveryK; s.FaceEvaluation = s.Evaluation + 1;
                 ApiGridState.Swap(ref s.FaceHeatW, ref s.FaceHeatWB); ApiGridState.Swap(ref s.FaceSkinK, ref s.FaceSkinKB); ApiGridState.Swap(ref s.FaceFilm, ref s.FaceFilmB);
+                s.Held[ApiGridState.RecFaces] = true;
             }
         }
         lock (s.Lock)
@@ -109,7 +110,7 @@ public partial class AeroGridComponent
                 ApiGridState.Swap(ref s.Util, ref s.UtilB); ApiGridState.Swap(ref s.Health, ref s.HealthB); ApiGridState.Swap(ref s.TempK, ref s.TempKB);
                 ApiGridState.Swap(ref s.SkinK, ref s.SkinKB); ApiGridState.Swap(ref s.HeatW, ref s.HeatWB);
                 ApiGridState.Swap(ref s.LoadF, ref s.LoadFB); ApiGridState.Swap(ref s.LoadM, ref s.LoadMB);
-                s.StateLayout = s.Layout;
+                s.StateLayout = s.Layout; s.Held[ApiGridState.RecStruct] = true;
             }
             s.Evaluation++;
         }

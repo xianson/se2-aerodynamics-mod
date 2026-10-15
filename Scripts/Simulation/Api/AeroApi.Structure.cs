@@ -164,6 +164,9 @@ public static partial class AeroApi
             Array.Copy(tempK, s.ExtTempK, n);
             Array.Copy(skinMaxK ?? tempK, s.ExtSkinK, n);
             s.ExtLayout = layout; s.ExtStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            // (kept while they apply, then dropped like a record: AeroGridComponent.ApiRelease, 2026-10-15 review)
+            s.Push(ApiGridState.RecExt, s.ExtStamp + (long)(AeroGridComponent.ExternalHeatHold * System.Diagnostics.Stopwatch.Frequency));
+            s.Held[ApiGridState.RecExt] = true;
             return true;
         }
     }

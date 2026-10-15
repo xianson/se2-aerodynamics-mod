@@ -15,6 +15,7 @@
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
     <Compile Include="$(Sim)\Api\SeqRing.cs" />
     <Compile Include="$(Sim)\Api\ApiGridState.Watch.cs" />
+    <Compile Include="$(Sim)\Api\ApiGridState.cs" />
     <Compile Include="$(Sim)\Api\CrossModLink.cs" />
   </ItemGroup>
 </Project>
