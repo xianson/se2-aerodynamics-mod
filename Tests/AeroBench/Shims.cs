@@ -3,7 +3,7 @@ global using Keen.VRage.Library.Diagnostics;
 
 namespace AeroMod;
 
-/// <summary>Test stand-in for the in-game profiler (Integration/AeroStats.cs uses the engine's stat API).</summary>
+/// <summary>Test stand-in for the in-game profiler (Runtime/AeroStats.cs uses the engine's stat API).</summary>
 public static class AeroStats
 {
     public static long Timestamp() => System.Diagnostics.Stopwatch.GetTimestamp();

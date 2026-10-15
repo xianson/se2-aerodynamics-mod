@@ -1,6 +1,6 @@
 # Aerodynamics Mod API
 
-The Aerodynamics Mod exposes its data to other mods through one class, `AeroMod.AeroApi` (`Scripts/Simulation/Integration/AeroApi.cs`).
+The Aerodynamics Mod exposes its data to other mods through one class, `AeroMod.AeroApi` (`Scripts/Simulation/Api/AeroApi.cs`).
 
 ## How to call it
 
