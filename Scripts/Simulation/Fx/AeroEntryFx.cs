@@ -577,7 +577,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             System.Threading.Interlocked.Increment(ref AeroEntryFx.FlightActive);
         }
         c.Flight.Update(p, wt);
-        if (++c.ScorchTick >= 30) { c.ScorchTick = 0; HeatScorch.Sync(c, p.Aero); }   // (the hull's scorch marks, twice a second)
         // (the diagnostics strings - FlightStatus, NearTipWhy, FlightLines - made four times a second per field, not every
         //  frame: each was a string a frame per flying grid with the field's whole Status in it - a profile, 2026-10-15. Read
         //  by the harness only; Status itself is built when read, FlightField.Status)
@@ -622,6 +621,20 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
+        // (the hull's scorch marks, twice a second - off with the effects only: from the flight field's update they were never
+        //  stamped with the field off, out of its range or culled, 2026-10-15. The server copy: the field's pairing, else
+        //  found here)
+        if (AeroEntryFx.AllEffects && ++c.ScorchTick >= 30)
+        {
+            c.ScorchTick = 0;
+            if (c.FlowOf == null && AeroEntryFx.AnyFlow && PhysicsHack.Alive(c.Data))
+            {
+                var swt = c.Data.GetWorldTransform();
+                var sp = AeroEntryFx.FindFlow(swt.Position, null, swt.Orientation, c.Entity, c.FlowCopy);
+                if (sp != null) c.FlowOf = sp.Aero;
+            }
+            HeatScorch.Sync(c, c.FlowOf);
+        }
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
             if (c.Flight != null) { c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }

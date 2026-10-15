@@ -118,9 +118,15 @@ public static class HeatScorch
         return d;
     }
 
+    /// <summary>After a placement fault (Stopwatch ticks): none tried until then. A fault set Enabled off for the process -
+    /// the server's spots too, 2026-10-15.</summary>
+    static long _retryAt;
+    public static float RetrySeconds = 10f;
+
     internal static void Sync(AeroEntryFxComponent c, AeroGridComponent server)
     {
         if (!Enabled || server == null) return;
+        if (_retryAt != 0 && System.Diagnostics.Stopwatch.GetTimestamp() < _retryAt) return;
         int ver = System.Threading.Volatile.Read(ref server.ScorchVersion);
         if (ver == c.ScorchVersion) return;
         var spots = System.Threading.Volatile.Read(ref server.ScorchPublished);
@@ -166,7 +172,12 @@ public static class HeatScorch
                 }
                 Status = $"{grid.DebugName}: {spots.Count} spot(s), {Placed} placed, {Missed} missed (no block at the spot)";
             }
-            catch (Exception e) { Status = "scorch failed: " + e.GetType().Name + ": " + e.Message; Enabled = false; }
+            catch (Exception e)
+            {
+                Status = "scorch failed: " + e.GetType().Name + ": " + e.Message;
+                c.ScorchVersion = -1;   // (this grid's marks tried again after the wait)
+                _retryAt = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(RetrySeconds * System.Diagnostics.Stopwatch.Frequency);
+            }
         }
     }
 }
