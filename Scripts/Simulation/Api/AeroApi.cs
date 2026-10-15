@@ -630,6 +630,8 @@ public static partial class AeroApi
         lock (_suppressed)
         {
             _suppressed.Remove(grid);
+            // (grids gone from their scenes dropped here: the list kept every grid ever suppressed, 2026-10-15)
+            for (int i = _suppressed.Count - 1; i >= 0; i--) if (!PhysicsHack.Alive(_suppressed[i].Data)) _suppressed.RemoveAt(i);
             if (suppress) _suppressed.Add(grid);
             _suppressCount = _suppressed.Count;
         }

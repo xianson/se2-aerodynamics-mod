@@ -361,6 +361,7 @@ public static class ThrustTorque
     {
         lock (_published) { if (_published.Remove(aero, out var gone)) { gone.Gone = true; _publishedCount = _published.Count; } }
         aero._flamePub = null;
+        lock (_probeAt) _probeAt.Remove(aero);   // (the probe log's rate limit: it kept every grid ever probed, 2026-10-15)
     }
     static void Unpublish(AeroGridComponent aero) { if (aero._flamePub != null) Forget(aero); }
     public static volatile string ClientNote = "-";
