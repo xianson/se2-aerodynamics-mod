@@ -372,7 +372,7 @@ internal sealed partial class FlightField
     }
 
     private void DropEdges([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genEdges++; RecDrop("V", why); DropVapour(k => k != 2); _edgesUp = false; }
-    private void DropTips([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genTips++; RecDrop("T", why); DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear(); _tipShown.Clear(); }
+    private void DropTips([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genTips++; RecDrop("T", why); DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipLineAt.Clear(); _tipAt.Clear(); _tipOrder.Clear(); _tipShown.Clear(); }
 
     private void DropVapour(Func<int, bool> which)
     {
@@ -435,7 +435,7 @@ internal sealed partial class FlightField
     {
         _genPlasma++; _genEdges++; _genTips++;
         _noStop = false; StopPuffs(); BakedDrop();
-        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _lightAt = default; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear();
+        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _lightAt = default; _tipF = default; _tipPrm.Clear(); _tipLineAt.Clear(); _tipAt.Clear(); _tipOrder.Clear();
     }
 
     // ── the aero model, read directly ──
