@@ -204,17 +204,7 @@ internal sealed partial class FlightField
             var hn = HullNormal(mid - lift, f);
             if (hn != null) q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, SprayDir(mid - lift, f, hn.Value));
         }
-        void FillLine(object prm)
-        {
-            var t = prm.GetType();
-            t.GetField("EmitterScaleMultiplier").SetValue(prm, LineScale);
-            t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, SparkSpeed));
-            t.GetField("ColorMultiplier").SetValue(prm, new ColorSRGB(SparkBright, SparkBright, SparkBright, 1f));
-            t.GetField("EmitterSizeMultiplier").SetValue(prm, SpawnSize);
-            t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
-            if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
-        }
-        object h = SpawnEffect(_client, e, new RelativeTransform(mid, q), out object prm, out _puffWhy, FillLine);
+        object h = SpawnEffect(_client, e, new RelativeTransform(mid, q), out object prm, out _puffWhy, FillSparks);
         if (h == null) return;
         _puffs.Add(h);
         try
@@ -226,13 +216,25 @@ internal sealed partial class FlightField
         catch (Exception ex) { _puffWhy = "set: " + Inner(ex); }
     }
 
+    /// <summary>A plasma spark emitter's parameters (the line segments and the baked slots).</summary>
+    private static void FillSparks(object prm)
+    {
+        var t = prm.GetType();
+        t.GetField("EmitterScaleMultiplier").SetValue(prm, LineScale);
+        t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, SparkSpeed));
+        t.GetField("ColorMultiplier").SetValue(prm, new ColorSRGB(SparkBright, SparkBright, SparkBright, 1f));
+        t.GetField("EmitterSizeMultiplier").SetValue(prm, SpawnSize);
+        t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
+        if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
+    }
+
     private bool _fieldUp;
 
     /// <summary>The local pressure at p: the chunks' drag over their frontal area, Gaussian-blended (sigma 0.6 chunk).</summary>
     private float LocalPressure(Vector3 p)
     {
         long tP = System.Diagnostics.Stopwatch.GetTimestamp();
-        try { return LocalPressure0(p); } finally { BkPressure += Ms(tP); }
+        try { return LocalPressure0(p); } finally { BkPressure += AeroCost.Ms(tP); }
     }
     private float LocalPressure0(Vector3 p)
     {

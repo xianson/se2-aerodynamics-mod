@@ -61,14 +61,6 @@ public static class StructureEval
     /// blocks by their area, whatever their lever arm (a 1.3 t nose platform got 1.3 MN m; 2026-10-14 review).</summary>
     public static bool CoupleAsForces = true;
     public static Vector3 LastDm, LastMDist;
-    static Vector3 Solve3S(double a, double b, double c, double d, double e, double f, Vector3 r)
-    {
-        double det = a * (d * f - e * e) - b * (b * f - e * c) + c * (b * e - d * c);
-        if (Math.Abs(det) < 1e-12) return Vector3.Zero;
-        double i00 = (d * f - e * e) / det, i01 = (c * e - b * f) / det, i02 = (b * e - c * d) / det;
-        double i11 = (a * f - c * c) / det, i12 = (b * c - a * e) / det, i22 = (a * d - b * b) / det;
-        return new Vector3((float)(i00 * r.X + i01 * r.Y + i02 * r.Z), (float)(i01 * r.X + i11 * r.Y + i12 * r.Z), (float)(i02 * r.X + i12 * r.Y + i22 * r.Z));
-    }
     public sealed class Loads
     {
         /// <summary>The air's applied force and torque (grid-local; torque about AeroCom), and the air past the ship.</summary>
@@ -215,7 +207,7 @@ public static class StructureEval
                 // (scratch) the couple as a rotational force field over the same weights: df_i = w_i Omega x (p_i - c), J Omega = dm
                 // (the centre cw and J: WindSet's, the pass's own)
                 var cw = ws.Centre;
-                var om = Solve3S(ws.Jxx, ws.Jxy, ws.Jxz, ws.Jyy, ws.Jyz, ws.Jzz, dm);
+                var om = ShipStructure.Solve3(ws.Jxx, ws.Jxy, ws.Jxz, ws.Jyy, ws.Jyz, ws.Jzz, dm);
                 for (int k = 0; k < nf; k++)
                 {
                     int i = faces[k];
@@ -273,7 +265,7 @@ public static class StructureEval
             jxx += m * (r.Y * r.Y + r.Z * r.Z + g.Y + g.Z); jyy += m * (r.X * r.X + r.Z * r.Z + g.X + g.Z); jzz += m * (r.X * r.X + r.Y * r.Y + g.X + g.Y);
             jxy -= m * r.X * r.Y; jxz -= m * r.X * r.Z; jyz -= m * r.Y * r.Z;
         }
-        var alpha = Solve3S(jxx, jxy, jxz, jyy, jyz, jzz, torque);
+        var alpha = ShipStructure.Solve3(jxx, jxy, jxz, jyy, jyz, jzz, torque);
         for (int b = 0; b < n; b++)
         {
             float m = st.Mass[b]; if (m <= 0f) continue;

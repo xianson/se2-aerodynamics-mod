@@ -518,7 +518,7 @@ public class CompressibleWingModel : IWingLiftModel
         return _resultsList;
     }
 
-    private static float ComputePlanformOverlap(in LiftingSurface a, in LiftingSurface b)
+    internal static float ComputePlanformOverlap(in LiftingSurface a, in LiftingSurface b)
     {
         var delta = b.Centroid - a.Centroid;
         float spanSep = MathF.Abs(Vector3.Dot(delta, a.SpanAxis));

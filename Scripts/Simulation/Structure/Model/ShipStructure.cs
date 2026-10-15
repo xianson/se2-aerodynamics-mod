@@ -556,7 +556,7 @@ public sealed partial class ShipStructure
         AngAccel = Solve3(ixx, ixy, ixz, iyy, iyz, izz, rhs);
     }
 
-    static Vector3 Solve3(double a, double b, double c, double d, double e, double f, Vector3 r)
+    internal static Vector3 Solve3(double a, double b, double c, double d, double e, double f, Vector3 r)
     {
         // symmetric [[a b c][b d e][c e f]]
         double det = a * (d * f - e * e) - b * (b * f - e * c) + c * (b * e - d * c);
