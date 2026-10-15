@@ -91,10 +91,6 @@ public static class ThrustAllocator
     /// the least share it plans with when the disturbance takes nearly all of it.</summary>
     public static float LinearGain = 6f, RateTime = 0.05f, Margin = 0.8f, MinShare = 0.1f;
 
-    /// <summary>Each thruster's force f (0..cap) so that the torque is tauTarget and the net force stays gameF: minimises
-    /// |sum a_i f_i - tauTarget|^2 + mu |sum d_i f_i - gameF|^2 (mu: the mean arm squared, so force and torque weigh
-    /// alike) by accelerated projected gradient (FISTA) from f as given (the warm start), then KeepNetThrust. prev, y:
-    /// scratch of n.</summary>
     /// <summary>The most net thrust attitude may take when keeping the game's thrust cannot give the torque wanted (share of
     /// the game's thrust): with a whole group of thrusters at full power (full throttle), nothing within it can be
     /// rebalanced, and its offset torque out-turned the steering (the Hercules at full forward thrust: 0.10 MN m of yaw
@@ -104,6 +100,10 @@ public static class ThrustAllocator
     public static float Drain = 1e-4f;
     [ThreadStatic] static float[] _free;
 
+    /// <summary>Each thruster's force f (0..cap) so that the torque is tauTarget and the net force stays gameF: minimises
+    /// |sum a_i f_i - tauTarget|^2 + mu |sum d_i f_i - gameF|^2 (mu: the mean arm squared, so force and torque weigh
+    /// alike) by accelerated projected gradient (FISTA) from f as given (the warm start), then KeepNetThrust. prev, y:
+    /// scratch of n.</summary>
     public static void Solve(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f0, float[] f,
         float[] prev, float[] y, float armSq, int n, int iterations) => Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, iterations, out _);
 
