@@ -219,18 +219,22 @@ internal static class DesignProbe
             var t = cache[i];
             float along = Vector3.Dot(t.ThrustDirection, dHat);
             if (along < 0.5f) continue;
-            float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
-            float eff = ThrustTorque.SeaLevelEfficiency(t.ThrusterEntity, SeaRho);
             float prof = t.Profile == null ? 1f : (float)t.Profile.Evaluate(mach);
-            float f = max * eff * Math.Max(0f, prof) * along;
+            float f = SeaLevelMax(t) * Math.Max(0f, prof) * along;
             sum += f; moment += t.GridLocalPosition * f;
         }
         if (sum > 0f) centre = moment / sum;
         return sum;
     }
 
-    /// <summary>The top speed at sea level travelling along a direction: where the forward thrust (at that Mach) meets the
-    /// drag along it. NaN: no table; +inf: thrust beats drag past 3 km/s.</summary>
+    /// <summary>A thruster's maximum at sea level (N): its live maximum (its definition's when unreadable) x its class's
+    /// sea-level efficiency.</summary>
+    static float SeaLevelMax(in ThrusterInfo t)
+    {
+        float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
+        return max * ThrustTorque.SeaLevelEfficiency(t.ThrusterEntity, SeaRho);
+    }
+
     static readonly DampedShadowedDragModel.TableWork _pressureWork = new();
     internal static string PressureWhy = "-";
     static readonly List<Vector3> _mp = new(), _mn = new(); static readonly List<float> _ma = new(), _mc = new();
@@ -322,11 +326,12 @@ internal static class DesignProbe
     /// <summary>The ship's centre of mass (the aimed grid's axes). False: no mass data.</summary>
     internal static bool CenterOfMass(AeroGridComponent aero, out Vector3 com) => ShipMass(ShipOf(aero), out com) > 0f;
 
+    /// <summary>The upset (deg) ControlRatio judges the ship's control at.</summary>
+    public static float UpsetDeg = 5f;
     /// <summary>CONTROLLABLE (2026-10-11, the user: "controllable if the rcs can overcome the torques"): the torque the ship
     /// can hold against an upset across dirLocal - its gyros' maximum plus what its thrusters give about each of the two
     /// axes across the flow, the weaker sign of the weaker axis (it must hold either way) - over the air's torque with the
     /// ship UpsetDeg off the flow at this speed (sea level), the larger of the two axes. Over 1: it can hold it. NaN: no table.</summary>
-    public static float UpsetDeg = 5f;
     internal static float ControlRatio(AeroGridComponent aero, Vector3 dirLocal, float speed)
     {
         var s = ShipOf(aero);
@@ -352,8 +357,7 @@ internal static class DesignProbe
                 for (int i = 0; i < cache.Count; i++)
                 {
                     var t = cache[i];
-                    float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
-                    max *= ThrustTorque.SeaLevelEfficiency(t.ThrusterEntity, SeaRho);
+                    float max = SeaLevelMax(t);
                     var r = ToRootPoint(s, m, t.GridLocalPosition) - com;
                     float tq = Vector3.Dot(Vector3.Cross(r, ToRootDir(s, m, t.ThrustDirection) * max), a);
                     if (tq > 0f) pos += tq; else neg -= tq;
@@ -365,6 +369,8 @@ internal static class DesignProbe
         return (gyro + (hold == float.MaxValue ? 0f : hold)) / air;
     }
 
+    /// <summary>The top speed at sea level travelling along a direction: where the forward thrust (at that Mach) meets the
+    /// drag along it. NaN: no table; +inf: thrust beats drag past 3 km/s.</summary>
     internal static float TopSpeed(AeroGridComponent aero, Vector3 dirLocal) => TopSpeed(aero, dirLocal, 1f);
 
     /// <summary>The sea-level speed along dirLocal where drag meets throttle x the forward thrust (1: the top speed).</summary>
