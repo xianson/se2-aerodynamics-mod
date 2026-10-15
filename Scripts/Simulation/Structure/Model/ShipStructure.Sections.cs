@@ -47,6 +47,12 @@ public sealed partial class ShipStructure
     bool[] _plPlusLight;
     int[] _gPlane, _contactSection;
     float[] _mUtil, _gUtil;
+    // (TENSION VS COMPRESSION, 2026-10-15, the user: "add compression vs tension to the break work": each piece's normal
+    //  stress kept by its sign - its worst pulled corner against the yield, its worst pushed corner against what its plates
+    //  carry buckled - besides the combined utilisation; PieceTension / PieceCompression)
+    float[] _mUt, _mUc;
+    /// <summary>(the fold's pivot, 2026-10-15) each piece's normal stress at its four corners (Pa; 4 x piece + corner: bit 0 u, bit 1 v).</summary>
+    float[] _mS4;
     // (each section's TIES: trim crossing its plane - detailing carries no load, so it is no member, but it still joins the
     //  two sides: a cut that failed without them left the piece hanging on its detailing, and the fracture went on to the
     //  next cut out - the Tu-134's left wing over three cuts, 2026-10-15. Each the trim block, and its place on the plane)
@@ -271,6 +277,7 @@ public sealed partial class ShipStructure
         _mU0 = mU0.ToArray(); _mU1 = mU1.ToArray(); _mV0 = mV0.ToArray(); _mV1 = mV1.ToArray(); _mWhat = mWhat.ToArray();
         _mTa = mTa.ToArray(); _mWa = mWa.ToArray(); _mTb = mTb.ToArray(); _mWb = mWb.ToArray();
         _gPlane = gPlane.ToArray(); _mUtil = new float[_mWhat.Length]; _gUtil = new float[_gA.Length];
+        _mUt = new float[_mWhat.Length]; _mUc = new float[_mWhat.Length]; _mS4 = new float[4 * _mWhat.Length];
         _gTieStart = gTs.ToArray(); _gTieCount = gTc.ToArray(); _tieBlock = tieBlock.ToArray(); _tiePoint = tiePoint.ToArray();
         _contactSection = new int[nc]; Array.Fill(_contactSection, -1);
         for (int g = 0; g < _gA.Length; g++) for (int mi = _gMemStart[g]; mi < _gMemStart[g] + _gMemCount[g]; mi++) if (_mWhat[mi] >= 0) _contactSection[_mWhat[mi]] = g;
@@ -334,6 +341,7 @@ public sealed partial class ShipStructure
         if (_gA == null) BuildSections();
         Array.Clear(ContactUtil, 0, ContactUtil.Length); Array.Clear(BlockUtil, 0, BlockUtil.Length);
         Array.Clear(_mUtil, 0, _mUtil.Length); Array.Clear(_gUtil, 0, _gUtil.Length);
+        Array.Clear(_mUt, 0, _mUt.Length); Array.Clear(_mUc, 0, _mUc.Length); Array.Clear(_mS4, 0, _mS4.Length);
         Array.Clear(_gF, 0, _gF.Length); Array.Clear(_gM, 0, _gM.Length);
         MaxUtil = 0f; MaxContact = -1; MaxBlock = -1; MaxJoint = -1;
         // running totals along each axis (blocks in centre order): force, and moment about the grid origin - a
@@ -419,6 +427,7 @@ public sealed partial class ShipStructure
                     {
                         float uu = ((q & 1) == 0 ? _mU0[mi] : _mU1[mi]) - _gCu[g], vv = ((q & 2) == 0 ? _mV0[mi] : _mV1[mi]) - _gCv[g];
                         float s = N / A + Mu * vv / iuu - Mv * uu / ivv;
+                        _mS4[4 * mi + q] = s;
                         if (s > sTen) sTen = s; else if (-s > sCom) sCom = -s;
                     }
                     int what = _mWhat[mi];
@@ -438,6 +447,7 @@ public sealed partial class ShipStructure
                     float u2 = MathF.Max(ut, uc);
                     float util = MathF.Sqrt(u2 * u2 + 3f * us * us) / Strength;
                     _mUtil[mi] = util; if (util > _gUtil[g]) _gUtil[g] = util;
+                    _mUt[mi] = ut / Strength; _mUc[mi] = uc / Strength;
                     if (what >= 0) { if (util > ContactUtil[what]) ContactUtil[what] = util; }
                     else { int b = -what - 1; if (util > BlockUtil[b]) BlockUtil[b] = util; }
                     if (util > MaxUtil) { MaxUtil = util; if (what >= 0) { MaxContact = what; MaxBlock = -1; } else { MaxBlock = -what - 1; MaxContact = -1; } }
@@ -463,6 +473,20 @@ public sealed partial class ShipStructure
     public int SectionPieceCount(int g) => _gMemCount[g];
     /// <summary>A piece's utilisation (the last solve).</summary>
     public float PieceUtil(int mi) => _mUtil[mi];
+    /// <summary>TENSION VS COMPRESSION (2026-10-15): a piece's normal stress by its sign, as utilisations (the last solve; shear
+    /// left out - PieceUtil has it): its worst pulled corner against the yield, its worst pushed corner against what its
+    /// plates carry buckled. A member in bending has both (one face pulled, the other pushed).</summary>
+    public float PieceTension(int mi) => _mUt != null ? _mUt[mi] : 0f;
+    public float PieceCompression(int mi) => _mUc != null ? _mUc[mi] : 0f;
+    /// <summary>The piece's governing normal stress is compression (its compression utilisation - against its buckled plates
+    /// - over its tension's): light armour's thin walls make most members compression-governed, even those mostly pulled.</summary>
+    public bool PieceCompressive(int mi) => PieceCompression(mi) > PieceTension(mi);
+    /// <summary>The piece's mean normal stress over its outline (Pa; the last solve): + pulled, - pushed - which side of its
+    /// section's neutral axis it is on.</summary>
+    public float PieceMidStress(int mi) => _mS4 != null ? 0.25f * (_mS4[4 * mi] + _mS4[4 * mi + 1] + _mS4[4 * mi + 2] + _mS4[4 * mi + 3]) : 0f;
+    /// <summary>The piece's SIDE of its section: +1 the pulled side, -1 the pushed side, 0 neither (PieceMidStress's sign) -
+    /// a failing cut tears on the pulled side and hinges on the pushed one (FractureMath.ModeOf).</summary>
+    public int PieceSide(int mi) { float s = PieceMidStress(mi); return s > 0f ? 1 : s < 0f ? -1 : 0; }
     /// <summary>A piece's contact (-1: a straddling block - PieceBlock).</summary>
     public int PieceContact(int mi) => _mWhat[mi] >= 0 ? _mWhat[mi] : -1;
     /// <summary>The block a piece's failure takes off the ship: a patch's block on the slice's lighter side (Outboard), a
@@ -473,6 +497,24 @@ public sealed partial class ShipStructure
     {
         int pl = _gPlane[GroupOfPiece(mi)], ax = _plAxis[pl];
         return Axis(ax) * _plCoord[pl] + Axis((ax + 1) % 3) * ((_mU0[mi] + _mU1[mi]) * 0.5f) + Axis((ax + 2) % 3) * ((_mV0[mi] + _mV1[mi]) * 0.5f);
+    }
+    /// <summary>A piece's PUSHED EDGE on its plane (the last solve): the middle of its corners at its lowest normal stress
+    /// (within a tenth of its corners' range) - a member's extreme compression fibre (StructureBend: the fold's pivot). No
+    /// stress across it: its middle.</summary>
+    public Vector3 PiecePushedEdge(int mi)
+    {
+        if (_mS4 == null) return PiecePoint(mi);
+        float lo = float.MaxValue, hi = float.MinValue;
+        for (int q = 0; q < 4; q++) { float v = _mS4[4 * mi + q]; lo = MathF.Min(lo, v); hi = MathF.Max(hi, v); }
+        if (!(hi > lo)) return PiecePoint(mi);
+        int pl = _gPlane[GroupOfPiece(mi)], ax = _plAxis[pl], u = (ax + 1) % 3, w = (ax + 2) % 3;
+        float su = 0f, sv = 0f; int n = 0;
+        for (int q = 0; q < 4; q++)
+        {
+            if (_mS4[4 * mi + q] > lo + 0.1f * (hi - lo)) continue;
+            su += (q & 1) == 0 ? _mU0[mi] : _mU1[mi]; sv += (q & 2) == 0 ? _mV0[mi] : _mV1[mi]; n++;
+        }
+        return Axis(ax) * _plCoord[pl] + Axis(u) * (su / n) + Axis(w) * (sv / n);
     }
     int GroupOfPiece(int mi)
     {
@@ -491,6 +533,8 @@ public sealed partial class ShipStructure
     public int SectionTieCount(int g) => _gTieCount[g];
     public int SectionTieBlock(int g, int t) => _tieBlock[_gTieStart[g] + t];
     public Vector3 SectionTiePoint(int g, int t) => _tiePoint[_gTieStart[g] + t];
+    /// <summary>THE ORGANIC BREAK's noise seed (FractureMath.Step: the grid's id - the game sets it each evaluation; 0 offline).</summary>
+    public int Seed;
     /// <summary>A contact's section (-1: none - trim, or not the slices).</summary>
     public int ContactSection(int k) => SectionCount > 0 && k >= 0 && k < _contactSection.Length ? _contactSection[k] : -1;
 }

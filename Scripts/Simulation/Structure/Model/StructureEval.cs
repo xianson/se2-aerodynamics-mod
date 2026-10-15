@@ -14,8 +14,10 @@ namespace AeroMod;
 /// loaded CUT (the method of sections' cut through one part of the ship: its patches and the blocks straddling it) loses
 /// health at StructureFatigue.HealthRate of its own utilisation - fatigue past the endurance limit, yield wear past 1 -
 /// times the time, so the whole neck tires together; the CUT fails when a member's health is exhausted, or at once at
-/// SnapUtil, and then every member of it goes in the same evaluation (the worst MaxBreaks cuts an evaluation, each whole or
-/// not at all); blocks past their burn temperature lose health at their burn rate, and go when it is out.
+/// SnapUtil, and then every member of it goes, decided in the same evaluation (the worst MaxBreaks cuts an evaluation, each
+/// whole or not at all) - HOW it lets go (2026-10-15, FractureMath): a crack across it, the pulled side first and the pushed
+/// side - the hinge - last, along a jagged line; blocks past their burn temperature lose health at their burn rate, and go
+/// when it is out.
 /// </summary>
 public static class StructureEval
 {
@@ -283,7 +285,18 @@ public static class StructureEval
     /// <summary>A failed cut (2026-10-15): its centre on its plane (grid-local m), the way out of it into what it takes off,
     /// its worst member's utilisation, its plane (axis, coordinate), and its members' entries in the damage list
     /// [First, First + Count) - each a destroy, all in this evaluation.</summary>
-    public sealed class CutFail { public Vector3 At, Dir; public float Util, Plane; public int Axis, First, Count; }
+    public sealed class CutFail
+    {
+        public Vector3 At, Dir; public float Util, Plane; public int Axis, First, Count;
+        /// <summary>THE ORGANIC BREAK (2026-10-15, FractureMath), per entry [0, Count): its release (seconds after the cut's
+        /// first: the crack's order - null with FractureMath.Crack off or one entry: all at once) and how it lets go
+        /// (FractureMath.Torn / Hinge / Crushed / Tie). Stubs: member blocks the jagged line leaves standing on the ship (the
+        /// cut's verify spares them); Steps: members broken off the plane.</summary>
+        public float[] Release; public byte[] Mode; public int[] Stubs; public int Steps;
+        /// <summary>Per entry: the member's own block (its piece's - a jagged step breaks another; -1 a tie): a hinge's crumple
+        /// goes on its own block.</summary>
+        public int[] Own;
+    }
     /// <summary>Diagnostics: cuts failed, their members in all, the most in one.</summary>
     public static int CutsFailed, CutMembersFailed, CutMostMembers;
 
@@ -380,7 +393,11 @@ public static class StructureEval
     ///    member at StructureFatigue.SnapUtil of its intact strength), ALL its members fail in this evaluation: each one's
     ///    departing block (a patch's on the lighter side, a straddling block itself) a destroy entry, together (outCuts),
     ///    and its TIES - the trim crossing its plane (no load, so no member, but it held the piece on: the Tu-134's left wing
-    ///    went over three cuts before) - so the piece beyond the cut leaves in one go;
+    ///    went over three cuts before) - so the piece beyond the cut leaves in one go (THE ORGANIC BREAK, 2026-10-15 -
+    ///    FractureMath: each member's mode by its side of the section, the crack's release order - CutFail.Release, Mode - and
+    ///    the jagged line's blocks - JagCut);
+    ///  - FATIGUE BY SIGN (2026-10-15): each member's fatigue by its tensile part at the full rate, its compression's at
+    ///    StructureFatigue.CompressionFatigueShare (StructureFatigue.TensilePart);
     ///  - BUDGET: the worst maxBreaks failing cuts an evaluation, after the first no more than MaxBreakBlocks blocks; a cut
     ///    past it is DEFERRED WHOLE - its members held just short (next time), never part of it failed now;
     ///  - NO ZIPPER: an evaluation's failures are decided on its own solve (no load moved onto neighbours inside it; a failing
@@ -413,7 +430,8 @@ public static class StructureEval
                 //  block's health lost raises its utilisation only once it is the weaker; a straddling block's own: none)
                 float cap = float.MaxValue; int k = st.PieceContact(mi);
                 if (k >= 0) { st.ContactBlocks(k, out int ca, out int cb); float sb = st.BlockStrength(b); cap = sb > 0f ? st.BlockStrength(ca == b ? cb : ca) / sb : float.MaxValue; }
-                float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact);
+                // (TENSION DRIVES FATIGUE, 2026-10-15: a member pushed more than pulled tires slower - StructureFatigue.TensilePart)
+                float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact, StructureFatigue.TensilePart(st.PieceTension(mi), st.PieceCompression(mi), u));
                 // (the snap on the load against the INTACT strength - a genuine overload; a worn member's own utilisation runs
                 //  high as its health goes, and wears through instead)
                 if (uIntact >= snap || (loss > 0f && have - loss <= floor)) fails = true;
@@ -429,6 +447,7 @@ public static class StructureEval
         foreach (var c in cuts) if (c.fails) nFailing++;
         Dictionary<int, float> lost = null;
         HashSet<int> leaving = null; int[] adjStart = null, adjOther = null;
+        FractureMath.JagScratch jag = null; HashSet<int> stubbed = null;   // (the jagged line's working set; the stubs it leaves)
         foreach (var (g, ug, fails) in cuts)
         {
             if (!fails) continue;
@@ -464,14 +483,28 @@ public static class StructureEval
             nCut++; nBlocks += add;
             var cf = new CutFail { At = st.SectionCentre(g), Dir = st.SectionOut(g), Util = ug, First = outDamage.Count };
             st.SectionPlane(g, out cf.Axis, out cf.Plane);
+            // (THE ORGANIC BREAK, 2026-10-15 - FractureMath: the jagged line's blocks, each entry's mode, the crack's order)
+            int nm = m1 - m0;
+            int[] jb = null, js = null; Vector3[] jat = null;
+            if (FractureMath.Jagged && nm > 1)
+            {
+                jb = new int[nm]; js = new int[nm]; jat = new Vector3[nm]; var stubs = new List<int>();
+                jag ??= new FractureMath.JagScratch();
+                cf.Steps = FractureMath.JagCut(st, g, st.Seed, jag, jb, jat, js, stubs);
+                if (stubs.Count > 0) { cf.Stubs = stubs.ToArray(); (stubbed ??= new HashSet<int>()).UnionWith(stubs); }
+            }
+            var eMode = new List<byte>(); var eU = new List<float>(); var eUc = new List<float>(); var eAt = new List<Vector3>(); var eOwn = new List<int>();
             for (int mi = m0; mi < m1; mi++)
             {
-                int b = st.PieceBlock(mi);
-                if (!failed.Add(b)) continue;   // (in an earlier failed cut too: once)
+                int b = jb != null ? jb[mi - m0] : st.PieceBlock(mi);
+                if (!failed.Add(b)) continue;   // (in an earlier failed cut too, or two members' steps into one block: once)
                 float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
                 outDamage.Add((b, MathF.Max(have, 0f), true)); (lost ??= new())[b] = have;
-                // (each member split at its own place on the cut, out of it into what leaves)
-                outWhere?.Add((st.PiecePoint(mi), cf.Dir, st.PieceUtil(mi)));
+                // (each member split at its own place on the cut - or its step's face - out of it into what leaves)
+                var at = jat != null ? jat[mi - m0] : st.PiecePoint(mi);
+                outWhere?.Add((at, cf.Dir, st.PieceUtil(mi)));
+                float uc = st.PieceCompression(mi);
+                eMode.Add(FractureMath.ModeOf(st, mi)); eU.Add(st.PieceUtil(mi)); eUc.Add(uc); eAt.Add(at); eOwn.Add(st.PieceBlock(mi));
             }
             // (its TIES too - the trim across its plane: no load, but it would hold what leaves; ShipStructure.SectionTieCount)
             for (int t = 0; t < nt; t++)
@@ -481,8 +514,16 @@ public static class StructureEval
                 float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
                 outDamage.Add((b, MathF.Max(have, 0f), true)); (lost ??= new())[b] = have;
                 outWhere?.Add((st.SectionTiePoint(g, t), cf.Dir, 0f));
+                eMode.Add(FractureMath.Tie); eU.Add(0f); eUc.Add(0f); eAt.Add(st.SectionTiePoint(g, t)); eOwn.Add(-1);
             }
             cf.Count = outDamage.Count - cf.First;
+            cf.Mode = eMode.ToArray(); cf.Own = eOwn.ToArray();
+            foreach (byte md in cf.Mode) { if (md == FractureMath.Hinge) FractureMath.Hinges++; else if (md == FractureMath.Crushed) FractureMath.CrushedMembers++; }
+            if (FractureMath.Crack && cf.Count > 1)
+            {
+                cf.Release = new float[cf.Count];
+                FractureMath.Plan(cf.Mode, eU.ToArray(), eUc.ToArray(), eAt.ToArray(), cf.Count, FractureMath.CrackSeconds, cf.Release);
+            }
             outCuts?.Add(cf);
             // (what leaves with it - only while more cuts are failing: its departing blocks and everything joined to them on
             //  its far side, at most LeavingMax blocks)
@@ -493,7 +534,8 @@ public static class StructureEval
                 if (mine != null) leaving.UnionWith(mine);
                 else
                 {
-                    var seeds = new List<int>(); for (int i = cf.First; i < cf.First + cf.Count; i++) seeds.Add(outDamage[i].block);
+                    // (from its members' own blocks and its ties - the flat cut's: a jagged step's block inside the plane is no seed)
+                    var seeds = new List<int>(); for (int mi = m0; mi < m1; mi++) seeds.Add(st.PieceBlock(mi)); for (int t = 0; t < nt; t++) seeds.Add(st.SectionTieBlock(g, t));
                     FarSide(st, cf.Axis, cf.Plane, (cf.Axis == 0 ? cf.Dir.X : cf.Axis == 1 ? cf.Dir.Y : cf.Dir.Z) > 0f ? 1 : -1, seeds, adjStart, adjOther, leaving);
                 }
             }
@@ -509,7 +551,7 @@ public static class StructureEval
             {
                 if (!mLoss.TryGetValue(mi, out float loss) || !(loss > 0f)) continue;
                 int b = st.PieceBlock(mi);
-                if (failed.Contains(b) || (leaving != null && leaving.Contains(b))) continue;
+                if (failed.Contains(b) || (leaving != null && leaving.Contains(b)) || (stubbed != null && stubbed.Contains(b))) continue;
                 if (!best.TryGetValue(b, out var o) || loss > o.loss) best[b] = (loss, mi, g);
             }
         }

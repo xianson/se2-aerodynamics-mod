@@ -139,7 +139,7 @@ public sealed partial class ShipStructure
 
     /// <summary>A vector's component on axis a (0 X, 1 Y, 2 Z).</summary>
     internal static float C(Vector3 v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
-    static Vector3 Axis(int a) => a == 0 ? Vector3.UnitX : a == 1 ? Vector3.UnitY : Vector3.UnitZ;
+    internal static Vector3 Axis(int a) => a == 0 ? Vector3.UnitX : a == 1 ? Vector3.UnitY : Vector3.UnitZ;
 
     /// <summary>The structure of these blocks. boxes: (block index, cell min, cell max) - inclusive 0.25 m cells, cell i
     /// centred at i x 0.25 m (the aero surface's cells), disjoint, a block's cells all its boxes. mass, mat: per block.

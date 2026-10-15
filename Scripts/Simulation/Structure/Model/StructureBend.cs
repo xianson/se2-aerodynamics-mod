@@ -26,6 +26,8 @@ namespace AeroMod;
 ///    block - one per cut, keyed by the cut's centre (its peak does not wander from member to member as they wear); a cut
 ///    whose worst member is a straddling block bends too (its plane is the cut's). Not the slices: each worn block's worst
 ///    contact, as before (straddling blocks there have no plane: not bent).
+/// FOLD TOWARD THE PUSHED SIDE (2026-10-15, HingeToCompression): a cut's bend turns about its most pushed member's pushed
+/// edge, not its centre - the pulled side opens, nothing is pushed into the ship.
 /// Defaults: PerUtil 0.05 rad - at BreakAt 1.5 (just short of breaking) a 10 m wing's tip sets 25 cm, at 1.2 ~10 cm; Max 0.3 m.
 /// </summary>
 public static class StructureBend
@@ -45,6 +47,12 @@ public static class StructureBend
     public static float MinStep = 0.02f;
     /// <summary>Over this distance (m) from the joint's plane a point takes up its full share (bones on the plane stay put).</summary>
     public static float Ramp = 1f;
+    /// <summary>FOLD TOWARD THE PUSHED SIDE (2026-10-15, the user: "add compression vs tension to the break work"): a cut's bend
+    /// turns about its most compressed member (ShipStructure.PieceCompression) instead of its centre - a plastic hinge forms
+    /// on the crushed face, the pulled face opens and the far side swings away from it (the torn side) - by this share of the
+    /// way from the centre (0: about the centre, as before; 1: about the most pushed member's pushed edge - the extreme compression fibre, ShipStructure.PiecePushedEdge).
+    /// On the slices only.</summary>
+    public static float HingeToCompression = 1f;
 
     // diagnostics (harness aeroget)
     public static int Planned, TooBig, NoMoment, Nested;
@@ -77,23 +85,28 @@ public static class StructureBend
             (worn ??= new HashSet<int>()).Add(d.block);
         }
         if (worn == null) return 0;
-        // the hinges: (point, axis, plane, utilisation, departing block)
-        var order = new List<(Vector3 J, int ax, float plane, float u, int ob)>();
+        // the hinges: (point - the key's, axis, plane, utilisation, departing block, the turn's pivot)
+        var order = new List<(Vector3 J, int ax, float plane, float u, int ob, Vector3 H)>();
         if (st.SectionCount > 0)
         {
             // BY CUT (2026-10-15): each cut over 1 with a worn member - at its centre, its worst member's utilisation and block
             for (int g = 0; g < st.SectionCount; g++)
             {
                 float ug = st.SectionUtil(g); if (!(ug > 1f)) continue;
-                int m0 = st.SectionPieceStart(g), m1 = m0 + st.SectionPieceCount(g), wm = -1; bool any = false;
+                int m0 = st.SectionPieceStart(g), m1 = m0 + st.SectionPieceCount(g), wm = -1, cm = -1; bool any = false;
                 for (int mi = m0; mi < m1; mi++)
                 {
                     if (worn.Contains(st.PieceBlock(mi))) any = true;
                     if (wm < 0 || st.PieceUtil(mi) > st.PieceUtil(wm)) wm = mi;
+                    if (st.PieceCompression(mi) > 0f && (cm < 0 || st.PieceCompression(mi) > st.PieceCompression(cm))) cm = mi;   // (the most pushed)
                 }
                 if (!any || wm < 0) continue;
                 st.SectionPlane(g, out int ax, out float plane);
-                order.Add((st.SectionCentre(g), ax, plane, ug, st.PieceBlock(wm)));
+                // (the pivot: toward the most pushed member - the fold on the crushed side; the key stays the centre's, so the
+                //  peak does not wander as the members wear)
+                var centre = st.SectionCentre(g);
+                var pivot = cm >= 0 ? centre + (st.PiecePushedEdge(cm) - centre) * Math.Clamp(HingeToCompression, 0f, 1f) : centre;
+                order.Add((centre, ax, plane, ug, st.PieceBlock(wm), pivot));
             }
         }
         else
@@ -106,7 +119,7 @@ public static class StructureBend
                 int b = st.Outboard(k); if (!worn.Contains(b)) continue;
                 if (!best.TryGetValue(b, out int o) || u > st.ContactUtil[o]) best[b] = k;
             }
-            foreach (int k in best.Values) { st.ContactPlane(k, out int ax, out float plane); order.Add((st.ContactPoint(k), ax, plane, st.ContactUtil[k], st.Outboard(k))); }
+            foreach (int k in best.Values) { st.ContactPlane(k, out int ax, out float plane); order.Add((st.ContactPoint(k), ax, plane, st.ContactUtil[k], st.Outboard(k), st.ContactPoint(k))); }
         }
         if (order.Count == 0) return 0;
         order.Sort((p, q) => q.u.CompareTo(p.u));
@@ -116,7 +129,7 @@ public static class StructureBend
         // every 2.5 m). The worst joint of a branch bends; a joint inside its far side - or holding it in its own - is nested:
         // its peak taken, not bent (it bends later only if it becomes its branch's worst past that peak).
         HashSet<int> chosenFar = null; List<int> chosenOb = null;
-        foreach (var (J, ax, plane, u, ob) in order)
+        foreach (var (J, ax, plane, u, ob, H) in order)
         {
             long key = Key(J, ax);
             float peak = peaks != null && peaks.TryGetValue(key, out float pk) ? pk : 1f;
@@ -130,10 +143,10 @@ public static class StructureBend
             if (nested) { Nested++; continue; }
             int side = ShipStructure.C(st.Center[ob], ax) >= plane ? 1 : -1;
             if (adjStart == null) Adjacency(st, out adjStart, out adjOther);
-            var b = new Bend { Joint = J, Axis = ax, Plane = plane, Side = side, Util = u };
+            var b = new Bend { Joint = H, Axis = ax, Plane = plane, Side = side, Util = u };
             if (!FarSide(st, ob, ax, plane, side, adjStart, adjOther, MaxBlocks, b.Blocks)) { TooBig++; continue; }
             if (chosenOb != null) { bool holds = false; foreach (int o in chosenOb) if (b.Blocks.Contains(o)) { holds = true; break; } if (holds) { Nested++; continue; } }
-            // the far side's load's moment at the joint (net loads: its inertia counted)
+            // the far side's load's moment at the joint - the cut's centre (net loads: its inertia counted); the turn about the pivot
             Vector3 M = Vector3.Zero;
             foreach (int i in b.Blocks) M += st.NetMoment(i) + Vector3.Cross(st.Center[i] - J, st.NetForce(i));
             float m = M.Length();

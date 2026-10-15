@@ -29,6 +29,14 @@ using AeroMod;
 // 14. the neck fails whole (StructureEval.DamageBySection, 2026-10-15): a wing on a narrow neck under a growing lift - the
 //     neck's root cut tires as one, fails in one evaluation with the trim tied across it, and nothing creeps outboard after;
 //     by block (A/B) it zipped; a snap with one cut allowed fails one cut whole and leaves the next untouched.
+// 15. tension vs compression (2026-10-15): a deep beam lifted - its root cut's lower members pulled, upper pushed (sign
+//     classification); fatigue by the pull at the full rate, by the push at CompressionFatigueShare (pulled members
+//     unchanged, pushed ones slower); worn through, the pulled side tears first and the pushed side - the hinge - lets go
+//     last (FractureMath.Plan: monotone, 0 .. CrackSeconds); a snap past CrushUtil crushes the pushed side; a bend folds
+//     about the pushed side (the pulled side opens, nothing pushed into the ship).
+// 16. the jagged line (FractureMath.JagCut): a plate's cut over 300 seeds - deterministic, each member at the plane or one
+//     block either side, steps both ways, and every path across the cut broken (the root never joined to the tip); off -
+//     the flat cut's blocks; a failed cut through DamageBySection parts the plate for every seed tried.
 static class Program
 {
     static int _fails, _checks;
@@ -486,7 +494,9 @@ static class Program
             Vector3 tipP = s.Center[tip], midP = s.Center[10];
             var dTip = StructureBend.Displacement(b, tipP); var dMid = StructureBend.Displacement(b, midP);
             float arm = tipP.X - b.Joint.X, want = StructureBend.PerUtil * (b.Util - 1f) * arm;
-            Check(dTip.Y > 0f && MathF.Abs(dTip.X) + MathF.Abs(dTip.Z) < 0.01f * dTip.Y, $"bends: the tip moves up, the load's way ({dTip})");
+            // (2026-10-15: it folds about the root's pushed edge - StructureBend.HingeToCompression - so the tip also swings
+            //  out a little, away from the ship: the pulled side opens)
+            Check(dTip.Y > 0f && dTip.X >= 0f && dTip.X + MathF.Abs(dTip.Z) < 0.03f * dTip.Y, $"bends: the tip moves up, the load's way ({dTip})");
             Check(MathF.Abs(dTip.Length() / want - 1f) < 0.05f, $"bends: tip set {dTip.Length() * 100f:F1} cm vs PerUtil x {b.Util - 1f:F2} x {arm:F2} m = {want * 100f:F1} cm");
             var onPlane = new Vector3(b.Plane, 0.3f, 0.2f);
             Check(StructureBend.Displacement(b, onPlane) == Vector3.Zero && StructureBend.Displacement(b, new Vector3(b.Plane - 0.5f, 0, 0)) == Vector3.Zero, "bends: nothing on the joint's plane or behind it");
@@ -679,8 +689,12 @@ static class Program
             }
             Check(mono && last < 1f, $"fatigue: health only falls ({last:F3})");
         }
-        // rate-independent: 2 Hz and 8 Hz evaluations of the same held load end alike
+        // rate-independent: 2 Hz and 8 Hz evaluations of the same held load end alike (the integrator's checks at the full
+        // rate - this boom's root is pushed more than pulled, its buckled wall governing, so tension-driven fatigue
+        // (StructureFatigue.CompressionFatigueShare, 2026-10-15) would slow it five-fold: tested in TensionCompression)
         var f12 = Loads(1.15f);
+        float share0 = StructureFatigue.CompressionFatigueShare; StructureFatigue.CompressionFatigueShare = 1f;
+        try {
         var slow = Run(f12, 0.5f, 1f); var fast = Run(f12, 0.125f, 1f);
         Check(slow.failAt < 0f && fast.failAt < 0f && MathF.Abs(slow.worst - fast.worst) < 0.04f, $"rate-independent past the yield: 1 s at 1.15 - health {slow.worst:F3} at 2 Hz, {fast.worst:F3} at 8 Hz");
         var f9 = Loads(0.9f);
@@ -689,6 +703,7 @@ static class Program
         // (held on, the tired root reaches its yield and runs away: the same time either way)
         var slowE = Run(f9, 0.5f, 120f); var fastE = Run(f9, 0.125f, 120f);
         Check(slowE.failAt > 40f && MathF.Abs(slowE.failAt / fastE.failAt - 1f) < 0.03f, $"rate-independent failure: held at 0.9 the root tires through at {slowE.failAt:F2} s at 2 Hz, {fastE.failAt:F2} s at 8 Hz");
+        } finally { StructureFatigue.CompressionFatigueShare = share0; }
         var held = Run(f12, 0.25f, 30f);
         Check(held.failAt > 0.5f, $"progressive: held at 1.15 the root wears through over time - fails at {held.failAt:F2} s, not at once");
         // the snap: past SnapUtil of the intact strength at once; just under it, not in one step
@@ -844,6 +859,258 @@ static class Program
         Check(snap2.breaks.Count == 1 && snap2.breaks[0].cuts == 1, $"neck: two cuts allowed, still one cut - the next is inside what leaves ({(snap2.breaks.Count > 0 ? snap2.breaks[0].cuts : 0)} cuts)");
     }
 
+
+    /// <summary>Joined: from reaches to through contacts, not through gone blocks.</summary>
+    static bool Joined(ShipStructure s, HashSet<int> gone, int from, int to)
+    {
+        StructureBend.Adjacency(s, out var a0, out var a1);
+        if (gone.Contains(from) || gone.Contains(to)) return false;
+        var seen = new bool[s.Count]; var q = new Queue<int>(); q.Enqueue(from); seen[from] = true;
+        while (q.Count > 0)
+        {
+            int i = q.Dequeue(); if (i == to) return true;
+            for (int e = a0[i]; e < a0[i + 1]; e++) { int j = a1[e]; if (seen[j] || gone.Contains(j)) continue; seen[j] = true; q.Enqueue(j); }
+        }
+        return false;
+    }
+
+    /// <summary>15. TENSION VS COMPRESSION (2026-10-15, the user: "add compression vs tension to the break work"): a deep beam -
+    /// 12 x 2 x 3 blocks of 0.5 m off a fixed root - lifted: its root cut's lower row pulled, upper row pushed.</summary>
+    static void TensionCompression()
+    {
+        var sh = new TShip();
+        int root = sh.Block(0, 0, 0, 1e9f, 1, 2, 3);
+        var blk = new int[13, 2, 3];
+        for (int x = 1; x <= 12; x++) for (int y = 0; y <= 1; y++) for (int z = 0; z <= 2; z++) blk[x, y, z] = sh.Block(x, y, z);
+        sh.Build();
+        var s = sh.S;
+        // (the lift scaled to a target utilisation of the intact beam, then the health in)
+        void Pull(float target, float[] health)
+        {
+            for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = i == root ? Vector3.Zero : new Vector3(0, 100f, 0); s.ExtMoment[i] = Vector3.Zero; }
+            s.SolveFree(Vector3.Zero);
+            float k = target / s.MaxUtil;
+            for (int i = 0; i < s.Count; i++) { s.ExtForce[i] *= k; if (health != null) s.Integrity[i] = health[i]; }
+            s.SolveFree(Vector3.Zero);
+        }
+        Pull(1f, null);
+        // the root cut: the section of a contact between the root and the first column
+        int g = -1;
+        for (int k = 0; k < s.ContactCount && g < 0; k++) { s.ContactBlocks(k, out int a, out int b); if ((a == root || b == root) && (a == blk[1, 0, 0] || b == blk[1, 0, 0])) g = s.ContactSection(k); }
+        Check(g >= 0 && s.SectionPieceCount(Math.Max(g, 0)) == 6, $"tension/compression: the root cut and its six members ({(g >= 0 ? s.SectionPieceCount(g) : 0)})");
+        if (g < 0) return;
+        int m0 = s.SectionPieceStart(g), m1 = m0 + s.SectionPieceCount(g);
+        bool signs = true; float utLow = 0f, ucHigh = 0f;
+        for (int mi = m0; mi < m1; mi++)
+        {
+            bool upper = s.Center[s.PieceBlock(mi)].Y > 0.375f;
+            if (upper) { signs &= s.PieceCompressive(mi) && s.PieceTension(mi) < 1e-4f; ucHigh = MathF.Max(ucHigh, s.PieceCompression(mi)); }
+            else { signs &= !s.PieceCompressive(mi) && s.PieceCompression(mi) < 1e-4f; utLow = MathF.Max(utLow, s.PieceTension(mi)); }
+        }
+        Check(signs && utLow > 0.1f && ucHigh > 0.1f, $"tension/compression: lifted, the lower row is pulled (tension {utLow:F2}), the upper pushed (compression {ucHigh:F2})");
+        Check(FractureMath.ModeOf(1.2f, 0.3f) == FractureMath.Torn && FractureMath.ModeOf(0.3f, 1.2f) == FractureMath.Hinge && FractureMath.ModeOf(0.3f, FractureMath.CrushUtil) == FractureMath.Crushed && FractureMath.ModeOf(0f, 0f) == FractureMath.Torn
+            && FractureMath.ModeOf(1, 0.3f, 1.2f) == FractureMath.Torn && FractureMath.ModeOf(-1, 0.3f, 1.2f) == FractureMath.Hinge && FractureMath.ModeOf(-1, 0f, 2.5f) == FractureMath.Crushed && FractureMath.ModeOf(0, 1.2f, 0.3f) == FractureMath.Torn,
+            "modes: the pulled side tears (even buckling-governed), the pushed side is the hinge, crushed past CrushUtil; no side - by the governing utilisation");
+        {
+            bool sides = true;
+            for (int mi = m0; mi < m1; mi++) sides &= s.PieceSide(mi) == (s.Center[s.PieceBlock(mi)].Y > 0.375f ? -1 : 1);
+            Check(sides, "tension/compression: each member's side of the section - the lower row pulled (+1), the upper pushed (-1)");
+        }
+        // fatigue's rate by sign
+        float share = StructureFatigue.CompressionFatigueShare;
+        float rT = StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f, 1f), rC = StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f, 0f);
+        Check(rT == StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f) && MathF.Abs(rC / rT - share) < 1e-4f, $"fatigue by sign: pure compression tires at {rC / rT:F2} of tension at 0.9 (CompressionFatigueShare {share})");
+        float wT = StructureFatigue.HealthRate(StructMaterial.Armor, 1.3f, 1.5f, 0.45f, 1f), wC = StructureFatigue.HealthRate(StructMaterial.Armor, 1.3f, 1.5f, 0.45f, 0f);
+        Check(MathF.Abs((wT - wC) - (1f - share) * StructureFatigue.Rate * StructMaterial.FatigueFactor[StructMaterial.Armor]) < 1e-5f, "fatigue by sign: the yield wear past 1 is the same either way (only the fatigue part differs)");
+        Check(StructureFatigue.TensilePart(0.9f, 0.2f, 0.9f) == 1f && StructureFatigue.TensilePart(0f, 0.9f, 0.9f) == 0f && MathF.Abs(StructureFatigue.TensilePart(0.3f, 0.9f, 0.9f) - 1f / 3f) < 1e-5f
+            && MathF.Abs(StructureFatigue.TensilePart(0f, 0.8f, 1f) - 0.6f) < 1e-5f && StructureFatigue.TensilePart(float.NaN, 0.5f, 0.6f) == 1f,
+            "fatigue by sign: the tensile part - all of a pulled member, none of a pushed one, its shear kept");
+        // the beam held at 0.9 for 40 s: the pulled row's fatigue unchanged, the pushed row's slower
+        float[] Tire(float sh0)
+        {
+            float keep = StructureFatigue.CompressionFatigueShare; StructureFatigue.CompressionFatigueShare = sh0;
+            try
+            {
+                var health = new float[s.Count]; Array.Fill(health, 1f);
+                var dmg = new List<(int block, float fraction, bool destroy)>();
+                for (float t = 0f; t < 40f; t += 0.25f)
+                {
+                    Pull(0.9f, health);
+                    StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, dmg);
+                    foreach (var (b, frac, destroy) in dmg) if (!destroy) health[b] -= frac;
+                }
+                return health;
+            }
+            finally { StructureFatigue.CompressionFatigueShare = keep; }
+        }
+        var hFull = Tire(1f); var hSign = Tire(share);
+        float lowFull = 1f - hFull[blk[1, 0, 1]], lowSign = 1f - hSign[blk[1, 0, 1]], upFull = 1f - hFull[blk[1, 1, 1]], upSign = 1f - hSign[blk[1, 1, 1]];
+        Check(lowSign == lowFull && upFull > 0f && upSign < 0.6f * upFull,
+            $"fatigue by sign: 40 s at 0.9 - the pulled root block lost {lowSign:F4} (at the full rate {lowFull:F4}), the pushed one {upSign:F4} (at the full rate {upFull:F4}): it lasts {upFull / MathF.Max(upSign, 1e-9f):F1}x longer");
+
+        // worn through at 1.3: the pulled side tears first, the pushed side - the hinge - goes last
+        bool jag = FractureMath.Jagged; FractureMath.Jagged = false;
+        try
+        {
+            var health = new float[s.Count]; Array.Fill(health, 1f);
+            var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+            StructureEval.CutFail cut = null; float at = 0f;
+            for (float t = 0f; t < 20f && cut == null; t += 0.25f)
+            {
+                Pull(1.3f, health);
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                if (cuts.Count > 0) { cut = cuts[0]; at = t; break; }
+                foreach (var (b, frac, destroy) in dmg) if (!destroy) health[b] -= frac;
+            }
+            Check(cut != null && cut.Release != null && cut.Mode != null, $"crack: the beam's root wears through at 1.3 ({at:F2} s) and its cut has a crack plan");
+            if (cut != null && cut.Release != null)
+            {
+                float tornLast = 0f, hingeFirst = float.MaxValue, lo = float.MaxValue, hi = 0f; int nT = 0, nH = 0; bool rows = true;
+                for (int i = 0; i < cut.Count; i++)
+                {
+                    int b = dmg[cut.First + i].block; float r = cut.Release[i];
+                    lo = MathF.Min(lo, r); hi = MathF.Max(hi, r);
+                    if (cut.Mode[i] == FractureMath.Hinge) { nH++; hingeFirst = MathF.Min(hingeFirst, r); rows &= s.Center[b].Y > 0.375f; }
+                    else if (cut.Mode[i] == FractureMath.Torn) { nT++; tornLast = MathF.Max(tornLast, r); rows &= s.Center[b].Y < 0.375f; }
+                }
+                Check(nT == 3 && nH == 3 && rows, $"crack: the pulled row tears, the pushed row is the hinge ({nT} torn, {nH} hinge)");
+                Check(lo == 0f && MathF.Abs(hi - FractureMath.CrackSeconds) < 1e-5f && hingeFirst >= tornLast, $"crack: from 0 to CrackSeconds ({lo:F2} .. {hi:F2} s), the hinge after every torn member (torn by {tornLast:F2} s, hinge from {hingeFirst:F2} s)");
+            }
+            // the plan's order: monotone in the key, the extreme pushed fibre last, ties with their nearest member
+            {
+                var mode = new byte[] { FractureMath.Torn, FractureMath.Torn, FractureMath.Hinge, FractureMath.Hinge, FractureMath.Torn, FractureMath.Tie };
+                var u = new float[] { 1.2f, 1.5f, 1.4f, 1.1f, 1.2f, 0f };
+                var uc = new float[] { 0f, 0f, 1.4f, 1.1f, 0f, 0f };
+                var pts = new Vector3[] { new(0, 0, 0), new(0, 0, 1), new(0, 1, 0), new(0, 1, 1), new(0, 0, 2), new(0, 1.1f, 0) };
+                var rel = new float[6];
+                FractureMath.Plan(mode, u, uc, pts, 6, 0.3f, rel);
+                Check(rel[1] == 0f && rel[0] == rel[4] && rel[0] > rel[1] && rel[3] > rel[0] && rel[2] > rel[3] && MathF.Abs(rel[2] - 0.3f) < 1e-6f && rel[5] == rel[2],
+                    $"plan: most loaded torn first, equal keys together, the less pushed hinge next, the most pushed last at CrackSeconds, a tie with its nearest ({string.Join(" ", rel.Select(r => r.ToString("F3")))})");
+                var all = new byte[] { FractureMath.Hinge, FractureMath.Hinge };
+                var r2 = new float[2]; FractureMath.Plan(all, new[] { 1.3f, 1.1f }, new[] { 1.3f, 1.1f }, new Vector3[2], 2, 0.3f, r2);
+                Check(r2[0] == 0f && r2[1] == 0.3f, "plan: an all-pushed cut goes by its utilisation (the worst first)");
+            }
+            // a snap past CrushUtil: the pushed side crushed, not the hinge
+            {
+                Pull(StructureFatigue.SnapUtil * 1.3f, null);
+                var cuts2 = new List<StructureEval.CutFail>();
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts2);
+                int crushed = 0; if (cuts2.Count > 0) foreach (var md in cuts2[0].Mode) if (md == FractureMath.Crushed) crushed++;
+                Check(cuts2.Count == 1 && crushed == 3, $"crush: a snap at {StructureFatigue.SnapUtil * 1.3f:F1} crushes the pushed row ({crushed} crushed)");
+            }
+        }
+        finally { FractureMath.Jagged = jag; }
+
+        // the bend folds about the pushed side
+        {
+            var damage = new List<(int block, float fraction, bool destroy)>(); var where = new List<(Vector3 at, Vector3 dir, float util)>();
+            var bends = new List<StructureBend.Bend>(); int mj = StructureBend.MaxJoints; StructureBend.MaxJoints = 1;
+            float hc = StructureBend.HingeToCompression;
+            try
+            {
+                Pull(1.3f, null);
+                StructureEval.Damage(s, null, 0.25f, true, false, 1.5f, 0.5f, 2, damage, where);
+                StructureBend.Plan(s, damage, where, new Dictionary<long, float>(), bends);
+                Check(bends.Count == 1, $"fold: one bend ({bends.Count})");
+                if (bends.Count == 1)
+                {
+                    var b = bends[0];
+                    var lowP = new Vector3(b.Plane + 0.6f, -0.125f, 0.375f); var upP = new Vector3(b.Plane + 0.6f, 0.875f, 0.375f);
+                    var dLow = StructureBend.Displacement(b, lowP); var dUp = StructureBend.Displacement(b, upP);
+                    var tipD = StructureBend.Displacement(b, s.Center[blk[12, 0, 1]]);
+                    Check(b.Joint.Y > 0.5f && tipD.Y > 0f && dLow.X > 0f && dUp.X > -1e-5f && dLow.X > dUp.X,
+                        $"fold: about the pushed side (pivot y {b.Joint.Y:F2}) - the tip up {tipD.Y * 100f:F1} cm, the pulled side opens {dLow.X * 1000f:F1} mm, the pushed side {dUp.X * 1000f:F2} mm (never into the ship)");
+                    StructureBend.HingeToCompression = 0f;
+                    StructureBend.Plan(s, damage, where, new Dictionary<long, float>(), bends);
+                    Check(bends.Count == 1 && MathF.Abs(bends[0].Joint.Y - 0.375f) < 1e-3f && StructureBend.Displacement(bends[0], upP).X < 0f, "fold: HingeToCompression 0 - about the cut's centre, as before (the pushed side moves in)");
+                }
+            }
+            finally { StructureBend.MaxJoints = mj; StructureBend.HingeToCompression = hc; }
+        }
+    }
+
+    /// <summary>16. THE JAGGED LINE (2026-10-15, the user: "our uniform break is maybe a little too linear?" - FractureMath.JagCut):
+    /// a plate 10 x 2 x 6 blocks of 0.5 m off a fixed root, lifted; its cut between columns 4 and 5.</summary>
+    static void Jagged()
+    {
+        var sh = new TShip();
+        var blk = new int[10, 2, 6];
+        for (int x = 0; x <= 9; x++) for (int y = 0; y <= 1; y++) for (int z = 0; z <= 5; z++) blk[x, y, z] = sh.Block(x, y, z, x == 0 ? 1e9f : SmallMass);
+        sh.Build();
+        var s = sh.S; int root = blk[0, 0, 0], tip = blk[9, 1, 5];
+        void Lift(float target)
+        {
+            for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = s.Center[i].X > 0.3f ? new Vector3(0, 100f, 0) : Vector3.Zero; s.ExtMoment[i] = Vector3.Zero; }
+            s.SolveFree(Vector3.Zero);
+            if (target > 0f) { float k = target / s.MaxUtil; for (int i = 0; i < s.Count; i++) s.ExtForce[i] *= k; s.SolveFree(Vector3.Zero); }
+        }
+        Lift(0f);
+        int g = -1;
+        for (int q = 0; q < s.SectionCount; q++) { s.SectionPlane(q, out int ax, out float pl); if (ax == 0 && MathF.Abs(pl - 2.375f) < 1e-3f) g = q; }
+        Check(g >= 0 && s.SectionPieceCount(Math.Max(g, 0)) == 12, $"jagged: the plate's cut between columns 4 and 5 ({(g >= 0 ? s.SectionPieceCount(g) : 0)} members)");
+        if (g < 0) return;
+        float share = FractureMath.JaggedShare, stress = FractureMath.JaggedStress; bool hs = FractureMath.HingeStays;
+        FractureMath.JaggedShare = 1f; FractureMath.JaggedStress = 0f; FractureMath.HingeStays = false;
+        try
+        {
+            int n = s.SectionPieceCount(g);
+            var sc = new FractureMath.JagScratch();
+            var ob = new int[n]; var at = new Vector3[n]; var step = new int[n]; var stubs = new List<int>();
+            int parted = 0, seeds = 300, stepped = 0, inner = 0, outer = 0, withStubs = 0, near = 0; int rep0 = FractureMath.Repairs;
+            bool deterministic = true, differ = false; int[] first = null;
+            for (int seed = 0; seed < seeds; seed++)
+            {
+                FractureMath.JagCut(s, g, seed, sc, ob, at, step, stubs);
+                var again = new int[n]; var at2 = new Vector3[n]; var st2 = new int[n];
+                FractureMath.JagCut(s, g, seed, sc, again, at2, st2, null);
+                for (int i = 0; i < n; i++) if (again[i] != ob[i] || st2[i] != step[i]) deterministic = false;
+                if (first == null) first = (int[])ob.Clone(); else for (int i = 0; i < n; i++) if (first[i] != ob[i]) differ = true;
+                var gone = new HashSet<int>(ob);
+                if (!Joined(s, gone, root, tip)) parted++;
+                bool ok = true;
+                for (int i = 0; i < n; i++)
+                {
+                    if (step[i] != 0) stepped++;
+                    if (step[i] < 0) inner++;
+                    if (step[i] > 0) outer++;
+                    float dx = s.Center[ob[i]].X - 2.375f;
+                    if (dx < -0.26f || dx > 0.76f) ok = false;
+                }
+                if (ok) near++;
+                if (stubs.Count > 0) withStubs++;
+            }
+            Check(deterministic && differ, "jagged: the same seed the same line, other seeds other lines");
+            Check(parted == seeds, $"jagged: every path across the cut broken - the root never joined to the tip ({parted} of {seeds} seeds)");
+            Check(near == seeds && inner > 0 && outer > 0 && withStubs > 0, $"jagged: each member at the plane or one block either side ({near} of {seeds}); steps in {inner} / out {outer}, stubs in {withStubs} lines");
+            Check(FractureMath.Repairs > rep0 && stepped > 0, $"jagged: steps that would leave a bridge put back ({FractureMath.Repairs - rep0} repairs over {seeds} lines, {stepped} steps kept)");
+            // off: the flat cut's blocks
+            bool jg = FractureMath.Jagged; FractureMath.Jagged = false;
+            var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+            try
+            {
+                Lift(StructureFatigue.SnapUtil * 1.2f);
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                bool flat = cuts.Count == 1 && cuts[0].Steps == 0 && cuts[0].Stubs == null;
+                if (flat) { var cg = cuts[0]; for (int i = 0; i < cg.Count; i++) flat &= MathF.Abs(s.Center[dmg[cg.First + i].block].X - cg.Plane) < 0.26f; }
+                Check(flat, "jagged off: the flat cut's own blocks, on the plane");
+            }
+            finally { FractureMath.Jagged = jg; }
+            // through DamageBySection, jagged: the snap parts the plate for every seed
+            int partedEval = 0, steppedEval = 0;
+            for (int seed = 1; seed <= 40; seed++)
+            {
+                s.Seed = seed;
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                var gone = new HashSet<int>(); foreach (var (b, _, d) in dmg) if (d) gone.Add(b);
+                if (cuts.Count == 1 && !Joined(s, gone, root, tip)) partedEval++;
+                if (cuts.Count == 1) steppedEval += cuts[0].Steps;
+            }
+            s.Seed = 0;
+            Check(partedEval == 40 && steppedEval > 0, $"jagged: a failed cut parts the plate for every seed ({partedEval} of 40; {steppedEval} members off the plane in all)");
+        }
+        finally { FractureMath.JaggedShare = share; FractureMath.JaggedStress = stress; FractureMath.HingeStays = hs; }
+    }
+
     static int Main()
     {
         Classes();
@@ -851,6 +1118,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
+        TensionCompression(); Jagged();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
