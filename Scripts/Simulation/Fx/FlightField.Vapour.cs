@@ -1,9 +1,7 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Game.Systems;
 namespace AeroMod;
 
@@ -219,7 +217,7 @@ internal sealed partial class FlightField
         return n;
     }
 
-    /// <summary>One vapour effect: scale (sizes, ring, speeds), its local weight (rate x it), held by VapourFlow.</summary>
+    /// <summary>One vapour effect: scale (sizes, ring, speeds), its local weight (rate x it), held by Strengths.</summary>
     private void VapourEffect(Guid effect, Vector3 at, Quaternion q, float scale, float weight, bool cone, float speed = -1f, bool tip = false, float spawn = -1f)
     {
         if (!_draining && !(_relayout && !tip))

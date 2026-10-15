@@ -2,7 +2,6 @@
 using System;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.DCS.Components;
 using Keen.VRage.Library.Definitions;
 namespace AeroMod;
 
@@ -21,7 +20,7 @@ namespace AeroMod;
 ///    pooled one-shot gets no timeout of the game's) - on the grid's removal from the scene too (EndAll); effects off: ended.
 /// An event no client grid takes in KeepSeconds is dropped (a dedicated server: never taken - the list is capped and aged
 /// on publish too). Pairing is in-process (single player and a host), as the rest of the mod's server-to-client effects.
-/// The particle API is VRage.Game.Client / VRage.Render (not mod references): late-bound as FlightFieldHost does it
+/// The particle API is VRage.Game.Client / VRage.Render (not mod references): late-bound as FlightField.Render.cs does it
 /// (docs/REFLECTION_AND_WHITELIST.md).
 /// </summary>
 public static class TearSmoke

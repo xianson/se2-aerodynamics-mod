@@ -1,9 +1,7 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Game.Systems;
 namespace AeroMod;
 
@@ -147,7 +145,7 @@ internal sealed partial class FlightField
         if (_sub == 6)
         {
             // (the vapour sheets: the same placement and spray direction, its own effect; the weight at heat 1 is kept and
-            //  VapourFlow multiplies it by the Mach band every quarter second)
+            //  Strengths multiplies it by the band's eased strength every tenth of a second)
             float w = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f;
             w *= SuctionSide(mid - lift, f);
             if (RateJitter > 0f) w *= 1f + RateJitter * ((float)_rng.NextDouble() * 2f - 1f);

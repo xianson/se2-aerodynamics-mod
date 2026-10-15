@@ -1,5 +1,4 @@
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
@@ -141,7 +140,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // Direct torque applied to physics, independent of aero surfaces.
     internal Vector3 SasTorque;  // local frame, computed per frame
     internal Vector3 EulerError; // local frame, orientation error in radians
-    internal bool SuppressPhantomTorque; // test harness: disable SAS + phantom attitude torque
+    internal bool SuppressPhantomTorque; // disables SAS + phantom attitude torque (meant for a test harness: nothing sets it now - always false)
     internal bool HarnessControlsAttitude; // test harness: skip UpdateAttitudeHold, harness drives _lastGridAngVel + SasTorque
     internal Quaternion _holdOrientation = Quaternion.Identity; // orientation to hold when unpiloted
     internal bool _holdOrientationValid;                        // true once captured
@@ -349,7 +348,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // Enable debug draw globally (off by default)
         Keen.VRage.Core.GlobalDebugSettings.Default.EnabledDebugDraw = true;
 
-        // The client copy shows thruster flames for the controller's sharing (ThrustTorque.ClientFlames). The game
+        // The client copy shows thruster flames for the controller's sharing (ThrustTorque.Publish, AeroFlameComponent). The game
         // names its scenes "Server" and "Client" (WorldSessionComponent); in single player both sessions have the
         // game server service, so that cannot tell them apart.
         try { IsServerScene = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { IsServerScene = true; }
