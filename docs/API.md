@@ -536,6 +536,8 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Fx.ScorchVisible` | client | bool | true |  | Show scorch marks · Visual effects · advanced | Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). |
 | `Fx.ThrusterFlamesFollow` | client | bool | true |  | Thruster flames show attitude thrust · Visual effects · advanced | Thruster flames show the share each thruster gives to steering (off: the game's own flames). |
 | `Fx.DebrisScale` | client | float | 1 | 0..3 | Break debris amount · Visual effects · advanced | The debris a break sheds, times this. |
+| `Debris.Drag` | client | bool | true | | Debris drag · Visual effects · advanced | Loose fracture pieces (a broken block's chips, not grids) slow in the air: quadratic drag on their bounding box against the air (the wind taken off, the game's own wind push counted in), and a little on their tumbling. The pieces exist on this PC only. |
+| `Debris.DragScale` | client | float | 0.4 | 0..10 | Debris drag strength · Visual effects · advanced | The pieces' drag coefficient on their bounding box (1: a blunt chunk; 0.4: slight). |
 | `Fx.MaxGrids` | client | int | 4 | 1..32 | Ships with effects · Effects quality · basic | Grids with flight effects at once (the nearest). |
 | `Fx.Range` | client | float | 4000 | 100..50000 | Effect distance · Effects quality · basic | Distance (m) past which a grid shows no flight effects. |
 | `Fx.SpawnPerTick` | client | int | 48 | 1..200 | Effect build-up speed · Effects quality · advanced | Effects started per frame while a grid's effects build. |

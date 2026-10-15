@@ -137,6 +137,12 @@ public static class FlightField
     public static bool ConeOn;   // Fx/FlightField.Host.cs
     public static float Bright = 1f;   // Fx/FlightField.cs
 }
+public static class AeroDebrisDrag
+{
+    public static bool Enabled = true;   // Debris/AeroDebrisDrag.cs
+    public static float DragScale = 0.4f;   // Debris/AeroDebrisDrag.cs
+}
+
 public static class TearSmoke
 {
     public static bool Enabled = true;   // Structure/Fx/TearSmoke.cs

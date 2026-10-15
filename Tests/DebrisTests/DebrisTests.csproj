@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Drag on loose fracture debris (Debris/DebrisDragMath.cs), offline: projected area, the step's drag, never past
+       zero, the game's wind push counted once, terminal velocity, spin damping. -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Debris\DebrisDragMath.cs" />
+  </ItemGroup>
+</Project>

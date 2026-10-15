@@ -330,6 +330,12 @@ public static partial class AeroSettings
         F("Fx.DebrisScale", "client", 0, 3, false, () => TearSmoke.DebrisScale, v => TearSmoke.DebrisScale = (float)v,
             "The debris a break sheds, times this.")
             .Ui("Break debris amount", GFx, Advanced, "×", 0.05);
+        B("Debris.Drag", "client", false, () => AeroDebrisDrag.Enabled, v => AeroDebrisDrag.Enabled = v,
+            "Loose fracture pieces (a broken block's chips, not grids) slow in the air: drag on their bounding box against the air and the wind, and a little on their tumbling. The pieces live on this PC only.")
+            .Ui("Debris drag", GFx, Advanced);
+        F("Debris.DragScale", "client", 0, 10, false, () => AeroDebrisDrag.DragScale, v => AeroDebrisDrag.DragScale = (float)v,
+            "The pieces' drag coefficient on their bounding box (1: a blunt chunk; 0.4: slight).")
+            .Ui("Debris drag strength", GFx, Advanced, "×", 0.05);
 
         // ── effects quality ──
         I("Fx.MaxGrids", "client", 1, 32, false, () => FlightField.FlightMax, v => FlightField.FlightMax = (int)v,
