@@ -81,7 +81,7 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
 3. **Quiet path.** A grid nobody flies, not thrusting, with no air past it and not turning (`IsQuiet`) does only those
    reads after `QuietAfter` steps, and the full step once every `QuietRefresh`.
 4. **Mass, inertia, density** (`AirData.Density` plus `AtmosphereProbe.WithTail` above the game's air edge). Server
-   only: `AtmosphereProbe.Tick`, `AeroSettings.Poll`, the async ground ray (`PhysicsHack.GetGroundDistance`).
+   only: `AtmosphereProbe.Tick`, `AeroSettings.Poll`, the ground ray (`PhysicsHack.GetGroundDistance`, a synchronous `IPhysics.CastRay` since 2026-10-15).
 5. **Thruster and gyro caches** rebuilt when dirty (`OffsetThrustJob.RebuildThrusterCache` / `RebuildGyroCache`).
 6. **Compute** (`TryCompute`, `Grid/AeroGridComponent.Compute.cs`) when due: every frame for piloted or fast (>= 80 m/s)
    grids, else every 2nd / 4th (`ComputeInterval`); once `AeroFrameBudget` is spent, due slow grids wait up to

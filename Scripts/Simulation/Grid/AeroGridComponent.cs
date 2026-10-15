@@ -395,8 +395,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
-        // (the ground ray's ignore list: released when no ray is in flight - the engine reads it until the cast completes)
-        if (Ground.HasIgnore && !Ground.InFlight) { try { Ground.Ignore.Dispose(); } catch { } Ground.HasIgnore = false; }
+        Ground.Release();            // (the ground ray's native hit/ignore lists)
         _initialized = false;
         lock (HarnessTrackLock) AeroTestHarness.UntrackGrid(this);
         AeroScheduler.Remove(this);
