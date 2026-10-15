@@ -203,6 +203,14 @@ static class Program
             var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
             Check(locks.Count > 0 && locks.All(l => !l.Statement.ToString().Contains(".Add(")), "GetSurface: no List.Add under the grid's API lock (copied out, added after)");
         }
+        // (2026-10-15 review) SetBlockTemperatures checks the caller's arrays before the grid's API lock, not under it (an O(blocks)
+        // scan held the lock the structure's evaluation takes)
+        {
+            var m = members.FirstOrDefault(x => x.name == "SetBlockTemperatures");
+            var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
+            Check(locks.Count == 1 && !locks[0].Statement.DescendantNodes().OfType<ForStatementSyntax>().Any() && m.node.DescendantNodes().OfType<ForStatementSyntax>().Any(),
+                "SetBlockTemperatures: validates before the lock, only copies under it");
+        }
         // (2026-10-15 review) each reader pushes on only the record it reads (ApiGridState.Watch.cs): one window for all kept a
         // flight-state reader's grid publishing its whole structure every evaluation, and a structure reader the tick record
         foreach (var (name, rec) in new[] { ("GetFlightState", "RecFlight"), ("GetControlSurfaces", "RecFlight"), ("GetThrusterForces", "RecFlight"),

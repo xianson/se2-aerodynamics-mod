@@ -155,11 +155,14 @@ public static partial class AeroApi
         if (tempK == null) return false;
         var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return false;
+        // (the caller's arrays checked before the lock - an O(blocks) scan held the lock the evaluation's ApiHeatOverride and
+        //  ApiPublishStructure take, 2026-10-15 review; under it only the layout and the count are checked again)
+        int n = s.BlockCount;
+        if (layout <= 0 || tempK.Length < n || (skinMaxK != null && skinMaxK.Length < n)) return false;
+        for (int i = 0; i < n; i++) if (!float.IsFinite(tempK[i]) || (skinMaxK != null && !float.IsFinite(skinMaxK[i]))) return false;
         lock (s.Lock)
         {
-            int n = s.BlockCount;
-            if (layout != s.Layout || layout <= 0 || tempK.Length < n || (skinMaxK != null && skinMaxK.Length < n)) return false;
-            for (int i = 0; i < n; i++) if (!float.IsFinite(tempK[i]) || (skinMaxK != null && !float.IsFinite(skinMaxK[i]))) return false;
+            if (layout != s.Layout || s.BlockCount != n) return false;
             s.ExtTempK = ApiGridState.Fit(s.ExtTempK, n); s.ExtSkinK = ApiGridState.Fit(s.ExtSkinK, n);
             Array.Copy(tempK, s.ExtTempK, n);
             Array.Copy(skinMaxK ?? tempK, s.ExtSkinK, n);
