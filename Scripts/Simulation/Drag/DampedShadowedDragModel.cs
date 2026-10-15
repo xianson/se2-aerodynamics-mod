@@ -249,10 +249,15 @@ public partial class DampedShadowedDragModel : IAeroDragModel
     private List<bool> _excluded;
     private int _excludedVersion = -1;
 
-    /// <summary>Faces another model owns (a wing's skins): left out of this one. For the surface version given only.</summary>
+    /// <summary>Faces another model owns (a wing's skins): left out of this one. For the surface version given only.
+    /// Starts a surface's masks: its flow-through faces (SetThroughFaces) follow, or there are none.</summary>
     public void SetExcludedFaces(List<bool> excluded, int surfaceVersion)
     {
         _wingMask = excluded; _wingMaskVersion = surfaceVersion;
+        // (2026-10-15: the through mask stayed from the surface before - a pooled table builder, or a grid that lost its
+        //  engines - and versions are per surface, so it matched or outranked the new one: an engine-less grid built
+        //  after one with intakes lost random faces' drag, or its wing skins were no longer left out)
+        _throughMask = null; _throughVersion = -1;
         CombineExcluded();
     }
 
