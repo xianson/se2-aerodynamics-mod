@@ -193,9 +193,12 @@ fly.
   `DampedShadowedDragModel`, `ConnectedComponentWingDetector`, `SmoothSurfaceProvider`, `AeroSettings`). Public names
   unchanged (the harness reads them by name).
 - **Dead code out**: the never-built drag / surface models `AxisCdDragModel`, `CubeSurfaceProvider`,
-  `NewtonianDragModel` and the never-created `ThinAirfoilWingModel` (deleted with the user's approval),
+  `NewtonianDragModel`, the never-created `ThinAirfoilWingModel` and `HelicopterRotor` (no block definition carries
+  its two GUIDs: its registrations, GUIDs, debug draw, control feed and the `GetAeroBlocks` / `GetAeroBlockState`
+  "HelicopterRotor" kind went with it; the "HelicopterRotor" thrust profile stays) - deleted with the user's approval,
   `PhysicsHack.UncapSpeed` / `ApplyDeltaVAndTorque`, `EngineOverrides.UncapSpeed` / `TrySetConfigProperty`,
-  `FlightField.LightPlace` and the old mesh-plasma leftovers, unused structure knobs and diagnostics; unused usings in 71 files; stale comments fixed.
+  `FlightField.LightPlace` and the old mesh-plasma leftovers, unused structure knobs and diagnostics; unused
+  usings in 71 files; stale comments fixed.
 - **Shared helpers**: one `FindType`, `IsFinite`, `FloorDiv`, SAS torque, symmetric 3x3 solve, block-definition read,
   block health, bone ledger step.
 - **Tests**: new suites `ApiTests` (the API's shape from source, the event ring, the cross-mod binding), `SettingsTests`,

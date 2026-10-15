@@ -15,7 +15,7 @@ public readonly struct ComponentForceResult
     /// <summary>
     /// Pure torque in body-frame N·m, added directly (not derived from offset).
     /// Used by components that produce torque independently of thrust position
-    /// (e.g. helicopter rotor cyclic, reaction wheels).
+    /// (e.g. reaction wheels).
     /// </summary>
     public readonly Vector3 DirectTorque;
 

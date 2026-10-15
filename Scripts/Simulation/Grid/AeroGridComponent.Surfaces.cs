@@ -194,39 +194,7 @@ public partial class AeroGridComponent
         // ══════════════════════════════════════════════════════════════════════
         for (int i = 0; i < _components.Components.Count; i++)
         {
-            if (_components.Components[i] is HelicopterRotor rotor)
-            {
-                // Feed orientation data to rotor for cyclic/yaw PD control
-                rotor.CurrentOrientation = gridOrientation;
-                rotor.LocalAngularVelocity = localAngVel;
-                rotor.OrientationHoldActive = hasTargetData;
-                if (hasTargetData)
-                    rotor.TargetOrientation = targetData.TargetOrientation;
-
-                // Feed collective pitch from matching thruster state.
-                // The rotor block IS a thruster — find it by block position.
-                rotor.CollectivePitch = 0f;
-                for (int t = 0; t < _thrusterCache.Count; t++)
-                {
-                    var ti = _thrusterCache[t];
-                    // Match by position proximity (same block)
-                    float dx = ti.GridLocalPosition.X - rotor.Position.X;
-                    float dy = ti.GridLocalPosition.Y - rotor.Position.Y;
-                    float dz = ti.GridLocalPosition.Z - rotor.Position.Z;
-                    if (dx * dx + dy * dy + dz * dz > _blockSize * _blockSize)
-                        continue;
-
-                    // Read thrust state: IsThrusting or override
-                    var td = ti.ThrusterEntity.Data;
-                    float overridePower = PhysicsHack.GetThrustOverride(td);
-                    if (overridePower > 0f)
-                        rotor.CollectivePitch = overridePower;
-                    else if (PhysicsHack.IsEntityThrusting(td))
-                        rotor.CollectivePitch = 1f;
-                    break;
-                }
-            }
-            else if (_components.Components[i] is Airbrake ab)
+            if (_components.Components[i] is Airbrake ab)
             {
                 // (the clamshell: both leaves seen from ahead - sin of their opening; the old 1x1: always out)
                 ab.DeployFraction = ab.State != null ? MathF.Sin(Math.Clamp(ab.State.OpeningDeg, 0f, 90f) * MathF.PI / 180f) : 1f;

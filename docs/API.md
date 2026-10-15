@@ -131,7 +131,7 @@ Commands (setting a control surface's deflection, an airbrake's deployment) will
 
 | Member | What it gives |
 |---|---|
-| `int GetAeroBlocks(Entity grid, List<string> kinds, List<Vector3I> cells, List<Vector3> positionsLocal)` | Every aero block: kind (`ControlSurface`, `Airbrake`, `AirIntake`, `AtmosphericScoop`, `HelicopterRotor`), grid cell, action point (local m). |
+| `int GetAeroBlocks(Entity grid, List<string> kinds, List<Vector3I> cells, List<Vector3> positionsLocal)` | Every aero block: kind (`ControlSurface`, `Airbrake`, `AirIntake`, `AtmosphericScoop`), grid cell, action point (local m). |
 | `int GetAeroBlockState(Entity grid, Vector3I cell, List<string> names, List<float> values)` | The block at a cell, as named values from the last tick (below). Returns the count; 0 when no aero block is there. |
 
 | Kind | Values |
@@ -140,7 +140,6 @@ Commands (setting a control surface's deflection, an airbrake's deployment) will
 | Airbrake | `DeployFraction` (0..1), `Drag` (N), `Effectiveness` (0..1) |
 | AirIntake | `MassFlow` (kg/s), `TotalPressure` (Pa), `RamPressureRatio` |
 | AtmosphericScoop | `MassFlow` (kg/s), `CollectionRate`, `Collected`, `Drag` (N) |
-| HelicopterRotor | `Collective` (0..1), `Thrust` (N), `DensityScale`, `TranslationalLift`, `GroundEffect`, `Autorotation` (N) |
 
 ### Structure and hull heat
 | Call | What |

@@ -348,42 +348,6 @@ public partial class AeroGridComponent
                     $"\nPtot={ai.TotalPressure:F0}Pa ram={ai.RamPressureRatio:F2}";
                 dd.AddText(posWorld + (Vector3D)(facingWorld * 0.3f), info, ColorSRGB.White, 0.35f);
             }
-            else if (comp is HelicopterRotor rotor)
-            {
-                // Disc axis (magenta arrow)
-                Vector3 discWorld = WorldTransform.TransformDirection(rotor.DiscAxis, wt);
-                dd.AddArrow(posWorld, posWorld + (Vector3D)(discWorld * 2.5f),
-                    ColorSRGB.Magenta, null, 0.12);
-
-                // Thrust vector (green, scaled)
-                if (rotor.CurrentThrust > 1f)
-                {
-                    Vector3 thrustWorld = WorldTransform.TransformDirection(rotor.DiscAxis * rotor.CurrentThrust, wt);
-                    dd.AddArrow(posWorld, posWorld + (Vector3D)(thrustWorld * ForceScale),
-                        ColorSRGB.LimeGreen, null, 0.10);
-                }
-
-                // Cyclic torque visualization (yellow arrows on pitch/roll axes)
-                if (rotor.CyclicTorque.LengthSquared() > 100f)
-                {
-                    Vector3 cyclicWorld = WorldTransform.TransformDirection(rotor.CyclicTorque, wt);
-                    float tScale = 1f / 2_000_000f; // torque → draw scale
-                    dd.AddArrow(posWorld, posWorld + (Vector3D)(cyclicWorld * tScale),
-                        ColorSRGB.Yellow, null, 0.08);
-                }
-
-                string spinDir = rotor.SpinSign > 0 ? "CCW" : "CW";
-                string autoStr = rotor.AutorotationThrust > 1f ? $"\nAUTO={rotor.AutorotationThrust:F0}N" : "";
-                string info = $"ROTOR({spinDir}) T={rotor.CurrentThrust:F0}N" +
-                    $"\nrho={rotor.DensityScale:F3} ETL={rotor.TranslationalLiftFactor:F3}" +
-                    $"\nGE={rotor.GroundEffectFactor:F3}" +
-                    $"\ncoll={rotor.CollectivePitch:F2} hold={rotor.OrientationHoldActive}" +
-                    autoStr +
-                    $"\nreaction={rotor.ReactionTorque:F0}N·m" +
-                    $"\ncyclic=({rotor.CyclicTorque.X:F0},{rotor.CyclicTorque.Y:F0},{rotor.CyclicTorque.Z:F0})" +
-                    $"\nyaw={rotor.YawTorqueApplied:F0}N·m";
-                dd.AddText(posWorld + (Vector3D)(discWorld * 0.5f), info, ColorSRGB.Magenta, 0.35f);
-            }
         }
     }
 
