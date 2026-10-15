@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
+    <Compile Include="$(Sim)\Core\CellCoords.cs" />
   </ItemGroup>
 </Project>

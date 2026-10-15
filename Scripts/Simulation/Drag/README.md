@@ -7,7 +7,7 @@
 | `DampedShadowedDragModel.Table.cs` | The force table build and the overlay's pressures |
 | `DampedShadowedDragModel.Compute.cs` | The per-frame face loop, used only before a grid has its table |
 | `ForceTable.cs` | Forces for every flow direction (486): a lookup per frame |
-| `ChunkedTable.cs` | The table in 8 m chunks, for local updates after damage |
+| `ChunkedTable.cs` | The table in 8 m chunks, for local updates after damage (the full build's occlusion rule; each chunk's pressure-recovery push kept from the full build, which a local update cannot redo) |
 | `AeroTableCache.cs` | Built tables on disk by shape (`%TEMP%\AeroMod\tables`), `Version`, `ModelSwitches` |
 | `OrphanChunks.cs` | A broken-off piece flies on its parent's shares until its own build |
 | `IAeroDragModel.cs` | The model interface |

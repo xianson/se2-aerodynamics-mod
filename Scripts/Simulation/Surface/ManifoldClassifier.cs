@@ -7,9 +7,11 @@ namespace AeroMod;
 /// using connected component analysis on the face adjacency graph.
 ///
 /// All exposed faces form closed 2-manifold surfaces. The outer hull is one
-/// manifold; each sealed internal cavity is another. The largest connected
-/// component by face count is the hull. Cavity faces can be skipped in the
-/// drag loop and wing detection.
+/// manifold; each sealed internal cavity is another. A component enclosing
+/// solid (positive volume: its faces point out of it) is hull - the largest,
+/// and any other solid touching it only at a corner, or not at all; one
+/// enclosing empty space (negative volume) is a cavity. Cavity faces can be
+/// skipped in the drag loop and wing detection.
 ///
 /// Face adjacency: each quad face has 4 edges. For each edge, the neighbor
 /// is either the continuation face (same normal, adjacent cell) or the corner
@@ -89,13 +91,19 @@ public class ManifoldClassifier
         }
 
         // Find largest component = hull
-        // Count faces per root
+        // Count faces per root, and the volume each encloses (divergence theorem, in cells: a face of cell c with outward
+        // normal +-e_k adds +-c_k + 1/2 - a solid's surface sums to its cell count, a cavity's to minus the room's)
         var rootCounts = new Dictionary<int, int>();
+        var rootVolume = new Dictionary<int, long>();
         for (int i = 0; i < _faceCount; i++)
         {
             int root = Find(i);
             rootCounts.TryGetValue(root, out int count);
             rootCounts[root] = count + 1;
+            surface.GetFaceCellDir(i, out var fc, out int fd);
+            int ck = fd < 2 ? fc.X : fd < 4 ? fc.Y : fc.Z;
+            rootVolume.TryGetValue(root, out long twice);
+            rootVolume[root] = twice + ((fd & 1) == 0 ? 2L * ck + 1 : -2L * ck + 1);   // (x2: integers)
         }
 
         _hullRoot = -1;
@@ -112,9 +120,13 @@ public class ManifoldClassifier
         // Classify
         HullFaceCount = 0;
         CavityFaceCount = 0;
+        // (every solid is hull, not only the largest - 2026-10-15: solids meeting only at a corner, or held by mount points
+        //  with no cell touching, are separate skins, and every one but the biggest was culled as "cavity": no drag, no
+        //  wings - 26 m2 of the Diamondback's surface, 34 m2 of the Jetliner's)
         for (int i = 0; i < _faceCount; i++)
         {
-            bool hull = Find(i) == _hullRoot;
+            int root = Find(i);
+            bool hull = root == _hullRoot || rootVolume[root] > 0;
             _isHull[i] = hull;
             if (hull) HullFaceCount++;
             else CavityFaceCount++;

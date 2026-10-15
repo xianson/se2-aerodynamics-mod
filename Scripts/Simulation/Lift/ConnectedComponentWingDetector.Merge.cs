@@ -120,14 +120,10 @@ public partial class ConnectedComponentWingDetector
                     spanMin[i] = MathF.Min(aMinS, bMinS2);
                     spanMax[i] = MathF.Max(aMaxS, bMaxS2);
 
-                    wings.RemoveAt(j);
-                    // Shift span arrays: move last element into j's slot
-                    int last = wings.Count; // after RemoveAt, Count is one less
-                    if (j < last)
-                    {
-                        spanMin[j] = spanMin[last];
-                        spanMax[j] = spanMax[last];
-                    }
+                    // (the span lists shift with the wings - 2026-10-15: they took the LAST wing's span into j's slot while
+                    //  RemoveAt shifted the wings down, so from four coplanar wings on, a wing was judged by another's span:
+                    //  far-apart wings merged, the merged span wrong)
+                    wings.RemoveAt(j); spanMin.RemoveAt(j); spanMax.RemoveAt(j);
                     changed = true;
                 }
             }

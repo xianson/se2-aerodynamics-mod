@@ -142,9 +142,8 @@ public partial class AeroGridComponent
         AeroStats.BeginGrid();
         long tpre = AeroCost.Start();
 
-        // Zero angular velocity on first frame to clear saved-world spin
-        if (aero._simFrameCount == 1)
-            PhysicsHack.TryZeroAngularVelocity(aero.Data);
+        // (no spin zeroed on a grid's first frame - 2026-10-15: it was there to clear saved-world spin, and took the tumble
+        //  of every piece broken off, every re-added grid and every client copy on its first frame: a grid's spin is physics)
 
         // ── Read physics state ──
         PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
@@ -190,6 +189,7 @@ public partial class AeroGridComponent
 
         Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
         aero.InGravity = gravity.LengthSquared() > 1e-4f;
+        aero.LastGravity = gravity.Length();
         aero.GroundHeight = aero.IsServerScene ? PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity) : -1f;   // (rays in the server's world only)
         aero.GroundUpLocal = aero.InGravity ? -Vector3.Normalize(WorldTransform.TransformDirectionInv(gravity, wt)) : Vector3.Zero;
 

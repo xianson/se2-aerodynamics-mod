@@ -36,8 +36,14 @@ public static class AeroEntryFx
         float heat = OnsetHeat * mr * mr * mr;
         return Math.Clamp((heat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f) * DensityScale(density);
     }
-    public static float DensityScale(float rho) =>
-        rho <= DensityFloor ? 0f : Math.Clamp((MathF.Log10(rho) - MathF.Log10(DensityFloor)) / (MathF.Log10(1.225f) - MathF.Log10(DensityFloor)), 0f, 1f);
+    public static float DensityScale(float rho)
+    {
+        if (!(rho > DensityFloor)) return 0f;
+        // (NaN is 0, not passed on - 2026-10-15: a NaN density, or 0/0 with DensityFloor at 1.225, came out NaN and the
+        //  glow's lag kept it; otherwise as before: Clamp keeps NaN, this does not)
+        float r = (MathF.Log10(rho) - MathF.Log10(DensityFloor)) / (MathF.Log10(1.225f) - MathF.Log10(DensityFloor));
+        return r >= 0f ? MathF.Min(r, 1f) : 0f;
+    }
     /// <summary>Seconds the hull takes to heat up / cool down (the glow lingers after slowing).</summary>
     public static float HeatLag = 2f;
     /// <summary>TEST (harness: aeroset AeroEntryFx.TestSpeed 2000): every grid as if flying forward at this speed in
