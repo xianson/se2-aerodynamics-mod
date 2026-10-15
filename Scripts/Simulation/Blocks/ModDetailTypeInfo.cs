@@ -1,10 +1,8 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Reflection;
 using Keen.Game2.Simulation.StreamedUI.Terminal.ControlPanel.BlockDetails;
-using Keen.VRage.Library.Collections.Readers;
 using Keen.VRage.Library.Serialization;
 
 namespace AeroMod;

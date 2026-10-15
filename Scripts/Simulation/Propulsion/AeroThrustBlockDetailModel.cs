@@ -1,7 +1,6 @@
 #pragma warning disable
 using System;
 using Keen.Game2.Simulation.StreamedUI.Terminal.ControlPanel.BlockDetails;
-using Keen.VRage.DCS.Annotations;
 using Keen.VRage.Library.UI.PropertyInspector;
 using Keen.VRage.Library.Serialization.Validation;
 

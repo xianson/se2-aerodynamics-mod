@@ -1,5 +1,4 @@
 #pragma warning disable
-using Keen.VRage.Core;
 
 namespace AeroMod;
 

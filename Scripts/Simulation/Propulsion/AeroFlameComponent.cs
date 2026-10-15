@@ -1,6 +1,5 @@
 #pragma warning disable
 using System;
-using Keen.VRage.Core;
 using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Systems;
 using Keen.VRage.DCS.Annotations;

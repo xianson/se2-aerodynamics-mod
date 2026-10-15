@@ -1,10 +1,8 @@
 #pragma warning disable
 using System;
-using System.Runtime.CompilerServices;
 using Keen.Game2.Simulation.GameSystems.RangedAffectGenerators.Atmosphere;
 using Keen.Game2.Simulation.GameSystems.RangedAffectGenerators.Wind;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.Data;
 using Keen.VRage.DCS.Accessors;
 using Keen.VRage.Physics.Data;
 

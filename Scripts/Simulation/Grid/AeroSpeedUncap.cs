@@ -1,5 +1,4 @@
 #pragma warning disable
-using System;
 using Keen.Game2.Simulation.GameSystems.Movement;
 using Keen.VRage.Core.Systems;
 using Keen.VRage.DCS.Annotations;

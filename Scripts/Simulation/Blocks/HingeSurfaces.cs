@@ -1,7 +1,6 @@
 #pragma warning disable
 using System;
 using Keen.Game2.Simulation.WorldObjects.CubeBlocks.MechanicalBlocks;
-using Keen.VRage.Core;
 using Keen.VRage.Core.Game.Components;
 namespace AeroMod;
 

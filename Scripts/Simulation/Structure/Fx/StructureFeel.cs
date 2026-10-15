@@ -1,12 +1,10 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.Game2.Client.GameSystems.CameraSystems;
 using Keen.Game2.Client.GameSystems.PlayerControl;
 using Keen.VRage.Core;
 using Keen.VRage.Core.Game.GameSystems.Audio;
-using Keen.VRage.DCS.Components;
 using Keen.VRage.Library.Utils;
 namespace AeroMod;
 

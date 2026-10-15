@@ -1,7 +1,6 @@
 #pragma warning disable
 using System;
 using System.Reflection;
-using Keen.VRage.Core;
 
 namespace AeroMod;
 

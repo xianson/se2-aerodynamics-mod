@@ -1,12 +1,10 @@
 #pragma warning disable
 using System;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.Movement;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.Data;
 using Keen.VRage.DCS.Accessors;
 using Keen.VRage.Physics.Data;
 

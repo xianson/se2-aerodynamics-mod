@@ -3,7 +3,6 @@ using System;
 using System.Globalization;
 using System.Text;
 using Keen.Game2.Simulation.WorldObjects.Shared.Movement;
-using Keen.VRage.Core;
 using Keen.VRage.Core.Game.Data;
 using Keen.VRage.Physics.Data;
 

@@ -1,5 +1,4 @@
 #pragma warning disable
-using System;
 namespace AeroMod;
 
 /// <summary>The world's structure and hull-heat settings (AeroSettings: Structure.*, Heat.*) and diagnostics.</summary>
