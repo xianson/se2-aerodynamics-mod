@@ -34,7 +34,12 @@ public sealed partial class ShipStructure
     public static bool Lattices = true;
     /// <summary>Joints through mated mount faces when the blocks' mount points are given (off: every touching face, as
     /// without them - for A/B).</summary>
-    public static bool MountJoints = false;   // (off 2026-10-14: the SSTO's wings mate on 2 of 36 cells and fell off at 2.4 g - pending the user)
+    // (off 2026-10-14: the SSTO's wings mate on 2 of 36 cells and fell off at 2.4 g - pending the user. Kept off 2026-10-15
+    //  after the A/B the user approved turning it on for (AeroBench struct / fail, MOUNTS=1, ssto_m.struct - the one dump with
+    //  mount data): cost nothing to speak of (Build 2.2 -> 3.0 ms, +0.2 MB, a rebuild only; a solve unchanged, 0.19 ms), but each
+    //  wing root is 15 armour blocks against the hydrogen tanks' and thrusters' sides, which have no mounts there - 52 cells
+    //  -> 13: the wings (10.6 t) leave at 1.9 g on the pull ramp (5.4 g off), in 3.2 s held at 1.0 g. Level flight.)
+    public static bool MountJoints = false;
 
     /// <summary>Each block's steel fraction (its mass over its cells' volume as steel) - a lattice's smeared density.</summary>
     public float[] Phi;
