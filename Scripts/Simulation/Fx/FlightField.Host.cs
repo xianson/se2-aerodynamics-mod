@@ -301,7 +301,9 @@ internal sealed partial class FlightField
             // (a rebuild drops the plasma for a moment: the light made stays through it - it was destroyed and made again
             //  at every rebuild, blinking and jumping whenever the angle of attack moved, 2026-10-09)
             // (one light a ship: its main grid's - a ship of six grids made six, FxTipOwner as the tips)
-            bool want = SpotOn && (_server == null || _server.FxTipOwner) && (_plasmaUp || BakedOn || _spot != null) && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
+            // (the PLASMA's light: never with the plasma off - the baked path's BakedOn let it light the hull with Fx.Plasma off,
+            //  2026-10-15)
+            bool want = SpotOn && PlasmaOn && (_server == null || _server.FxTipOwner) && (_plasmaUp || BakedOn || _spot != null) && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
             if (!want) { if (_spotUsed > 0f) StopSpot(); _spotUsed = -1f; }
             else if (_spotUsed < 0f || _spot == null)
             {
