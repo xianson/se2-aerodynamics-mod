@@ -146,11 +146,6 @@ public static class PhysicsHack
         return true;
     }
 
-    /// <summary>
-    /// Set GravityMultiplier and MaximumSpeedLinear on the physics session configuration.
-    /// The lookup is now a direct DefinitionManager.GetConfiguration&lt;T&gt;() call; only the
-    /// private property setters still need reflection (see EngineOverrides).
-    /// </summary>
     /// <summary>The world's PhysicsSessionConfiguration.GravityMultiplier (1 when unreadable): the engine scales the
     /// gravity it applies by it, on top of GravityEffectData.GravitySum.</summary>
     public static float GravityMultiplier()
@@ -159,7 +154,12 @@ public static class PhysicsHack
         catch { return 1f; }
     }
 
-    public static void TryFixGravity(float targetGravity = 1f, float targetSpeed = 1000f, bool apply = true)
+    /// <summary>
+    /// Once: log the physics session configuration the world runs with (CONFIGPROBE). It used to set
+    /// GravityMultiplier and MaximumSpeedLinear by reflection (private setters); the mod's own
+    /// PhysicsSessionConfiguration.def sets them now, so this only reads.
+    /// </summary>
+    public static void TryFixGravity()
     {
         if (_gravityFixed) return;
         _gravityFixed = true;
@@ -173,27 +173,13 @@ public static class PhysicsHack
                 return;
             }
 
-            // WHY THIS REFLECTION STILL EXISTS.
-            // The mod ships Content/System/Configurations/PhysicsSessionConfiguration.def, which
-            // is the correct data-driven way to set these -- WorldSessionComponent builds the
-            // VelocityLimitProvider straight from _definition.Physics.MaximumSpeedLinear, so a
-            // working .def would make both this and EngineOverrides.UncapSpeed unnecessary.
-            //
-            // It does not currently apply. The mod has no contentcache.vrb ("Warning: Mounted
-            // path ... did not contain contentcache.vrb, assets might not be properly
-            // recognized"), so its .def content is never mounted, and this probe reads the
-            // world's values rather than the mod's 1000/1/1000:
-            //     CONFIGPROBE before override: MaximumSpeedLinear=300 GravityMultiplier=2
-            // Building that cache needs the content builder, which is blocked on the stale Mod
-            // SDK (see tools/SE2-UPDATE-RUNBOOK.md). Delete this once the cache builds.
+            // The mod ships Content/System/Configurations/PhysicsSessionConfiguration.def, the data-driven way to set
+            // these: WorldSessionComponent builds the VelocityLimitProvider straight from _definition.Physics.MaximumSpeedLinear.
+            // Until its contentcache.vrb built, the .def never mounted and the probe read the world's values
+            // (CONFIGPROBE before override: MaximumSpeedLinear=300 GravityMultiplier=2), so the values were forced by reflection.
             Log.Default?.Info($"[AERO] CONFIGPROBE before override: MaximumSpeedLinear={config.MaximumSpeedLinear} GravityMultiplier={config.GravityMultiplier} MaximumCharacterSpeedLinear={config.MaximumCharacterSpeedLinear}");
             // (2026-10-01: the cache builds now - D:/aero/tools/build_mod_content.py - and the probe reads the
-            // mod's 1000 / 1. Called with apply: false; the setters below are kept for a world without it.)
-            if (!apply) return;
-
-            bool speedOk = EngineOverrides.TrySetConfigProperty(config, "MaximumSpeedLinear", targetSpeed);
-            bool gravOk = EngineOverrides.TrySetConfigProperty(config, "GravityMultiplier", targetGravity);
-            Log.Default?.Info($"[AERO] Physics config: MaximumSpeedLinear={targetSpeed} ({speedOk}), GravityMultiplier={targetGravity} ({gravOk})");
+            // mod's 1000 / 1. The reflection setters, unused since, went in the 2026-10-15 reorg.)
         }
         catch (Exception ex)
         {
@@ -320,7 +306,7 @@ public static class PhysicsHack
     ///
     /// Prefers ThrustComponent.SetData so the value lands in the component's scene pool where
     /// ComputeThrust looks; DEntityContext.Set is the fallback. SetData is PROTECTED on
-    /// Component, so this is one of the three reflection holdouts -- see EngineOverrides.
+    /// Component, so this is the reflection holdout -- see EngineOverrides.
     /// </summary>
     public static bool TrySetOverriddenThrust(Entity gridEntity, DEntityContext gridData, Vector3 directionalThrust)
     {
