@@ -11,8 +11,17 @@ namespace AeroMod;
 ///   drag = CdDeployed × q × A × effectiveness
 ///   force = -flowDir × drag
 /// </summary>
+/// <summary>An airbrake block's live opening (the server's AeroAirbrakeComponent): each leaf's angle from closed (deg).</summary>
+public interface IAirbrakeState
+{
+    float OpeningDeg { get; }
+}
+
 public class Airbrake : IAeroBlockComponent, IFaceOverride
 {
+    /// <summary>The block's opening (the 3x3x3 clamshell); null: DeployFraction as set by the grid.</summary>
+    public IAirbrakeState State { get; init; }
+
     // ── Configuration ──
 
     /// <summary>Deployed plate normal direction, grid-local unit vector.</summary>
@@ -70,7 +79,9 @@ public class Airbrake : IAeroBlockComponent, IFaceOverride
             return ComponentForceResult.Zero;
 
         // How much the plate faces oncoming air
-        float cosAoA = Vector3.Dot(-conditions.FlowDirection, FacingDirection);
+        // (either side: FlowDirection is the motion's direction here, so the old sign - against the facing - made a
+        //  forward-facing plate drag nothing in forward flight, 2026-10-15)
+        float cosAoA = MathF.Abs(Vector3.Dot(conditions.FlowDirection, FacingDirection));
 
         if (cosAoA <= 0)
             return ComponentForceResult.Zero;

@@ -19,8 +19,13 @@ namespace AeroMod;
 /// published record. A remote multiplayer client gets false (nothing is published to it yet).
 ///
 /// Threads: any. Every answer is one consistent snapshot of the last simulation tick (copied under a lock).
+/// LOCKS: never call this API while holding a lock of your own, and aero never calls another mod while holding one of
+/// its own (aero's reads of the Orbital mod - OrbitalLink, AeroEntryFx.EntryStateAt - are made with none held): a call
+/// that waits on the other's lock while the other waits on yours is a deadlock neither mod can see.
 ///
-/// Stability: members are only ADDED within a version; a change to an existing one bumps <see cref="Version"/>.
+/// Stability: members are only ADDED within a version; a change to an existing one bumps <see cref="Version"/>. A public
+/// member is NEVER OVERLOADED (no second member of the same name): callers find members by name - pass the parameter types
+/// too - and an overload makes a name-only lookup throw AmbiguousMatchException. A new shape gets a new name.
 /// The Orbital Mod's fast gate checks the members it uses from source (its tools/check_contract.sh).
 /// Documented in docs/API.md (the same text, with an example).
 /// </summary>
@@ -29,7 +34,7 @@ public static class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 5;   // (5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 6;   // (6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -188,6 +193,66 @@ public static class AeroApi
         strain = rootMoment = capacity = 0f;
         var aero = AeroOf(grid);
         return aero != null && aero.TryGetWingStrain(index, out strain, out rootMoment, out capacity);
+    }
+
+    /// <summary>The grid's STRUCTURE and HULL HEAT (StructureServer: the method of sections on its blocks, the hull's
+    /// aerodynamic heating; a background evaluation a few times a second, server). maxUtilisation: the worst joint's load
+    /// over its strength now (heat and damage in; 1: yield - the joint wears past it with Structure.Damage on, and breaks
+    /// at Structure.BreakAt); maxSkinK: the hottest hull skin (K); heatShare: the hottest block's way from softening to
+    /// burning (0..1). False: not evaluated yet (or Structure.Loads off).</summary>
+    public static bool TryGetStructure(Keen.VRage.DCS.Components.Entity grid, out float maxUtilisation, out float maxSkinK, out float heatShare)
+    {
+        maxUtilisation = maxSkinK = heatShare = 0f;
+        var aero = AeroOf(grid);
+        if (aero == null || aero.StructMaxSkinK <= 0f) return false;
+        maxUtilisation = aero.StructMaxUtil; maxSkinK = aero.StructMaxSkinK; heatShare = aero.StructHeatShare;
+        return true;
+    }
+
+    /// <summary>The grid was just moved by someone else (a teleport, a frame shift, a rails stow or arrival): its physics
+    /// contacts for the next steps are not loads (StructureContactLoads.MaskSteps). Server, any thread before the physics step.
+    /// Takes no lock (safe to call while holding one of yours - though the lock rule says not to). The Orbital mod also
+    /// publishes a move stamp aero reads itself (OrbitalApi.TryGetGridEdits): this is the push, that the pull.</summary>
+    public static void NoteMoved(Keen.VRage.DCS.Components.Entity grid)
+    {
+        var aero = grid?.TryGet<AeroGridComponent>();
+        aero?.MaskContacts(StructureContactLoads.MaskSteps);
+    }
+
+    /// <summary>The grid a player is flying (seated in) - call it about once a second while they are. Only such grids'
+    /// structure and hull heat are evaluated (gauges, damage), at the full rate; it stays so for Structure FocusLinger s
+    /// after the last call (a pilot bailing out mid-dive: the dive still ends as it would).</summary>
+    public static void SetFocusGrid(Keen.VRage.DCS.Components.Entity grid)
+    {
+        var aero = AeroOf(grid);
+        if (aero != null) aero.StructFocusUntil = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(StructureLoads.FocusLinger * System.Diagnostics.Stopwatch.Frequency);
+    }
+
+    /// <summary>The STALL WARNING of a player's grid (StallWarning.cs: the whole ship's best lift within reach, -15 to +60
+    /// deg from where it flies; any shape, no wings needed): state 0 none, 1 approaching (the best lift just ahead, or the
+    /// lift now on its flat top), 2 stalled (the best behind, the lift now clearly short of it) - each held 0.3 s; the
+    /// best lift's angle from now (deg, negative: behind), the share of it in use now, and the g it would give. False: not
+    /// a player's grid, or never evaluated.</summary>
+    public static bool TryGetStall(Keen.VRage.DCS.Components.Entity grid, out int state, out float marginDeg, out float liftShare, out float gAvailable)
+    {
+        state = 0; marginDeg = liftShare = gAvailable = 0f;
+        var aero = AeroOf(grid);
+        if (aero == null || aero.StallGAvailable <= 0f) return false;
+        state = aero.StallState; marginDeg = aero.StallMarginDeg; liftShare = aero.StallLiftInUse; gAvailable = aero.StallGAvailable;
+        return true;
+    }
+
+    /// <summary>LOSS OF ATTITUDE CONTROL of a player's grid, PREDICTED (Loac.cs): the commanded attitude and the way to it,
+    /// the air's torque there at the speed now against the gyros', thrusters' and control surfaces' reach. state 0 none,
+    /// 1 at the limit (over 90% of the torque available needed), 2 lost (more than available) - held 0.25 s; the worst
+    /// needed / available. False: not a player's grid.</summary>
+    public static bool TryGetLoac(Keen.VRage.DCS.Components.Entity grid, out int state, out float ratio)
+    {
+        state = 0; ratio = 0f;
+        var aero = AeroOf(grid);
+        if (aero == null) return false;
+        state = aero.LoacState; ratio = aero.LoacRatio;
+        return true;
     }
 
     /// <summary>The grid's highest wing strain (as TryGetWingStrain), 0 with no wings.</summary>
@@ -523,8 +588,38 @@ public static class AeroApi
     /// again).</summary>
     public static int RegisterEntrySource(string owner, Delegate source) => AeroEntryFx.RegisterEntrySource(owner, source);
     public static bool UnregisterEntrySource(string owner) => AeroEntryFx.UnregisterEntrySource(owner);
+
     /// <summary>Still registered (cheap: a session change or a reloaded aero mod drops it - check now and then).</summary>
     public static bool HasEntrySource(string owner, Delegate source) => AeroEntryFx.HasEntrySource(owner, source);
+
+    // ── other mods' drag (version 6) ──
+
+    /// <summary>Put drag on a grid, or change it: a drag area <paramref name="cdA"/> (Cd x area, m2) acting at
+    /// <paramref name="pointLocal"/> (grid-local m), against that point's travel through the air, as q x CdA - so drag off
+    /// the centre of mass also turns the ship. Keyed: the same key replaces it; cdA 0 removes it (or ClearDrag). Prefix keys
+    /// with your mod's name. Counted as the grid's own air (TryGetForces includes it). Server copy; not saved - set it again
+    /// when your block loads. False: no aero grid here, or a bad value (not finite; a point over 2 km out). CdA is capped at
+    /// 10000 m2.</summary>
+    public static bool SetDrag(Keen.VRage.DCS.Components.Entity grid, string key, Vector3 pointLocal, float cdA)
+        => AeroOf(grid)?.SetDragPatch(key, pointLocal, cdA, Vector3.Zero) ?? false;
+
+    /// <summary>As SetDrag, for a FLAT PLATE: <paramref name="cdA"/> is its full drag area face-on, scaled by how squarely
+    /// the air meets it (|normal . travel|) - an airbrake, a door, a parachute canopy's disc.</summary>
+    public static bool SetPlateDrag(Keen.VRage.DCS.Components.Entity grid, string key, Vector3 pointLocal, float cdA, Vector3 normalLocal)
+        => AeroOf(grid)?.SetDragPatch(key, pointLocal, cdA, normalLocal) ?? false;
+
+    /// <summary>Remove every drag on the grid whose key starts with <paramref name="keyPrefix"/> (null or "": all of them).
+    /// Returns how many went.</summary>
+    public static int ClearDrag(Keen.VRage.DCS.Components.Entity grid, string keyPrefix)
+        => AeroOf(grid)?.ClearDragPatches(keyPrefix) ?? 0;
+
+    /// <summary>One drag set on the grid: its point, drag area, plate normal (zero: none). False: no such key.</summary>
+    public static bool TryGetDrag(Keen.VRage.DCS.Components.Entity grid, string key, out Vector3 pointLocal, out float cdA, out Vector3 normalLocal)
+    {
+        pointLocal = normalLocal = Vector3.Zero; cdA = 0f;
+        var a = AeroOf(grid);
+        return a != null && key != null && a.TryGetDragPatch(key, out pointLocal, out cdA, out normalLocal);
+    }
 
     // ── the effects ──
 

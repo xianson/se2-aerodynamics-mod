@@ -199,7 +199,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         if (_octree == null) return boxes;
         foreach (var block in _octree.GetAllCubeBlocks())
         {
-            if (block == null) continue;
+            if (block == null || BlockComponentFactory.IsSelfModelled(block)) continue;
             foreach (var g in block.GetTransformedOccupiedCellGroups()) boxes.Add((g.Min, g.Max));
         }
         return boxes;
@@ -239,6 +239,17 @@ public partial class AeroGridComponent : Component, IInSceneListener
             try { _isSubPart = PhysicsHack.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
         }
         if (_isSubPart) { _rcsHoldValid = false; mode = "sub-part"; return false; }
+        if (TestTurnGen != 0 && IsServerScene && Data.TryGet<TargetControlData>(out var tt))
+        {
+            // DEV (harness): the pilot's target set as the reticle sets it - the orientation when TestTurnGen last changed,
+            // turned by TestTurnPitch / Yaw / Roll (deg, grid-local X / Y / Z) - written where the cockpit writes it
+            if (_testTurnGen != TestTurnGen) { _testTurnGen = TestTurnGen; _testTurnBase = wt.Orientation; }
+            const float D2R = MathF.PI / 180f;
+            target = Quaternion.Normalize(_testTurnBase * Quaternion.CreateFromAxisAngle(Vector3.UnitX, TestTurnPitch * D2R)
+                * Quaternion.CreateFromAxisAngle(Vector3.UnitY, TestTurnYaw * D2R) * Quaternion.CreateFromAxisAngle(Vector3.UnitZ, TestTurnRoll * D2R));
+            tt.TargetOrientation = target; Data.Set(tt);
+            _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
+        }
         if (Data.TryGet<TargetControlData>(out var tc) && tc.TargetOrientation.IsValidAndRotationIsNormalized())
         {
             target = tc.TargetOrientation; _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
@@ -260,6 +271,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _rcsHoldValid = false; mode = "free"; return false;
     }
     internal ThrustTorque.Report LastThrust;
+    /// <summary>DEV (harness: aeroset AeroGridComponent.TestTurnPitch 10, then TestTurnGen n - a new n re-bases): a seated
+    /// grid's target, as the reticle sets it, turned from its orientation at that moment. 0: the pilot's own.</summary>
+    public static int TestTurnGen; public static float TestTurnPitch, TestTurnYaw, TestTurnRoll;
+    private int _testTurnGen; private Quaternion _testTurnBase = Quaternion.Identity;
+    /// <summary>The allocation's last step: the surfaces it gave inputs to, and how many at their limit.</summary>
+    internal int _allocN, _allocSat;
     /// <summary>The air-breathing engines of the last build (their block boxes, 0.25 m cells, and axes): flow-through.</summary>
     internal List<(Vector3I lo, Vector3I hi, Vector3 axis)> _engines;
     /// <summary>The atmospheric thrusters (an air-breathing profile) as boxes and axes, from the thruster list.</summary>
@@ -272,6 +289,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>The air's torque applied this frame (local, N m, the world's multipliers in; zero: none) - the attitude
     /// control's feedforward (ThrustTorque, aero-aware).</summary>
     internal Vector3 LastAeroTorque;
+    /// <summary>The control surfaces' torque applied this frame (local, N m, the world's multipliers in): the block
+    /// components' share of the air's torque. The aero-aware law counts it as delivered by an actuator.</summary>
+    internal Vector3 LastSurfaceTorque;
+    /// <summary>The attitude controller's whole torque demand (local, N m): I x the law's acceleration - the airframe's own
+    /// torque (surfaces excluded), for every actuator together - surfaces, thrusters, gyros. Written by ThrustTorque.Apply
+    /// (the late attitude job: the surfaces, computed earlier in the tick, read the previous tick's). Zero, with
+    /// LastControlTorqueValid false, when the aero-aware law is not flying (rate input, free, vacuum, harness).</summary>
+    internal Vector3 LastControlTorque;
+    internal bool LastControlTorqueValid;
     /// <summary>The wind at the grid (world m/s; AeroWind), whether aero applied its forces last tick (the game's own wind
     /// push is then taken back), and the impulse taken back (world N s).</summary>
     internal Vector3 LastWind, LastWindUndone; internal bool AeroForcesApplied;
@@ -322,6 +348,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>Component (CS/wing) torque from last frame, separate from body torque.</summary>
     internal Vector3 LastComponentTorque;
+    /// <summary>DEV (harness: aeroset AeroGridComponent.SurfaceTorqueLog true): twice a second per grid with block components,
+    /// their torque (grid frame, N m), the rotation wanted and the rotation now - [AERO-CS-TORQUE] lines.</summary>
+    public static bool SurfaceTorqueLog;
+    private long _surfaceLogAt;
     /// <summary>Component (CS/wing) force from last frame, separate from body force.</summary>
     internal Vector3 LastComponentForce;
 
@@ -408,6 +438,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     private void OnBlocksChangedCore(CubeGridComponent.BlocksChangedArgs blockData)
     {
+        StructBlockVersion++;   // (the structure's rebuild: StructureServer)
         if (blockData.IsParallelInit) return;
         if (!AeroSwitch.Enabled) return;   // (on again: a full rebuild, see AeroSimJob)
 
@@ -439,20 +470,21 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 if (_thrusterSetCount != _thrusterCache.Count) { _thrusterSet.Clear(); foreach (var t in _thrusterCache) if (t.ThrusterEntity != null) _thrusterSet.Add(t.ThrusterEntity); _thrusterSetCount = _thrusterCache.Count; }
                 if (block.Entity != null && _thrusterSet.Contains(block.Entity)) thrustersChanged = true;
             }
+            bool inSurface = !BlockComponentFactory.IsSelfModelled(block);   // (self-modelled: never in the surface)
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var min = cellGroup.Min;
                 var max = cellGroup.Max;
-                _patchRemoved.Add((min, max));
+                if (inSurface) _patchRemoved.Add((min, max));
                 // per block, not per cell (an impact is hundreds of blocks of 1000 cells in one tick: it was ~0.2 s)
                 if (_components.RemoveInBox(min, max) > 0) _faceOverridesDirty = true;
-                if (_model?.HasWings == true)
+                if (inSurface && _model?.HasWings == true)
                 {
                     int k = _cellScale;
                     var q0 = new Vector3I(FloorDiv(min.X, k), FloorDiv(min.Y, k), FloorDiv(min.Z, k)); var q1 = new Vector3I(FloorDiv(max.X, k), FloorDiv(max.Y, k), FloorDiv(max.Z, k));
                     for (int x = q0.X; x <= q1.X; x++) for (int y = q0.Y; y <= q1.Y; y++) for (int z = q0.Z; z <= q1.Z; z++) _model.RemoveWingCell(new Vector3I(x, y, z));
                 }
-                if (_chunks == null || !LocalUpdates)   // (the cells, for the cell-by-cell surface update: chunked grids need none)
+                if (inSurface && (_chunks == null || !LocalUpdates))   // (the cells, for the cell-by-cell surface update: chunked grids need none)
                     for (int x = min.X; x <= max.X; x++)
                         for (int y = min.Y; y <= max.Y; y++)
                             for (int z = min.Z; z <= max.Z; z++)
@@ -476,6 +508,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 }
             }
 
+            if (!BlockComponentFactory.IsSelfModelled(block))   // (its component models it whole: not in the surface)
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {
                 var min = cellGroup.Min;
@@ -594,7 +627,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
             var boxes = new List<(Vector3I, Vector3I)>();
             foreach (var block in _octree.GetAllCubeBlocks())
             {
-                if (block == null) continue;
+                if (block == null || BlockComponentFactory.IsSelfModelled(block)) continue;
                 foreach (var g in block.GetTransformedOccupiedCellGroups())
                     for (int r = 0; r < regions.Count; r++)
                     {
@@ -637,6 +670,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
         UpdateAttitudeHold(wt, angularVelocity);
 
         if (!_initialized) return;
+        // (the save's surface / gear settings onto their blocks - here, before the air's early outs: a parked grid too)
+        if (IsServerScene) AeroSurfaceSaved.ApplyPending();
 
         // ── Global scheduler tick (first grid each frame drives all rebuilds) ──
         long tsc = AeroCost.Start();
@@ -789,7 +824,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
         // ── Force computation (the force table; else the surface, even during staggered build) ──
         // (a big grid's surface is let go once its table is in: the table alone carries it)
-        if (_surface.FaceCount == 0 && _model?.Table == null) return;
+        // (no surface and no table: nothing for the drag model - but self-modelled blocks, kept out of the surface, still
+        //  fly by their components: a grid of 3x3x1 control surfaces alone has no faces at all)
+        bool noSurface = _surface.FaceCount == 0 && _model?.Table == null;
+        if (noSurface && _components.Count == 0) return;
 
         Vector3 localLinVel = WorldTransform.TransformDirectionInv(linearVelocity, wt);
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, wt);
@@ -813,13 +851,17 @@ public partial class AeroGridComponent : Component, IInSceneListener
             GroundUpLocal);
 
         long dragStart = AeroStats.Timestamp();
-        LastResult = _model.Compute(ctx);
+        LastResult = noSurface ? default : _model.Compute(ctx);
         AeroStats.SetDrag(AeroStats.ElapsedUs(dragStart));
 
         // ── Control surface input from player ──
         long csStart = AeroStats.Timestamp();
         float q = (float)(0.5 * atmo.Density * speed * speed);
         UpdateControlSurfaceInputs(centerOfMass, wt, localAngVel, q, LastResult.Torque);
+        // the aero-aware attitude law flying: the surfaces deliver ITS torque demand (ThrustTorque publishes it; the gyros
+        // and thrusters give the rest) - the mixer's own law stands only when it does not fly (rate input, harness, vacuum)
+        if (AllocEnabled && IsServerScene && LastControlTorqueValid && float.IsNaN(ControlSurface.TestInput)) AllocateSurfaces(ctx, centerOfMass);
+        PublishFlapAngles(wt);
         AeroStats.SetCtrl(AeroStats.ElapsedUs(csStart));
 
         // ── Block component forces ──
@@ -831,6 +873,15 @@ public partial class AeroGridComponent : Component, IInSceneListener
             var (compForce, compTorque) = _components.EvaluateAll(ctx);
             LastComponentTorque = compTorque;
             LastComponentForce = compForce;
+            if (SurfaceTorqueLog && IsServerScene)
+            {
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (now - _surfaceLogAt > System.Diagnostics.Stopwatch.Frequency / 2)
+                {
+                    _surfaceLogAt = now;
+                    Log.Default?.Info($"[AERO-CS-TORQUE] grid={Entity?.GetHashCode()} q={q:F0}Pa comp torque=({compTorque.X:F0},{compTorque.Y:F0},{compTorque.Z:F0})Nm want=({_lastGridAngVel.X:F3},{_lastGridAngVel.Y:F3},{_lastGridAngVel.Z:F3}) w=({localAngVel.X:F3},{localAngVel.Y:F3},{localAngVel.Z:F3}) testInput={ControlSurface.TestInput}");
+                }
+            }
             var merged = LastResult.Force + compForce;
             var mergedTorque = LastResult.Torque + compTorque;
 
@@ -844,6 +895,18 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 LastResult.FrontalArea,
                 LastResult.Mach,
                 LastResult.DynamicPressure);
+        }
+        // ── Other mods' drag (AeroApi.SetDrag): airframe air - in the result, not the control surfaces' torque ──
+        LastPatchForce = LastPatchTorque = Vector3.Zero;
+        List<DragPatch> patches = _dragPatches;
+        if (patches.Count > 0)
+        {
+            var (pf, pt) = EvaluateDragPatches(patches, ctx);
+            LastPatchForce = pf; LastPatchTorque = pt;
+            var mf = LastResult.Force + pf;
+            float fdv = Vector3.Dot(mf, localLinVel / speed);
+            LastResult = new AeroResult(mf, LastResult.Torque + pt, MathF.Abs(fdv), (mf - fdv * (localLinVel / speed)).Length(),
+                LastResult.FrontalArea, LastResult.Mach, LastResult.DynamicPressure);
         }
         AeroStats.SetComp(AeroStats.ElapsedUs(compStart));
 
@@ -1007,6 +1070,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // ══════════════════════════════════════════════════════════════════════
         Quaternion gridOrientation = wt.Orientation;
         Vector3 gridPosition = (Vector3)wt.Position;
+        _cockpit = Data.TryGet<TargetControlData>(out var cockpitTd) && cockpitTd.RelativeCockpitOrientation.IsValidAndRotationIsNormalized() ? cockpitTd.RelativeCockpitOrientation : Quaternion.Identity;
 
         if (shouldLog)
         {
@@ -1067,13 +1131,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
             const float Kp = 5.0f;    // proportional gain on attitude error (rad)
             const float Kd = 0.5f;    // derivative gain on angular rate (in PD cmd, surface adds more)
 
-            // Roll: use keyboard rate command when available
+            // (no keyboard roll override: with the reticle on, Q/E rolls the TARGET orientation - CockpitInputHandlerComponent
+            //  multiplies TargetOrientation by the roll - and the cockpit stops updating AngularControlData (UpdateRotationData
+            //  is [DoesNotHave(ReticleTargettingEnabler)]); its stale roll here overrode Q/E: the surfaces ignored the keys and
+            //  fought the gyros' roll - "Q/E inverted", the user on the Tu-134, 2026-10-12. The error's roll carries Q/E.)
             Vector3 attitudeCmd = eulerError * Kp;
-            if (hasAngularData)
-            {
-                float rollInput = MathF.Max(-1f, MathF.Min(1f, angularData.TargetAngularVelocity.Z));
-                attitudeCmd.Z = rollInput * Kp;  // keyboard overrides attitude roll
-            }
 
             // Clamp per axis
             const float maxCmd = 5.0f;
@@ -1082,8 +1144,9 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Y * targetData.PerAxisDampeningMultiplier.Y)),
                 MathF.Max(-maxCmd, MathF.Min(maxCmd, attitudeCmd.Z)));
 
-            // targetAngVel = PD command (will be projected per-surface in STEP 5)
-            targetAngVel = attitudeCmd - localAngVel * Kd;
+            // the rotation wanted: the attitude command as a rate; the surfaces take it through ControlSurface.RateCommand
+            // (damping on the rate ERROR - the old "- w Kd" here plus 3 w per surface damped the turn the gyros were making)
+            targetAngVel = attitudeCmd;
 
             // ── FEEDFORWARD: counter body aero torque ──
             // bodyTorque is in local frame from the body aero model (drag, lift on hull).
@@ -1251,16 +1314,24 @@ public partial class AeroGridComponent : Component, IInSceneListener
             }
             else if (_components.Components[i] is Airbrake ab)
             {
-                ab.DeployFraction = 1f;
+                // (the clamshell: both leaves seen from ahead - sin of their opening; the old 1x1: always out)
+                ab.DeployFraction = ab.State != null ? MathF.Sin(Math.Clamp(ab.State.OpeningDeg, 0f, 90f) * MathF.PI / 180f) : 1f;
             }
             else if (_components.Components[i] is ControlSurface cs)
             {
+                // its terminal: off / unpowered - trails at neutral; the axes it may help with; its flap / trim
+                if (!SurfaceSetup(cs, _lastVelocityLocal, out float baseInput, out bool usable)) { cs.DeflectionInput = 0f; continue; }
+                if (!usable) { cs.DeflectionInput = baseInput; continue; }
+
                 // 5a. Moment arm from CoM to surface position
                 Vector3 r = cs.Position - centerOfMass;
 
                 // 5b. Lift direction = cross(hinge, chord)
                 //     This is the direction of force when the surface deflects
                 Vector3 liftDir = Vector3.Cross(cs.HingeAxis, cs.ChordDirection);
+                // (the force a deflection adds runs along (air . chord) x normal: with the air coming over the trailing
+                //  edge - a surface mounted backwards - the same deflection pushes the other way)
+                if (Vector3.Dot(-_lastVelocityLocal, cs.ChordDirection) < 0f) liftDir = -liftDir;
                 float liftDirLen = liftDir.Length();
 
                 // 5c. Torque axis from positive deflection.
@@ -1268,12 +1339,12 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 //     → positive AoA → positive lift → torque = Cross(r, liftDir*lift).
                 //     effectiveness = Cross(r, liftDir): torque direction from positive lift.
                 //     But positive input → positive lift, so effectiveness IS the torque direction of +input.
-                Vector3 effectiveness = Vector3.Cross(r, liftDir);
+                Vector3 effectiveness = MaskAxes(cs, Vector3.Cross(r, liftDir));
                 float effLen = effectiveness.Length();
 
                 if (effLen < 0.01f)
                 {
-                    cs.DeflectionInput = 0;
+                    cs.DeflectionInput = baseInput;
                     if (shouldLog)
                     {
                         Log.Default?.Info($"[AERO-CS] CS#{i} SKIPPED effLen={effLen:F4} pos=({cs.Position.X:F3},{cs.Position.Y:F3},{cs.Position.Z:F3}) blockPos=({cs.BlockPosition.X},{cs.BlockPosition.Y},{cs.BlockPosition.Z})");
@@ -1291,28 +1362,13 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 float command;
                 float damping;
 
-                if (inputMode == "RETICLE")
-                {
-                    // Reticle mode: PD command already includes damping.
-                    // Use actual torque direction (Cross(r, liftDir)) for projection,
-                    // but ALSO add direct damping per-surface to fight angular velocity.
-                    command = Vector3.Dot(effNorm, targetAngVel);
-                    // Add strong per-surface damping to prevent overshoot
-                    float angVelProjection = Vector3.Dot(effNorm, localAngVel);
-                    damping = angVelProjection * 3.0f;
-                    scaledInput = command - damping;
-                }
-                else
-                {
-                    // Keyboard mode: PD controller with speed-dependent gain
-                    const float Kp = 1.0f;
-                    const float Kd = 1.5f;
-                    command = Vector3.Dot(effNorm, targetAngVel) * Kp;
-                    damping = Vector3.Dot(effNorm, localAngVel) * Kd;
-                    scaledInput = command * gainScale - damping;
-                }
-                float clampedInput = MathF.Max(-1f, MathF.Min(1f, scaledInput));
-                cs.DeflectionInput = clampedInput;
+                // every mode: ControlSurface.RateCommand - the rotation wanted (reticle: the attitude command; keyboard: the
+                // pilot's rates; hold: the hold's) plus damping of the rate error
+                command = Vector3.Dot(effNorm, targetAngVel) * ControlSurface.RateKp;
+                damping = Vector3.Dot(effNorm, localAngVel - targetAngVel) * ControlSurface.RateKd;
+                scaledInput = ControlSurface.RateCommand(effNorm, targetAngVel, localAngVel, gainScale);
+                float clampedInput = MathF.Max(-1f, MathF.Min(1f, baseInput + scaledInput));
+                cs.DeflectionInput = float.IsNaN(ControlSurface.TestInput) ? clampedInput : Math.Clamp(ControlSurface.TestInput, -1f, 1f);
 
                 if (shouldLog)
                 {
@@ -1365,6 +1421,135 @@ public partial class AeroGridComponent : Component, IInSceneListener
         }
     }
 
+    /// <summary>The flap models' deflections, for the client copies (AeroFlapComponent turns each flap subpart by its angle).</summary>
+    private void PublishFlapAngles(in WorldTransform wt)
+    {
+        var t = _flapTable; int n = 0; bool same = t != null;
+        for (int i = 0; i < _components.Components.Count; i++)
+            if (_components.Components[i] is ControlSurface fs && fs.FlapKey is Vector3I fk)
+            {
+                n++;
+                if (same && !(t.Index.TryGetValue(fk, out int slot) && slot < t.Angle.Length)) same = false;
+            }
+        if (n == 0) return;
+        if (!same || t.Index.Count != n)
+        {
+            // (a new set of flaps: a new table - a client holding the old one finds it replaced and matches again)
+            t = new ThrustTorque.FlapTable { Angle = new float[n] }; int k = 0;
+            for (int i = 0; i < _components.Components.Count; i++)
+                if (_components.Components[i] is ControlSurface fs && fs.FlapKey is Vector3I fk && !t.Index.ContainsKey(fk)) t.Index[fk] = k++;
+            _flapTable = t;
+        }
+        for (int i = 0; i < _components.Components.Count; i++)
+            if (_components.Components[i] is ControlSurface fs && fs.FlapKey is Vector3I fk && t.Index.TryGetValue(fk, out int slot))
+                t.Angle[slot] = fs.DeflectionAngle;
+        ThrustTorque.PublishFlaps(this, wt, t);
+    }
+    private ThrustTorque.FlapTable _flapTable;
+
+    /// <summary>
+    /// The control surfaces as actuators of the aero-aware attitude law (the user, 2026-10-12: "the gyro / thrust controller
+    /// is correct - the surfaces follow it"): its torque demand (LastControlTorque, grid-local N m, a tick old) less what the
+    /// surfaces give undeflected, shared out by least squares over each surface's torque per unit input - measured now, by
+    /// computing it at +-1/2 input - and clamped to +-1. So the surfaces give about the demand and never more (an excess the
+    /// gyros and thrusters would counter); the law asks them for the rest (demand - LastSurfaceTorque).
+    /// </summary>
+    private void AllocateSurfaces(in AeroContext ctx, Vector3 com)
+    {
+        var list = _allocScratch; list.Clear(); _allocBase.Clear(); _allocA.Clear(); _allocN = 0;   // (read by Loac: never stale or mismatched)
+        _cockpit = Data.TryGet<TargetControlData>(out var tcd) && tcd.RelativeCockpitOrientation.IsValidAndRotationIsNormalized() ? tcd.RelativeCockpitOrientation : Quaternion.Identity;
+        Vector3 t0 = Vector3.Zero;
+        for (int i = 0; i < _components.Components.Count; i++)
+        {
+            if (_components.Components[i] is not ControlSurface cs) continue;
+            var cond = LocalAeroConditions.FromContext(ctx, cs.Position);
+            // its terminal: off - neutral, left out; no axes - its flap / trim held; else the control works about the trim
+            if (!SurfaceSetup(cs, _lastVelocityLocal, out float b, out bool usable)) b = 0f;
+            else if (usable)
+            {
+                cs.DeflectionInput = b + 0.5f; var tp = cs.Compute(cond).TorqueAbout(com);
+                cs.DeflectionInput = b - 0.5f; var tm = cs.Compute(cond).TorqueAbout(com);
+                // (torque per unit input, about the centre of mass - only its share on the axes it may help with: what it
+                //  gives on the others the gyros answer, the law asking them for demand less what the surfaces gave)
+                var a = MaskAxes(cs, tp - tm);
+                if (a.LengthSquared() > 1e-6f) { list.Add((cs, a)); _allocBase.Add(b); }
+            }
+            cs.DeflectionInput = b; t0 += cs.Compute(cond).TorqueAbout(com);
+        }
+        if (list.Count == 0) { SurfacePush = SurfacePull = Vector3.Zero; SurfaceNeutral = t0; return; }
+        // the world's tuning scale (applied torque / computed), as the sim job took it last tick
+        float lc = LastComponentTorque.Length();
+        float scale = lc > 1e-3f ? LastSurfaceTorque.Length() / lc : 1f;
+        if (!(scale > 1e-3f) || !float.IsFinite(scale)) scale = 1f;
+        Vector3 want = LastControlTorque / scale - t0;
+        // (the loss-of-control warning's: the surfaces' torque at full throw per axis, and at their trim - Loac.cs)
+        SurfaceTravel(list, scale, t0);
+        _allocA.Clear(); foreach (var (_, a) in list) _allocA.Add(a);
+        if (_allocU.Length < list.Count) _allocU = new float[list.Count * 2];
+        if (!ControlSurface.Allocate(_allocA, want, _allocU)) return;
+        _allocN = list.Count; _allocSat = 0;
+        for (int k = 0; k < list.Count; k++)
+        {
+            float u = Math.Clamp(_allocBase[k] + _allocU[k], -1f, 1f);
+            list[k].cs.DeflectionInput = u; if (MathF.Abs(u) > 0.999f) _allocSat++;
+        }
+    }
+    /// <summary>The surfaces as the attitude law's actuators on/off (harness: aeroset AeroGridComponent.AllocEnabled true).
+    /// (Its off switch is for diagnosis: the 2026-10-12 freeze blamed on it was EffectCull's exceptions.) Server only: the
+    /// client copies show the server's deflections.</summary>
+    public static bool AllocEnabled = true;
+    private readonly List<(ControlSurface cs, Vector3 a)> _allocScratch = new();
+    private readonly List<Vector3> _allocA = new(); private readonly List<float> _allocBase = new(); private float[] _allocU = new float[16];
+
+    /// <summary>After a rebuild: each control surface's section from the grid's cells (its host ahead, span, end plates -
+    /// ControlSurfaceGeometry, no wing detection), logged once per rebuild per surface.</summary>
+    private void MeasureSurfaces()
+    {
+        ControlSurfaceGeometry.Measure(_components.Components, _gridAccessor);
+        for (int i = 0; i < _components.Components.Count; i++)
+            if (_components.Components[i] is ControlSurface cs && cs.Surroundings is SurfaceSurroundings g)
+                Log.Default?.Info($"[AERO] surface at {cs.BlockPosition}: +chord edge {g.Describe(0)}; -chord edge {g.Describe(1)}");
+    }
+
+    /// <summary>The cockpit's orientation in the grid (TargetControlData), this step: the frame of the surfaces' axis toggles.</summary>
+    private Quaternion _cockpit = Quaternion.Identity;
+
+    /// <summary>
+    /// A surface's terminal settings this step (none: works on every axis): its max deflection applied; false when it is
+    /// off, unpowered or broken (it trails at neutral). baseInput: its flap / trim as an input (+ trim: the force toward the
+    /// cockpit's up - for a fin, its right); usable: it may help on some axis.
+    /// </summary>
+    private bool SurfaceSetup(ControlSurface cs, Vector3 velLocal, out float baseInput, out bool usable)
+    {
+        baseInput = 0f; usable = true;
+        var s = cs.Settings;
+        if (s == null) return true;
+        if (!s.Working) { usable = false; return false; }
+        cs.MaxDeflection = s.MaxDeflection;
+        usable = (s.Pitch || s.Yaw || s.Roll) && cs.MaxDeflection > 0.01f;
+        if (s.Trim != 0f && cs.MaxDeflection > 0.01f)
+        {
+            // (+ input pushes along hinge x chord - the other way with the air over the trailing edge, as the mixer)
+            Vector3 push = Vector3.Cross(cs.HingeAxis, cs.ChordDirection);
+            if (Vector3.Dot(-velLocal, cs.ChordDirection) < 0f) push = -push;
+            Vector3 up = Vector3.Transform(Vector3.UnitY, _cockpit), right = Vector3.Transform(Vector3.UnitX, _cockpit);
+            float pu = Vector3.Dot(push, up), pr = Vector3.Dot(push, right);
+            float sign = MathF.Abs(pu) >= MathF.Abs(pr) ? MathF.Sign(pu) : MathF.Sign(pr);
+            baseInput = Math.Clamp(sign * s.Trim / cs.MaxDeflection, -1f, 1f);
+        }
+        return true;
+    }
+
+    /// <summary>A torque (grid frame) with the parts on the cockpit's axes the surface may not help with taken out.</summary>
+    private Vector3 MaskAxes(ControlSurface cs, Vector3 torque)
+    {
+        var s = cs.Settings;
+        if (s == null || (s.Pitch && s.Yaw && s.Roll)) return torque;
+        var c = Vector3.Transform(torque, Quaternion.Inverse(_cockpit));
+        c = new Vector3(s.Pitch ? c.X : 0f, s.Yaw ? c.Y : 0f, s.Roll ? c.Z : 0f);
+        return Vector3.Transform(c, _cockpit);
+    }
+
     // ── Scheduler callbacks (called by AeroScheduler) ──
 
     /// <summary>
@@ -1410,11 +1595,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// </summary>
     private void StartBackgroundBuild()
     {
-        long tb = AeroCost.Start();
+        long tb = System.Diagnostics.Stopwatch.GetTimestamp();   // (the big-build log line reads it: always)
         var boxes = new List<(Vector3I, Vector3I)>();
         foreach (var block in _octree.GetAllCubeBlocks())
         {
-            if (block == null) continue;
+            if (block == null || BlockComponentFactory.IsSelfModelled(block)) continue;
             foreach (var g in block.GetTransformedOccupiedCellGroups()) boxes.Add((g.Min, g.Max));
         }
         // the air-breathing engines (flow-through: their intakes and exhausts are no walls) - the thruster list first, if
@@ -1581,6 +1766,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
                 _builtShadow = null;
                 _components.Clear();
                 _factory.CreateAll(_octree, _blockSize, _components);
+                MeasureSurfaces();
                 _faceOverridesDirty = true;
                 AeroCost.FinComponents.Stop(ts);
                 return;
@@ -1609,6 +1795,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // Rebuild all block-level aero components from scratch
         _components.Clear();
         _factory.CreateAll(_octree, _blockSize, _components);
+        MeasureSurfaces();
         _faceOverridesDirty = true;
         AeroCost.FinComponents.Stop(tf);
     }

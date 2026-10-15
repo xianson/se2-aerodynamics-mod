@@ -45,7 +45,7 @@ public class Se2GridAccessor : IGridAccessor
         var blocks = _octree.GetAllCubeBlocks();
         foreach (var block in blocks)
         {
-            if (block == null)
+            if (block == null || BlockComponentFactory.IsSelfModelled(block))
                 continue;
             foreach (var cellGroup in block.GetTransformedOccupiedCellGroups())
             {

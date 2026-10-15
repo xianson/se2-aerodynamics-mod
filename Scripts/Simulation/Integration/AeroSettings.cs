@@ -88,14 +88,79 @@ public static class AeroSettings
             "Seconds without block changes before a full rebuild cleans up after local updates.");
         B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
             "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.");
+        B("Structure.Loads", "world", false, () => StructureLoads.Enabled, v => StructureLoads.Enabled = v,
+            "Work out the loads in every ship's structure (air, thrust, gyros, its own turning) and its hull's heating, a few times a second in the background. Damage is separate.");
+        B("Structure.Damage", "world", false, () => StructureLoads.Damage, v => StructureLoads.Damage = v,
+            "Overloaded joints of the ship a player flies wear, and break off what hangs from them (pull too many g, whip the ship round too hard). AI ships and wrecks never. On by default.");
+        F("Structure.Strength", "world", 0.1, 100, false, () => ShipStructure.Strength, v => ShipStructure.Strength = (float)v,
+            "Every block's strength, times this (7: an airliner of small blocks yields near 3 g and sheds parts past 4; a light large-block plane yields near 8 g and breaks past 12).");
+        F("Structure.BreakAt", "world", 1.05, 10, false, () => StructureLoads.BreakUtil, v => StructureLoads.BreakUtil = (float)v,
+            "Past its yield a joint wears through over a moment, faster the further over: at this many times its yield load it loses Structure.WearRate of its health a second. It lets go when its health runs out (or at once past Structure.SnapUtil).");
+        F("Structure.WearRate", "world", 0, 100, false, () => StructureLoads.WearPerSecond, v => StructureLoads.WearPerSecond = (float)v,
+            "Health a joint loses per second at Structure.BreakAt (0.45: a hard pull wears a joint through over a second or several; a brief spike only dents it).");
+        F("Structure.SnapUtil", "world", 1.05, 100, false, () => StructureFatigue.SnapUtil, v => StructureFatigue.SnapUtil = (float)v,
+            "A joint snaps at once at this many times its intact yield load (a genuine overload: a collision, a violent whip); below it, it wears through.");
+        B("Structure.BySection", "world", false, () => StructureEval.BySection, v => StructureEval.BySection = v,
+            "A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck).");
+        B("Structure.Fatigue", "world", false, () => StructureFatigue.Enabled, v => StructureFatigue.Enabled = v,
+            "Joints tire under hard flying below their yield too: from Structure.EnduranceUtil of the yield up they lose health slowly, faster the harder they are loaded. Health lost is strength lost, so a tired ship fails at a lower load. Kept in the blocks' health (saved; welding repairs it). Cruising never tires a ship.");
+        F("Structure.FatigueRate", "world", 0, 1, false, () => StructureFatigue.Rate, v => StructureFatigue.Rate = (float)v,
+            "Health a joint loses per second from fatigue held at its yield (0.005: a tenth in 20 s at the yield, in ~40 s at 90%, ~5 min at 70%).");
+        F("Structure.EnduranceUtil", "world", 0, 1, false, () => StructureFatigue.EnduranceUtil, v => StructureFatigue.EnduranceUtil = (float)v,
+            "The endurance limit: joints loaded under this share of their yield never tire.");
+        B("Structure.SplitBlocks", "world", false, () => AeroGridComponent.SplitBlocks, v => AeroGridComponent.SplitBlocks = v,
+            "A joint that fails breaks its block's pieces on the failing side - the block stays, broken, on one side, and the ship parts along the failed face - instead of destroying the whole block (a block of one piece is still destroyed).");
+        B("Structure.ThrustLoads", "world", false, () => StructureEval.ThrustLoads, v => StructureEval.ThrustLoads = v,
+            "Engine thrust loads the structure (engine mounts, and the push through the ship). Off: engines never strain or break a ship.");
+        B("Structure.EntryLoads", "world", false, () => StructureEval.EntryLoads, v => StructureEval.EntryLoads = v,
+            "A re-entry flown on rails by the Orbital mod loads the structure with its braking (up to ~5 g), pressed onto the windward faces as the air would: the nose and heat shield carry it. Off: a railed entry heats the hull but never strains it.");
+        B("Structure.Tear", "world", false, () => StructureTear.Enabled, v => StructureTear.Enabled = v,
+            "A large piece the structure breaks off tears loose over a moment (held at the torn joint, sagging, then free) instead of vanishing off at once. Small bits still pop off.");
+        F("Structure.TearSeconds", "world", 0.1, 10, false, () => StructureTear.TearSeconds, v => StructureTear.TearSeconds = (float)v,
+            "Seconds a large broken-off piece takes to tear loose.");
+        F("Structure.TearMinMass", "world", 0, 1e7, false, () => StructureTear.MinMass, v => StructureTear.MinMass = (float)v,
+            "Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once.");
+        F("Structure.TearHold", "world", 0, 50, false, () => StructureTear.ForceFactor, v => StructureTear.ForceFactor = (float)v,
+            "How hard a tearing piece is held at first, in g of its own weight (it eases to nothing over the tear).");
+        B("Structure.Bends", "world", false, () => StructureBend.Enabled, v => StructureBend.Enabled = v,
+            "An overloaded joint that holds stays bent: the armour outboard of it (a wing, a pod) sets a little the way the load pushed, more the further past its yield, more again after a harder pull. With Structure.Damage.");
+        F("Structure.BendPerUtil", "world", 0, 1, false, () => StructureBend.PerUtil, v => StructureBend.PerUtil = (float)v,
+            "The permanent turn (radians) at a joint per unit of load over its last peak (0.05: a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm just short of breaking).");
+        F("Structure.BendMax", "world", 0, 1, false, () => StructureBend.Max, v => StructureBend.Max = (float)v,
+            "The most any point of the armour is bent in total (m).");
+        I("Structure.BendMaxBlocks", "world", 1, 5000, false, () => StructureBend.MaxBlocks, v => StructureBend.MaxBlocks = (int)v,
+            "The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip, and is not bent.");
+        B("Fx.TornSmoke", "client", false, () => TearSmoke.Enabled, v => TearSmoke.Enabled = v,
+            "A joint the structure breaks smokes and sheds debris for a few seconds, on the ship and on the piece that tears off.");
+        F("Fx.TornSmokeSeconds", "client", 0.5, 20, false, () => TearSmoke.Seconds, v => TearSmoke.Seconds = (float)v,
+            "Seconds a torn joint smokes.");
+        B("Heat.Damage", "world", false, () => StructureLoads.HeatDamage, v => StructureLoads.HeatDamage = v,
+            "Hull blocks hotter than they can take (reentry, very fast low flight) lose health. Heat weakens the structure either way. On by default.");
+        F("Heat.Multiplier", "world", 0, 10, false, () => HullHeat.HeatMultiplier, v => HullHeat.HeatMultiplier = (float)v,
+            "The air's heating of the hull, times this.");
         B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
             "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.");
         F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
             "Wing strength, times this (1: a light-armour wing 4 blocks long snaps at 40 kPa wing loading; heavy armour 4x).");
 
         // ── CLIENT ──
+        B("Hud.StallWarning", "client", false, () => StallWarning.Enabled, v => StallWarning.Enabled = v,
+            "The stall warning, from the whole ship's air force (any shape): STALL when pulling further only loses lift, amber when close to it.");
+        B("Hud.Loac", "client", false, () => LoacWarning.Enabled, v => LoacWarning.Enabled = v,
+            "The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the attitude you command needs nearly / more than the torque the gyros, thrusters and control surfaces have at this speed (slow, the surfaces lose to the air).");
+        B("Hud.GameStallWarning", "client", false, () => GameStallWarning.On, v => GameStallWarning.On = v,
+            "The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity - it ignores the wings' lift). Off by default: removed.");
         B("Hud.Mach", "client", false, () => MachHud.On, v => MachHud.On = v,
             "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying. Off by default: the flight boxes by ALT show it.");
+        // (the airframe you can feel - StructureFeel.cs, 2026-10-14: the structure's load, heard and felt in the seat)
+        B("Feel.Creaks", "client", false, () => StructureFeel.Creaks, v => StructureFeel.Creaks = v,
+            "The airframe creaks and groans as the structure is loaded (from 60% of its strength, more and louder toward 100%), and cracks when a block wears or breaks. The ship you are seated in.");
+        F("Feel.CreakVolume", "client", 0, 2, false, () => StructureFeel.Volume, v => StructureFeel.Volume = (float)v,
+            "The creaks' and cracks' volume, times this.");
+        B("Feel.Shake", "client", false, () => StructureFeel.Shake, v => StructureFeel.Shake = v,
+            "The cockpit buzzes as the structure is loaded (from 50% of its strength, noticeable near 100%), with a jolt when a block breaks. The game's own camera shake settings apply.");
+        F("Feel.ShakeScale", "client", 0, 5, false, () => StructureFeel.ShakeScale, v => StructureFeel.ShakeScale = (float)v,
+            "The load shake's strength, times this.");
         B("Fx.Effects", "client", false, () => AeroEntryFx.AllEffects, v => AeroEntryFx.AllEffects = v,
             "Every aero visual effect (plasma, vapour, tip trails, the plasma light). Off: none at all.");
         B("Fx.FlightField", "client", false, () => FlightField.On, v => FlightField.On = v,
@@ -262,6 +327,7 @@ public static class AeroSettings
         _worldApplied = true;
         ResetScope("world");
         int n = Apply(text, "world");
+        AeroSurfaceSaved.Load(text);
         Log.Default?.Info($"[AERO] world settings loaded: {n}");
         _worldFileAt = DateTime.MinValue;   // (the host's overrides again, over the save)
     }
@@ -274,6 +340,7 @@ public static class AeroSettings
         if (System.Threading.Interlocked.Decrement(ref _carriers) > 0) return;
         _worldApplied = false;
         ResetScope("world");
+        AeroSurfaceSaved.Clear();
         _worldFileAt = DateTime.MinValue;
     }
 
@@ -289,44 +356,77 @@ public static class AeroSettings
     static string ClientPath => Path.Combine(Folder, "AerodynamicsMod.client.cfg");
     static string WorldPath => Path.Combine(Folder, "AerodynamicsMod.world.cfg");
 
-    /// <summary>Any aero job: cheap (a timestamp compare); the files every ~2 s.</summary>
+    /// <summary>Any aero job: cheap (a timestamp compare); the files every ~2 s - looked at OFF the job's thread (2026-10-15,
+    /// a profile: 6 ms/s of the simulation's threads was this poll's file system calls - the folder made, each file's
+    /// existence and time asked separately - every 2 s from whichever aero job came first). Now one background task at a
+    /// time does it (a poll due while one runs is skipped: the next comes 2 s later), with one look per file (FileInfo: there
+    /// and when written together) and the folder made only to write into it. A forced poll (a world's settings carrier
+    /// added) still reads at once, on its caller's thread, as before.</summary>
     internal static void Poll(bool force = false)
     {
-        long now = System.Diagnostics.Stopwatch.GetTimestamp(), due = System.Threading.Interlocked.Read(ref _pollAt);
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        // (called by every grid's sim tick and every client grid's effects frame - tens of thousands a second on many
+        //  threads: each thread looks at the shared due time at most 4 times a second, its own clock first; the shared
+        //  cache line read by all of them cost ~5 ms/s in a profile, 2026-10-15)
+        if (!force && now < _localNext) return;
+        _localNext = now + System.Diagnostics.Stopwatch.Frequency / 4;
+        long due = System.Threading.Interlocked.Read(ref _pollAt);
         if (!force && now < due) return;
         if (System.Threading.Interlocked.CompareExchange(ref _pollAt, now + 2 * System.Diagnostics.Stopwatch.Frequency, due) != due && !force) return;
+        GameStallWarning.Apply();   // (the game's stall warning: removed unless Hud.GameStallWarning)
         if (_fileFails >= 3) return;
-        try
+        if (force) { PollFiles(true); return; }
+        if (System.Threading.Interlocked.CompareExchange(ref _polling, 1, 0) != 0) return;
+        try { System.Threading.Tasks.Task.Factory.StartNew(_pollTask, System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.None, System.Threading.Tasks.TaskScheduler.Default); }
+        catch { System.Threading.Volatile.Write(ref _polling, 0); }
+    }
+    static int _polling;
+    [ThreadStatic] static long _localNext;
+    static readonly object _filesLock = new object();
+    static readonly Action _pollTask = () => { try { PollFiles(false); } finally { System.Threading.Volatile.Write(ref _polling, 0); } };
+
+    /// <summary>The files themselves (one poll at a time: the lock - a forced poll may meet a background one).</summary>
+    static void PollFiles(bool force)
+    {
+        lock (_filesLock)
         {
-            Directory.CreateDirectory(Folder);
-            // client: written after an API change has settled (1 s), else read when edited by hand
-            long dirty = _clientDirtyAt;
-            if (dirty != 0 && now - dirty > System.Diagnostics.Stopwatch.Frequency)
+            if (_fileFails >= 3) return;
+            try
             {
-                _clientDirtyAt = 0;
-                File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
-                _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                // client: written after an API change has settled (1 s), else read when edited by hand
+                long dirty = _clientDirtyAt;
+                var client = new FileInfo(ClientPath);   // (whether it is there and when it was written: one look)
+                if (dirty != 0 && now - dirty > System.Diagnostics.Stopwatch.Frequency)
+                {
+                    _clientDirtyAt = 0;
+                    Directory.CreateDirectory(Folder);
+                    File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
+                    _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
+                }
+                else if (!client.Exists)
+                {
+                    Directory.CreateDirectory(Folder);
+                    File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
+                    _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
+                }
+                else
+                {
+                    var at = client.LastWriteTimeUtc;
+                    if (at != _clientFileAt) { _clientFileAt = at; Apply(File.ReadAllText(ClientPath), "client"); }
+                }
+                // world: the host's overrides (only where the server runs)
+                if (SawServer || force)
+                {
+                    var world = new FileInfo(WorldPath);
+                    if (!world.Exists) { Directory.CreateDirectory(Folder); File.WriteAllText(WorldPath, WorldHeader + Commented(Text("world", all: true))); world.Refresh(); }
+                    var at = world.LastWriteTimeUtc;
+                    if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; Apply(File.ReadAllText(WorldPath), "world"); }
+                }
+                FileWhy = "";
             }
-            else if (!File.Exists(ClientPath))
-            {
-                File.WriteAllText(ClientPath, ClientHeader + Text("client", all: true));
-                _clientFileAt = File.GetLastWriteTimeUtc(ClientPath);
-            }
-            else
-            {
-                var at = File.GetLastWriteTimeUtc(ClientPath);
-                if (at != _clientFileAt) { _clientFileAt = at; Apply(File.ReadAllText(ClientPath), "client"); }
-            }
-            // world: the host's overrides (only where the server runs)
-            if (SawServer || force)
-            {
-                if (!File.Exists(WorldPath)) File.WriteAllText(WorldPath, WorldHeader + Commented(Text("world", all: true)));
-                var at = File.GetLastWriteTimeUtc(WorldPath);
-                if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; Apply(File.ReadAllText(WorldPath), "world"); }
-            }
-            FileWhy = "";
+            catch (Exception e) { _fileFails++; FileWhy = $"{e.GetType().Name}: {e.Message}" + (_fileFails >= 3 ? " (files given up for this session)" : ""); }
         }
-        catch (Exception e) { _fileFails++; FileWhy = $"{e.GetType().Name}: {e.Message}" + (_fileFails >= 3 ? " (files given up for this session)" : ""); }
     }
 
     static string Commented(string text)
@@ -360,7 +460,7 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
     private void SerializeSettings(EntityNameSessionComponentObjectBuilder ob)
     {
         ob.NamedEntities = new Dictionary<string, Keen.VRage.DCS.Components.Entity>();
-        string text = AeroSettings.Text("world", all: false);
+        string text = AeroSettings.Text("world", all: false) + AeroSurfaceSaved.Text();
         if (text.Length > 0 && Entity != null) ob.NamedEntities[AeroSettings.SaveKey + text] = Entity;
     }
 

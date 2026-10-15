@@ -46,7 +46,13 @@ public static class ThrustTorque
     public struct Report { public Vector3 OffsetTorque, RcsTorque, RcsForce, Error; public float RcsUse, AttitudePriority; public string Mode;
         /// <summary>Flying by the aero-aware law (AeroAware): the air's torque it answered, the gyros' torque it gave, and the
         /// game gyros' own angular velocity change it took back (all local).</summary>
-        public bool Aware; public Vector3 AeroTorque, GyroTorque, GameGyroUndone; }
+        public bool Aware; public Vector3 AeroTorque, GyroTorque, GameGyroUndone;
+        /// <summary>The aware law's ask of the gyros and thrusters (after the surfaces' share) and what they gave (local N m):
+        /// the loss-of-control warning's shortfall (Loac.cs).</summary>
+        public Vector3 Need, Delivered;
+        /// <summary>The commanded attitude the law flew to, and the gyros' and thrusters' reach it had (local N m per axis):
+        /// the predicted loss-of-control warning's (Loac.cs).</summary>
+        public Quaternion Target; public bool HasTarget; public Vector3 Reach; }
 
     /// <summary>
     /// AERO-AWARE ATTITUDE (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but they don't
@@ -119,8 +125,10 @@ public static class ThrustTorque
     public static Report Apply(AeroGridComponent aero, in WorldTransform wt, Vector3 angVelWorld, float dt)
     {
         var rep = new Report { Mode = "off" };
+        aero.LastControlTorque = Vector3.Zero; aero.LastControlTorqueValid = false;
+        aero.LastThrustCount = 0;   // (set where the thrusters' forces are published)   // (set below while the aware law flies)
         var thrusters = aero._thrusterCache;
-        if (aero.IsServerScene) System.Threading.Interlocked.Increment(ref ServerCalls); else System.Threading.Interlocked.Increment(ref ClientCalls);
+        if (aero.IsServerScene) Count(ref _tServer, ref ServerCalls); else Count(ref _tClient, ref ClientCalls);
         if (!Enabled) { Unpublish(aero); return rep; }   // (the game's own flames again)
         var data = aero.Data;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || mass.InvMass <= 0f) { Unpublish(aero); return rep; }
@@ -228,7 +236,8 @@ public static class ThrustTorque
             if (aware)
             {
                 // the aero-aware law: all it needs (the air's torque answered); the thrusters asked for what the gyros cannot give
-                tauNeed = AwareNeed(aero, in mass, w, rep.Error, gyroReach + ThrusterReach(aero, n), dt, out rep.AeroTorque);
+                rep.Reach = gyroReach + ThrusterReach(aero, n); rep.Target = target; rep.HasTarget = true;
+                tauNeed = AwareNeed(aero, in mass, w, rep.Error, rep.Reach, dt, out rep.AeroTorque);
                 tauTarget = tauNeed - Vector3.Clamp(tauNeed, -gyroReach, gyroReach);
                 rep.Mode += " (aero-aware)"; rep.Aware = true;
             }
@@ -236,6 +245,9 @@ public static class ThrustTorque
             // Warm start: last frame's sharing (targets move slowly, so the iterations add up over frames), else the game's.
             var prev = aero._rcsPrev; var y = aero._rcsY;
             if (prev.Length != n || !aero._rcsWarm || aero._rcsWarmGen != aero._thrusterGen) { aero._rcsWarmGen = aero._thrusterGen; aero._rcsPrev = prev = new float[n]; aero._rcsY = y = new float[n]; for (int i = 0; i < n; i++) f[i] = f0[i]; }
+            // (the structure's cap on the controller's own steering: never more torque from the thrusters than the ship can
+            //  carry - StructureServer sets it from the structure's load, 1 unless structure damage is on and it binds)
+            if (aero.StructSteerCap < 1f) tauTarget *= MathF.Max(aero.StructSteerCap, 0f);
             ThrustAllocator.Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority);
             for (int i = 0; i < n; i++) if (!float.IsFinite(f[i])) { for (int j = 0; j < n; j++) f[j] = f0[j]; aero._rcsWarm = false; rep.Mode += " (reset: not finite)"; break; }
             aero._rcsWarm = true;
@@ -248,9 +260,11 @@ public static class ThrustTorque
         else aero._rcsWarm = false;
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
         // the gyros: what the thrusters' torque left of the need, up to their reach
+        if (rep.Aware) { rep.Need = tauNeed; rep.Delivered = torque; }
         if (rep.Aware && gyroReach != Vector3.Zero)
         {
             rep.GyroTorque = Vector3.Clamp(tauNeed - torque, -gyroReach, gyroReach);
+            rep.Delivered = torque + rep.GyroTorque;
             if (ApplyForces && rep.GyroTorque.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, rep.GyroTorque, dt);
         }
         // (applied: 68bda99 replaced this call with the flame publishing below, and thrust stopped turning ships at all -
@@ -259,11 +273,17 @@ public static class ThrustTorque
         // the solver's force difference cancelled the game's thrust while steering - the engines felt dead.)
         // Torque, and - only when the thrusters had to give up some of the game's thrust to hold attitude (a whole group at
         // full power: ThrustAllocator.MaxThrustLoss) - that thrust change, the thrusters' own (world axes).
+        aero.LastExtraForceWorld = Vector3.Zero;
         if (ApplyForces && torque.LengthSquared() > 0f)
-            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, rep.AttitudePriority > 0f ? WorldTransform.TransformDirection(extraForce, wt) : Vector3.Zero, torque, dt);
+        {
+            var extraW = rep.AttitudePriority > 0f ? WorldTransform.TransformDirection(extraForce, wt) : Vector3.Zero;
+            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, extraW, torque, dt);
+            aero.LastExtraForceWorld = extraW;   // (the structure's contact balance: StructureContacts)
+        }
         // The flames: each thruster's share, published for the client copy to show - the controller's sharing while it
         // steers, the game's own otherwise (free, rate input: the gyros turn it), so a flame is never handed back mid-flight.
         Publish(aero, wt, steered ? f : f0);
+        aero.LastThrustShares = steered ? f : f0; aero.LastThrustGame = f0; aero.LastThrustCount = n;   // (the structure's thrust loads: StructureServer; the game's own, for the steering's part)
         if (Probe) ProbeLog(aero, data, wt, gameF, mass.InvMass, rep);
         return rep;
     }
@@ -309,12 +329,24 @@ public static class ThrustTorque
     /// <summary>A grid's shares: Index (block cells -> slot) is built once per thruster list and never changed after,
     /// Share written in place each frame - a client reads both without the lock.</summary>
     internal sealed class Table { public int Gen; public float[] Share; public readonly Dictionary<Vector3I, int> Index = new(); }
+    internal sealed class FlapTable { public float[] Angle; public readonly Dictionary<Vector3I, int> Index = new(); }
+    /// <summary>The grid's retractable gears (AeroGearComponent): progress 0 up .. 1 down and the suspension's compression
+    /// (m) by block AABB Min + Max - the index replaced when a gear is new to it, the values written in place.</summary>
+    internal sealed class GearTable { public float[] Progress, Compression; public readonly Dictionary<Vector3I, int> Index = new(); }
     /// <summary>One server grid's record: where it is (to match its client copy) and its shares.</summary>
     internal sealed class Published
     {
         public Vector3D Pos; public Vector3 Vel; public Quaternion Orient = Quaternion.Identity;
         public Vector3 BoxMin, BoxMax; public bool HasBox;   // (its local bounds: its client copy has the same - another grid does not)
         public long Stamp; public volatile bool Gone; public volatile Table Table;
+        /// <summary>When the flame table's shares were last written (Publish). The record's own Stamp is refreshed by the flaps
+        /// and gears too: a grid whose aero step stopped publishing flames (aero off, not ready) kept a fresh record with its
+        /// last shares forever - frozen or dark flames (2026-10-13, an independent review). Flames read only a fresh table.</summary>
+        public long TableStamp;
+        /// <summary>The grid's flap deflections: Index (block AABB Min + Max -> slot) built once per set of flaps and never
+        /// changed after, Angle (rad) written in place every step - a client reads both without the lock (as the flames).</summary>
+        public volatile FlapTable Flaps;
+        public volatile GearTable Gears;
     }
     static readonly Dictionary<AeroGridComponent, Published> _published = new();
     static volatile int _publishedCount;
@@ -323,6 +355,7 @@ public static class ThrustTorque
     public static bool AnyPublished => _publishedCount > 0;
     /// <summary>A record this fresh is matched; one staler is still HELD (its last shares shown) up to HoldSeconds - a
     /// late server frame never drops a flame - after which the flame is the game's again.</summary>
+    /// (Flames: only a table written within FreshSeconds - Published.TableStamp; the hold is for the flaps' and gears' records.)
     public const double FreshSeconds = 1.0, HoldSeconds = 5.0;
     /// <summary>A grid leaving the scene: its published shares dropped (a grid destroyed while piloted stayed forever).</summary>
     internal static void Forget(AeroGridComponent aero)
@@ -333,20 +366,21 @@ public static class ThrustTorque
     static void Unpublish(AeroGridComponent aero) { if (aero._flamePub != null) Forget(aero); }
     public static volatile string ClientNote = "-";
     public static int ServerCalls, ClientCalls, FlameLookups, FlameHits, FlameLit;
+    /// <summary>The counts above, gathered per thread and added CountBatch at a time (2026-10-15, a profile: every client
+    /// thruster's flame, every frame, did two or three Interlocked increments on these few shared words from every job
+    /// thread - a cache line passed between the cores tens of thousands of times a second). Diagnostics only (AERO-COST, the
+    /// harness's checkall deltas): a thread's last few (under CountBatch) are added with its next batch.</summary>
+    const int CountBatch = 32;
+    [ThreadStatic] static int _tServer, _tClient, _tLookups, _tHits, _tLit;
+    static void Count(ref int local, ref int shared) { if (++local >= CountBatch) { Interlocked.Add(ref shared, local); local = 0; } }
 
     /// <summary>The server copy's shares this frame: use[i] / caps[i] (use null: all zero).</summary>
     static void Publish(AeroGridComponent aero, in WorldTransform wt, float[] use)
     {
         // (the client copy runs Apply too, for its own prediction: its publish, 0 m from its own thrusters, won the match)
         if (!aero.IsServerScene) return;
-        if (!FlamesEnabled) { Unpublish(aero); return; }
-        var p = aero._flamePub;
-        if (p == null)
-        {
-            p = new Published();
-            lock (_published) { _published[aero] = p; _publishedCount = _published.Count; }
-            aero._flamePub = p;
-        }
+        if (!FlamesEnabled) { if (aero._flamePub?.Flaps == null && aero._flamePub?.Gears == null) Unpublish(aero); else aero._flamePub.Table = null; return; }
+        var p = Record(aero, wt);
         var thrusters = aero._thrusterCache; int n = thrusters.Count;
         var tab = p.Table;
         if (tab == null || tab.Gen != aero._thrusterGen || tab.Share.Length != n)
@@ -359,13 +393,104 @@ public static class ThrustTorque
         var share = tab.Share; var caps = aero._rcsCap;
         for (int i = 0; i < n; i++)
             share[i] = use != null && i < use.Length && i < caps.Length && caps[i] > 0f ? Math.Clamp(use[i] / caps[i], 0f, 1f) : 0f;
+        System.Threading.Volatile.Write(ref p.TableStamp, System.Diagnostics.Stopwatch.GetTimestamp());
+    }
+
+    /// <summary>The server copy's record, created on first use, its pose (what a client copy is matched by) set now.</summary>
+    static Published Record(AeroGridComponent aero, in WorldTransform wt)
+    {
+        var p = aero._flamePub;
+        if (p == null)
+        {
+            p = new Published();
+            lock (_published) { _published[aero] = p; _publishedCount = _published.Count; }
+            aero._flamePub = p;
+        }
+        // (the pose already written this step - the attitude job, the flaps and every gear / airbrake of the grid each call
+        //  this, in parallel, every step: one write a step, the rest return here without the lock or the bounds read. The
+        //  pose and its Stamp stay a pair (written together, under the lock), so a client's match - the position carried
+        //  forward by the velocity x the record's age - is the same; at most a few ms older within the step. 7.8 ms/s of a
+        //  profile, 2026-10-15)
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long stamp0 = System.Threading.Volatile.Read(ref p.Stamp);
+        if (stamp0 != 0 && now - stamp0 < _poseFresh) return p;
         bool hasBox = aero.Data.TryGet<BoundingBoxData>(out var lb);
-        lock (_published)
+        // (under the record's own lock, not the table's: every server grid's attitude job wrote its pose here every frame,
+        //  in parallel, through the one lock of _published - 7 ms/s of a profile, 2026-10-15. FindRecord reads a record's
+        //  pose under the same lock: whole, never half a step's)
+        lock (p)
         {
             p.Pos = wt.Position; p.Orient = wt.Orientation; p.Vel = aero.LastLinVel;
             p.HasBox = hasBox; if (hasBox) { p.BoxMin = lb.BoundingBox.Min; p.BoxMax = lb.BoundingBox.Max; }
-            p.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            p.Stamp = now;
         }
+        return p;
+    }
+    /// <summary>A record's pose this fresh is not written again (Record): a quarter of a 60 Hz step.</summary>
+    static readonly long _poseFresh = System.Diagnostics.Stopwatch.Frequency / 240;
+
+    /// <summary>Server: the grid's flap deflections this step, for the client copies' flap models (AeroFlapComponent). The
+    /// table is replaced only when the set of flaps changes; else its angles are written in place (no garbage per step).</summary>
+    internal static void PublishFlaps(AeroGridComponent aero, in WorldTransform wt, FlapTable flaps)
+    {
+        if (!aero.IsServerScene) return;
+        var p = Record(aero, wt);
+        if (!ReferenceEquals(p.Flaps, flaps)) p.Flaps = flaps;
+    }
+
+    /// <summary>Server: one gear's state this step (from its own job - the gears of a grid run in parallel: the table is
+    /// grown under the record's lock). Keeps the record fresh while the grid is parked (nothing else publishes then).</summary>
+    internal static void PublishGear(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float progress, float compression)
+    {
+        if (!aero.IsServerScene) return;
+        var p = Record(aero, wt);
+        var t = p.Gears;
+        if (t == null || !t.Index.TryGetValue(key, out int i))
+        {
+            lock (p)
+            {
+                t = p.Gears;
+                if (t == null || !t.Index.TryGetValue(key, out i))
+                {
+                    int n = t?.Progress.Length ?? 0;
+                    var nt = new GearTable { Progress = new float[n + 1], Compression = new float[n + 1] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Progress, nt.Progress, n); Array.Copy(t.Compression, nt.Compression, n); }
+                    nt.Index[key] = i = n;
+                    p.Gears = t = nt;
+                }
+            }
+        }
+        t.Progress[i] = progress; t.Compression[i] = compression;
+    }
+
+    /// <summary>A client gear's state from its grid's server record (false: none matched); matched as the flaps.</summary>
+    internal static bool GearState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float progress, out float compression)
+    {
+        progress = compression = 0f;
+        if (kept == null || kept.Gone || now >= recheckAt)
+        {
+            recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
+            if (!FindRecord(grid, p => p.Gears?.Index.ContainsKey(key) == true, kept, now, out var m)) { kept = null; return false; }
+            kept = m;
+        }
+        var t = kept.Gears;
+        if (t == null || !t.Index.TryGetValue(key, out int i) || (uint)i >= (uint)t.Progress.Length) return false;
+        progress = t.Progress[i]; compression = t.Compression[i];
+        return true;
+    }
+
+    /// <summary>A client flap's deflection (rad) from its grid's server record, or NaN: none matched. The record matched
+    /// is kept and checked again every 0.25 s.</summary>
+    internal static float FlapAngle(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now)
+    {
+        if (kept == null || kept.Gone || now >= recheckAt)
+        {
+            recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
+            if (!FindRecord(grid, WantFlap, key, 0.0, null, kept, now, out var m)) { kept = null; return float.NaN; }
+            kept = m;
+        }
+        var f = kept.Flaps;
+        return f != null && f.Index.TryGetValue(key, out int i) && (uint)i < (uint)f.Angle.Length ? f.Angle[i] : float.NaN;
     }
 
     /// <summary>A client thruster's share this frame (0..1), or -1: none (no record matched, or no place in its grid).
@@ -373,7 +498,7 @@ public static class ThrustTorque
     /// while unmatched after it had one), or at once when it is gone or re-keyed.</summary>
     internal static float FlameShare(AeroFlameComponent flame, long now)
     {
-        Interlocked.Increment(ref FlameLookups);
+        Count(ref _tLookups, ref FlameLookups);
         double freq = System.Diagnostics.Stopwatch.Frequency;
         if (!flame._hasKey)
         {
@@ -382,8 +507,14 @@ public static class ThrustTorque
             var bb = block.AABB; flame._key = bb.Min + bb.Max; flame._hasKey = true;
         }
         var m = flame._match; var tab = flame._table;
+        bool had = m != null;
+        // (a table not written for FreshSeconds is no longer the flames' - the game's flame then)
+        if (m != null && now - System.Threading.Volatile.Read(ref m.TableStamp) > (long)(freq * FreshSeconds)) { m = null; tab = null; flame._match = null; flame._table = null; }
         if (m == null ? now >= flame._recheckAt : (m.Gone || m.Table != tab || now >= flame._recheckAt))
         {
+            // (its block's cells read again at every search: a split or a rebuilt grid moves them)
+            var blk = flame.Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.CubeBlockComponent>();
+            if (blk != null) { var bb2 = blk.AABB; flame._key = bb2.Min + bb2.Max; }
             var grid = flame.Entity?.GetTopLevelParent();
             if (grid == null || !Find(grid, flame._key, m, now, out m, out tab, out int idx))
             {
@@ -398,12 +529,15 @@ public static class ThrustTorque
         //  the game, 2026-10-09)
         if (tab == null || tab.Share == null || (uint)flame._idx >= (uint)tab.Share.Length)
         {
+            // (unmatched and not due - none had, none found: it waits for its recheck. This reset it to now, so a thruster
+            //  no record had searched every other frame, not every 0.25 s as above - and FlameJob could never skip it)
+            if (!had && m == null) return -1f;
             flame._match = null; flame._table = null; flame._recheckAt = now;
             return -1f;
         }
         float s = tab.Share[flame._idx];
-        Interlocked.Increment(ref FlameHits);
-        if (s > 0.05f) Interlocked.Increment(ref FlameLit);
+        Count(ref _tHits, ref FlameHits);
+        if (s > 0.05f) Count(ref _tLit, ref FlameLit);
         return s;
     }
 
@@ -416,50 +550,95 @@ public static class ThrustTorque
     /// </summary>
     static bool Find(Entity grid, Vector3I key, Published kept, long now, out Published match, out Table table, out int idx)
     {
-        match = null; table = null; idx = -1;
+        table = null; idx = -1;
+        double hold = System.Diagnostics.Stopwatch.Frequency * FreshSeconds;
+        if (!FindRecord(grid, WantTable, key, hold, null, kept, now, out match)) return false;
+        table = match.Table;
+        if (table == null || !table.Index.TryGetValue(key, out idx) || idx >= table.Share.Length) { match = null; table = null; idx = -1; return false; }
+        return true;
+    }
+
+    /// <summary>The server record for a client grid (the matching described on Find) that has what the caller looks for.</summary>
+    static bool FindRecord(Entity grid, Func<Published, bool> has, Published kept, long now, out Published match)
+        => FindRecord(grid, WantAny, default, 0.0, has, kept, now, out match);
+
+    // (what a record must have, without a closure per call: a flame and a flap looked up per block per frame made a closure
+    //  and a delegate each time - a profile, 2026-10-14)
+    const int WantAny = 0, WantFlap = 1, WantTable = 2;
+    static bool Has(Published p, int want, Vector3I key, double hold, long now, Func<Published, bool> has)
+    {
+        switch (want)
+        {
+            case WantFlap: return p.Flaps?.Index.ContainsKey(key) == true;
+            case WantTable: { var t = p.Table; return t != null && now - System.Threading.Volatile.Read(ref p.TableStamp) <= hold && t.Index.TryGetValue(key, out int i) && i < t.Share.Length; }
+            default: return has(p);
+        }
+    }
+
+    static bool FindRecord(Entity grid, int want, Vector3I key, double hold, Func<Published, bool> has, Published kept, long now, out Published match)
+    {
+        match = null;
         var gwt = grid.Data.GetWorldTransform();
         bool cBox = grid.Data.TryGet<BoundingBoxData>(out var cb);
         Vector3 cMin = cBox ? cb.BoundingBox.Min : Vector3.Zero, cMax = cBox ? cb.BoundingBox.Max : Vector3.Zero;
         double freq = System.Diagnostics.Stopwatch.Frequency;
         lock (_published)
         {
-            bool Fits(Published p, double extra, double deg, double maxAge, out double dist, out Table t, out int i)
+            bool Fits(Published p, double extra, double deg, double maxAge, out double dist)
             {
-                dist = 0; t = null; i = -1;
+                dist = 0;
                 if (p == null || p.Gone) return false;
-                double age = (now - p.Stamp) / freq;
+                // (what it has first - no pose needed, most records fail it - then the record's pose, whole, under its own
+                //  lock: Record writes it there. The same tests, the same answer)
+                if (!Has(p, want, key, hold, now, has)) return false;
+                long stamp; bool pBox; Vector3 pMin, pMax, pVel; Quaternion pOrient; Vector3D pPos;
+                lock (p) { stamp = p.Stamp; pBox = p.HasBox; pMin = p.BoxMin; pMax = p.BoxMax; pVel = p.Vel; pOrient = p.Orient; pPos = p.Pos; }
+                double age = (now - stamp) / freq;
                 if (age > maxAge) return false;
-                t = p.Table;
-                if (t == null || !t.Index.TryGetValue(key, out i) || i >= t.Share.Length) return false;
-                if (cBox && p.HasBox && ((p.BoxMin - cMin).Length() > 0.5f || (p.BoxMax - cMax).Length() > 0.5f)) return false;
-                float dot = MathF.Abs(Quaternion.Dot(p.Orient, gwt.Orientation));
+                if (cBox && pBox && ((pMin - cMin).Length() > 0.5f || (pMax - cMax).Length() > 0.5f)) return false;
+                float dot = MathF.Abs(Quaternion.Dot(pOrient, gwt.Orientation));
                 if (2.0 * Math.Acos(Math.Min(1.0, dot)) > deg * Math.PI / 180.0) return false;
-                dist = (p.Pos + (Vector3D)(p.Vel * (float)Math.Max(0.0, age)) - gwt.Position).Length();
-                return dist <= 20.0 + 0.1 * p.Vel.Length() + extra;
+                dist = (pPos + (Vector3D)(pVel * (float)Math.Max(0.0, age)) - gwt.Position).Length();
+                return dist <= 20.0 + 0.1 * pVel.Length() + extra;
             }
-            if (Fits(kept, 20.0, 20.0, FreshSeconds, out _, out var kt, out int ki)) { match = kept; table = kt; idx = ki; return true; }
+            if (Fits(kept, 20.0, 20.0, FreshSeconds, out _)) { match = kept; return true; }
             double bestD = double.MaxValue;
             foreach (var p in _published.Values)
             {
-                if (p == kept || !Fits(p, 0.0, 5.0, FreshSeconds, out double d, out var t, out int i) || d >= bestD) continue;
-                bestD = d; match = p; table = t; idx = i;
+                if (p == kept || !Fits(p, 0.0, 5.0, FreshSeconds, out double d) || d >= bestD) continue;
+                bestD = d; match = p;
             }
             if (match != null) return true;
-            if (Fits(kept, 20.0, 20.0, HoldSeconds, out _, out kt, out ki)) { match = kept; table = kt; idx = ki; return true; }   // (stale: held)
+            if (Fits(kept, 20.0, 20.0, HoldSeconds, out _)) { match = kept; return true; }   // (stale: held)
             return false;
         }
     }
 
-    /// <summary>The aero-aware law's whole ask (local N m): I x AttitudeAccel - the air's torque. reach: the most torque per
-    /// axis the actuators give (gyros + thrusters); the rate read without this frame's air kick (applied before this ran).</summary>
+    /// <summary>What the aero-aware law asks of the gyros and thrusters (local N m): the whole demand (I x AttitudeAccel - the
+    /// airframe's torque, published as LastControlTorque for the control surfaces to follow) less what the surfaces gave
+    /// this frame (LastSurfaceTorque) - one allocation: the surfaces first, gyros and thrusters the rest. reach: the most
+    /// torque per axis the actuators give; the rate read without this frame's air kick (applied before this ran).</summary>
     static Vector3 AwareNeed(AeroGridComponent aero, in RigidBodyMassProperties mass, Vector3 w, Vector3 error, Vector3 reach, float dt, out Vector3 aeroTorque)
     {
         aeroTorque = aero.LastAeroTorque;
-        Vector3 d = DeltaW(in mass, aeroTorque);   // (rad/s^2)
+        Vector3 surf = aero.LastSurfaceTorque;
+        Vector3 d = DeltaW(in mass, aeroTorque + surf);   // (rad/s^2: this frame's whole air kick, taken out of the rate)
+        // the control surfaces' reach too (2026-10-14, the user: "they respond eventually but are slow, esp. on Q/E"): the
+        // law clamps the acceleration it plans to the reach it is given, and with the gyros' and thrusters' alone it never
+        // asked for more than the gyros could do - the surfaces only took a share of that, never added to it. Their reach
+        // left either way from their trim (the allocator's, a tick old), the smaller side (the plan brakes with it too).
+        if (AeroGridComponent.AllocEnabled) reach += SurfaceReachShare * Vector3.Min(aero.SurfacePush, aero.SurfacePull);
         var axisReach = new Vector3(AxisAccel(in mass, Vector3.UnitX, reach.X), AxisAccel(in mass, Vector3.UnitY, reach.Y), AxisAccel(in mass, Vector3.UnitZ, reach.Z));
-        Vector3 acc = ThrustAllocator.AttitudeAccel(error, w - d * dt, axisReach, d, RestAngle, RestRate);
-        return Inertia(mass, acc) - aeroTorque;
+        Vector3 acc = ThrustAllocator.AttitudeAccel(error, w - d * dt, axisReach, DeltaW(in mass, aeroTorque), RestAngle, RestRate);
+        Vector3 demand = Inertia(mass, acc) - aeroTorque;
+        aero.LastControlTorque = demand; aero.LastControlTorqueValid = true;
+        return demand - surf;
     }
+
+    /// <summary>The share of the surfaces' reach the attitude law plans with: their reach is the model's own and a tick old -
+    /// told all of it while they gave 60%, a roll step overshot 2-4 deg (AeroBench roll); at 75% it stays under 1 deg while
+    /// they give 80% and more.</summary>
+    internal const float SurfaceReachShare = 0.75f;
 
     /// <summary>The angular acceleration (local) a torque gives.</summary>
     static Vector3 DeltaW(in RigidBodyMassProperties m, Vector3 torque)
@@ -481,10 +660,12 @@ public static class ThrustTorque
     static void FlyGyros(AeroGridComponent aero, in WorldTransform wt, in RigidBodyMassProperties mass, Vector3 angVelWorld, Vector3 gyroReach, float dt, ref Report rep)
     {
         if (gyroReach == Vector3.Zero || !aero.AttitudeTarget(wt, out var target, out _)) return;
+        rep.Reach = gyroReach; rep.Target = target; rep.HasTarget = true;
         Vector3 w = WorldTransform.TransformDirectionInv(angVelWorld, wt);
         ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, RestRate, out rep.Error);
         Vector3 need = AwareNeed(aero, in mass, w, rep.Error, gyroReach, dt, out rep.AeroTorque);
         rep.GyroTorque = Vector3.Clamp(need, -gyroReach, gyroReach);
+        rep.Need = need; rep.Delivered = rep.GyroTorque;
         if (ApplyForces && rep.GyroTorque.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, rep.GyroTorque, dt);
     }
 

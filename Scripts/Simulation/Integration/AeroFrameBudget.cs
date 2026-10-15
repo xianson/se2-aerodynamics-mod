@@ -17,13 +17,16 @@ public static class AeroFrameBudget
     public static int SkippedThisSecond, ComputedThisSecond;
 
     /// <summary>Called at each grid's job: a new frame starts the count again.</summary>
+    // (the frame's start read plainly - a long is read whole on 64-bit - and written only when a new frame starts:
+    //  Interlocked.Read is a locked compare-exchange that takes the cache line for writing, and every grid's job on every
+    //  thread did it every tick - 1.5 ms/s of a profile, 2026-10-15. The same test, the same reset.)
     public static void Touch()
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (now - System.Threading.Interlocked.Read(ref _frameStart) > _frameGap) { System.Threading.Interlocked.Exchange(ref _frameStart, now); System.Threading.Interlocked.Exchange(ref _spent, 0); }
+        if (now - System.Threading.Volatile.Read(ref _frameStart) > _frameGap) { System.Threading.Interlocked.Exchange(ref _frameStart, now); System.Threading.Interlocked.Exchange(ref _spent, 0); }
     }
 
-    public static bool Spent => System.Threading.Interlocked.Read(ref _spent) > (long)(BudgetMs * System.Diagnostics.Stopwatch.Frequency / 1000.0);
+    public static bool Spent => System.Threading.Volatile.Read(ref _spent) > (long)(BudgetMs * System.Diagnostics.Stopwatch.Frequency / 1000.0);
 
     public static void Add(long ticks) => System.Threading.Interlocked.Add(ref _spent, ticks);
 }

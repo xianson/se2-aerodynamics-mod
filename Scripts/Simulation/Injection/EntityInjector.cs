@@ -88,6 +88,43 @@ public class InjectAeroComponents : Injections
             _flameCount++;
         }
 
+        // the 3x3x1 control surfaces' client prefabs: their flap subpart turned by the server's deflection
+        if (AeroBlockGuids.FlapClientPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroFlapComponent));
+            Log.Default?.Info($"[AERO] Injected AeroFlapComponent into control surface client prefab '{entity.DebugName}'");
+        }
+
+        // their server prefabs: the terminal's settings (axes, max deflection, trim), read by the grid's control
+        if (AeroBlockGuids.SurfaceServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroSurfaceSettingsComponent));
+            Log.Default?.Info($"[AERO] Injected AeroSurfaceSettingsComponent into control surface server prefab '{entity.DebugName}'");
+        }
+
+        // the retractable gears: the server drives the gear (its vanilla wheel made and unmade), the client animates it
+        if (AeroBlockGuids.GearServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroGearComponent));
+            Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
+        }
+        // the 3x3x3 airbrakes: the server opens them on the parking signal, the client turns their leaves
+        if (AeroBlockGuids.AirbrakeServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroAirbrakeComponent));
+            Log.Default?.Info($"[AERO] Injected AeroAirbrakeComponent into airbrake server prefab '{entity.DebugName}'");
+        }
+        if (AeroBlockGuids.AirbrakeClientPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroAirbrakeAnimComponent));
+            Log.Default?.Info($"[AERO] Injected AeroAirbrakeAnimComponent into airbrake client prefab '{entity.DebugName}'");
+        }
+        if (AeroBlockGuids.GearClientPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroGearAnimComponent));
+            Log.Default?.Info($"[AERO] Injected AeroGearAnimComponent into gear client prefab '{entity.DebugName}'");
+        }
+
         if (hasTank)
         {
             Add(entity, typeof(AeroFuelMassComponent));

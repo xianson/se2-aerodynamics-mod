@@ -109,6 +109,48 @@ public static class AeroEntryFx
         return EntrySourceContract;
     }
 
+    // ── ENTRY STATE (2026-10-14, the user: "i would use an orbital api instead of some glow"): the real re-entry the
+    // Orbital mod flies - per grid, the TRUE air velocity past it (world m/s: its real speed, not the rails' capped one) and
+    // the air's density there (kg/m3). The hull heat model heats from these (Sutton-Graves at the true speed), so a railed
+    // entry heats, weakens and scorches the hull as a real one. Asked of the Orbital mod's API (OrbitalApi.TryGetEntryState,
+    // by reflection - mods compile apart: a typed delegate bound once, looked up again now and then until found).
+    delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
+    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt;
+    public static string EntryStateStatus = "not looked up";
+
+    /// <summary>A grid's real re-entry state (the Orbital mod's): the true air velocity (world) and density. False: none.</summary>
+    internal static bool EntryStateAt(Keen.VRage.DCS.Components.Entity grid, out Vector3 airWorld, out float density)
+    {
+        airWorld = default; density = 0f;
+        if (grid == null) return false;
+        var fn = System.Threading.Volatile.Read(ref _orbitalState);
+        if (fn == null)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now < System.Threading.Volatile.Read(ref _orbitalStateRetryAt)) return false;
+            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + 5 * System.Diagnostics.Stopwatch.Frequency);
+            System.Reflection.MethodInfo mi = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type t; try { t = asm.GetType("OrbitalMod.OrbitalApi"); } catch { continue; }
+                // (by name AND parameter types: an overload added on Orbital's side must never make it ambiguous - API.md)
+                var m = t?.GetMethod("TryGetEntryState", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType() });
+                if (m != null) mi = m;   // (the last loaded copy wins)
+            }
+            if (mi == null) { EntryStateStatus = "OrbitalApi.TryGetEntryState not found (no Orbital mod, or an older one)"; return false; }
+            try { fn = (EntryStateFn)Delegate.CreateDelegate(typeof(EntryStateFn), mi); }
+            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; return false; }
+            System.Threading.Volatile.Write(ref _orbitalState, fn);
+            EntryStateStatus = "bound to OrbitalApi.TryGetEntryState";
+        }
+        try
+        {
+            if (!fn(grid, out airWorld, out density)) return false;
+        }
+        catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _orbitalState, null); return false; }
+        return density > 0f && float.IsFinite(density) && float.IsFinite(airWorld.X + airWorld.Y + airWorld.Z) && airWorld.LengthSquared() > 1f;
+    }
+
     /// <summary>Diagnostics: the registered sources' owners.</summary>
     public static string EntrySources { get { var src = _sources; var n = new string[src.Length]; for (int i = 0; i < n.Length; i++) n[i] = src[i].owner; return string.Join(",", n); } }
 
@@ -150,7 +192,12 @@ public static class AeroEntryFx
         if (!Enabled || !aero.IsServerScene) return;   // (the sim job runs on client copies too: they only draw)
         if (TestSpeed > 0f) { vel = TestVelocityWorld(wt); density = MathF.Max(density, 1.2f); }
         float extStrength = 0f;
-        if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extStrength = es; }
+        // (the sources' word Flow asked for this grid a moment ago, on this thread, this same step: not asked twice - each
+        //  source is a call into another mod, per server grid per tick)
+        Vector3 extAir; float es; bool ext;
+        if (ReferenceEquals(_extFor, aero)) { ext = _extHas; extAir = _extAir; es = _extS; _extFor = null; }
+        else ext = ExternalAt(aero.Entity, out extAir, out es);
+        if (ext) { vel = extAir; extStrength = es; }
         float speed = vel.Length();
         double m0 = aero.LastResult.Mach;
         float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
@@ -174,6 +221,17 @@ public static class AeroEntryFx
         public Vector3 TravelLocal, LiftLocal;
         public float Mach, Density, Speed, LiftCoef;
         internal object MemberwiseCloneFlow() => MemberwiseClone();
+        /// <summary>A copy into a record the caller keeps (the flight job's own, AeroEntryFxComponent.FlowCopy): what
+        /// MemberwiseCloneFlow gives, without a new record per frame (47 KB/s of a profile, 2026-10-15). Every field - a new
+        /// one goes here too.</summary>
+        internal FlowPub CopyFrom(FlowPub p)
+        {
+            Pos = p.Pos; Vel = p.Vel; Orient = p.Orient; BoxMin = p.BoxMin; BoxMax = p.BoxMax; HasBox = p.HasBox;
+            TravelLocal = p.TravelLocal; LiftLocal = p.LiftLocal; Mach = p.Mach; Density = p.Density; Speed = p.Speed; LiftCoef = p.LiftCoef;
+            ExtStrength = p.ExtStrength; Aero = p.Aero; ForceLocal = p.ForceLocal; TorqueLocal = p.TorqueLocal;
+            Drag = p.Drag; Lift = p.Lift; Q = p.Q; FrontalArea = p.FrontalArea; Stamp = p.Stamp;
+            return this;
+        }
         public float ExtStrength = -1f;   // (an entry source's strength: it owns the plasma; -1 none)
         public AeroGridComponent Aero;    // (its server copy: the force table, the wings)
         public Vector3 ForceLocal, TorqueLocal;   // (the aero result, grid frame: components included)
@@ -181,6 +239,8 @@ public static class AeroEntryFx
         public long Stamp;
     }
     static readonly Dictionary<AeroGridComponent, FlowPub> _flow = new();
+    /// <summary>The entry sources' answer Flow got (ExternalAt), for the grid's Server call right after on the same thread.</summary>
+    [ThreadStatic] static AeroGridComponent _extFor; [ThreadStatic] static bool _extHas; [ThreadStatic] static Vector3 _extAir; [ThreadStatic] static float _extS;
 
     /// <summary>Server, each aero step, for every grid (not gated by the entry plasma's switch or heat): the air past it -
     /// its travel in its own frame, Mach (speed over the speed of sound the aero model last used; 340 m/s before it has
@@ -192,14 +252,18 @@ public static class AeroEntryFx
         if (!aero.IsServerScene) return;
         if (TestSpeed > 0f) { vel = TestVelocityWorld(wt); density = MathF.Max(density, 1.2f); }
         float extS = -1f;
-        if (ExternalAt(aero.Entity, out var extAir, out float es)) { vel = extAir; extS = es; }
+        bool ext = ExternalAt(aero.Entity, out var extAir, out float es);
+        _extFor = aero; _extHas = ext; _extAir = extAir; _extS = es;   // (for Server, next: AeroSimJobCore calls it right after)
+        if (ext) { vel = extAir; extS = es; }
         // (a railed grid braking through another mod's band is in vacuum as far as the game is concerned: density 0 - it
         //  published nothing and drew no plasma. The source's strength stands for the air: published regardless)
         if (extS > 0f) density = MathF.Max(density, 0.01f);
         float speed = vel.Length();
-        if (speed < 1f || density <= 0f)
+        // (hysteresis: published from 1 m/s, withdrawn below 0.7 - a ship hovering about 1 m/s, the wind in, flickered in
+        //  and out, and every return built its flight field anew)
+        if (speed < (aero.FlowPublished ? 0.7f : 1f) || density <= 0f)
         {
-            if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; }
+            if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; _flowCount = _flow.Count; }
             return;
         }
         aero.RefreshFxGroup();   // (the ship it is part of: one set of tip trails per ship)
@@ -207,7 +271,7 @@ public static class AeroEntryFx
         float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
         lock (_flow)
         {
-            if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; }
+            if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; _flowCount = _flow.Count; }
             // (Vel is the real motion, not the air: a held test grid's or a railed grid's air speed carried its position
             //  hundreds of metres off, and a client matched its subgrid's record - the wrong hull)
             p.Pos = wt.Position; p.Orient = wt.Orientation; p.Vel = moving;
@@ -305,11 +369,13 @@ public static class AeroEntryFx
     internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last) => FindFlow(pos, last, null);
     /// <summary>The client grid's local bounds (set per call by the flight job; none: orientation only).</summary>
     [ThreadStatic] static Vector3 _cMin, _cMax; [ThreadStatic] static bool _cBox;
-    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient, Keen.VRage.DCS.Components.Entity client)
+    /// <summary>into: the caller's own record, the match copied into it (null: a new copy).</summary>
+    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient, Keen.VRage.DCS.Components.Entity client, FlowPub into = null)
     {
-        _cBox = client != null && client.Data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out var cb);
-        if (_cBox) { var b = client.Data.Get<Keen.VRage.Core.Game.Data.BoundingBoxData>().BoundingBox; _cMin = b.Min; _cMax = b.Max; }
-        try { return FindFlow(pos, last, orient); } finally { _cBox = false; }
+        Keen.VRage.Core.Game.Data.BoundingBoxData cb = default;
+        _cBox = client != null && client.Data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out cb);
+        if (_cBox) { var b = cb.BoundingBox; _cMin = b.Min; _cMax = b.Max; }   // (the value TryGet read: no second lookup)
+        try { return FindFlow(pos, last, orient, into); } finally { _cBox = false; }
     }
     /// <summary>Another grid (a pod, a rotor - turned the same way or not): its local bounds differ from the client's.</summary>
     static bool OtherGrid(FlowPub p) => _cBox && p.HasBox && ((p.BoxMin - _cMin).Length() > 0.5f || (p.BoxMax - _cMax).Length() > 0.5f);
@@ -326,7 +392,7 @@ public static class AeroEntryFx
     /// 20 m, and the field froze or dropped). A sub-grid's nearer record no longer steals a ship's field. A copy, taken under
     /// the lock (the record is written by the sim thread).
     /// </summary>
-    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient)
+    internal static FlowPub FindFlow(Vector3D pos, AeroGridComponent last, Quaternion? orient, FlowPub into = null)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
         lock (_flow)
@@ -341,7 +407,7 @@ public static class AeroEntryFx
             // (the grid already matched: kept within 20 deg - the record is a step old while the ship turns; at 3 deg a turning
             //  ship lost its own record, its field was dropped and made again, and its trails re-placed five times in 8 s)
             if (last != null && _flow.TryGetValue(last, out var kept) && !OtherGrid(kept) && !Turned(kept, orient, 20.0) && Reach(kept, 20.0) != null)
-                return (FlowPub)kept.MemberwiseCloneFlow();
+                return into != null ? into.CopyFrom(kept) : (FlowPub)kept.MemberwiseCloneFlow();
             FlowPub best = null; double bestD = double.MaxValue;
             foreach (var p in _flow.Values)
             {
@@ -349,10 +415,13 @@ public static class AeroEntryFx
                 double d = (p.Pos + p.Vel * ((now - p.Stamp) / freq) - pos).Length();
                 if (d < bestD) { bestD = d; best = p; }
             }
-            return best == null ? null : (FlowPub)best.MemberwiseCloneFlow();
+            return best == null ? null : into != null ? into.CopyFrom(best) : (FlowPub)best.MemberwiseCloneFlow();
         }
     }
-    public static bool AnyFlow { get { lock (_flow) return _flow.Count > 0; } }
+    /// <summary>Any flow published (no lock: every client grid's flight job asks it every frame - they queued on the flow
+    /// table's lock, 2026-10-15; the count is written under the lock wherever the table changes).</summary>
+    public static bool AnyFlow => _flowCount > 0;
+    static volatile int _flowCount;
 
     /// <summary>A grid's flow record, copied under the lock: its own (server copy) or, for a client copy, the nearest
     /// published one (FindFlow). False: not flying (under 1 m/s or no air), or not published in this process.</summary>
@@ -376,7 +445,7 @@ public static class AeroEntryFx
     /// <summary>Server: a grid going away stops publishing.</summary>
     internal static void Forget(AeroGridComponent aero)
     {
-        if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; }
+        if (aero.FlowPublished) lock (_flow) { _flow.Remove(aero); aero.FlowPublished = false; _flowCount = _flow.Count; }
     }
 
     static readonly Keen.VRage.Library.Utils.StringId CameraTag = Keen.VRage.Library.Utils.StringId.Get("VisualEffectsObserver");
@@ -430,11 +499,17 @@ public static class AeroEntryFx
 /// quiet at once).</summary>
 public partial class AeroEntryFxComponent : Component, IInSceneListener
 {
+    internal int ScorchVersion = -1, ScorchTick;
+    internal List<(int step, bool dark)> ScorchStamped;
     internal object RenderParent;
     internal bool NoRender;
     internal int RetryIn;
     internal FlightField Flight;
     internal AeroGridComponent FlowOf;
+    /// <summary>The flight job's copy of its grid's flow, written in place each frame (FindFlow's into; read by this job only -
+    /// the flight field and the scorch read it within the frame and keep nothing of it).</summary>
+    internal readonly AeroEntryFx.FlowPub FlowCopy = new();
+    internal long LinesAt;   // (its diagnostics lines next made: FlightJob)
     internal long LostSince;   // (dropped after 1 s lost, and 60 frames: not 60 frames - half a second at 120 fps, two at 30)   // (the server grid matched last frame: kept while in reach)
     internal int FlightLost;
 
@@ -443,6 +518,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     {
         if (Flight != null) { Flight.Destroy(); Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); }
         lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(this);
+        TearSmoke.EndAll(this);   // (its torn-edge smoke: stopped and disposed with it)
     }
 
     [After(typeof(RenderSubmissionBegin))]
@@ -450,13 +526,16 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
 
     /// <summary>The flight field: kept while the grid publishes a flow, is within FlightRange and among the nearest
     /// FlightMax to the camera; dropped a second after it stops.</summary>
+    /// <summary>A field whose flow is lost is kept at least this long (s) before it goes.</summary>
+    public static double LostKeepSeconds = 1.5;
+
     private static void FlightJob(AeroEntryFxComponent c, IObservers observers)
     {
         if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
         var grid = c.Entity;
         if (grid == null || !PhysicsHack.Alive(c.Data)) return;
         var wt = c.Data.GetWorldTransform();
-        var p = AeroEntryFx.FindFlow(wt.Position, c.FlowOf, wt.Orientation, grid);
+        var p = AeroEntryFx.FindFlow(wt.Position, c.FlowOf, wt.Orientation, grid, c.FlowCopy);   // (into its own copy: no record a frame)
         if (p != null) c.FlowOf = p.Aero;   // (one miss kept the remembered grid: it was cleared, and the next match was not sticky)
         bool keep = p != null && p.Aero != null && !AeroApi.Suppressed(grid, wt.Position);
         double d = -1;
@@ -476,7 +555,10 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             long nowL = System.Diagnostics.Stopwatch.GetTimestamp();
             if (c.Flight != null && c.LostSince == 0) c.LostSince = nowL;
             bool faded = c.Flight != null && c.Flight.FadeOut(wt);
-            if (c.Flight != null && (faded || nowL - c.LostSince > 4 * System.Diagnostics.Stopwatch.Frequency)) { c.LostSince = 0; c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
+            // (and never before LostKeepSeconds: a slow ship flickering about the publish speed lost its field and built a new
+            //  one - the shock grid, the hull, its hash - every few frames: a profile, 2026-10-14)
+            long lostFor = nowL - c.LostSince;
+            if (c.Flight != null && ((faded && lostFor > (long)(LostKeepSeconds * System.Diagnostics.Stopwatch.Frequency)) || lostFor > 4 * System.Diagnostics.Stopwatch.Frequency)) { c.LostSince = 0; c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
             return;
         }
         c.FlightLost = 0; c.LostSince = 0;
@@ -495,9 +577,15 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             System.Threading.Interlocked.Increment(ref AeroEntryFx.FlightActive);
         }
         c.Flight.Update(p, wt);
-        AeroEntryFx.FlightStatus = c.Flight.Status;
+        if (++c.ScorchTick >= 30) { c.ScorchTick = 0; HeatScorch.Sync(c, p.Aero); }   // (the hull's scorch marks, twice a second)
+        // (the diagnostics strings - FlightStatus, NearTipWhy, FlightLines - made four times a second per field, not every
+        //  frame: each was a string a frame per flying grid with the field's whole Status in it - a profile, 2026-10-15. Read
+        //  by the harness only; Status itself is built when read, FlightField.Status)
+        long nowS = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool lines = nowS >= c.LinesAt;
+        if (lines) { c.LinesAt = nowS + System.Diagnostics.Stopwatch.Frequency / 4; AeroEntryFx.FlightStatus = c.Flight.Status; }
         // (your ship's own: the trail owner's field within 150 m of the camera - the cockpit's grid is often a sub-grid)
-        if (d >= 0 && d < 150 && (p.Aero?.FxTipOwner ?? false))
+        if (lines && d >= 0 && d < 150 && (p.Aero?.FxTipOwner ?? false))
         {
             // (client copy vs the server grid it draws for: the same grid should sit on top of itself)
             string pair = "";
@@ -512,7 +600,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             }
             FlightField.NearTipWhy = $"{c.Flight.TipWhyHere} (cam {d:F0} m){pair} | {c.Flight.Status}";
         }
-        lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines[c] = $"[{wt.Position.X:F0} {wt.Position.Y:F0} {wt.Position.Z:F0} cam {d:F0} m] {c.Flight.Status}";
+        if (lines) lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines[c] = $"[{wt.Position.X:F0} {wt.Position.Y:F0} {wt.Position.Z:F0} cam {d:F0} m] {c.Flight.Status}";
     }
 
     /// <summary>The trail tracker's overlay (FlightField.TrailDebug): its own job - one job context each.</summary>
@@ -532,6 +620,8 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
         AeroSettings.Poll();   // (the settings files, every ~2 s)
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
+        StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
+        TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
             if (c.Flight != null) { c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }

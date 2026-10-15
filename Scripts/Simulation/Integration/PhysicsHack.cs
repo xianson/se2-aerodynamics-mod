@@ -222,6 +222,23 @@ public static class PhysicsHack
         return true;
     }
 
+    /// <summary>TryGetMassProperties and TryGetInertiaData in one read (the same RigidBodyMassProperties: one alive check -
+    /// the scene's shared lock word - and one lookup, not two; the sim job reads both every full step). False: neither read,
+    /// mass and centre of mass zero, the inertia outputs as TryGetInertiaData leaves them.</summary>
+    public static bool TryGetMassAndInertia(DEntityContext data, out float mass, out Vector3 centerOfMass,
+        out Vector3 invInertiaTensor, out Quaternion majorAxisRot)
+    {
+        mass = 0f; centerOfMass = Vector3.Zero;
+        invInertiaTensor = Vector3.Zero; majorAxisRot = Quaternion.Identity;
+        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mp))
+            return false;
+        mass = mp.InvMass > 1e-10f ? 1f / mp.InvMass : 0f;
+        centerOfMass = mp.CenterOfMass;
+        invInertiaTensor = mp.InvInertiaTensor;
+        majorAxisRot = mp.InertiaMajorAxisRotation;
+        return true;
+    }
+
     /// <summary>Read inverse inertia tensor and principal-axis rotation (diagnostics).</summary>
     public static bool TryGetInertiaData(DEntityContext data,
         out Vector3 invInertiaTensor, out Quaternion majorAxisRot)

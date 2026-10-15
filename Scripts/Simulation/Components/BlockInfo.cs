@@ -1,4 +1,5 @@
 #pragma warning disable
+using System;
 namespace AeroMod;
 
 /// <summary>
@@ -22,19 +23,35 @@ public readonly struct BlockInfo
     /// <summary>Block edge length in meters (2.5 large, 0.5 small).</summary>
     public readonly float BlockSize;
 
-    /// <summary>Planform area of the control surface in m² (single cell face).</summary>
-    public readonly float FaceArea;
+    /// <summary>The block's size along the grid's X, Y, Z (m): its occupied cells' bounds.</summary>
+    public readonly Vector3 Extents;
+
+    /// <summary>The block's AABB Min + Max (cells): the key both copies of a grid share for it (flames, flaps).</summary>
+    public Vector3I CellKey { get; init; }
+    /// <summary>The block's terminal settings, if it has any (the 3x3x1 control surfaces).</summary>
+    public IControlSurfaceSettings Settings { get; init; }
+    /// <summary>The block's retractable gear, if it is one (its drag follows the leg).</summary>
+    public IGearState Gear { get; init; }
+    /// <summary>The block's airbrake opening, if it is one (the 3x3x3 clamshell).</summary>
+    public IAirbrakeState Airbrake { get; init; }
 
     public BlockInfo(Vector3 position, Vector3I blockPosition,
-        Vector3 forward, Vector3 up, float blockSize)
+        Vector3 forward, Vector3 up, float blockSize, Vector3 extents)
     {
         Position = position;
         BlockPosition = blockPosition;
         Forward = forward;
         Up = up;
         BlockSize = blockSize;
-        // Control surface planform area — one block face worth of lifting surface
-        // Real aircraft: aileron ~1-2 m² on a 10m wing. A 2.5m block ≈ 1 m²
-        FaceArea = 30.0f;
+        Extents = extents;
+    }
+
+    /// <summary>The block's area seen along <paramref name="normal"/> (an axis direction, e.g. Up for a control surface's
+    /// planform, Forward for an airbrake's plate): the product of its two other extents. (It was a constant 30 m2 for every
+    /// block until 2026-10-12, about five times a large block's 6.25 m2 face.)</summary>
+    public float AreaFacing(Vector3 normal)
+    {
+        float ax = MathF.Abs(normal.X), ay = MathF.Abs(normal.Y), az = MathF.Abs(normal.Z);
+        return ax >= ay && ax >= az ? Extents.Y * Extents.Z : ay >= az ? Extents.X * Extents.Z : Extents.X * Extents.Y;
     }
 }

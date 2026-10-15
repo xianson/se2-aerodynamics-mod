@@ -119,9 +119,24 @@ internal static class DesignProbe
     internal static bool Forces(AeroGridComponent aero, Vector3 travelLocal, float mach, float rho, float sos, out Vector3 force, out Vector3 torque, out Vector3 com, out float frontal)
     {
         force = torque = com = default; frontal = 0f;
-        var model = aero?.FxModel; var table = model?.Table;
-        if (table == null || model.InnerModel is not DampedShadowedDragModel d) { if (aero != null) aero.EntryWantsTable = true; return false; }
+        // (a grid just split or removed: its entity gone under the build hints' feet - a null reference here faulted
+        //  BuildHints.Draw mid-pull, 2026-10-13)
+        if (aero?.Entity == null) return false;
+        var dd = aero.Data;
+        if (dd.Scene == null || !dd.Scene.IsEntityAlive(dd.Entity)) return false;
+        var model = aero.FxModel; var table = model?.Table;
+        if (table == null || model.InnerModel is not DampedShadowedDragModel) { if (aero != null) aero.EntryWantsTable = true; return false; }
         com = aero.Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) ? mp.CenterOfMass : table.BuildCom;
+        return ForcesAt(aero, travelLocal, mach, rho, sos, com, out force, out torque, out frontal);
+    }
+
+    /// <summary>Forces with the centre of mass given - no entity data read, so safe off the simulation thread (the stall
+    /// warning's background evaluation): the table is read only, the wings' model is this probe's own, locked.</summary>
+    internal static bool ForcesAt(AeroGridComponent aero, Vector3 travelLocal, float mach, float rho, float sos, Vector3 com, out Vector3 force, out Vector3 torque, out float frontal)
+    {
+        force = torque = default; frontal = 0f;
+        var model = aero?.FxModel; var table = model?.Table;
+        if (table == null || model.InnerModel is not DampedShadowedDragModel d) return false;
         Vector3 v = Vector3.Normalize(travelLocal) * Math.Max(1f, mach * sos);
         var atm = new AtmosphereState { Density = rho, SpeedOfSound = sos, Pressure = 101325, Temperature = 288.15, DynamicViscosity = 1.8e-5 };
         var ctx = new AeroContext(null, null, v, atm, com);

@@ -533,6 +533,8 @@ static partial class Program
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships
             int fails = known + TorqueChecks(atmo, false);
+            // the stall warning's whole-ship lift peak against a fine sweep (Lift/LiftPeak)
+            fails += StallCheck(dataDir, atmo, new[] { "bluefighter", "pelican" });
             // the aero-aware attitude law on the F-6 (statically unstable in pitch): every case within its gyros settles
             if (Directory.GetFiles(dataDir, "3737149863.boxes", SearchOption.AllDirectories).Length > 0) fails += Attitude(dataDir, atmo, "bp/3737149863");
             foreach (var name in new[] { "bluefighter", "pelican" })
@@ -803,7 +805,12 @@ static partial class Program
                     Console.WriteLine($"   wing: area {w.PlanformArea,6:F1} m2  span {w.Span,5:F1} m  AR {w.AspectRatio,4:F1}  sweep {w.SweepAngle * 57.3f,5:F1} deg  CLmax {w.CLMax:F2}  normal {w.Normal}  centre {w.AeroCenter}");
             return 0;
         }
+        if (args.Length > 0 && args[0] == "roll") return RollResponse();
         if (args.Length > 0 && args[0] == "blend") return Blend(dataDir, atmo);
+        if (args.Length > 0 && args[0] == "struct") return StructBench(dataDir, atmo, args.Skip(1).ToArray());
+        if (args.Length > 0 && args[0] == "fail") return FailSim(dataDir, args.Skip(1).ToArray());
+        if (args.Length > 2 && args[0] == "replay") return Replay(args[1], args[2], args.Length > 3 ? args[3] : null);
+        if (args.Length > 0 && args[0] == "stall") return StallCheck(dataDir, atmo, args.Length > 1 ? args.Skip(1).ToArray() : new[] { "bluefighter", "pelican" });
         if (args.Length > 0 && args[0] == "bodies") return Bodies(atmo);
         if (args.Length > 1 && args[0] == "columns") return Columns(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "polar") return Polar(dataDir, atmo, args[1]);

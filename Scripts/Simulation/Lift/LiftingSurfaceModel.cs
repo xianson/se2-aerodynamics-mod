@@ -178,6 +178,20 @@ public class LiftingSurfaceModel : IAeroDragModel
     public AeroResult Compute(in AeroContext ctx)
     {
         var inner = InnerForces(ctx);
+        // ground effect on the hull's own lift (GroundEffect: all lift, doubled coming down to land) - its span from its
+        // frontal area (a circle's diameter), its height the grid's
+        float landing = GroundEffect.Landing(ctx.Velocity, ctx.GroundUpLocal);
+        if (ctx.GroundHeight >= 0f && inner.FrontalArea > 0f && ctx.Speed > 0.01f)
+        {
+            float phiH = GroundEffect.Phi(ctx.GroundHeight, 2f * MathF.Sqrt(inner.FrontalArea / MathF.PI));
+            if (phiH < 1f)
+            {
+                Vector3 v = ctx.Velocity / ctx.Speed;
+                Vector3 lift = inner.Force - v * Vector3.Dot(inner.Force, v);
+                float k = GroundEffect.LiftBoost(phiH, 1f + landing) - 1f;
+                inner = new AeroResult(inner.Force + lift * k, inner.Torque, inner.DragMagnitude, inner.LiftMagnitude * (1f + k), inner.FrontalArea, inner.Mach, inner.DynamicPressure);
+            }
+        }
 
         if (_wings == null || _wings.Count == 0)
         {
@@ -230,7 +244,15 @@ public class LiftingSurfaceModel : IAeroDragModel
                 totalTorque += Vector3.Cross(wing.Centroid - ctx.CenterOfMass, profileDrag);
             }
 
-            var wingTotalForce = (wf.LiftForce + wf.InducedDrag) * left;
+            // (coming down to land: the wings' ground effect doubled - the model gave McCormick's phi; GroundEffect)
+            var liftF = wf.LiftForce; var cdiF = wf.InducedDrag;
+            if (landing > 0f && ctx.GroundHeight >= 0f)
+            {
+                float hW = ctx.GroundHeight + (ctx.GroundUpLocal.LengthSquared() > 0.5f ? Vector3.Dot(wing.AeroCenter, ctx.GroundUpLocal) : 0f);
+                float phiW = GroundEffect.Phi(hW, wing.Span);
+                if (phiW < 1f) { liftF *= GroundEffect.LiftBoost(phiW, landing); cdiF *= MathF.Pow(phiW, landing); }
+            }
+            var wingTotalForce = (liftF + cdiF) * left;
             totalForce += wingTotalForce;
             totalTorque += Vector3.Cross(wf.ApplicationPoint - ctx.CenterOfMass, wingTotalForce);
         }

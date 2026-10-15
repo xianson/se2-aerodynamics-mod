@@ -36,6 +36,9 @@ public partial class AeroGridComponent
     {
         if (!aero._initialized || !AeroSwitch.Enabled || AeroTestHarness.ShouldSkipGrid(aero)) return;
         if (!ThrustTorque.Enabled || (aero._thrusterCache.Count == 0 && aero._gyroCache.Count == 0)) return;
+        // (a quiet grid - the sim job's quiet path, this tick - was at rest for QuietAfter steps: ThrustTorque's rest branch
+        //  ran each of them and darkened its flames; nothing to do until it stirs)
+        if (QuietGate && aero._quietFrames > QuietAfter && aero._quietFrames % QuietRefresh != 0) return;
         long tth2 = AeroCost.Start();
         AeroCost.EnterSim();
         try
@@ -49,13 +52,17 @@ public partial class AeroGridComponent
             }
             PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
+            aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
+            // (the predicted loss-of-control warning's inputs: Loac.cs)
+            aero.LoacHasTarget = aero.LastThrust.Aware && aero.LastThrust.HasTarget; aero.LoacTarget = aero.LastThrust.Target; aero.LoacReach = aero.LastThrust.Reach;
             if (PitchLog && aero.IsServerScene && aero.Data.Has<TargetControlData>() && aero._simFrameCount % 6 == 0)
             {
                 PhysicsHack.TryGetVelocity(aero.Data, out _, out var w2);
                 var wl = WorldTransform.TransformDirectionInv(w2, wt); var r = aero.LastThrust;
                 Log.Default?.Info($"[AERO-PITCH] v={aero.LastSpeed:F0} M={(aero.HasResult ? aero.LastResult.Mach : 0):F2} w=({wl.X:F3},{wl.Y:F3},{wl.Z:F3}) err=({r.Error.X * 57.3f:F2},{r.Error.Y * 57.3f:F2},{r.Error.Z * 57.3f:F2})deg"
                     + $" aeroT=({aero.LastAeroTorque.X / 1000:F0},{aero.LastAeroTorque.Y / 1000:F0},{aero.LastAeroTorque.Z / 1000:F0})kNm gyro=({r.GyroTorque.X / 1000:F0},{r.GyroTorque.Y / 1000:F0},{r.GyroTorque.Z / 1000:F0})kNm"
-                    + $" rcs=({r.RcsTorque.X / 1000:F0},{r.RcsTorque.Y / 1000:F0},{r.RcsTorque.Z / 1000:F0})kNm undone=({r.GameGyroUndone.X:F4},{r.GameGyroUndone.Y:F4},{r.GameGyroUndone.Z:F4}) aware={(r.Aware ? 1 : 0)} mode={r.Mode}");
+                    + $" rcs=({r.RcsTorque.X / 1000:F0},{r.RcsTorque.Y / 1000:F0},{r.RcsTorque.Z / 1000:F0})kNm undone=({r.GameGyroUndone.X:F4},{r.GameGyroUndone.Y:F4},{r.GameGyroUndone.Z:F4}) aware={(r.Aware ? 1 : 0)} mode={r.Mode}"
+                    + $" surf=({aero.LastSurfaceTorque.X / 1000:F0},{aero.LastSurfaceTorque.Y / 1000:F0},{aero.LastSurfaceTorque.Z / 1000:F0})kNm dem=({aero.LastControlTorque.X / 1000:F0},{aero.LastControlTorque.Y / 1000:F0},{aero.LastControlTorque.Z / 1000:F0})kNm alloc={aero._allocN}/{aero._allocSat}sat");
             }
         }
         finally { AeroCost.ExitSim(); }
@@ -80,14 +87,37 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void AeroSimJob(AeroGridComponent aero, WorldTransform wt)
     {
+        // (TEARING: something queued or tied - arm this tick's tear job, StructureTear.cs; idle: this one read)
+        if (StructureTear.Work != 0 && aero.IsServerScene) StructureTear.Armed = 1;
         long t0 = AeroCost.Start();
         AeroCost.EnterSim();
         try { AeroSimJobCore(aero, wt); } finally { AeroCost.ExitSim(); }
         AeroCost.Sim.Stop(t0);
         AeroCost.Watch(aero);
-        if (aero.IsServerScene) Interlocked.Increment(ref AeroCost.SimServer); else Interlocked.Increment(ref AeroCost.SimClient);
+        if (AeroCost.Log) { if (aero.IsServerScene) Interlocked.Increment(ref AeroCost.SimServer); else Interlocked.Increment(ref AeroCost.SimClient); }
         AeroCost.WatchThrust(aero);
         AeroCost.MaybeLog();
+    }
+
+    /// <summary>The quiet path (AeroSimJobCore): on, the steps a grid must stay quiet first, and its full step's period.</summary>
+    public static bool QuietGate = true;
+    public static int QuietAfter = 30, QuietRefresh = 30;
+    internal int _quietFrames;
+    [ThreadStatic] static int _tQuietSkips;
+
+    /// <summary>Nothing for the aero model to do: nobody flying it (seat focus, a target), no engine pushing, no air past it,
+    /// not turning, no entry glow, no external entry source, no test airflow.</summary>
+    bool IsQuiet(Vector3 airVel, Vector3 angVel)
+    {
+        if (airVel.LengthSquared() > 0.0025f || angVel.LengthSquared() > 4e-6f) return false;
+        if (EntryHeat > 1e-3f || FlowPublished || AeroEntryFx.TestSpeed > 0f || AeroEntryFx.TestForcesOn) return false;
+        // (the test harnesses tick at the end of the full step and count its frames: never quiet under them)
+        if (AeroTestHarness.Enabled || AeroFlightTest.Enabled || AeroSpeedSpike.Enabled) return false;
+        if (System.Diagnostics.Stopwatch.GetTimestamp() < StructFocusUntil || Data.Has<TargetControlData>()) return false;
+        if (Data.Has<ActiveThrustData>()) return false;
+        // (an external entry source - a grid on another mod's rails - checked on the full steps only: it ends quiet there)
+        if (_quietFrames % QuietRefresh == 0 && AeroEntryFx.ExternalAt(Entity, out _, out float es) && es > 0f) return false;
+        return true;
     }
 
     /// <summary>DEV: every 6th tick, a piloted grid's rates and attitude error (local), the air's torque, and what the
@@ -121,7 +151,26 @@ public partial class AeroGridComponent
         // the air: the grid's velocity less the wind's (AeroWind) - what the aero model, Mach and the effects meet
         aero.LastWind = AeroWind.At(aero.Data);
         Vector3 airVel = linVel - aero.LastWind;
-        PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
+
+        // ── QUIET (2026-10-14, the user: "reduce performance cost"): a grid nobody flies, not thrusting, with no air past it
+        // (the wind included), not turning, its entry glow gone - parked ships, stations, debris, most of a world's ~150
+        // grids - had the whole step every tick (the ground ray, the mass, the inertia, the model: ~3 us x 2 scenes x 60 Hz
+        // each, 55 ms/s in all). Quiet for QuietAfter steps in a row, it does only the reads above, and the full step once
+        // every QuietRefresh steps (its caches, the probes, the clocks kept fresh); anything changing ends it at once.
+        if (QuietGate && aero.IsQuiet(airVel, angVel))
+        {
+            if (++aero._quietFrames > QuietAfter && aero._quietFrames % QuietRefresh != 0)
+            {
+                aero.LastLinVel = linVel; aero.LastAngVel = angVel; aero.LastSpeed = linVel.Length();
+                aero.AeroForcesApplied = false; aero.LastAeroTorque = Vector3.Zero; aero.LastSurfaceTorque = Vector3.Zero;
+                AeroCost.Count(ref _tQuietSkips, ref AeroStats.QuietSkips);   // (per thread, a batch at a time: AeroCost.Count)
+                AeroCost.Pre.Stop(tpre);
+                return;
+            }
+        }
+        else aero._quietFrames = 0;
+        // (the mass and the inertia: one read of the same data - the inertia used below as before)
+        bool massRead = PhysicsHack.TryGetMassAndInertia(aero.Data, out float mass, out Vector3 com, out var invI, out var majorAxisRot);
 
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
@@ -151,7 +200,7 @@ public partial class AeroGridComponent
         aero.LastMass = mass;
         aero.LastDensity = density;
         aero.LastSpeed = linVel.Length();
-        if (PhysicsHack.TryGetInertiaData(aero.Data, out var invI, out var majorAxisRot))
+        if (massRead)
         {
             aero.LastInvInertia = invI;
             aero.LastInertiaMajorAxisRot = majorAxisRot;
@@ -196,7 +245,7 @@ public partial class AeroGridComponent
         }
 
         // ── Aero computation ──
-        long tco = AeroCost.Start();
+        long tco = System.Diagnostics.Stopwatch.GetTimestamp();   // (the frame budget's clock too: always read)
         aero.CachedPriority = aero.BuildPriority;
         AeroFrameBudget.Touch();
         int every = aero.ComputeInterval;
@@ -206,7 +255,7 @@ public partial class AeroGridComponent
         {
             aero.BudgetSkips++;
             due = false;
-            System.Threading.Interlocked.Increment(ref AeroFrameBudget.SkippedThisSecond);
+            if (AeroCost.Log) System.Threading.Interlocked.Increment(ref AeroFrameBudget.SkippedThisSecond);   // (read by the [AERO-COST] log only)
         }
         if (due)
         {
@@ -215,12 +264,12 @@ public partial class AeroGridComponent
                 aero.TryCompute(wt, MathF.Max(density, 1.2f), AeroEntryFx.TestVelocityWorld(wt), angVel, com, aero.GroundHeight);
             else
                 aero.TryCompute(wt, density, airVel, angVel, com, aero.GroundHeight);
-            System.Threading.Interlocked.Increment(ref AeroFrameBudget.ComputedThisSecond);
+            if (AeroCost.Log) System.Threading.Interlocked.Increment(ref AeroFrameBudget.ComputedThisSecond);   // (read by the [AERO-COST] log only)
         }
         else
             aero.SkipCompute(wt, angVel);   // (the last forces, in the grid's frame, are applied again below)
         AeroFrameBudget.Add(System.Diagnostics.Stopwatch.GetTimestamp() - tco);
-        AeroCost.Compute.Stop(tco);
+        if (AeroCost.Log) AeroCost.Compute.Stop(tco);
         AeroEntryFx.Flow(aero, wt, airVel, density, linVel);
         AeroEntryFx.Server(aero, wt, airVel, density, 1f / 60f);
         if (aero.IsServerScene) aero.TickWingStrain(AeroPhysics.Dt);   // (under TestForces too: the forces at the test airflow strain the wings - damage only with Structure.WingStrain on)   // (wing strain: WingStrainServer.cs)
@@ -247,7 +296,8 @@ public partial class AeroGridComponent
             && aero.Data.Has<TargetControlData>()
             && aero.EulerError.LengthSquared() > GyroHandoffRad * GyroHandoffRad;
 
-        aero.LastAeroTorque = Vector3.Zero;
+        aero.LastAeroTorque = Vector3.Zero; aero.LastSurfaceTorque = Vector3.Zero;
+        Vector3 appliedF = Vector3.Zero, appliedT = Vector3.Zero;   // (the structure's air loads: StructureServer)
         aero.AeroForcesApplied = aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn;
         if (aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn)
         {
@@ -270,14 +320,22 @@ public partial class AeroGridComponent
 
             Vector3 sasTorque = (ThrustTorque.Enabled || aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;   // (no phantom: ThrustTorque)
             Vector3 totalTorque = torqueLocal + sasTorque;
-            aero.LastAeroTorque = torqueLocal;   // (the attitude control's feedforward: the very torque applied)
+            // (the attitude control's feedforward: the airframe's own torque - not the block components' (control surfaces:
+            //  they are actuators, deflected on purpose; fed forward, the aero-aware law had the gyros cancel every turn they
+            //  helped with, 2026-10-12). The world's multipliers taken as they scale the whole.)
+            float tuneScale = aero.LastResult.Torque.LengthSquared() > 1e-6f ? torqueLocal.Length() / aero.LastResult.Torque.Length() : 1f;
+            aero.LastSurfaceTorque = aero.LastComponentTorque * tuneScale;
+            aero.LastAeroTorque = torqueLocal - aero.LastSurfaceTorque;
             // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
             // ref into component storage and uses the engine's own inertia math, instead of
             // PhysicsHack's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
             long tap = AeroCost.Start();
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, totalTorque, dt);
             AeroCost.Apply.Stop(tap);
+            appliedF = forceLocal; appliedT = torqueLocal;
         }
+        // the structure and the hull's heat (StructureServer.cs: a background evaluation a few times a second)
+        if (aero.IsServerScene) aero.TickStructure(dt, appliedF, appliedT, WorldTransform.TransformDirectionInv(airVel, wt), AeroTuning.LiftMultiplier);
 
         // ── Thrust torque and attitude: AttitudeJob, after the game's gyros (ThrustTorque.Enabled) ──
         // ── Offset thrust (RCS) correction (the old system: phantom attitude torque; ThrustTorque.Enabled = false) ──

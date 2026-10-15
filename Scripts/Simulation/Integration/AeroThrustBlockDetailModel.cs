@@ -19,10 +19,11 @@ namespace AeroMod;
 /// <summary>
 /// Terminal slider for per-thruster attitude authority.
 /// </summary>
-// NOT a [BlockDetailProvider] any more: the control panel's streamed UI translates every detail model through the
-// replication mapping (ObservableObjectReplicationSessionComponent.TranslateLocalToRemote), which a mod's model is never
-// in ([Replicate] is not whitelisted) - selecting a thruster in the control panel crashed the game (KeyNotFoundException
-// 'AeroMod.AeroThrustBlockDetailModel', 2026-10-04). Kept for when mods can replicate; the slider tuned the old system.
+// A [BlockDetailProvider] again (2026-10-12): it crashed the game when a thruster was selected in the control panel
+// (KeyNotFoundException 'AeroMod.AeroThrustBlockDetailModel', 2026-10-04) - the panel translates every detail model through
+// the replication mapping, which a mod's model is never in. DetailModelPairing pairs it with itself in the ctor (see there).
+// The attribute stays OFF until one in-game check (open a thruster's control panel) passes: the user plays this build.
+// [BlockDetailProvider]
 public class AeroThrustBlockDetailModel : BlockDetailModel
 {
     [Keen.VRage.DCS.Annotations.Component]
@@ -30,7 +31,9 @@ public class AeroThrustBlockDetailModel : BlockDetailModel
 
     public AeroThrustBlockDetailModel()
     {
-        Log.Default?.Info($"[AERO] AeroThrustBlockDetailModel CTOR settings={_settings != null}");
+        // (runs inside the game's Allocate, before RegisterObservable: the pairing must exist by then)
+        DetailModelPairing.Pair(this, _settings);
+        Log.Default?.Info($"[AERO] AeroThrustBlockDetailModel CTOR settings={_settings != null} {DetailModelPairing.Status}");
     }
 
     [Slider(null)]

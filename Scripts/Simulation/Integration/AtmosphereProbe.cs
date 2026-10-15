@@ -34,7 +34,10 @@ internal static class AtmosphereProbe
     /// <summary>Sim thread, every aero grid tick: cheap (a timestamp compare); the list again every ~10 s.</summary>
     internal static void Tick(AeroGridComponent aero)
     {
-        long now = System.Diagnostics.Stopwatch.GetTimestamp(), due = System.Threading.Interlocked.Read(ref _refreshAt);
+        // (the due time read plainly - a long is read whole on 64-bit: Interlocked.Read is a locked compare-exchange that took
+        //  this shared cache line for writing from every server grid's tick on every thread - 1.6 ms/s of a profile, 2026-10-15;
+        //  the refresh is still taken by one thread, the compare-exchange below)
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), due = System.Threading.Volatile.Read(ref _refreshAt);
         if (now < due) return;
         // (grid jobs may run in parallel: one of them takes the refresh)
         if (System.Threading.Interlocked.CompareExchange(ref _refreshAt, now + 10 * System.Diagnostics.Stopwatch.Frequency, due) != due) return;

@@ -15,6 +15,8 @@ namespace AeroMod;
 /// </summary>
 public static class AeroStats
 {
+    /// <summary>Steps a quiet grid skipped (AeroSimJobCore's quiet path).</summary>
+    public static int QuietSkips;
     private const float BudgetUs = 2000f; // 2ms budget
     private const int PeakWindow = 60;
 

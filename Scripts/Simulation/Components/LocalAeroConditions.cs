@@ -31,11 +31,16 @@ public readonly struct LocalAeroConditions
 
     /// <summary>Height above ground in meters (-1 if unknown/no ground).</summary>
     public readonly float GroundHeight;
+    /// <summary>Away from the ground (grid-local unit; zero unknown), and how much the grid is coming down to land (0..1) -
+    /// ground effect (GroundEffect).</summary>
+    public readonly Vector3 GroundUp;
+    public readonly float Landing;
 
     public LocalAeroConditions(Vector3 velocity, float speed, Vector3 flowDirection,
         float dynamicPressure, float mach, AtmosphereState atmosphere, Vector3 position,
-        float groundHeight = -1f)
+        float groundHeight = -1f, Vector3 groundUp = default, float landing = 0f)
     {
+        GroundUp = groundUp; Landing = landing;
         Velocity = velocity;
         Speed = speed;
         FlowDirection = flowDirection;
@@ -60,6 +65,6 @@ public readonly struct LocalAeroConditions
             : 0f;
 
         return new LocalAeroConditions(vel, speed, flowDir, q, mach, ctx.Atmosphere, position,
-            ctx.GroundHeight);
+            ctx.GroundHeight, ctx.GroundUpLocal, GroundEffect.Landing(ctx.Velocity, ctx.GroundUpLocal));
     }
 }

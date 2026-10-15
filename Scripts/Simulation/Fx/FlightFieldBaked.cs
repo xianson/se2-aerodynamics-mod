@@ -310,6 +310,7 @@ internal sealed partial class FlightField
     private object[] _slotH; private long[] _slotDark; private Quaternion[] _slotQ;
     private float[] _accW; private Vector3[] _accD;
     private readonly List<int> _touched = new(); private readonly HashSet<int> _live = new();
+    private readonly List<int> _drop = new();   // (the slots leaving _live this frame: one list kept - subsonic, every touched slot left every frame, a fresh list grown each time)
     private Vector3 _bakedSpotMid; private float _bakedSpotFront; private bool _bakedSpotOk;
 
     /// <summary>Every frame (no easing): the live flow's baked triangle blended onto the emitters.</summary>
@@ -354,7 +355,7 @@ internal sealed partial class FlightField
         float jt = MathF.Tan(PlasmaJitter * MathF.PI / 180f), jtV = MathF.Tan(VapourJitter * MathF.PI / 180f);
         Vector3 spotSum = Vector3.Zero; float spotW = 0f, spotFront = float.MinValue;
         foreach (int s in _touched) _live.Add(s);
-        var drop = (List<int>)null;
+        var drop = _drop; drop.Clear();
         foreach (int s in _live)
         {
             int k = s / 3, ch = s % 3;
@@ -367,14 +368,14 @@ internal sealed partial class FlightField
             else if (_slotDark[s] == 0) _slotDark[s] = now;
             if (h == null)
             {
-                if (str <= 0.002f) { (drop ??= new List<int>()).Add(s); continue; }
+                if (str <= 0.002f) { drop.Add(s); continue; }
                 h = SpawnSlot(s, f);
-                if (h == null) { (drop ??= new List<int>()).Add(s); continue; }
+                if (h == null) { drop.Add(s); continue; }
                 _slotH[s] = h;
             }
             else if (_slotDark[s] != 0 && now - _slotDark[s] > idle)
             {
-                Park(h); _slotH[s] = null; (drop ??= new List<int>()).Add(s); continue;
+                Park(h); _slotH[s] = null; drop.Add(s); continue;
             }
             if (w > 0f && _accD[s].LengthSquared() > 1e-8f)
             {
@@ -390,7 +391,8 @@ internal sealed partial class FlightField
             }
             FixTime(h, Math.Clamp(str, 0.00001f, 0.999f), FixTimeFine);
         }
-        if (drop != null) foreach (int s in drop) _live.Remove(s);
+        foreach (int s in drop) _live.Remove(s);
+        drop.Clear();
         _bakedSpotOk = spotW > 0f; if (_bakedSpotOk) { _bakedSpotMid = spotSum / spotW; _bakedSpotFront = spotFront; }
     }
 

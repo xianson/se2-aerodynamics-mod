@@ -136,8 +136,8 @@ public partial class AeroGridComponent
             if (recv == null) return;
             foreach (var b in blocks)
             {
-                if (b == null || b.HealthIntegrity <= 0f) continue;
-                if (destroy) { recv.DealDamage(b, float.MaxValue); continue; }   // (clamped to its full health)
+                if (Gone(b)) continue;   // (a block the game is removing: never damaged again - StructureServer.Gone)
+                if (destroy) { recv.DealDamage(b, float.MaxValue); _goneBlocks.Add(b); continue; }   // (clamped to its full health)
                 // (its full health: the definition's MaxHealth is not reachable from mod scripts)
                 float full = b.HealthIntegrity > 1e-3f ? b.AbsoluteHealth / b.HealthIntegrity : 0f;
                 float hp = fraction * full;

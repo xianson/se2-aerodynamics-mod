@@ -245,7 +245,7 @@ public class CompressibleWingModel : IWingLiftModel
         h = MathF.Max(0.05f, h);
         float x = 16f * h / w.Span;
         if (x > 60f) return 1f;   // (phi within 0.03 % of 1)
-        return MathF.Max(0.1f, x * x / (1f + x * x));
+        return MathF.Max(0.1f, x * x / (1f + x * x));   // (the landing double on top: GroundEffect, LiftingSurfaceModel)
     }
 
     public List<WingForceResult> ComputeWingForces(ReadOnlySpan<LiftingSurface> wings, in AeroContext ctx)

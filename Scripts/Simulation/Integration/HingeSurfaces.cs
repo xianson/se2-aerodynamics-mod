@@ -11,7 +11,7 @@ namespace AeroMod;
 ///   - the flap's effect: a positive hinge angle swings its trailing edge toward n = axis x chord (right-hand rule about
 ///     the hinge's Forward), which pushes the air that way and the flap the other: force along -n, at the flap's middle
 ///     (the hinge plus half a chord aft), torque r x (-n) about the centre of mass - its unit direction is what +angle does;
-///   - the command: (wanted rotation . that) x gain (lower at high dynamic pressure) - (spin . that) x damping, clamped
+///   - the command: (wanted rotation . that) x gain (lower at high dynamic pressure) - ((spin - wanted) . that) x damping, clamped
 ///     to +-1, times MaxDeflection, about the NEUTRAL angle (the middle of the hinge's limits: a vanilla hinge turns
 ///     0..180 degrees, so a flap is mounted to trail at 90 and deflects 70..110), is the angle aimed for; the hinge's
 ///     velocity = Gain x (aim - angle).
@@ -101,7 +101,8 @@ public static class HingeSurfaces
             float len = eff.Length();
             if (len < 0.05f) continue;
             eff /= len;
-            float cmd = Math.Clamp(Vector3.Dot(eff, targetAngVel) * Kp * gainScale - Vector3.Dot(eff, localAngVel) * Kd, -1f, 1f);
+            // (the control surfaces' rate law: damping on the rate ERROR - on the rate, a held turn was fought)
+            float cmd = Math.Clamp(ControlSurface.RateCommand(eff, targetAngVel, localAngVel, gainScale, Kp, Kd), -1f, 1f);
             s.Aim = Math.Clamp(s.Neutral + cmd * max, s.Lo, s.Hi);
             if (!s.Block.Data.TryGet<HingeComponent.HingeData>(out var hd)) continue;
             s.Hinge.SetVelocity(Gain * (s.Aim - hd.CurrentAngle));

@@ -85,7 +85,9 @@ public class DampedShadowedDragModel : IAeroDragModel
                 // (within the engine's cross-section, and along its axis up to IntakeReach past either end: a cowling built
                 //  in front of the thruster is its intake - the game gives it full thrust whatever covers it, so the air goes in)
                 float rx = MathF.Abs(ax.X) > 0.5f ? IntakeReach : 0f, ry = MathF.Abs(ax.Y) > 0.5f ? IntakeReach : 0f, rz = MathF.Abs(ax.Z) > 0.5f ? IntakeReach : 0f;
-                if (c.X < lo.X * 0.25f - rx || c.Y < lo.Y * 0.25f - ry || c.Z < lo.Z * 0.25f - rz || c.X > (hi.X + 1) * 0.25f + rx || c.Y > (hi.Y + 1) * 0.25f + ry || c.Z > (hi.Z + 1) * 0.25f + rz) continue;
+                // (cell i spans (i -+ 0.5) x 0.25 m - centred, CubeGridCoords.GridToLocal; lo*0.25 .. (hi+1)*0.25 took in a
+                //  cell's width beyond the engine on every + side)
+                if (c.X < (lo.X - 0.5f) * 0.25f - rx || c.Y < (lo.Y - 0.5f) * 0.25f - ry || c.Z < (lo.Z - 0.5f) * 0.25f - rz || c.X > (hi.X + 0.5f) * 0.25f + rx || c.Y > (hi.Y + 0.5f) * 0.25f + ry || c.Z > (hi.Z + 0.5f) * 0.25f + rz) continue;
                 t = true; break;
             }
             through.Add(t); if (t) count++;

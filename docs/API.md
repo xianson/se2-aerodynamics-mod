@@ -8,7 +8,7 @@ Space Engineers 2 compiles each mod on its own, so your mod cannot reference thi
 
 1. Find the type `AeroMod.AeroApi` in `AppDomain.CurrentDomain.GetAssemblies()`.
 2. Read `Version`. It is a `const`, so use `FieldInfo.GetRawConstantValue()`.
-3. Cache the `MethodInfo`s you use.
+3. Find each member by its name **and its parameter types** (`GetMethod(name, Type[])`; an `out` parameter is `typeof(T).MakeByRefType()`) and cache it. For a call made often, bind it once as a typed delegate (`Delegate.CreateDelegate(typeof(YourDelegate), method, false)`: no argument array and no boxing per call).
 
 Every signature uses only .NET and engine types (`Entity`, `Vector3`, `Vector3D`, `Vector3I`, `List<T>`, `Delegate`), never an aero type.
 
@@ -27,7 +27,8 @@ static bool AeroFlight(Entity grid, out float mach, out float airspeed)
             var t = a.GetType("AeroMod.AeroApi");
             if (t == null) continue;
             if ((int)t.GetField("Version").GetRawConstantValue() < 2) break;   // (too old for what you use)
-            _tryGetFlight = t.GetMethod("TryGetFlight");
+            var f = typeof(float).MakeByRefType();
+            _tryGetFlight = t.GetMethod("TryGetFlight", new[] { typeof(Entity), typeof(Vector3).MakeByRefType(), f, f, f, f });
             break;
         }
     }
@@ -51,7 +52,9 @@ static bool AeroFlight(Entity grid, out float mach, out float airspeed)
   - A client copy in the same process (single player or host) answers from the nearest published record.
   - A remote multiplayer client gets `false`, because nothing is sent to clients yet.
 - **Threads:** any. Each answer is one consistent snapshot of the last simulation tick.
+- **Locks (the lock rule):** never call this API while holding a lock of your own, and aero never calls another mod while holding one of its own (its reads of the Orbital Mod are made with none held). A call that waits on the other mod's lock while the other waits on yours is a deadlock neither mod can see. The Orbital Mod collects its calls into aero under its frame lock and makes them after it.
 - **Stability:** members are only **added** within a version. Changing an existing member bumps `Version`.
+- **Never overloaded:** no two public members share a name. A name-only lookup (`GetMethod(name)`) throws `AmbiguousMatchException` the day an overload appears, so a new shape gets a **new name** and the old member stays. Look members up with their parameter types anyway. The Orbital Mod's `tools/check_contract.sh` fails its build on an overload in either mod's API.
 
 ## Version 2
 
@@ -139,6 +142,15 @@ Commands (setting a control surface's deflection, an airbrake's deployment) will
 | AtmosphericScoop | `MassFlow` (kg/s), `CollectionRate`, `Collected`, `Drag` (N) |
 | HelicopterRotor | `Collective` (0..1), `Thrust` (N), `DensityScale`, `TranslationalLift`, `GroundEffect`, `Autorotation` (N) |
 
+### Structure and hull heat
+| Call | What |
+|---|---|
+| `bool TryGetStall(Entity grid, out int state, out float marginDeg, out float liftShare, out float gAvailable)` | The stall warning of a player's grid, from the whole ship's air force (any shape, no wings needed): the best lift within reach (-15° to +60° from where it flies). `state` 0 none, 1 approaching, 2 stalled (pulling further only loses lift), each held 0.3 s; `marginDeg` the best lift's angle from now (negative: behind); `liftShare` the share of it in use; `gAvailable` the g it would give. `false`: not evaluated. |
+| `bool TryGetLoac(Entity grid, out int state, out float ratio)` | Loss of attitude control of a player's grid, predicted: the commanded attitude and the way to it - the air's torque there at the speed now against the gyros', thrusters' and control surfaces' reach. `state` 0 none, 1 at the limit (over 90% needed), 2 lost (more than available), held 0.25 s; `ratio` the worst needed / available. |
+| `void SetFocusGrid(Entity grid)` | The grid a player is flying (call about once a second while seated). Only such grids' structure and hull heat are evaluated (gauges, damage); a grid stays one for 10 s after the last call. |
+| `void NoteMoved(Entity grid)` | The grid was just moved by someone else (a teleport, a frame shift, a rails stow or arrival). Its physics contacts for the next steps (`StructureContactLoads.MaskSteps`) are not taken as loads on its structure. Server; call after `SetWorldTransform`, before the next physics step. Takes no lock. The Orbital Mod's moves are also read back (the pull side: `OrbitalApi.TryGetGridEdits`' move stamp), so a push that comes late or never is covered. |
+| `bool TryGetStructure(Entity grid, out float maxUtilisation, out float maxSkinK, out float heatShare)` | The grid's structure (the method of sections on its blocks: air, thrust, gyros and its own turning) and its hull's aerodynamic heating, evaluated in the background a few times a second. `maxUtilisation`: the worst joint's load over its strength now (heat and damage weaken it; 1 is yield, from `Structure.EnduranceUtil` the joint tires (`Structure.Fatigue`), past 1 it wears through - faster the further over - and fails when its health is out, or at once at `Structure.SnapUtil`, with `Structure.Damage` on); `maxSkinK`: the hottest hull skin (K); `heatShare`: the hottest block's way from softening to burning (0..1). `false`: not evaluated yet, or `Structure.Loads` off. |
+
 ### Wing strain
 
 | Member | What it gives |
@@ -160,6 +172,34 @@ The model (`Lift/WingStrain.cs`): a wing is a cantilever rooted at its span end 
 | `int GetSettingsVersion()` | Bumped on every change (the API, a settings file, a world load). Watch it to re-read. |
 
 Note: `TryGetForces` and the flow calls report the model's force **before** the world's drag and lift multipliers.
+
+## Version 6
+
+### Drag from your mod
+
+Put drag on a grid without depending on the aero mod's block types: a parachute, a deployable airbrake, landing gear, a
+door left open, cargo hanging in the air. Aero applies it every tick as part of the grid's own air.
+
+| Member | What it does |
+|---|---|
+| `bool SetDrag(Entity grid, string key, Vector3 pointLocal, float cdA)` | Drag area `cdA` (Cd × area, m²) at a grid-local point. The force is `q × cdA` against **that point's** travel through the air (the grid's rotation included), so drag off the centre of mass also turns the ship. The same key replaces the drag; `cdA` 0 removes it. |
+| `bool SetPlateDrag(Entity grid, string key, Vector3 pointLocal, float cdA, Vector3 normalLocal)` | The same for a **flat plate**: `cdA` is its face-on drag area, scaled by how squarely the air meets it (`|normal · travel|`). Edge-on it gives nothing. |
+| `int ClearDrag(Entity grid, string keyPrefix)` | Remove every drag whose key starts with the prefix (`null` or `""`: all). Returns how many went. |
+| `bool TryGetDrag(Entity grid, string key, out Vector3 pointLocal, out float cdA, out Vector3 normalLocal)` | One drag as set (normal zero: not a plate). |
+
+- **Keys:** prefix them with your mod's name (`"MyMod.Chute#3"`) so `ClearDrag(grid, "MyMod.")` removes only yours.
+- **Lifetime:** server copy only, and not saved. Set it again when your block loads or changes; it goes when the grid
+  goes.
+- **Limits:** `false` for a bad value (not finite, or a point over 2 km from the grid's origin); `cdA` is capped at
+  10,000 m².
+- **How the control law sees it:** it's counted as the airframe's air, in `TryGetForces` and in what the attitude
+  control answers, not as control-surface torque.
+- **Changing it each tick is fine:** a deploying chute can set its growing area every frame (one dictionary write).
+
+```csharp
+// a tail chute, 30 m behind the grid's origin, opening over 2 s
+_setDrag.Invoke(null, new object[] { grid, "MyMod.Chute", new Vector3(0, 0, 30), 60f * Math.Min(1f, t / 2f) });
+```
 
 ## Settings
 
@@ -190,16 +230,62 @@ Both files are read again within ~2 s of an edit, so they can be changed while p
 | `Perf.ChunksPerUpdate` | world | int | 8 | 1..64 | Hull chunks updated per pass. |
 | `Perf.MinSpeedForUpdates` | world | float | 10 | 0..1000 | Below this speed (m/s) an edited hull waits before updating its forces. |
 | `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Seconds without block changes before a cleanup rebuild. |
+| `Hud.StallWarning` | client | bool | true | | The stall warning from the whole ship's air force: STALL when pulling further only loses lift, amber close to it. |
+| `Hud.Loac` | client | bool | true | | The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the commanded attitude needs nearly / more than the torque available at this speed. |
+| `Hud.GameStallWarning` | client | bool | false | | The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity; it ignores the wings' lift). Off: removed. |
+| `Structure.Loads` | world | bool | true | | The loads in every ship's structure and its hull's heating, computed in the background (`TryGetStructure`). |
+| `Structure.Damage` | world | bool | true | | Overloaded joints of the ship a player flies wear, and break off what hangs from them (AI ships and wrecks never). The flight controller limits its own steering so it never overloads the ship. |
+| `Structure.Strength` | world | float | 7 | 0.1-100 | Every block's strength, times this (7: a small-block airliner yields near 3 g, a light large-block plane near 8 g; thin wall panels buckle in compression). |
+| `Structure.BreakAt` | world | float | 1.5 | 1.05-10 | PROGRESSIVE FAILURE: past its yield a joint wears through over a moment, in proportion to how far over; at this many times its yield load it loses `Structure.WearRate` of its health a second. It lets go when its health is exhausted (the game's destruction threshold, 0.3 of full) (or at once past `Structure.SnapUtil`). Health lost is strength lost, so a worn joint runs away: it bends and dents, the creaks rise, then it goes. |
+| `Structure.WearRate` | world | float | 0.45 | 0-100 | Health (fraction of full) a joint loses per second at `Structure.BreakAt`. 0.45 puts the first break of a fast pull where the old instant break was (a small-block airliner ~3.8 g, a light large-block plane ~13 g); a sustained pull fails earlier, a brief spike (0.5 s at 1.5 x the yield) costs about a quarter of a block's health instead of snapping it. |
+| `Structure.SnapUtil` | world | float | 2.75 | 1.05-100 | A joint snaps at once at this many times its INTACT yield load (a genuine overload); below it, it wears through. |
+| `Structure.Fatigue` | world | bool | true | | FATIGUE below the yield: from `Structure.EnduranceUtil` of the yield up, every joint loses health slowly, as the cube of how far it is between the endurance limit and the yield. Health lost is strength lost (a tired joint fails at a lower load). Kept in the blocks' own health - saved with the world, replicated, repaired by welding; the mod writes it in steps (5% of a block's health, at most once a second a block, at once when it crosses a damage stage or fails) so the game's damage sound and network traffic stay proportionate. |
+| `Structure.FatigueRate` | world | float | 0.005 | 0-1 | Health a joint loses per second from fatigue while held at its yield (a tenth in 20 s; at 90% of the yield ~40 s, at 70% ~5 min, at 60% ~40 min). Hard flying at 80% of the limit (3 s pulls every 10 s) wears a small-block airliner's worst joint to 85% in ~7 min and to its yield in ~13 min. |
+| `Structure.EnduranceUtil` | world | float | 0.5 | 0-1 | The endurance limit: a joint loaded under this share of its yield never tires (cruising never fatigues a ship). |
+| `Structure.SplitBlocks` | world | bool | true | | A joint that fails breaks only its block's fracture pieces on the failing side (the game's own fracturing): the block stays, broken, on one side, and the ship parts along the failed face. A block of a single critical piece is destroyed as before. |
+| `Structure.ThrustLoads` | world | bool | true | | Engine thrust loads the structure (mounts, and the push through the ship). Off: engines never strain or break a ship. |
+| `Structure.EntryLoads` | world | bool | true | | A re-entry the Orbital Mod flies on rails loads the structure with its braking (`OrbitalApi.TryGetEntryState2`; up to ~5 g): the ship's mass × the deceleration, pressed onto the windward faces by the same Newtonian weights as the air's own load (cos² × area along the travel), with no net moment; the free-body solve carries it through the whole ship (the nose and heat shield take it). Not a contact. Off: a railed entry heats the hull but never strains it. |
+| `Structure.Tear` | world | bool | true | | A large piece the structure breaks off tears loose over a moment: the game splits it off, and for `Structure.TearSeconds` it stays tied at the torn joint by soft physics constraints whose hold eases to nothing (it holds, sags, flutters, then is free). Server only; clients see the motion. Small bits still pop off at once. |
+| `Structure.TearSeconds` | world | float | 1.2 | 0.1..10 | Seconds a large broken-off piece takes to tear loose. |
+| `Structure.TearMinMass` | world | float | 2000 | 0..1e7 | Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once. |
+| `Structure.TearHold` | world | float | 6 | 0..50 | The hold at the start of a tear, in g of the piece's own weight (the three anchors together). |
+| `Structure.Bends` | world | bool | true | | PERMANENT BENDS: a joint past its yield that holds (it wears, not breaks) leaves the structure outboard of it - the slice's lighter side, connected to it - turned a little about the joint, the way its load turned it (up after a hard pull on a light wing, down for a heavy pod, twisted under torsion): the armour sags or twists as one piece, nothing at the joint, more toward the tip. It bends again only past its last peak. The game's deformation bones move armour only (a part past the joint that is more than a tenth other blocks is not bent). With `Structure.Damage`; server, replicated by the game. |
+| `Structure.BendPerUtil` | world | float | 0.05 | 0..1 | The permanent turn (rad) at a joint per unit of utilisation over its last peak (1 at first): a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm at 1.5 (just short of breaking at the default `Structure.BreakAt`). |
+| `Structure.BendMax` | world | float | 0.3 | 0..1 | The most any point (deformation bone) is bent in total, m. The game also clamps a bone by its armour: within 0.25 m of a 0.25 m block. |
+| `Structure.BendMaxBlocks` | world | int | 300 | 1..5000 | The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip: not bent. |
+| `Heat.Damage` | world | bool | true | | Hull blocks past their burn temperature lose health (heat weakens the structure either way). |
+| `Heat.Multiplier` | world | float | 1 | 0-10 | The air's heating of the hull, times this. |
 | `Structure.WingStrain` | world | bool | false | | Overloaded wings strain at the root, wear and break off (the game splits them off). Off by default: it destroys blocks. The strain is reported (`TryGetWingStrain`) either way. |
 | `Structure.WingStrength` | world | float | 1 | 0.1..100 | Wing strength, times this. |
+| `Feel.Creaks` | client | bool | true | | The airframe creaks and groans as the structure is loaded (the ship you are seated in: from 0.6 of its worst joint's strength, more often and louder toward 1, heavier groans from 0.85), and cracks when a block wears or breaks. The game's own sound events, at the cockpit. |
+| `Feel.CreakVolume` | client | float | 1 | 0..2 | The creaks' and cracks' volume, times this. |
+| `Feel.Shake` | client | bool | true | | The cockpit buzzes with the structure's load (from 0.5, noticeable near 1), a jolt when a block breaks. Through the game's camera shake (its own switches apply). |
+| `Feel.ShakeScale` | client | float | 1 | 0..5 | The load shake's strength, times this. |
 | `Fx.Effects` | client | bool | true | | Every aero visual effect. |
 | `Fx.FlightField` | client | bool | true | | The flight effects (plasma, vapour, tip trails); off: none. |
 | `Fx.Plasma` / `Fx.Vapour` / `Fx.Tips` / `Fx.SpotLight` | client | bool | true | | Each group of the flight effects. |
 | `Fx.MaxGrids` | client | int | 4 | 1..32 | Grids with flight effects at once (the nearest). |
 | `Fx.Range` | client | float | 4000 | 100..50000 | Distance (m) past which a grid shows no flight effects. |
+| `Fx.TornSmoke` | client | bool | true | | A joint the structure breaks smokes (the game's damaged-block smoke) and sheds debris (its fracture debris) for `Fx.TornSmokeSeconds`, on the ship where the block was and on the piece that tears off, at its torn edge; parented to each, so the smoke trails behind them. Off with `Fx.Effects`. Single player and a host. |
+| `Fx.TornSmokeSeconds` | client | float | 4 | 0.5..20 | Seconds a torn joint smokes. |
 | `Fx.SpawnPerTick` | client | int | 12 | 1..200 | Effects started per frame while a grid's effects build. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.
+
+## The Orbital Mod
+
+The two mods compile apart and meet only by reflection. The Orbital Mod's `tools/check_contract.sh` (its fast gate) checks every link below against both sources: the names, the parameter lists, that every lookup passes its parameter types, and that neither API overloads a name.
+
+**Aero → Orbital** (`OrbitalMod.OrbitalApi`, that mod's `docs/API.md`; found by name and parameter types, bound once as typed delegates, looked up again every 5 s while missing, dropped if they throw):
+
+| Member | Aero's caller | What for |
+|---|---|---|
+| `TryGetGridEdits(Entity, out Vector3D, out long)` | `OrbitalLink` → `StructureContacts` | The contact loads' momentum balance. Orbital writes the physics velocity after the step (a frame anchor's motion drained into the rails every tick, warp's rescale and steering, differential gravity, a spinning planet's fictitious forces): none of it is a force. The change of its running sum since the last read is taken off the balance (× mass), and a changed move stamp masks the step as `NoteMoved` does. Without it an anchor's own thrust read as plate load, a warp switch as a giant impulse, the fictitious forces as a phantom support. |
+| `TryGetEntryState2(Entity, out Vector3, out float, out float, out Vector3)`, else `TryGetEntryState(Entity, out Vector3, out float)` | `OrbitalLink`, `AeroEntryFx.EntryStateAt` | A railed re-entry: the true travel into the air, density and the band's temperature (the hull heats from them, with that temperature as its ambient), and the frame's braking acceleration (`Structure.EntryLoads`: the structure is loaded with it). |
+
+**Orbital → Aero** (this API): `RegisterEntrySource` / `HasEntrySource` (the plasma of a railed re-entry), `PredictHullForces` / `RequestForceTable` (each railed frame's ballistic coefficient), `TryGetAtmosphereAt` (the air at a planet's border: the band's density and temperature), `NoteMoved` (its teleports and turns), `SetFocusGrid`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac` and the design probe (`TryDesign`, `GetTopSpeed`, `GetTopSpeedAt`, `GetThrustAlong`, `TryGetCenterOfMass`, `GetMass`, `GetDesignPressures`, `GetControlRatio`: its build hints and flight gauges), and, for its dev harness only, `TryGetLift`, `TryGetGroundHeight`, `TryGetEntry`, `TryGetAtmosphere`, `GetFxConsistency`, `FlightFixture.Build`, `PhysicsHack.GetGravityDirection` and static fields by name.
+
+**The physics' speed cap:** aero reads the engine's own (`IVelocityLimitProvider.LinearVelocityLimit`, the world definition's `Physics.MaximumSpeedLinear`; never assumed 1000) for the contact balance: at the cap the velocity's change along itself is the clamp's, not a contact's. The Orbital Mod publishes the same value as `GetPhysicsSpeedCap`; its `GetSpeedCap` is its arrival cap (990).
 
 ## Reaching aero from a script
 

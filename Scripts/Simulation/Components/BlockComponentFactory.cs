@@ -72,7 +72,7 @@ public class BlockComponentFactory
                 $"fwdVec=({info.Forward.X:F2},{info.Forward.Y:F2},{info.Forward.Z:F2}) " +
                 $"upVec=({info.Up.X:F2},{info.Up.Y:F2},{info.Up.Z:F2}) " +
                 $"pos=({info.Position.X:F2},{info.Position.Y:F2},{info.Position.Z:F2}) " +
-                $"area={info.FaceArea:F3}");
+                $"extents=({info.Extents.X:F2},{info.Extents.Y:F2},{info.Extents.Z:F2})");
             return comp;
         }
 
@@ -130,7 +130,19 @@ public class BlockComponentFactory
     /// CubeBlockDefinition derives from MaxHealthComponentDefinition in VRage.Game, which mod
     /// scripts do not reference (CS0012), so the compiler cannot reach Definition.Guid.
     /// </summary>
-    private static Guid? GetDefinitionGuid(CubeBlockComponent block)
+    /// <summary>Blocks whose component models ALL their air (lift, drag): their cells stay out of the voxel surface -
+    /// else the 3x3x1 control surface, a flat plate, was also a wing (lift twice) and a bluff body.</summary>
+    static readonly HashSet<Guid> _selfModelled = new() { AeroBlockGuids.ControlSurface_3x3x1_Large, AeroBlockGuids.ControlSurface_3x3x1_Small,
+        AeroBlockGuids.Airbrake_3x3x3_Large, AeroBlockGuids.Airbrake_3x3x3_Small };   // (the airbrake: its box is reserved room, not a body)
+
+    /// <summary>True for a block the surface must leave out (its component models it whole).</summary>
+    public static bool IsSelfModelled(CubeBlockComponent block)
+    {
+        var g = GetDefinitionGuid(block);
+        return g.HasValue && _selfModelled.Contains(g.Value);
+    }
+
+    internal static Guid? GetDefinitionGuid(CubeBlockComponent block)
     {
         if (block == null) return null;
         _definitionProperty ??= typeof(CubeBlockComponent).GetProperty("Definition",
@@ -176,14 +188,19 @@ public class BlockComponentFactory
         Vector3 up = DirectionToVector(orientation.Up);
 
         // Grid-local position in meters (block center)
-        // SE2 cells are 0.25m each; use center of min..max range
+        // SE2 cells are 0.25m each and cell i is centred at i x 0.25 (CubeGridCoords.GridToLocal), so the centre of the
+        // min..max range is (min + max) / 2 x 0.25 - no half-cell term
         const float CellSize = 0.25f;
         Vector3 position = new Vector3(
             (blockMin.X + blockMax.X) * 0.5f * CellSize,
             (blockMin.Y + blockMax.Y) * 0.5f * CellSize,
             (blockMin.Z + blockMax.Z) * 0.5f * CellSize);
 
-        return new BlockInfo(position, blockPos, forward, up, blockSize);
+        // (cell i is CENTRED at i x 0.25 m - CubeGridCoords.GridToLocal: the block spans (max - min + 1) cells per axis)
+        Vector3 extents = new Vector3(blockMax.X - blockMin.X + 1, blockMax.Y - blockMin.Y + 1, blockMax.Z - blockMin.Z + 1) * CellSize;
+
+        var aabb = block.AABB;
+        return new BlockInfo(position, blockPos, forward, up, blockSize, extents) { CellKey = aabb.Min + aabb.Max, Settings = block.Entity?.TryGet<AeroSurfaceSettingsComponent>(), Gear = block.Entity?.TryGet<AeroGearComponent>(), Airbrake = block.Entity?.TryGet<AeroAirbrakeComponent>() };
     }
 
     /// <summary>
