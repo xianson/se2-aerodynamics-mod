@@ -104,7 +104,7 @@ internal sealed partial class FlightField
 
     /// <summary>The chord ends at the first gap along the flow longer than this (metres).</summary>
     public static float ChordGap = 1.5f;
-    // (the shock grid itself, its outputs and the rim: FlightFieldShock.cs)
+    // (the shock grid itself, its outputs and the rim: FlightField.Shock.cs)
 
     /// <summary>What the shock grid was laid out for: the flow axis, the hull's point count and the knobs it reads
     /// (_shapeOk false: none yet, or thrown away - a re-layout, a rebuild).</summary>
