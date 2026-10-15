@@ -216,8 +216,9 @@ static partial class Program
         Knob("WEAR_RATE", v => StructureEval.WearPerSecond = v); Knob("WEAR_EXP", v => StructureFatigue.WearExponent = v);
         Knob("FEEDBACK_EXP", v => StructureFatigue.FeedbackExponent = v); Knob("FATIGUE_RATE", v => StructureFatigue.Rate = v);
         Knob("SNAP_UTIL", v => StructureFatigue.SnapUtil = v);
-        // (2026-10-15, the organic break's A/B: COMP_SHARE 1 - fatigue blind to the sign, as before; JAGGED 0 - the flat cut)
-        Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
+        // (2026-10-15, the organic break's A/B: COMP_SHARE 1 - fatigue blind to the sign, as before - BUCK_SHARE the
+        //  buckling-limited members' (1 by default); JAGGED 0 - the flat cut)
+        Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("BUCK_SHARE", v => StructureFatigue.BucklingFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();
         var sea = new AtmosphereState { Density = 1.225, Pressure = 101325, Temperature = 288, SpeedOfSound = 340 };

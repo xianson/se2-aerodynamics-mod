@@ -34,6 +34,8 @@ using AeroMod;
 //     unchanged, pushed ones slower); worn through, the pulled side tears first and the pushed side - the hinge - lets go
 //     last (FractureMath.Plan: monotone, 0 .. CrackSeconds); a snap past CrushUtil crushes the pushed side; a bend folds
 //     about the pushed side (the pulled side opens, nothing pushed into the ship).
+// 15b. buckling fatigue (2026-10-15): a buckling-limited pushed member tires at the tension rate (BucklingFatigueShare 1),
+//     a stocky - yield-limited - one at CompressionFatigueShare.
 // 16. the jagged line (FractureMath.JagCut): a plate's cut over 300 seeds - deterministic, each member at the plane or one
 //     block either side, steps both ways, and every path across the cut broken (the root never joined to the tip); off -
 //     the flat cut's blocks; a failed cut through DamageBySection parts the plate for every seed tried.
@@ -707,7 +709,8 @@ static class Program
         }
         // rate-independent: 2 Hz and 8 Hz evaluations of the same held load end alike (the integrator's checks at the full
         // rate - this boom's root is pushed more than pulled, its buckled wall governing, so tension-driven fatigue
-        // (StructureFatigue.CompressionFatigueShare, 2026-10-15) would slow it five-fold: tested in TensionCompression)
+        // (StructureFatigue.CompressionFatigueShare, 2026-10-15) would slow it five-fold were it stocky - buckling, it tires at
+        // BucklingFatigueShare, the full rate: tested in TensionCompression, BucklingFatigue)
         var f12 = Loads(1.15f);
         float share0 = StructureFatigue.CompressionFatigueShare; StructureFatigue.CompressionFatigueShare = 1f;
         try {
@@ -927,6 +930,66 @@ static class Program
 
     /// <summary>15. TENSION VS COMPRESSION (2026-10-15, the user: "add compression vs tension to the break work"): a deep beam -
     /// 12 x 2 x 3 blocks of 0.5 m off a fixed root - lifted: its root cut's lower row pulled, upper row pushed.</summary>
+    // 15b. buckling-limited compression fatigues at the full rate (2026-10-15, the user's decision: the sign split made real
+    //  ships - thin light-armour walls, buckling-governed - tire ~5x slower; a plate that buckles and un-buckles every pull
+    //  cracks at its edges): the light beam's pushed row (its walls buckle) tires as fast as its pulled row; a stocky
+    //  beam's (walls thick enough to reach the yield) at CompressionFatigueShare.
+    static void BucklingFatigue()
+    {
+        float r1 = StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f, 1f);
+        float rB = StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f, 0f, StructureFatigue.CompressionShare(true));
+        float rS = StructureFatigue.HealthRate(StructMaterial.Armor, 0.9f, 1.5f, 0.45f, 0f, StructureFatigue.CompressionShare(false));
+        Check(StructureFatigue.BucklingFatigueShare == 1f && rB == r1 && MathF.Abs(rS / r1 - StructureFatigue.CompressionFatigueShare) < 1e-4f,
+            $"buckling fatigue: pure compression at 0.9 - buckling-limited at {rB / r1:F2} of tension, stocky at {rS / r1:F2} (CompressionFatigueShare {StructureFatigue.CompressionFatigueShare})");
+        // (a 12-block beam two deep, three wide, lifted at a held 0.9 for 40 s; mass: the wall thickness - 33 kg: 2.8 mm, its
+        //  0.5 m panels buckle at a third of the yield; 5x: 14 mm, they reach it)
+        (float lostLow, float lostUp, bool buckLow, bool buckUp) Beam(float mass)
+        {
+            var sh = new TShip();
+            int root = sh.Block(0, 0, 0, 1e9f, 1, 2, 3);
+            var blk = new int[13, 2, 3];
+            for (int x = 1; x <= 12; x++) for (int y = 0; y <= 1; y++) for (int z = 0; z <= 2; z++) blk[x, y, z] = sh.Block(x, y, z, mass);
+            sh.Build();
+            var s = sh.S;
+            var health = new float[s.Count]; Array.Fill(health, 1f);
+            var dmg = new List<(int block, float fraction, bool destroy)>();
+            bool bLow = true, bUp = true;
+            for (float t = 0f; t < 40f; t += 0.25f)
+            {
+                for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = i == root ? Vector3.Zero : new Vector3(0, 100f, 0); s.ExtMoment[i] = Vector3.Zero; }
+                s.SolveFree(Vector3.Zero);
+                float k = 0.9f / s.MaxUtil;
+                for (int i = 0; i < s.Count; i++) { s.ExtForce[i] *= k; s.Integrity[i] = health[i]; }
+                s.SolveFree(Vector3.Zero);
+                if (t == 0f)
+                    for (int kc = 0; kc < s.ContactCount; kc++)
+                    {
+                        s.ContactBlocks(kc, out int a, out int b2);
+                        if (!((a == root || b2 == root) && (a == blk[1, 0, 0] || b2 == blk[1, 0, 0]))) continue;
+                        int g = s.ContactSection(kc);
+                        for (int mi = s.SectionPieceStart(g); mi < s.SectionPieceStart(g) + s.SectionPieceCount(g); mi++)
+                            if (s.Center[s.PieceBlock(mi)].Y > 0.375f) bUp &= s.PieceBuckling(mi); else bLow &= s.PieceBuckling(mi);
+                    }
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, dmg);
+                foreach (var (b, frac, destroy) in dmg) if (!destroy) health[b] -= frac;
+            }
+            return (1f - health[blk[1, 0, 1]], 1f - health[blk[1, 1, 1]], bLow, bUp);
+        }
+        var thin = Beam(SmallMass); var stocky = Beam(5f * SmallMass);
+        Check(thin.buckUp && thin.buckLow && !stocky.buckUp && !stocky.buckLow, $"buckling fatigue: the light beam's root members buckling-limited ({thin.buckUp}/{thin.buckLow}), the stocky beam's not ({stocky.buckUp}/{stocky.buckLow})");
+        // (its pulled row is barely loaded - a third of the buckled push - so the tension rate is the fatigue blind to the sign)
+        float keepC = StructureFatigue.CompressionFatigueShare; StructureFatigue.CompressionFatigueShare = 1f;
+        var thinAll = Beam(SmallMass); StructureFatigue.CompressionFatigueShare = keepC;
+        Check(thin.lostUp > 0f && thin.lostUp == thinAll.lostUp,
+            $"buckling fatigue: 40 s at 0.9 - the light beam's pushed root block lost {thin.lostUp:F4}, at the tension rate {thinAll.lostUp:F4} (buckling: the full rate)");
+        Check(stocky.lostLow > 0f && stocky.lostUp < 0.6f * stocky.lostLow,
+            $"buckling fatigue: 40 s at 0.9 - the stocky beam's pushed root block lost {stocky.lostUp:F4}, its pulled one {stocky.lostLow:F4} (yield-limited: CompressionFatigueShare)");
+        // (the share is the knob: pinned to the stocky share, the light beam's push slows as the stocky one's)
+        float keep = StructureFatigue.BucklingFatigueShare; StructureFatigue.BucklingFatigueShare = StructureFatigue.CompressionFatigueShare;
+        try { var thinLow = Beam(SmallMass); Check(thinLow.lostUp < 0.6f * thin.lostUp, $"buckling fatigue: BucklingFatigueShare {StructureFatigue.BucklingFatigueShare} - the light beam's pushed block lost {thinLow.lostUp:F4} (at 1: {thin.lostUp:F4})"); }
+        finally { StructureFatigue.BucklingFatigueShare = keep; }
+    }
+
     static void TensionCompression()
     {
         var sh = new TShip();
@@ -976,10 +1039,12 @@ static class Program
         Check(StructureFatigue.TensilePart(0.9f, 0.2f, 0.9f) == 1f && StructureFatigue.TensilePart(0f, 0.9f, 0.9f) == 0f && MathF.Abs(StructureFatigue.TensilePart(0.3f, 0.9f, 0.9f) - 1f / 3f) < 1e-5f
             && MathF.Abs(StructureFatigue.TensilePart(0f, 0.8f, 1f) - 0.6f) < 1e-5f && StructureFatigue.TensilePart(float.NaN, 0.5f, 0.6f) == 1f,
             "fatigue by sign: the tensile part - all of a pulled member, none of a pushed one, its shear kept");
-        // the beam held at 0.9 for 40 s: the pulled row's fatigue unchanged, the pushed row's slower
+        // the beam held at 0.9 for 40 s: the pulled row's fatigue unchanged, the pushed row's slower (the sign split itself:
+        // both shares set - this light beam's walls buckle, BucklingFatigueShare; the stocky/buckling split: BucklingFatigue)
         float[] Tire(float sh0)
         {
-            float keep = StructureFatigue.CompressionFatigueShare; StructureFatigue.CompressionFatigueShare = sh0;
+            float keep = StructureFatigue.CompressionFatigueShare, keepB = StructureFatigue.BucklingFatigueShare;
+            StructureFatigue.CompressionFatigueShare = sh0; StructureFatigue.BucklingFatigueShare = sh0;
             try
             {
                 var health = new float[s.Count]; Array.Fill(health, 1f);
@@ -992,7 +1057,7 @@ static class Program
                 }
                 return health;
             }
-            finally { StructureFatigue.CompressionFatigueShare = keep; }
+            finally { StructureFatigue.CompressionFatigueShare = keep; StructureFatigue.BucklingFatigueShare = keepB; }
         }
         var hFull = Tire(1f); var hSign = Tire(share);
         float lowFull = 1f - hFull[blk[1, 0, 1]], lowSign = 1f - hSign[blk[1, 0, 1]], upFull = 1f - hFull[blk[1, 1, 1]], upSign = 1f - hSign[blk[1, 1, 1]];
@@ -1182,7 +1247,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
-        TensionCompression(); Jagged();
+        TensionCompression(); BucklingFatigue(); Jagged();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
