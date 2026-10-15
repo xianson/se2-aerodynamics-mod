@@ -187,7 +187,9 @@ public partial class AeroGridComponent
         var index = build != null ? IndexOf(build.Blocks) : _stIndexOf;
         if (index != null)
         {
-            var shares = LastThrustShares; var game = LastThrustGame; int ns = LastThrustCount;
+            // (only shares of THIS thruster list: right after a rebuild the shares are the old list's - paired by index they put
+            //  thrust on the wrong blocks for an evaluation, 2026-10-15)
+            var shares = LastThrustShares; var game = LastThrustGame; int ns = LastThrustGen == _thrusterGen ? LastThrustCount : 0;
             for (int i = 0; i < _thrusterCache.Count && i < ns && shares != null && i < shares.Length; i++)
             {
                 var t = _thrusterCache[i];
@@ -360,6 +362,9 @@ public partial class AeroGridComponent
         else if (u < target * StructureLoads.SteerCapRelax && cap < 1f) StructSteerCap = MathF.Min(1f, cap + StructureLoads.SteerCapRecover * dt);
     }
     internal int LastThrustCount;
+    /// <summary>The thruster list's generation (_thrusterGen) LastThrustShares was computed for: the list is rebuilt in the
+    /// simulation job, the shares come later in the frame (AttitudeJob) - between, the old shares and the new list.</summary>
+    internal int LastThrustGen = -1;
     internal Vector3 LastGyroTorque;
     internal bool LastGyroAware;
 }

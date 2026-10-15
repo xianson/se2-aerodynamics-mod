@@ -77,7 +77,8 @@ public partial class AeroGridComponent
         }
         // the thrusters' forces (the attitude law's, last tick: ThrustTorque.Apply), _thrusterCache order
         var shares = LastThrustShares;
-        int nt = shares != null ? Math.Min(Math.Min(LastThrustCount, shares.Length), _thrusterCache.Count) : 0;
+        // (this list's shares only: right after a rebuild they are the old list's - LastThrustGen, 2026-10-15)
+        int nt = shares != null && LastThrustGen == _thrusterGen ? Math.Min(Math.Min(LastThrustCount, shares.Length), _thrusterCache.Count) : 0;
         s.ThrForceB = ApiGridState.Fit(s.ThrForceB, nt);
         if (nt > 0) Array.Copy(shares, s.ThrForceB, nt);
 

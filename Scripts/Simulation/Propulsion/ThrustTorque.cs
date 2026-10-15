@@ -282,7 +282,7 @@ public static class ThrustTorque
         // The flames: each thruster's share, published for the client copy to show - the controller's sharing while it
         // steers, the game's own otherwise (free, rate input: the gyros turn it), so a flame is never handed back mid-flight.
         Publish(aero, wt, steered ? f : f0);
-        aero.LastThrustShares = steered ? f : f0; aero.LastThrustGame = f0; aero.LastThrustCount = n;   // (the structure's thrust loads: StructureServer; the game's own, for the steering's part)
+        aero.LastThrustShares = steered ? f : f0; aero.LastThrustGame = f0; aero.LastThrustCount = n; aero.LastThrustGen = aero._thrusterGen;   // (the structure's thrust loads: StructureServer; the game's own, for the steering's part)
         if (Probe) ProbeLog(aero, data, wt, gameF, mass.InvMass, rep);
         return rep;
     }
