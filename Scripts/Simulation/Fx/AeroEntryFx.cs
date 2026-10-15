@@ -114,7 +114,10 @@ public static class AeroEntryFx
     // entry heats, weakens and scorches the hull as a real one. Asked of the Orbital mod's API (OrbitalApi.TryGetEntryState,
     // by reflection - mods compile apart: a typed delegate bound once, looked up again now and then until found).
     delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
-    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt;
+    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt; static int _orbitalStateFaults;
+    /// <summary>The wait (s) after the Orbital mod's call threw or did not fit, doubling a fault up to 300 s: a throwing
+    /// delegate was dropped with no wait - an assembly scan and a ~200 ms exception per grid every 0.25 s, 2026-10-15.</summary>
+    static long FaultWait() => (long)(Math.Min(10.0 * (1 << Math.Min(System.Threading.Interlocked.Increment(ref _orbitalStateFaults) - 1, 5)), 300.0) * System.Diagnostics.Stopwatch.Frequency);
     public static string EntryStateStatus = "not looked up";
 
     /// <summary>A grid's real re-entry state (the Orbital mod's): the true air velocity (world) and density. False: none.</summary>
@@ -137,8 +140,10 @@ public static class AeroEntryFx
                 if (m != null) mi = m;   // (the last loaded copy wins)
             }
             if (mi == null) { EntryStateStatus = "OrbitalApi.TryGetEntryState not found (no Orbital mod, or an older one)"; return false; }
+            // (the shape checked first: CreateDelegate throws on a mismatch - the same throw every 5 s, for good)
+            if (!mi.IsStatic || mi.ReturnType != typeof(bool)) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
             try { fn = (EntryStateFn)Delegate.CreateDelegate(typeof(EntryStateFn), mi); }
-            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; return false; }
+            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + FaultWait()); return false; }
             System.Threading.Volatile.Write(ref _orbitalState, fn);
             EntryStateStatus = "bound to OrbitalApi.TryGetEntryState";
         }
@@ -146,7 +151,12 @@ public static class AeroEntryFx
         {
             if (!fn(grid, out airWorld, out density)) return false;
         }
-        catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _orbitalState, null); return false; }
+        catch (Exception e)
+        {
+            EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name;
+            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, System.Diagnostics.Stopwatch.GetTimestamp() + FaultWait());   // (looked up again after the wait)
+            System.Threading.Volatile.Write(ref _orbitalState, null); return false;
+        }
         return density > 0f && float.IsFinite(density) && float.IsFinite(airWorld.X + airWorld.Y + airWorld.Z) && airWorld.LengthSquared() > 1f;
     }
 
@@ -575,7 +585,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             System.Threading.Interlocked.Increment(ref AeroEntryFx.FlightActive);
         }
         c.Flight.Update(p, wt);
-        if (++c.ScorchTick >= 30) { c.ScorchTick = 0; HeatScorch.Sync(c, p.Aero); }   // (the hull's scorch marks, twice a second)
         // (the diagnostics strings - FlightStatus, NearTipWhy, FlightLines - made four times a second per field, not every
         //  frame: each was a string a frame per flying grid with the field's whole Status in it - a profile, 2026-10-15. Read
         //  by the harness only; Status itself is built when read, FlightField.Status)
@@ -620,6 +629,20 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
+        // (the hull's scorch marks, twice a second - off with the effects only: from the flight field's update they were never
+        //  stamped with the field off, out of its range or culled, 2026-10-15. The server copy: the field's pairing, else
+        //  found here)
+        if (AeroEntryFx.AllEffects && ++c.ScorchTick >= 30)
+        {
+            c.ScorchTick = 0;
+            if (c.FlowOf == null && AeroEntryFx.AnyFlow && PhysicsHack.Alive(c.Data))
+            {
+                var swt = c.Data.GetWorldTransform();
+                var sp = AeroEntryFx.FindFlow(swt.Position, null, swt.Orientation, c.Entity, c.FlowCopy);
+                if (sp != null) c.FlowOf = sp.Aero;
+            }
+            HeatScorch.Sync(c, c.FlowOf);
+        }
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
             if (c.Flight != null) { c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }

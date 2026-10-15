@@ -16,19 +16,24 @@ public class AeroComponentRegistry
     /// <summary>Number of registered components.</summary>
     public int Count => _components.Count;
 
+    /// <summary>The list's lock: every change takes it (the simulation thread, rare - rebuilds and block changes), and a
+    /// reader on another thread copies under it (AeroApi.GetAeroBlocks / GetAeroBlockState: they iterated the list while
+    /// a rebuild cleared and refilled it - a torn list or a throw, 2026-10-15). The simulation thread's own reads need none.</summary>
+    internal object SyncRoot => _components;
+
     /// <summary>Remove all components.</summary>
-    public void Clear() => _components.Clear();
+    public void Clear() { lock (_components) _components.Clear(); }
 
     /// <summary>Add a component to the registry.</summary>
     public void Add(IAeroBlockComponent component)
     {
-        _components.Add(component);
+        lock (_components) _components.Add(component);
     }
 
     /// <summary>Remove a specific component.</summary>
     public bool Remove(IAeroBlockComponent component)
     {
-        return _components.Remove(component);
+        lock (_components) return _components.Remove(component);
     }
 
     /// <summary>Remove all components at a given block position.</summary>
@@ -36,6 +41,7 @@ public class AeroComponentRegistry
     public int RemoveInBox(Vector3I min, Vector3I max)
     {
         int removed = 0;
+        lock (_components)
         for (int i = _components.Count - 1; i >= 0; i--)
         {
             var p = _components[i].BlockPosition;

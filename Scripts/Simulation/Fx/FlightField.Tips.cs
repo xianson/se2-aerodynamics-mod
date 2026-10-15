@@ -16,7 +16,9 @@ internal sealed partial class FlightField
     //    covered. Kept live at 10 Hz as the speed changes. ──
     private readonly Dictionary<object, (object prm, float len)> _tipPrm = new Dictionary<object, (object, float)>(ReferenceEqualityComparer.Instance);
     private float _frameDt = 1f / 60f;
-    private long _tipLineAt;
+    /// <summary>Each tip's last airspeed send (Stopwatch ticks): one shared time let one tip's send hold every other tip's
+    /// for 3 s - after a speed change one trail updated and the other waited, 2026-10-15.</summary>
+    private readonly Dictionary<object, long> _tipLineAt = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
     /// <summary>This field's own tip report (TipWhy is shared - the last field to place wrote it); NearTipWhy: the one
     /// nearest the camera (your ship).</summary>
     public string TipWhyHere = "not placed";
@@ -129,15 +131,16 @@ internal sealed partial class FlightField
             // (EVERY SetParameters rebuilds the GPU emitter and deletes its live particles - the trail vanished for ~0.3 s at each:
             //  the airspeed is sent only on a 15 % change and at most every 3 s; there is no spawn line any more to keep up)
             want = TipWindVm;
-            if (len > 0f && (MathF.Abs(want - len) < 0.15f * len || System.Diagnostics.Stopwatch.GetTimestamp() - _tipLineAt < 3 * System.Diagnostics.Stopwatch.Frequency)) continue;
-            _tipLineAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            _tipLineAt.TryGetValue(h, out long lastAt);
+            if (len > 0f && (MathF.Abs(want - len) < 0.15f * len || System.Diagnostics.Stopwatch.GetTimestamp() - lastAt < 3 * System.Diagnostics.Stopwatch.Frequency)) continue;
+            _tipLineAt[h] = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 prm.GetType().GetField("VelocityMultiplier").SetValue(prm, want);   // (the airspeed)
                 (_setParams ??= h.GetType().GetMethod("SetParameters", AnyInst)).Invoke(h, new[] { prm }); _prmOf[h] = prm;
                 _tipPrm[h] = (prm, want);
             }
-            catch (Exception e) { _puffWhy = "tip line: " + Inner(e); _tipPrm.Remove(h); }
+            catch (Exception e) { _puffWhy = "tip line: " + Inner(e); _tipPrm.Remove(h); _tipLineAt.Remove(h); }
         }
     }
 

@@ -68,6 +68,7 @@ public partial class AeroGridComponent
             b.Names.Add(name);
             AddMounts(block, idx, b.Mounts);
             b.Mat.Add(StructMaterial.Classify(name));
+            b.BreakAt.Add(DestructionThreshold(block));
         }
         if (StructureLoads.DumpNext) { StructureLoads.DumpNext = false; DumpStructure(b); }
         return b;
@@ -190,8 +191,12 @@ public partial class AeroGridComponent
     /// first cell.</summary>
     static void CarryHeat(ShipStructure oldS, HullHeat oldH, ShipStructure newS, HullHeat newH)
     {
-        static long FaceKey(Vector3 p, Vector3 n) => ((long)MathF.Round(p.X * 8) & 0xFFFFF) << 40 | ((long)MathF.Round(p.Y * 8) & 0xFFFFF) << 20 | ((long)MathF.Round(p.Z * 8) & 0xFFFFF) ^ ((long)MathF.Round(n.X * 2 + 2) * 7 + (long)MathF.Round(n.Y * 2 + 2) * 3 + (long)MathF.Round(n.Z * 2 + 2)) << 61;
-        var faces = new Dictionary<long, float>();
+        // (the place, and the normal as its own number - each axis rounded to 5 steps, 125 codes: shifted into the key's top
+        //  3 bits only 3 of its bits were kept, and its weights 7 / 3 / 1 collided anyway - two faces at one place with
+        //  different normals shared a key and one took the other's heat after a rebuild, 2026-10-15)
+        static (long, int) FaceKey(Vector3 p, Vector3 n) => (((long)MathF.Round(p.X * 8) & 0xFFFFF) << 40 | ((long)MathF.Round(p.Y * 8) & 0xFFFFF) << 20 | ((long)MathF.Round(p.Z * 8) & 0xFFFFF),
+            (int)MathF.Round(n.X * 2 + 2) * 25 + (int)MathF.Round(n.Y * 2 + 2) * 5 + (int)MathF.Round(n.Z * 2 + 2));
+        var faces = new Dictionary<(long, int), float>();
         for (int i = 0; i < oldH.FaceCount; i++) faces[FaceKey(oldH.FacePosition(i), oldH.FaceNormal(i))] = oldH.FaceT[i];
         for (int i = 0; i < newH.FaceCount; i++) if (faces.TryGetValue(FaceKey(newH.FacePosition(i), newH.FaceNormal(i)), out float t)) newH.FaceT[i] = t;
         var cores = new Dictionary<long, float>();

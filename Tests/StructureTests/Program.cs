@@ -605,6 +605,22 @@ static class Program
         Check((F - want).Length() < 1e-3f * want.Length(), $"entry braking: the force is the mass x 5 g ({F.Length() / 1e3f:F2} kN of {want.Length() / 1e3f:F2})");
         Check(M.Length() < 1e-3f * want.Length() * 3f, $"entry braking: no net moment ({M.Length():F2} N m)");
         Check(Vector3.Dot(front, want) > 0.99f * want.LengthSquared(), $"entry braking: the nose's faces carry it ({Vector3.Dot(front, want) / want.Length() / 1e3f:F2} kN at the nose)");
+        // (A26, 2026-10-15) windward faces on no block (a coarsened heat grid's) take no share: the whole load still reaches
+        // the blocks; none on a block at all - the root carries it, no NaN
+        {
+            var keep = (int[])h.FaceBlock.Clone();
+            int off = 0;
+            for (int i = 0; i < h.FaceCount; i++) if (h.FaceWind[i] > 0f && (off++ & 1) == 0) h.FaceBlock[i] = -1;
+            h.Wind = null; StructureEval.Apply(s, h, L);
+            Vector3 F2 = Vector3.Zero; for (int i = 0; i < s.Count; i++) F2 += s.ExtForce[i];
+            Check(off > 1 && (F2 - want).Length() < 1e-3f * want.Length(), $"entry braking: half the windward faces on no block - the whole force still on the blocks ({F2.Length() / 1e3f:F2} kN of {want.Length() / 1e3f:F2})");
+            for (int i = 0; i < h.FaceCount; i++) h.FaceBlock[i] = -1;
+            h.Wind = null; StructureEval.Apply(s, h, L);
+            Vector3 F3 = Vector3.Zero; bool finite = true;
+            for (int i = 0; i < s.Count; i++) { F3 += s.ExtForce[i]; finite &= float.IsFinite(s.ExtForce[i].X + s.ExtMoment[i].X + s.ExtForce[i].Y + s.ExtMoment[i].Y + s.ExtForce[i].Z + s.ExtMoment[i].Z); }
+            Check(finite && (F3 - want).Length() < 1e-3f * want.Length(), $"entry braking: no face on a block - finite, on the root ({F3.Length() / 1e3f:F2} kN)");
+            Array.Copy(keep, h.FaceBlock, keep.Length); h.Wind = null; StructureEval.Apply(s, h, L);
+        }
         s.RigidAccel(Vector3.Zero);
         Check((s.Accel - accel).Length() < 1e-3f * accel.Length() && s.AngAccel.Length() < 1e-3f, $"entry braking: the free body decelerates at it, unturned ({s.Accel.Length() / 9.81f:F3} g, {s.AngAccel.Length():E1} rad/s2)");
         s.SolveFree(Vector3.Zero);
@@ -691,6 +707,22 @@ static class Program
         Check(slowE.failAt > 40f && MathF.Abs(slowE.failAt / fastE.failAt - 1f) < 0.03f, $"rate-independent failure: held at 0.9 the root tires through at {slowE.failAt:F2} s at 2 Hz, {fastE.failAt:F2} s at 8 Hz");
         var held = Run(f12, 0.25f, 30f);
         Check(held.failAt > 0.5f, $"progressive: held at 1.15 the root wears through over time - fails at {held.failAt:F2} s, not at once");
+        // (A11, 2026-10-15) a block whose definition removes it at 0.5 fails AT 0.5 - worn under it, the game removed it from
+        // a health write with no split, smoke or tear
+        {
+            s.BreakAt = new float[s.Count]; Array.Fill(s.BreakAt, 0.5f);
+            var health = new float[s.Count]; Array.Fill(health, 1f);
+            float lowest = 1f, failHealth = -1f;
+            for (float t = 0f; t < 30f && failHealth < 0f; t += 0.25f)
+            {
+                for (int i = 0; i < s.Count; i++) { s.Integrity[i] = health[i]; s.ExtForce[i] = f12[i]; }
+                s.SolveFree(Vector3.Zero);
+                StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, damage);
+                foreach (var (b, frac, destroy) in damage) { if (destroy) { failHealth = health[b]; break; } health[b] -= frac; lowest = MathF.Min(lowest, health[b]); }
+            }
+            s.BreakAt = null;
+            Check(failHealth >= 0.5f && lowest > 0.5f - 1e-3f && failHealth < 0.6f, $"own threshold: a block with DestructionThreshold 0.5 wears to {lowest:F3} and fails at {failHealth:F3}, never worn under it");
+        }
         // the snap: past SnapUtil of the intact strength at once; just under it, not in one step
         var over = Run(Loads(StructureFatigue.SnapUtil * 1.05f), 0.05f, 0.05f);
         Check(over.failAt > 0f && over.failAt <= 0.05f + 1e-4f, $"snap: past SnapUtil the joint goes at once ({over.failAt:F2} s)");
@@ -728,6 +760,25 @@ static class Program
             // a rebuild: the pending carried to the block's new index
             led.Resize(3, new[] { 2, 0 });
             Check(MathF.Abs(led.Pending[2] - 0.02f) < 1e-6f && led.Dirty.Contains(2), "ledger: a rebuild carries the pending by block");
+        }
+        // the server's readings (A1, 2026-10-15): a fresh reading is a NEW array (Ledger.Sync) - the server refilled one array
+        // in place and the ledger never saw a reading again (a weld never taken, its pending written over the repair); it
+        // takes two in turn (StructureServer _stInteg / _stIntegOther)
+        {
+            var led = new StructureFatigue.Ledger(); var integ = new float[1];
+            var bufA = new float[] { 0.6f }; var bufB = new float[1];
+            led.Sync(bufA, integ, 1, 0.25f);
+            led.Accrue(0, 0.03f); led.Sync(bufA, integ, 1, 0.25f);   // (between readings: the last one again)
+            int rep0 = StructureFatigue.Repairs;
+            bufB[0] = 1f; led.Sync(bufB, integ, 1, 0.25f);           // (welded: the next reading, in the other array)
+            Check(integ[0] == 1f && led.Pending[0] == 0f && StructureFatigue.Repairs == rep0 + 1, $"ledger: a weld seen through the server's alternating readings ({integ[0]:F3})");
+            led.Accrue(0, 0.02f); led.Sync(bufB, integ, 1, 0.25f);
+            bufA[0] = 0.5f; led.Sync(bufA, integ, 1, 0.25f);         // (shot: the reading after, in the first array again)
+            Check(MathF.Abs(integ[0] - 0.48f) < 1e-4f, $"ledger: someone else's damage seen through the alternating readings ({integ[0]:F3})");
+            // (one array refilled in place: never fresh - why the server alternates)
+            var one = new float[] { 0.5f }; var led1 = new StructureFatigue.Ledger(); led1.Sync(one, integ, 1, 0.25f);
+            one[0] = 1f; led1.Sync(one, integ, 1, 0.25f);
+            Check(integ[0] == 0.5f, "ledger: one array refilled in place is not a fresh reading (the server must not reuse one)");
         }
     }
 
@@ -844,6 +895,19 @@ static class Program
         Check(snap2.breaks.Count == 1 && snap2.breaks[0].cuts == 1, $"neck: two cuts allowed, still one cut - the next is inside what leaves ({(snap2.breaks.Count > 0 ? snap2.breaks[0].cuts : 0)} cuts)");
     }
 
+    /// <summary>(A31, 2026-10-15) the scorch thresholds follow each class's own heat limits (StructMaterial.ScorchAt):
+    /// armour's are the knobs themselves; a heat shield is not scorched below its own softening.</summary>
+    static void ScorchThresholds()
+    {
+        StructMaterial.ScorchAt(StructMaterial.Armor, 700f, 950f, out float la, out float da);
+        Check(MathF.Abs(la - 700f) < 1e-3f && MathF.Abs(da - 950f) < 1e-3f, $"scorch: armour at the knobs ({la:F0} / {da:F0} K)");
+        StructMaterial.ScorchAt(StructMaterial.HeatShield, 700f, 950f, out float ls, out float ds);
+        Check(ls >= StructMaterial.SoftenK[StructMaterial.HeatShield] && ds > ls && ds < StructMaterial.WeakK[StructMaterial.HeatShield], $"scorch: a heat shield from its own softening ({ls:F0} / {ds:F0} K, softens at {StructMaterial.SoftenK[StructMaterial.HeatShield]:F0})");
+        bool order = true;
+        for (int m = 0; m < StructMaterial.Count; m++) { StructMaterial.ScorchAt(m, 700f, 950f, out float l, out float d); order &= l > 0f && d > l && d < StructMaterial.WeakK[m]; }
+        Check(order, "scorch: every class light under dark, dark under its WeakK");
+    }
+
     static int Main()
     {
         Classes();
@@ -852,7 +916,7 @@ static class Program
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
         BalanceUnderEdits(); EntryBraking();
-        HeatBalance(); BluntVsSharp(); Cooling();
+        HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
         return _fails == 0 ? 0 : 1;
     }

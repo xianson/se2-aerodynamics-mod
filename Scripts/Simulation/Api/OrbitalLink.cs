@@ -7,7 +7,8 @@ namespace AeroMod;
 /// <summary>
 /// THE ORBITAL MOD'S PER-GRID ANSWERS, bound once (2026-10-14; mods compile apart: OrbitalMod.OrbitalApi found by type name
 /// across the loaded assemblies - the last copy wins - each member by its name AND parameter types, bound as a typed
-/// delegate; looked up again every RetrySeconds while missing; a member that throws is dropped and looked up again):
+/// delegate; looked up again every RetrySeconds while missing; a member that throws is dropped and looked up again after a
+/// wait - 10 s, doubling to 300 s a fault):
 ///  - TryGetGridEdits (StructureContacts): what Orbital WROTE into a grid's physics velocity (a running world sum, m/s) and
 ///    a stamp changed by every teleport or turn it made - its writes land after the physics step, so between two of the
 ///    contact balance's reads, and are no force on the ship;
@@ -20,8 +21,8 @@ public static class OrbitalLink
     public static float RetrySeconds = 5f;
     delegate bool GridEditsFn(Keen.VRage.DCS.Components.Entity grid, out Vector3D velocityWrittenSum, out long moveStamp);
     delegate bool EntryState2Fn(Keen.VRage.DCS.Components.Entity grid, out Vector3 travelWorld, out float density, out float temperature, out Vector3 brakingAccelWorld);
-    static GridEditsFn _edits; static long _editsRetryAt;
-    static EntryState2Fn _entry2; static long _entry2RetryAt;
+    static GridEditsFn _edits; static long _editsRetryAt; static int _editsFaults;
+    static EntryState2Fn _entry2; static long _entry2RetryAt; static int _entry2Faults;
     /// <summary>Diagnostics: why each is (not) bound.</summary>
     public static string EditsStatus = "not looked up", Entry2Status = "not looked up";
 
@@ -46,6 +47,15 @@ public static class OrbitalLink
         return true;
     }
 
+    /// <summary>After a member threw: no lookup for 10 s, doubling a fault up to 300 s. Its last lookup's retry time had
+    /// long passed, so a throwing member was bound again at once and threw again - every tick for TryGetGridEdits (~200 ms
+    /// an exception), 2026-10-15.</summary>
+    static void FaultWait(ref long retryAt, ref int faults)
+    {
+        int n = System.Threading.Interlocked.Increment(ref faults);
+        System.Threading.Volatile.Write(ref retryAt, System.Diagnostics.Stopwatch.GetTimestamp() + (long)(Math.Min(10.0 * (1 << Math.Min(n - 1, 5)), 300.0) * System.Diagnostics.Stopwatch.Frequency));
+    }
+
     /// <summary>OrbitalApi.TryGetGridEdits: the sum of the velocity changes Orbital wrote into the grid (world, m/s) and its
     /// move stamp. False: no Orbital mod (or older), or it never wrote into this grid.</summary>
     public static bool TryGetGridEdits(Keen.VRage.DCS.Components.Entity grid, out Vector3D velocityWrittenSum, out long moveStamp)
@@ -64,7 +74,7 @@ public static class OrbitalLink
             EditsStatus = "bound to OrbitalApi.TryGetGridEdits";
         }
         try { return fn(grid, out velocityWrittenSum, out moveStamp) && double.IsFinite(velocityWrittenSum.X + velocityWrittenSum.Y + velocityWrittenSum.Z); }
-        catch (Exception e) { EditsStatus = "OrbitalApi.TryGetGridEdits threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _edits, null); velocityWrittenSum = default; moveStamp = 0; return false; }
+        catch (Exception e) { EditsStatus = "OrbitalApi.TryGetGridEdits threw: " + e.GetType().Name; FaultWait(ref _editsRetryAt, ref _editsFaults); System.Threading.Volatile.Write(ref _edits, null); velocityWrittenSum = default; moveStamp = 0; return false; }
     }
 
     /// <summary>A grid's railed re-entry, the fuller state (OrbitalApi.TryGetEntryState2; else TryGetEntryState with no
@@ -90,7 +100,7 @@ public static class OrbitalLink
         if (fn == null)
             return AeroEntryFx.EntryStateAt(grid, out travelWorld, out density);   // (the older member: no temperature, no braking)
         try { if (!fn(grid, out travelWorld, out density, out temperature, out brakingWorld)) return false; }
-        catch (Exception e) { Entry2Status = "OrbitalApi.TryGetEntryState2 threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _entry2, null); travelWorld = brakingWorld = default; density = temperature = 0f; return false; }
+        catch (Exception e) { Entry2Status = "OrbitalApi.TryGetEntryState2 threw: " + e.GetType().Name; FaultWait(ref _entry2RetryAt, ref _entry2Faults); System.Threading.Volatile.Write(ref _entry2, null); travelWorld = brakingWorld = default; density = temperature = 0f; return false; }
         if (!float.IsFinite(brakingWorld.X + brakingWorld.Y + brakingWorld.Z)) brakingWorld = default;
         if (!(temperature > 0f) || !float.IsFinite(temperature)) temperature = 0f;
         if (!float.IsFinite(density) || density < 0f) density = 0f;

@@ -51,7 +51,8 @@ public static class TearSmoke
     /// <summary>(server) A torn edge on this grid: grid-local point and the way out of the break.</summary>
     internal static void Publish(Entity grid, Vector3 local, Vector3 outward)
     {
-        if (!Enabled || grid == null) return;
+        // (no client in this process - a dedicated server: nobody takes them, and the last 16 kept their grids, 2026-10-15)
+        if (!Enabled || grid == null || !AeroSettings.SawClient) return;
         var o = outward.LengthSquared() > 1e-6f ? Vector3.Normalize(outward) : Vector3.UnitY;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_lock)

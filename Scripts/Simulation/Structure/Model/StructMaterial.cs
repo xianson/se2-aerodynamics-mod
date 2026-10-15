@@ -92,6 +92,17 @@ public static class StructMaterial
         return 1f - (1f - MinStrength) * (tK - a) / (b - a);
     }
 
+    /// <summary>The skin temperatures (K) a block of this class scorches light / dark at (HeatScorch, 2026-10-15): armour's
+    /// (lightK, darkK) moved with the class's own limits - light in proportion to its SoftenK, dark at the same place between
+    /// its SoftenK and WeakK. Armour's own: unchanged; a heat shield (softening at 1300 K) no longer scorches dark at 950.</summary>
+    public static void ScorchAt(int mat, float lightK, float darkK, out float light, out float dark)
+    {
+        if (mat < 0 || mat >= Count) mat = Armor;
+        float a0 = SoftenK[Armor], b0 = WeakK[Armor];
+        light = lightK * SoftenK[mat] / a0;
+        dark = SoftenK[mat] + (darkK - a0) * (WeakK[mat] - SoftenK[mat]) / (b0 - a0);
+    }
+
     /// <summary>Heat damage rate (fraction of full health per second) at tK.</summary>
     public static float BurnRate(int mat, float tK) => tK > BurnK[mat] ? BurnPerSecondPer100K * (tK - BurnK[mat]) / 100f : 0f;
 }
