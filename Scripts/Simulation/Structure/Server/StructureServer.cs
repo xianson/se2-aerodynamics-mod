@@ -84,7 +84,7 @@ public partial class AeroGridComponent
     /// applied force and torque (grid-local; torque about LastCoM); airVelLocal: the air past the ship (grid-local).</summary>
     internal void TickStructure(float dt, Vector3 forceLocal, Vector3 torqueLocal, Vector3 airVelLocal, float liftScale)
     {
-        if (!StructureLoads.Enabled || !IsServerScene || _octree == null) return;
+        if (!StructureLoads.Enabled || !IsServerScene || _octree == null) { if (_cracks.Count > 0 || _cutVerify.Count > 0) AbandonCracks(); return; }
         if (_hh != null && (_scorchClock += dt) >= 0.25f) { HeatScorch.Update(this, _hh, airVelLocal, _scorchClock); _scorchClock = 0f; }   // (re-entry scorch dose: HeatScorch)
         CheckCutSeparated();   // (a failed cut's separation watched: CutDone)
         StepCracks(dt);   // (a failed cut's crack running across it: StructureServer.Failure, FractureMath)

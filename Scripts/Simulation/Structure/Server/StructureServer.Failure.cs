@@ -321,7 +321,7 @@ public partial class AeroGridComponent
     //    every member's place and its order) are recorded at its start. ──
     /// <summary>Diagnostics (harness aeroget): cracks started, finished, members released along them, hinges crumpled; the
     /// last finished crack, and the running ones.</summary>
-    public static int CracksStarted, CracksDone, CrackReleases, Crumples, CracksRunning;
+    public static int CracksStarted, CracksDone, CrackReleases, Crumples, CracksRunning, CracksAbandoned;
     public static string CrackLast = "-";
     /// <summary>Torn-edge smoke puffs along a crack: at its first release, then evenly to its last (the hinge).</summary>
     public static int CrackSmokes = 3;
@@ -421,6 +421,24 @@ public partial class AeroGridComponent
         if (c.Next < c.Parts.Count) return false;
         FinishCrack(c);
         return true;
+    }
+
+    /// <summary>(TickStructure) Structure.Loads switched off mid-crack (or the grid without its octree): the running cracks
+    /// dropped - the members not yet let go stay (their wear taken), no hold, no verify - and the watched cuts dropped. A
+    /// crack frozen there held the structure's damage off until loads came back, then let its parts go, minutes stale; a
+    /// watched cut forced its bridges apart as stale (2026-10-15 review). Off is off: nothing more breaks.</summary>
+    void AbandonCracks()
+    {
+        foreach (var c in _cracks)
+        {
+            CracksAbandoned++;
+            CrackLast = $"{Entity?.DebugName}: crack at {c.Cut.At} abandoned (structure loads off) - {c.Next} of {c.Parts.Count} members let go";
+            if (c.Verify != null) DropVerify(c.Verify);
+        }
+        if (_cracks.Count > 0) Log.Default?.Info($"[AERO-STRUCT] {CrackLast}");
+        _cracks.Clear(); CracksRunning = 0; _crackOpen = null;
+        foreach (var v in _cutVerify) DropVerify(v);
+        _cutVerify.Clear();
     }
 
     /// <summary>A crack's last member gone: the cut's verify (from now - a crumb split off mid-crack is not its separation)
