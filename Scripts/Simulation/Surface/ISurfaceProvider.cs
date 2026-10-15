@@ -32,7 +32,7 @@ public readonly struct BlocksChangedArgs
 /// that interact with airflow.
 ///
 /// Implementations decide HOW to find exposed faces:
-///   - CubeSurfaceProvider: neighbor lookup in cell map (cubes only, fast)
+///   - SmoothSurfaceProvider: the hull from the cell map, with smoothed normals
 /// </summary>
 public interface ISurfaceProvider
 {

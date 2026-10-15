@@ -221,11 +221,6 @@ public class LiftingSurfaceModel : IAeroDragModel
             innerStreamlining = dsm.Streamlining;
             innerCfSkin = dsm.CfSkin;
         }
-        else if (InnerModel is NewtonianDragModel ndm)
-        {
-            innerCdBluff = ndm.CdBluff;
-            innerCfSkin = ndm.CfSkin;
-        }
 
         for (int i = 0; i < wingForces.Count; i++)
         {
