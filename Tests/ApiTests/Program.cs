@@ -316,6 +316,20 @@ static class Program
 
     static void Link()
     {
+        // (2026-10-15 review) at the refresh, ONE thread scans; the others go on with the current binding - every thread
+        // reaching the 5 s expiry queued on the lock while it ran AppDomain.GetAssemblies
+        {
+            var inside = new System.Threading.ManualResetEventSlim(); var release = new System.Threading.ManualResetEventSlim();
+            int calls = 0;
+            var slow = new LastLoadedType("OrbitalMod.OrbitalApi", () => { if (System.Threading.Interlocked.Increment(ref calls) == 1) { inside.Set(); release.Wait(5000); } return new[] { typeof(object).Assembly }; }) { CheckSeconds = 0 };
+            long tRef = System.Diagnostics.Stopwatch.GetTimestamp();
+            var first = System.Threading.Tasks.Task.Run(() => slow.GenerationAt(tRef));
+            bool entered = inside.Wait(5000);
+            var second = System.Threading.Tasks.Task.Run(() => slow.GenerationAt(tRef));
+            bool waitedNot = second.Wait(1000);
+            release.Set(); first.Wait(5000);
+            Check(entered && waitedNot && second.Result == 0 && calls == 1, $"link: a refresh under way - another thread goes on with the current binding, no wait (returned {waitedNot}, scans {calls})");
+        }
         var loaded = new List<System.Reflection.Assembly> { typeof(object).Assembly };
         var api = new LastLoadedType("OrbitalMod.OrbitalApi", () => loaded.ToArray()) { CheckSeconds = 0 };
         var which = new CrossModBinding<Func<int>>(api, "OrbitalApi", "Which", Type.EmptyTypes);
