@@ -1,6 +1,6 @@
-# Propulsion
+# Propulsion - thrust, attitude and flames
 
-Thrust and attitude: where the game's thrust acts, how thrusters and gyros steer, Mach thrust curves, flames.
+Where the game's thrust acts, how thrusters and gyros steer, thrust-vs-Mach curves, flames.
 
 | File | What |
 |---|---|
@@ -8,14 +8,20 @@ Thrust and attitude: where the game's thrust acts, how thrusters and gyros steer
 | `ThrustAllocator.cs` | Pure maths (no game): the game's share per thruster, the rate command, the allocation solve. Offline-tested by `Tests/ThrustTests` (also compiled into AeroBench and ControlSurfaceTests). |
 | `GyroControl.cs` | Reads back the game's own gyro impulse (private `ActiveGridGyroscopeData`) so the mod's law flies the gyros within the game's budget. |
 | `OffsetThrustJob*.cs` | The older per-thruster path: `.cs` Execute (Mach thrust scaling, damping/override writes, `[AERO-TRACE]` / `[AERO-THR]` logs), `.Attitude.cs` the RCS override law, `.Cache.cs` thruster / gyro caches, `ProfileByGuid`, the `_definition` reflection. |
-| `ThrustProfile*.cs` | Thrust vs Mach curves (turbofan etc.), by block GUID in `OffsetThrustJob.ProfileByGuid`. |
+| `ThrustProfile*.cs` | Thrust vs Mach curves (turbofan etc.), by block GUID in `OffsetThrustJob.ProfileByGuid`. They scale real thrust only on the older path (`ThrustTorque.Enabled` off); `DesignProbe` and `AeroApi` read them. |
 | `EngineOverrides.cs` | The engine writes that need reflection (protected `Component.SetData<T>`, speed cap, physics config). |
 | `AeroFlameComponent.cs` | Client: each thruster's flame drawn at its published share. |
 | `AeroFuelMassComponent.cs` | Hydrogen tank fuel adds mass (`IDynamicMassProvider`). |
 | `AeroThrustSettingsComponent.cs`, `AeroThrustBlockDetailModel.cs` | Per-thruster attitude authority and its terminal slider. |
 
+## Entry points
+- `ThrustTorque.Apply` (`AeroGridComponent.AttitudeJob`, after the game's grid systems, before physics).
+- `OffsetThrustJob.RebuildThrusterCache` / `RebuildGyroCache` (the sim job, when dirty); `OffsetThrustJob.Execute` only with
+  `ThrustTorque.Enabled` off.
+- Injected: `AeroThrustSettingsComponent` (thrusters), `AeroFlameComponent` (client thrusters), `AeroFuelMassComponent` (tanks).
+
 ## Threading
-- `AeroSimJob` (server copy of a grid, a DCS job per grid, in parallel across grids): `OffsetThrustJob.Execute` and the
+- `AeroSimJob` (a DCS job per grid, both scenes, in parallel across grids): `OffsetThrustJob.Execute` and the
   cache rebuilds; the attitude job (after the grid systems, before physics) calls `ThrustTorque.Apply`, which uses
   `ThrustAllocator` and `GyroControl`. Statics touched from there are per-grid records under their own locks.
 - Client render jobs (after `RenderSubmissionBegin`): `AeroFlameComponent` reads the shares `ThrustTorque` published.

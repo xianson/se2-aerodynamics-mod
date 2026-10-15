@@ -1,8 +1,18 @@
 # Core - shared types of the engine-free model
 
-`AeroContext` (what a model gets each compute), `AeroResult` (what it returns), `IGridAccessor` (cells of a grid),
-`SnapshotGridAccessor` (cells from captured block boxes: the background builds and the offline tests), `LongKey`
-(the hash for packed long keys), `AeroLog`. `Se2GridAccessor` is the one file here that touches SE2 types.
+| File | What |
+|---|---|
+| `AeroContext.cs` | Everything a model gets each compute (velocity, spin, air, centre of mass, ground, surfaces) |
+| `AeroResult.cs` | What a model returns (force, torque, drag, lift, frontal area, Mach, q) |
+| `IGridAccessor.cs` | Cells of a grid |
+| `SnapshotGridAccessor.cs` | Cells from captured block boxes: the background builds and the offline tests; cell scale for large grids |
+| `Se2GridAccessor.cs` | Cells from the live block octree - the one file here that touches SE2 types |
+| `LongKey.cs` | The hash for packed long keys |
+| `AeroLog.cs` | `AeroLog.Verbose`, the extra-logging switch |
 
-No engine types except `Se2GridAccessor.cs` (the test projects compile this folder without it). Thread-agnostic:
-each instance belongs to one build or one grid.
+## Entry points
+Built by `AeroGridComponent.TryCompute` (`AeroContext`) and the rebuild (`SnapshotGridAccessor`); consumed by every model folder.
+
+## Threading
+No engine types except `Se2GridAccessor.cs` (the test projects compile this folder without it). Thread-agnostic: each
+instance belongs to one build or one grid.

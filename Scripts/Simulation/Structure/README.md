@@ -1,4 +1,4 @@
-# Structure
+# Structure - loads, damage, heat, and how the ship feels it
 
 The ship's structure: loads spread over its blocks, the solve, wear / fatigue / failure, hull heat, and what the
 player sees, hears and feels of it. Only grids a player flies are evaluated (`StructureLoads.Rate` per second).
@@ -38,6 +38,12 @@ Compiled as-is by `Tests/StructureTests`, `Tests/AeroBench` (`struct`, `fail`, `
 | `StructureFeel.cs` | Creaks, groans and cockpit shake with the structure's utilisation. |
 | `TearSmoke.cs` | Smoke and debris at a torn edge (the server publishes, the client grid that pairs plays it). |
 | `HeatScorch.cs` | Re-entry scorch decals: spots gathered on the server, stamped on the client. |
+
+## Entry points
+- `AeroGridComponent.TickStructure` (end of the sim job, server, after the air's forces are applied) and
+  `TickWingStrain`; `TearJob` (`OnTear`); `AeroApi.SetFocusGrid` (who flies what), `TryGetStructure`, `NoteMoved`.
+- Client: `StructureFeel.Tick`, `TearSmoke.Tick`, `HeatScorch.Sync` from `AeroEntryFxComponent.EntryJob` / `FlightJob`.
+- The flow, step by step: `docs/ARCHITECTURE.md` §6.
 
 ## Threading
 - Simulation thread (`AeroSimJob`, per grid): `TickStructure` (snapshot, contacts, results applied: damage, failure,

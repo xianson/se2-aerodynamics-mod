@@ -1,6 +1,6 @@
-# Fx
+# Fx - flight effects and the flow record they are driven from
 
-Flight effects (client, visual only) and the flow record they are driven from.
+Client effects are visual only. The flow record is also what `AeroApi` answers from.
 
 | File | What |
 |---|---|
@@ -14,6 +14,12 @@ Flight effects (client, visual only) and the flow record they are driven from.
 | `FlightField.Shock.cs` | The shock grid (hull shadow along the flow); pure, offline-tested by `Tests/ShockGridTests`. |
 | `FlightField.Baked.cs`, `.Swing.cs` | The baked field and the swing between re-layouts. |
 | `FlightField.Render.cs` | Particle and spot-light plumbing, late-bound (`docs/REFLECTION_AND_WHITELIST.md`), the emitter pool. |
+
+## Entry points
+- Server: `AeroEntryFx.Flow` / `AeroEntryFx.Server` (each step of `AeroGridComponent.AeroSimJobCore`), `AeroEntryFx.Forget` (removal).
+- Client: `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (injected into every grid by `InjectAeroComponents`) ->
+  `FlightJob` -> `FlightField.Update`; the same job ticks `MachHud`, `StructureFeel`, `TearSmoke`, `HeatScorch.Sync`.
+- Other mods: `AeroApi.RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`; `AeroEntryFx.TryGetFlow` (Orbital, by reflection).
 
 ## Threading
 - Server: `AeroSimJob` (per grid, parallel) calls `AeroEntryFx.Flow` / `Server`; the flow table is locked.

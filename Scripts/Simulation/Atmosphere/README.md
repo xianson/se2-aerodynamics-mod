@@ -1,5 +1,17 @@
 # Atmosphere - the air model (engine-free)
 
-`AtmosphereModel` (layered barometric atmosphere), `AtmosphereState` (density, pressure, temperature, speed of sound,
-viscosity), `CompressibleFlow` (isentropic / shock relations), `AtmosphereTail` (the air's upper tail past the game's
-linear generator edge). Pure math, compiled by the offline tests. The game side is `Air/`.
+Pure math, compiled by the offline tests. The game side is `Air/`.
+
+| File | What |
+|---|---|
+| `AtmosphereModel.cs` | Layered barometric atmosphere |
+| `AtmosphereState.cs` | Density, pressure, temperature, speed of sound, viscosity |
+| `CompressibleFlow.cs` | Isentropic and shock relations, the wave-drag multiplier |
+| `AtmosphereTail.cs` | The air's upper tail past the game's linear generator edge |
+
+## Entry points
+- `AtmosphereBridge` (`Air/`) builds states from `AtmosphereModel`; `CompressibleFlow` is used by the drag model and
+  `ForceTable`; `AtmosphereTail` by `AtmosphereProbe` and `AeroApi`.
+
+## Threading
+Thread-agnostic (no shared state).
