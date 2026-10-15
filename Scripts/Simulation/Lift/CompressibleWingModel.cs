@@ -8,8 +8,8 @@ namespace AeroMod;
 ///   - Supersonic: Ackeret 2D + finite-wing tip correction
 ///   - Transonic: Hermite smoothstep blend avoiding the M=1 singularity
 ///
-/// Shares stall/interference/drag machinery with ThinAirfoilWingModel but applies
-/// compressibility to the lift slope rather than post-hoc correcting CL.
+/// Applies compressibility to the lift slope rather than post-hoc correcting CL (the incompressible
+/// ThinAirfoilWingModel it grew from was removed 2026-10-15: nothing created it).
 /// </summary>
 public class CompressibleWingModel : IWingLiftModel
 {

@@ -7,7 +7,7 @@ Mechanics use the whole grid's air force; wings never gate a mechanic.
 | `ConnectedComponentWingDetector.cs` | Finds wings in the grid's cells (low-aspect plates too: `LowAspectRatio`) |
 | `.Analysis.cs`, `.Columns.cs`, `.Incremental.cs`, `.Merge.cs` | The flood-fill path and each component's planform (the default); the planform-column detector (`ColumnMode`, off); updates after block changes; coplanar wings joined |
 | `LiftingSurfaceModel.cs` | Wraps the hull drag model and the wing lift model: the grid's whole model (aero-2c's) |
-| `CompressibleWingModel.cs`, `ThinAirfoilWingModel.cs` | Wing lift and induced drag; every live model is a `CompressibleWingModel` (Mach effects), `ThinAirfoilWingModel` is `LiftingSurfaceModel`'s default when none is given. `IWingLiftModel`, `IWingDetector`, `LiftingSurface`, `WingForceResult` are the shared types |
+| `CompressibleWingModel.cs` | Wing lift and induced drag (Mach effects); the one `IWingLiftModel`, also `LiftingSurfaceModel`'s default. `IWingLiftModel`, `IWingDetector`, `LiftingSurface`, `WingForceResult` are the shared types |
 | `GroundEffect.cs` | Ground effect for every kind of lift (belongs to the gear / airbrake work) |
 | `LiftPeak.cs` | The whole ship's stall: the best lift within reach (the stall warning) |
 | `WingStrain.cs` | The wings' root loads (`Tests/WingStrainTests`) |

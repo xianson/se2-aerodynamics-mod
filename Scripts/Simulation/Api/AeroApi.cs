@@ -519,8 +519,8 @@ public static partial class AeroApi
 
     // ── aero blocks (version 3, read only) ──
 
-    /// <summary>The grid's aero blocks: kind ("ControlSurface", "Airbrake", "AirIntake", "AtmosphericScoop",
-    /// "HelicopterRotor"), grid cell, action point (local m). Lists are cleared first; pass null for any you do not
+    /// <summary>The grid's aero blocks: kind ("ControlSurface", "Airbrake", "AirIntake", "AtmosphericScoop"),
+    /// grid cell, action point (local m). Lists are cleared first; pass null for any you do not
     /// want. Returns the count.</summary>
     public static int GetAeroBlocks(Keen.VRage.DCS.Components.Entity grid, List<string> kinds, List<Vector3I> cells, List<Vector3> positionsLocal)
     {
@@ -545,8 +545,8 @@ public static partial class AeroApi
     /// <summary>An aero block's state on the last tick, as named values (both lists cleared, then filled; units in
     /// docs/API.md). Control surface: DeflectionInput (-1..1), MaxDeflection (deg), Lift, Drag (N), AoA (deg). Airbrake:
     /// DeployFraction (0..1), Drag (N), Effectiveness (0..1). Intake: MassFlow (kg/s), TotalPressure (Pa),
-    /// RamPressureRatio. Scoop: MassFlow (kg/s), CollectionRate, Collected, Drag (N). Rotor: Collective (0..1),
-    /// Thrust (N), DensityScale, TranslationalLift, GroundEffect, Autorotation (N). Returns the count (0: no block there).</summary>
+    /// RamPressureRatio. Scoop: MassFlow (kg/s), CollectionRate, Collected, Drag (N). Returns the count (0: no
+    /// block there).</summary>
     public static int GetAeroBlockState(Keen.VRage.DCS.Components.Entity grid, Vector3I cell, List<string> names, List<float> values)
     {
         if (names == null || values == null) return 0;
@@ -561,7 +561,6 @@ public static partial class AeroApi
             case Airbrake b: V(names, values, "DeployFraction", b.DeployFraction); V(names, values, "Drag", b.DragForce); V(names, values, "Effectiveness", b.Effectiveness); break;
             case AirIntake a: V(names, values, "MassFlow", a.MassFlowRate); V(names, values, "TotalPressure", a.TotalPressure); V(names, values, "RamPressureRatio", a.RamPressureRatio); break;
             case AtmosphericScoop sc: V(names, values, "MassFlow", sc.MassFlowRate); V(names, values, "CollectionRate", sc.CollectionRate); V(names, values, "Collected", (float)sc.CumulativeCollected); V(names, values, "Drag", sc.DragForce); break;
-            case HelicopterRotor r: V(names, values, "Collective", r.CollectivePitch); V(names, values, "Thrust", r.CurrentThrust); V(names, values, "DensityScale", r.DensityScale); V(names, values, "TranslationalLift", r.TranslationalLiftFactor); V(names, values, "GroundEffect", r.GroundEffectFactor); V(names, values, "Autorotation", r.AutorotationThrust); break;
         }
         return names.Count;
     }

@@ -11,7 +11,7 @@ over `BlockInfo` / `AeroContext` (no SE2 types) except the factory, which reads 
 | `AeroBlockGuids.cs` | The mod's block and prefab GUIDs (must match the "Aerodynamics Mod Blocks" definitions) |
 | `ControlSurface.cs`, `ControlSurfaceGeometry.cs`, `IControlSurfaceSettings.cs`, `LocalAeroConditions.cs` | Deflectable surfaces (1x1, 3x3x1): thin-airfoil lift with stall and Mach, what they sit in, their terminal settings, the local air at a block |
 | `Airbrake.cs`, `GearDrag.cs` | The airbrakes' and retractable gears' drag (state from the gear / airbrake components) |
-| `AirIntake.cs`, `AtmosphericScoop.cs`, `HelicopterRotor.cs` | Ram intake drag and mass flow, the scoop, rotor thrust and torque |
+| `AirIntake.cs`, `AtmosphericScoop.cs` | Ram intake drag and mass flow, the scoop |
 | `PatchDrag.cs` | One drag patch's force (other mods' drag: `AeroApi.SetDrag` / `SetPlateDrag`, `Grid/DragPatches.cs`) |
 
 Owned by the gear / airbrake work: `ControlSurface*`, `IControlSurfaceSettings`, `LocalAeroConditions`,
