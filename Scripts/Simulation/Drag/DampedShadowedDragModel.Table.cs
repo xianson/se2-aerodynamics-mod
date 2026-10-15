@@ -233,22 +233,25 @@ public partial class DampedShadowedDragModel
             for (int fi = 0; fi < csp.FaceCount; fi++)
                 if (!manifold.IsHull(fi)) { csp.GetFaceCellDir(fi, out var cc0, out int cd0); chunks.CavityFaces.Add(ChunkedTable.FaceKey(cc0, cd0)); }
         int nChunks = chunks?.ChunkCount ?? 0;
-        for (int c = 0; c < nChunks; c++) chunks.RawShare(c);   // (made here: the workers below write them in parallel)
+        for (int c = 0; c < nChunks; c++) { chunks.RawShare(c); if (PressureRecovery) chunks.RawRecShare(c); }   // (made here: the workers below write them in parallel)
         void Worker(TableWork wk)
         {
             try { System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal; } catch { }
             var acc = nChunks > 0 ? new double[nChunks * ForceTable.Stride] : null;
+            var rec = nChunks > 0 && PressureRecovery ? new double[nChunks * ForceTable.Stride] : null;   // (each chunk's recovered push alone: ChunkedTable.RawRecShare)
             int idx;
             while ((idx = System.Threading.Interlocked.Increment(ref next)) < count)
             {
                 int face = idx / per, r = idx % per, i = r / (n + 1), j = r % (n + 1);
                 if (acc != null) System.Array.Clear(acc, 0, acc.Length);
-                SumFaces(grid, cache, ForceTable.Direction(face, i, j, n), table.At(face, i, j), bake: true, work: wk, faceChunk: faceChunk, chunkAcc: acc);   // (v: the grid's motion)
+                if (rec != null) System.Array.Clear(rec, 0, rec.Length);
+                SumFaces(grid, cache, ForceTable.Direction(face, i, j, n), table.At(face, i, j), bake: true, work: wk, faceChunk: faceChunk, chunkAcc: acc, chunkRec: rec);   // (v: the grid's motion)
                 if (acc != null)
                     for (int c = 0; c < nChunks; c++)
                     {
                         var ent = chunks.RawShare(c);
                         for (int k2 = 0; k2 < ForceTable.Stride; k2++) ent[idx * ForceTable.Stride + k2] = (float)acc[c * ForceTable.Stride + k2];
+                        if (rec != null) { var re = chunks.RawRecShare(c); for (int k2 = 0; k2 < ForceTable.Stride; k2++) re[idx * ForceTable.Stride + k2] = (float)rec[c * ForceTable.Stride + k2]; }
                     }
             }
         }
@@ -292,7 +295,7 @@ public partial class DampedShadowedDragModel
     /// suction on at full strength and friction off the instant a face turned leeward made the force jump wherever
     /// the many faces of a voxel ship lie parallel to the flow.)
     /// </summary>
-    public void SumFaces(IGridAccessor grid, ISurfaceProvider cache, Vector3 v, Span<float> e, Vector3 w = default, Vector3 com = default, bool bake = true, TableWork work = null, int[] faceChunk = null, double[] chunkAcc = null)
+    public void SumFaces(IGridAccessor grid, ISurfaceProvider cache, Vector3 v, Span<float> e, Vector3 w = default, Vector3 com = default, bool bake = true, TableWork work = null, int[] faceChunk = null, double[] chunkAcc = null, double[] chunkRec = null)
     {
         work ??= _work0;
         int total = _px.Count;
@@ -324,6 +327,11 @@ public partial class DampedShadowedDragModel
                     int o = faceChunk[gi] * ForceTable.Stride;
                     chunkAcc[o] += rax; chunkAcc[o + 1] += ray; chunkAcc[o + 2] += raz;
                     chunkAcc[o + 6] += qy * raz - qz * ray; chunkAcc[o + 7] += qz * rax - qx * raz; chunkAcc[o + 8] += qx * ray - qy * rax;
+                    if (chunkRec != null)
+                    {
+                        chunkRec[o] += rax; chunkRec[o + 1] += ray; chunkRec[o + 2] += raz;
+                        chunkRec[o + 6] += qy * raz - qz * ray; chunkRec[o + 7] += qz * rax - qx * raz; chunkRec[o + 8] += qx * ray - qy * rax;
+                    }
                 }
                 continue;
             }
@@ -359,7 +367,21 @@ public partial class DampedShadowedDragModel
                 sx = -(vx - cosA * nx) * fric; sy = -(vy - cosA * ny) * fric; sz = -(vz - cosA * nz) * fric;   // (friction opposes the motion: -tangent - it was +, pushing every hull along its travel)
             }
             float ax = -cpSub * vai * qf * nx + sx, ay = -cpSub * vai * qf * ny + sy, az = -cpSub * vai * qf * nz + sz;
-            if (recover) { float r = REC[gi]; if (r != 0f) { ax += r * v.X; ay += r * v.Y; az += r * v.Z; } }   // (the column's recovered push, along the travel: subsonic end)
+            if (recover)
+            {
+                float r = REC[gi];
+                if (r != 0f)
+                {
+                    float rx = r * v.X, ry = r * v.Y, rz = r * v.Z;
+                    ax += rx; ay += ry; az += rz;   // (the column's recovered push, along the travel: subsonic end)
+                    if (chunkRec != null && faceChunk[gi] >= 0)
+                    {
+                        int o = faceChunk[gi] * ForceTable.Stride;
+                        chunkRec[o] += rx; chunkRec[o + 1] += ry; chunkRec[o + 2] += rz;
+                        chunkRec[o + 6] += py * rz - pz * ry; chunkRec[o + 7] += pz * rx - px * rz; chunkRec[o + 8] += px * ry - py * rx;
+                    }
+                }
+            }
             float bx = -cpSup * vai * qf * nx + sx, by = -cpSup * vai * qf * ny + sy, bz = -cpSup * vai * qf * nz + sz;
             f0x += ax; f0y += ay; f0z += az; f1x += bx; f1y += by; f1z += bz;
             t0x += py * az - pz * ay; t0y += pz * ax - px * az; t0z += px * ay - py * ax;

@@ -69,6 +69,13 @@ public sealed class ChunkedTable
     readonly List<sbyte[]> _q = new();
     readonly List<float[]> _scale = new();
     readonly List<float[]> _raw = new();     // (during a build: plain, until Seal)
+    // Per chunk, the part of its share that is PressureRecovery's push (BakeRecovery: a column's exits pushed forward by
+    // what its front faces took) - columns run across chunks, so a local update cannot redo it from its own faces: it
+    // keeps the full build's (2026-10-15: without it, damage turned the rebuilt chunks' drag ~2.5x the full build's
+    // until the next full rebuild). The same 8-bit form; null where a chunk has none.
+    readonly List<sbyte[]> _qRec = new();
+    readonly List<float[]> _scaleRec = new();
+    readonly List<float[]> _rawRec = new();
     /// <summary>Per chunk: its faces' centres, grid-local, in eighths of a metre (16 bits each: face centres sit on
     /// a 0.125 m lattice, within +-4 km).</summary>
     public readonly List<List<P16>> Occluders = new();
@@ -83,11 +90,24 @@ public sealed class ChunkedTable
     /// <summary>During a build: chunk c's share, plain (Seal stores them all).</summary>
     public float[] RawShare(int c) => _raw[c] ??= new float[Slots * ForceTable.Stride];
 
+    /// <summary>During a build: chunk c's recovered push, plain (Seal stores them all).</summary>
+    public float[] RawRecShare(int c) => _rawRec[c] ??= new float[Slots * ForceTable.Stride];
+
     /// <summary>After a build: every share into its 8-bit form.</summary>
     public void Seal()
     {
         for (int c = 0; c < _raw.Count; c++) { if (_raw[c] != null) SetShare(c, _raw[c]); _raw[c] = null; }
+        for (int c = 0; c < _rawRec.Count; c++) { if (_rawRec[c] != null) SetRecShare(c, _rawRec[c]); _rawRec[c] = null; }
     }
+
+    /// <summary>Chunk c's recovered push (part of its share), decoded alone.</summary>
+    public float RecAt(int c, int slot, int k)
+    {
+        var q = _qRec[c]; if (q == null) return 0f;
+        return q[slot * ForceTable.Stride + k] * _scaleRec[c][k];
+    }
+
+    void SetRecShare(int c, float[] share) { Encode(share, out var q, out var sc); _qRec[c] = q; _scaleRec[c] = sc; }
 
     /// <summary>Chunk c's share, decoded (a new array).</summary>
     public float[] GetShare(int c)
@@ -99,17 +119,18 @@ public sealed class ChunkedTable
         return r;
     }
 
-    public void SetShare(int c, float[] share)
+    public void SetShare(int c, float[] share) { Encode(share, out var q, out var sc); _q[c] = q; _scale[c] = sc; }
+
+    static void Encode(float[] share, out sbyte[] q, out float[] sc)
     {
         const int K = ForceTable.Stride;
-        var sc = new float[K];
+        sc = new float[K];
         for (int i = 0; i < share.Length; i++) { float a = MathF.Abs(share[i]); if (a > sc[i % K]) sc[i % K] = a; }
         bool any = false;
         for (int k = 0; k < K; k++) { if (sc[k] > 0) any = true; sc[k] /= 127f; }
-        if (!any) { _q[c] = null; _scale[c] = null; return; }
-        var q = new sbyte[share.Length];
+        if (!any) { q = null; sc = null; return; }
+        q = new sbyte[share.Length];
         for (int i = 0; i < share.Length; i++) { float s = sc[i % K]; q[i] = s > 0 ? (sbyte)Math.Clamp((int)MathF.Round(share[i] / s), -127, 127) : (sbyte)0; }
-        _q[c] = q; _scale[c] = sc;
     }
 
     public bool HasShare(int c) => _q[c] != null;
@@ -126,7 +147,7 @@ public sealed class ChunkedTable
     public long Bytes()
     {
         long b = 0;
-        for (int c = 0; c < _q.Count; c++) { if (_q[c] != null) b += _q[c].Length + 13 * 4; b += Occluders[c].Count * 6L; }
+        for (int c = 0; c < _q.Count; c++) { if (_q[c] != null) b += _q[c].Length + 13 * 4; if (_qRec[c] != null) b += _qRec[c].Length + 13 * 4; b += Occluders[c].Count * 6L; }
         return b;
     }
     /// <summary>Faces another model owns (wing skins: the wing model carries them), by cell and side: left out of
@@ -156,13 +177,16 @@ public sealed class ChunkedTable
         for (int c = 0; c < _q.Count; c++)
         {
             w.Write(keys[c]);
-            var q = _q[c];
-            w.Write(q != null);
-            if (q != null)
+            for (int part = 0; part < 2; part++)   // (the share, then its recovered push)
             {
-                for (int i = 0; i < q.Length; i++) buf[i] = (byte)q[i];
-                w.Write(buf, 0, q.Length);
-                foreach (float x in _scale[c]) w.Write(x);
+                var q = part == 0 ? _q[c] : _qRec[c];
+                w.Write(q != null);
+                if (q != null)
+                {
+                    for (int i = 0; i < q.Length; i++) buf[i] = (byte)q[i];
+                    w.Write(buf, 0, q.Length);
+                    foreach (float x in part == 0 ? _scale[c] : _scaleRec[c]) w.Write(x);
+                }
             }
             var occ = Occluders[c];
             w.Write(occ.Count);
@@ -185,13 +209,14 @@ public sealed class ChunkedTable
         for (int c = 0; c < count; c++)
         {
             int ci = t.IndexOf(r.ReadInt64());
-            if (r.ReadBoolean())
+            for (int part = 0; part < 2; part++)   // (the share, then its recovered push)
             {
+                if (!r.ReadBoolean()) continue;
                 var b = r.ReadBytes(len);
                 if (b.Length != len) throw new System.IO.EndOfStreamException();
                 var q = new sbyte[len]; for (int i = 0; i < len; i++) q[i] = (sbyte)b[i];
                 var sc = new float[ForceTable.Stride]; for (int k = 0; k < sc.Length; k++) sc[k] = r.ReadSingle();
-                t._q[ci] = q; t._scale[ci] = sc;
+                if (part == 0) { t._q[ci] = q; t._scale[ci] = sc; } else { t._qRec[ci] = q; t._scaleRec[ci] = sc; }
             }
             int no = r.ReadInt32();
             if (no < 0 || no > 1 << 24) throw new System.IO.InvalidDataException("occluders");
@@ -217,7 +242,7 @@ public sealed class ChunkedTable
         if (_index.TryGetValue(key, out int i)) return i;
         i = _q.Count;
         _index[key] = i;
-        _q.Add(null); _scale.Add(null); _raw.Add(null);
+        _q.Add(null); _scale.Add(null); _raw.Add(null); _qRec.Add(null); _scaleRec.Add(null); _rawRec.Add(null);
         Occluders.Add(new List<P16>());
         Bounds.Add((new Vector3(float.MaxValue), new Vector3(float.MinValue)));
         return i;
@@ -403,14 +428,22 @@ public sealed class ChunkedTable
                 for (int i = 0; i < fp.Count; i++)
                 {
                     var p = fp[i];
-                    int iu = (int)((Vector3.Dot(p, e1) - umin) / Pix), iw = (int)((Vector3.Dot(p, e2) - wmin) / Pix);
-                    if (iu < 0 || iw < 0 || iu >= W || iw >= H) continue;
-                    if (Vector3.Dot(p, v) < z[iw * W + iu] - Tol) continue;   // hidden
+                    // (the full build's rule - DampedShadowedDragModel.BakeOcclusion: a grazing face is never shadowed, and a
+                    //  face's own plane gets Pix tan(theta) more tolerance. 2026-10-15: a flat 0.4 m here hid all but the first
+                    //  0.4 m of every side along the flow in the rebuilt chunks - drag and side force jumped after damage)
+                    float c = MathF.Abs(Vector3.Dot(fn[i], v));
+                    if (c >= DampedShadowedDragModel.GrazingCos)
+                    {
+                        int iu = (int)((Vector3.Dot(p, e1) - umin) / Pix), iw = (int)((Vector3.Dot(p, e2) - wmin) / Pix);
+                        if (iu < 0 || iw < 0 || iu >= W || iw >= H) continue;
+                        if (Vector3.Dot(p, v) < z[iw * W + iu] - (Tol + Pix * MathF.Sqrt(MathF.Max(0f, 1f - c * c)) / c)) continue;   // hidden
+                    }
                     Phys.Add(v, fn[i], p, fa[i], acc, slotOf[fc[i]] * ForceTable.Stride);
                 }
+                // (plus each chunk's recovered push as the full build left it: what a hole changes in it waits for the next one)
                 for (int d = 0; d < nd; d++)
                     for (int k = 0; k < ForceTable.Stride; k++)
-                        fresh[d][s * ForceTable.Stride + k] = (float)acc[d * ForceTable.Stride + k];
+                        fresh[d][s * ForceTable.Stride + k] = (float)acc[d * ForceTable.Stride + k] + RecAt(dirtyIdx[d], s, k);
             }
         }
         double tSetup = sw.Elapsed.TotalMilliseconds;
@@ -504,6 +537,12 @@ public sealed class ChunkedTable
                 }
             }
             SetShare(c, scaled);
+            if (_qRec[c] != null)   // (its recovered push with it: a local update after this adds what is left)
+            {
+                var rs = new float[slots * ForceTable.Stride];
+                for (int i = 0; i < rs.Length; i++) rs[i] = RecAt(c, i / ForceTable.Stride, i % ForceTable.Stride) * keep;
+                SetRecShare(c, rs);
+            }
             _shareCount[key] = n;
             removedShares?.Add((key, gone));
             if (n <= 0)

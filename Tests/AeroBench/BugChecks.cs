@@ -75,6 +75,41 @@ static partial class Program
                 Check(ok && c2.Phys.Cf == own, $"A5 chunk physics from the table cache: Cf {(ok ? c2.Phys.Cf : -1f):F5}, the ship's {own:F5}");
             }
         }
+        // A6: a local update after damage (ChunkedTable.ComputeLocal) as the full build sees the damaged ship: the same
+        // occlusion rule (grazing faces, a face's own plane) and the full build's pressure recovery kept per chunk.
+        {
+            var pb = Path.Combine(dataDir, "bluefighter.boxes");
+            if (File.Exists(pb))
+            {
+                var boxes = LoadBoxes(pb);
+                var whole = Build("bluefighter", boxes);
+                var dsm = (DampedShadowedDragModel)whole.Model.InnerModel;
+                var chunks = new ChunkedTable(8, 16f, new FacePhysics(dsm));
+                var table = dsm.BuildForceTable(whole.Grid, whole.Surface, whole.Manifold, whole.Com, chunks: chunks);
+                var rng = new Random(3);
+                var gone = new HashSet<int>(Enumerable.Range(0, 10).Select(_ => rng.Next(boxes.Count)));
+                var after = Build("bluefighter", boxes.Where((bx, i) => !gone.Contains(i)).ToList());
+                var dirty = new HashSet<long>();
+                foreach (int i in gone) { var (lo, hi) = boxes[i]; chunks.KeysIn(new Vector3(lo.X, lo.Y, lo.Z) * 0.25f - new Vector3(2f), new Vector3(hi.X + 1, hi.Y + 1, hi.Z + 1) * 0.25f + new Vector3(2f), dirty); }
+                var faces = LocalFaces(after.Grid, dirty, chunks, after.Surface);
+                chunks.Prepare(dirty);
+                table = chunks.Apply(chunks.ComputeLocal(dirty, faces, 2, _hideOnly), table);
+                ChunkedTable.FacesDone(faces);
+                var adsm = (DampedShadowedDragModel)after.Model.InnerModel;
+                var exact = adsm.BuildForceTable(after.Grid, after.Surface, after.Manifold, whole.Com);
+                var r = new Random(9); var err = new List<double>();
+                for (int k = 0; k < 200; k++)
+                {
+                    var d = Vector3.Normalize(new Vector3((float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1, (float)r.NextDouble() * 2 - 1));
+                    var ctx = new AeroContext(after.Grid, after.Surface, d * 150f, atmo, whole.Com, BlockSize, Vector3.Zero, -1f, after.Manifold);
+                    var fe = exact.Evaluate(ctx, adsm.SubsonicLimit, adsm.SupersonicLimit, adsm.Streamlining).Force;
+                    var fp = table.Evaluate(ctx, adsm.SubsonicLimit, adsm.SupersonicLimit, adsm.Streamlining).Force;
+                    err.Add((fp - fe).Length() / Math.Max(fe.Length(), 1));
+                }
+                err.Sort();
+                Check(err[100] < 0.05, $"A6 local update after 10 blocks lost (Bluefighter): off the full build by median {err[100] * 100:F1}% (p95 {err[190] * 100:F1}%)");
+            }
+        }
         return fails;
     }
 }
