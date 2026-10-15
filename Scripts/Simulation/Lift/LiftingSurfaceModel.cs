@@ -54,7 +54,7 @@ public class LiftingSurfaceModel : IAeroDragModel
     {
         InnerModel = innerModel;
         Detector = detector ?? new ConnectedComponentWingDetector();
-        LiftModel = liftModel ?? new ThinAirfoilWingModel();
+        LiftModel = liftModel ?? new CompressibleWingModel();   // (every caller passes one)
     }
 
     /// <summary>Full wing detection from scratch.</summary>
@@ -120,7 +120,6 @@ public class LiftingSurfaceModel : IAeroDragModel
     private void InvalidateLiftModelInfluence()
     {
         if (LiftModel is CompressibleWingModel cwm) cwm.InvalidateInfluence();
-        else if (LiftModel is ThinAirfoilWingModel tawm) tawm.InvalidateInfluence();
     }
 
     /// <summary>Clear cached wings and detector state.</summary>
