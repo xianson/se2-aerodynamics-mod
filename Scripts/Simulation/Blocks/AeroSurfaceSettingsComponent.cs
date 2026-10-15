@@ -81,11 +81,17 @@ public partial class AeroSurfaceSettingsComponent : Component, IInSceneListener,
 /// The surfaces' settings in the save: "surface x y z pitch yaw roll max trim" lines (only those changed from a new
 /// block's) after the world's aero settings in their text (AeroWorldSettingsComponent; AeroSettings.Apply skips lines
 /// without '='). On load they wait until a surface is within a metre of where it was (a save keeps grids where they were),
-/// then go onto it; one nobody claims in 60 s is dropped.
+/// then go onto it; one nobody claims in 60 s is dropped. The thrusters' attitude fractions likewise ("thrust x y z f",
+/// 2026-10-15; a save without them loads as before, and an older mod skips the unknown lines).
 /// </summary>
 internal static class AeroSurfaceSaved
 {
-    const string Tag = "surface ", GearTag = "gear ", BrakeTag = "airbrake ";
+    const string Tag = "surface ", GearTag = "gear ", BrakeTag = "airbrake ", ThrustTag = "thrust ";
+    /// <summary>A thruster's saved fraction goes onto the thrusters this close to where it was (m: blocks sit at least a
+    /// 0.25 m cell apart; both scenes' copies of the one block).</summary>
+    const double ThrustReach = 0.1;
+    /// <summary>The thrusters' saved attitude fractions ("thrust x y z f" - only those changed).</summary>
+    static readonly List<(Vector3D at, float frac, double since)> _thrusts = new();
     /// <summary>The airbrakes' saved max openings ("airbrake x y z max" - only those changed).</summary>
     static readonly List<(Vector3D at, float max, double since)> _brakes = new();
     static readonly List<(Vector3D at, bool p, bool y, bool r, float max, float trim, double since)> _pending = new();
@@ -111,6 +117,11 @@ internal static class AeroSurfaceSaved
                 sb.Append('\n').Append(GearTag).Append(p.X.ToString("R", c)).Append(' ').Append(p.Y.ToString("R", c)).Append(' ')
                   .Append(p.Z.ToString("R", c)).Append(' ').Append(g.Seq.Down ? "1" : "0");
             }
+        // (the client scene's copies first: where both scenes' copies changed, the server's line is last and wins on load)
+        lock (AeroThrustSettingsComponent.All)
+            for (int pass = 0; pass < 2; pass++)
+                foreach (var th in AeroThrustSettingsComponent.All)
+                    if (th.Server == (pass == 1) && th.Changed && th.Entity != null) sb.Append('\n').Append(ThrustTag).Append(th.SaveLine());
         return sb.ToString();
     }
 
@@ -119,10 +130,20 @@ internal static class AeroSurfaceSaved
         var c = System.Globalization.CultureInfo.InvariantCulture; int n = 0;
         lock (_pending)
         {
-            _pending.Clear(); _gears.Clear(); _brakes.Clear();
+            _pending.Clear(); _gears.Clear(); _brakes.Clear(); _thrusts.Clear();
             foreach (var raw in text.Split('\n'))
             {
                 var line = raw.Trim();
+                if (line.StartsWith(ThrustTag))
+                {
+                    var tw = line.Substring(ThrustTag.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (tw.Length >= 4 && double.TryParse(tw[0], System.Globalization.NumberStyles.Float, c, out double tx)
+                        && double.TryParse(tw[1], System.Globalization.NumberStyles.Float, c, out double ty)
+                        && double.TryParse(tw[2], System.Globalization.NumberStyles.Float, c, out double tz)
+                        && float.TryParse(tw[3], System.Globalization.NumberStyles.Float, c, out float tf) && float.IsFinite(tf))
+                    { _thrusts.Add((new Vector3D(tx, ty, tz), Math.Clamp(tf, 0f, 1f), -1)); n++; }
+                    continue;
+                }
                 if (line.StartsWith(BrakeTag))
                 {
                     var bw = line.Substring(BrakeTag.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -152,12 +173,12 @@ internal static class AeroSurfaceSaved
                 _pending.Add((new Vector3D(x, y, z), w[3] == "1", w[4] == "1", w[5] == "1", max, trim, -1));
                 n++;
             }
-            _count = _pending.Count + _gears.Count + _brakes.Count;
+            _count = _pending.Count + _gears.Count + _brakes.Count + _thrusts.Count;
         }
         if (n > 0) Log.Default?.Info($"[AERO] control surface / gear settings loaded: {n} (applied as their blocks appear)");
     }
 
-    internal static void Clear() { lock (_pending) { _pending.Clear(); _gears.Clear(); _brakes.Clear(); _count = 0; } }
+    internal static void Clear() { lock (_pending) { _pending.Clear(); _gears.Clear(); _brakes.Clear(); _thrusts.Clear(); _count = 0; } }
 
     /// <summary>Server, each step: the saved settings onto their surfaces (nothing to do: one read).</summary>
     internal static void ApplyPending()
@@ -224,7 +245,19 @@ internal static class AeroSurfaceSaved
                 best.MaxOpening = e.max; _brakes.RemoveAt(i);
                 Log.Default?.Info($"[AERO] airbrake restored: max opening {e.max:F0} deg");
             }
-            _count = _pending.Count + _gears.Count + _brakes.Count;
+            for (int i = _thrusts.Count - 1; i >= 0; i--)
+            {
+                var e = _thrusts[i];
+                if (e.since < 0) { e.since = now; _thrusts[i] = e; }
+                int hit = 0;
+                lock (AeroThrustSettingsComponent.All)
+                    foreach (var th in AeroThrustSettingsComponent.All)
+                        if (th.Entity != null && (th.Entity.Data.GetWorldTransform().Position - e.at).Length() < ThrustReach) { th.AttitudeFraction = e.frac; hit++; }
+                if (hit == 0) { if (now - e.since > 60) _thrusts.RemoveAt(i); continue; }
+                _thrusts.RemoveAt(i);
+                Log.Default?.Info($"[AERO] thruster restored: attitude fraction {e.frac:F2}");
+            }
+            _count = _pending.Count + _gears.Count + _brakes.Count + _thrusts.Count;
         }
     }
 }

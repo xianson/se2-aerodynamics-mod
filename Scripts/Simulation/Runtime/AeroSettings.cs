@@ -41,6 +41,10 @@ public static partial class AeroSettings
         public Func<double> Get;
         public Action<double> Set;
         public Func<double, string> Check;   // (a cross-setting rule: why not, or null)
+        /// <summary>The player's value: the last one set through the store (Set, a file, the save) - what the files and the
+        /// world save write. A field written directly (a harness command, a dev override) is live but never this, so it is
+        /// never persisted by a later, unrelated Set (2026-10-15: a dev override could become the saved setting).</summary>
+        public double Stored;
         // ── the UI metadata (the same fields as OrbitalSettings.Setting) ──
         /// <summary>The player-facing name, and the screen section it shows in.</summary>
         public string Label, Group;
@@ -322,7 +326,7 @@ public static partial class AeroSettings
             "The plasma's and glow's brightness, times this.")
             .Ui("Plasma brightness", GFx, Advanced, "×", 0.05);
         B("Fx.ScorchVisible", "client", false, () => HeatScorch.Visible, v => HeatScorch.Visible = v,
-            "Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any).")
+            "Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). Turning it off stops new marks only: those already placed stay.")
             .Ui("Show scorch marks", GFx, Advanced);
         B("Fx.ThrusterFlamesFollow", "client", false, () => ThrustTorque.FlamesEnabled, v => ThrustTorque.FlamesEnabled = v,
             "Thruster flames show the share each thruster gives to steering (off: the game's own flames).")
@@ -357,7 +361,7 @@ public static partial class AeroSettings
     static Setting Add(string name, string type, string scope, double min, double max, bool rebuild, Func<double> get, Action<double> set, string doc)
     {
         var s = new Setting { Name = name, Type = type, Scope = scope, Min = min, Max = max, Rebuild = rebuild, Get = get, Set = set, Doc = doc };
-        s.Default = get();   // (the field's own initial value)
+        s.Default = s.Stored = get();   // (the field's own initial value)
         s.Order = _all.Count;
         if (type != "float") s.Step = 1;
         _all.Add(s); _by[name] = s;

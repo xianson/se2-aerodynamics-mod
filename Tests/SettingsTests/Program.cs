@@ -12,6 +12,11 @@
 //    CanEditWorld false refuses world sets (and a world group's reset), not client ones; WorldUnsaved follows a set.
 // 7. DENYLIST: no Dev* / Test* / Debug* / Probe* / Trace* / *Log setting or field written (registry names, and a scan of
 //    every setter in the registry's source).
+// 8. PERSISTENCE (2026-10-15): a field written directly (a harness's aeroset, a dev override) is never what the files or
+//    the world save write, even after an unrelated Set rewrites them; a Set of that same value makes it the player's.
+// 9. WORLD UNLOAD: the host file's forced names do not carry over to the next world.
+// 10. NO CODE WRITES: outside the harness (Dev/, harness verb switches) no code writes a setting's field - a runtime state
+//    ("failed, off for the session") is a flag of its own (the Orbital Mod's ProxyAtmospheres, 2026-10-15).
 global using Keen.VRage.Library.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -255,6 +260,78 @@ static class Program
         ResetAll();
     }
 
+    // ── 8. a direct field write is never persisted ──
+    const string NL = "\n";
+    static void Persistence()
+    {
+        ResetAll();
+        HeatScorch.Visible = false;   // (as a harness writes it: the field, not Set)
+        Check(AeroSettings.TryGet("Fx.ScorchVisible", out double live) && live == 0, "persist: the direct write is live");
+        Check(AeroSettings.Set("Fx.Vapour", 0, out _), "persist: an unrelated client set");
+        string client = AeroSettings.Text("client", all: true);
+        Check(client.Contains(NL + "Fx.ScorchVisible = true" + NL) && client.Contains(NL + "Fx.Vapour = false" + NL), "persist: the client file keeps the player's Fx.ScorchVisible (true), with the set Fx.Vapour");
+        AeroSettings.Info("Structure.Strength", out _, out double strDef, out _, out _, out _, out _, out _);
+        HeatScorch.Enabled = false; ShipStructure.Strength = (float)strDef * 0.5f;   // (world fields, directly)
+        Check(AeroSettings.Set("Heat.Multiplier", 2, out _), "persist: an unrelated world set");
+        string world = AeroSettings.Text("world", all: false);
+        Check(world == "Heat.Multiplier = 2" + NL, $"persist: the world save holds only the set value ('{world.Replace(NL, "|")}')");
+        // the player then sets the dev value through the store: it is theirs now
+        Check(AeroSettings.Set("Fx.ScorchVisible", 0, out _) && AeroSettings.Text("client", all: true).Contains(NL + "Fx.ScorchVisible = false" + NL), "persist: a Set of the live value makes it the player's");
+        // a reset brings the live field back too, and the text matches
+        AeroSettings.ResetScope("world");
+        Check(HeatScorch.Enabled && ShipStructure.Strength == (float)strDef && AeroSettings.Text("world", all: false) == "", "persist: a world reset restores the directly written fields");
+        HeatScorch.Visible = true;
+        ResetAll();
+        Check(AeroSettings.Text("client", all: false) == "", "persist: back at the defaults");
+    }
+
+    // ── 9. the forced set does not outlive its world ──
+    static void ForcedUnload()
+    {
+        ResetAll();
+        var carriers = typeof(AeroSettings).GetField("_carriers", BindingFlags.NonPublic | BindingFlags.Static);
+        carriers.SetValue(null, 1);   // (one world's carrier; CarrierAdded would poll the real files)
+        AeroSettings.ApplyHostFile("Structure.Strength = 9" + NL + "Heat.Multiplier = 3" + NL);
+        Check(AeroSettings.IsForced("Structure.Strength") && AeroSettings.IsForced("Heat.Multiplier"), "unload: forced while the world is loaded");
+        AeroSettings.CarrierRemoved();
+        Check(!AeroSettings.IsForced("Structure.Strength") && !AeroSettings.IsForced("Heat.Multiplier"), "unload: nothing forced after the world unloads");
+        Check(AeroSettings.Set("Structure.Strength", 3, out string why), $"unload: the next world sets it ({why})");
+        Check(AeroSettings.TryGet("Heat.Multiplier", out double hm) && AeroSettings.Info("Heat.Multiplier", out _, out double def, out _, out _, out _, out _, out _) && hm == def, "unload: the forced value went back to its default");
+        carriers.SetValue(null, 0);
+        ResetAll();
+    }
+
+    // ── 10. the code never switches a setting itself ──
+    static void NoCodeWrites(string root)
+    {
+        string sim = Path.Combine(root, "Scripts", "Simulation");
+        string reg = File.ReadAllText(Path.Combine(sim, "Runtime", "AeroSettings.cs"));
+        var targets = Regex.Matches(reg, @"v\s*=>\s*\{?\s*([A-Z]\w*)\.([A-Z]\w*)\s*=(?![=>])").Cast<Match>()
+            .Select(m => (cls: m.Groups[1].Value, field: m.Groups[2].Value)).Distinct().ToList();
+        Check(targets.Count > 60, $"no code writes: {targets.Count} setting fields");
+        int files = 0;
+        foreach (var f in Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(sim, f).Replace('\\', '/');
+            if (rel.StartsWith("Dev/") || Path.GetFileName(f).StartsWith("AeroSettings") || Path.GetFileName(f) == "AeroTestHarness.cs") continue;   // (the harness: dev overrides, never saved)
+            files++;
+            string src = Regex.Replace(File.ReadAllText(f), @"//.*", "");
+            var lines = src.Split('\n');
+            foreach (var (cls, field) in targets)
+            {
+                bool own = Regex.IsMatch(src, @"\b(class|struct)\s+" + cls + @"\b");
+                var write = new Regex((own ? @"(?<![\w.])(" + cls + @"\.)?" : @"\b" + cls + @"\.") + field + @"\s*(=(?![=>])|\|=|&=|\^=)");
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string l = lines[i];
+                    if (!write.IsMatch(l) || Regex.IsMatch(l, @"\bstatic\b") || l.Contains("case \"")) continue;   // (its declaration; a harness verb's switch)
+                    Check(false, $"no code writes: {rel}:{i + 1} writes {cls}.{field} (a setting) - keep a runtime flag of its own: {l.Trim()}");
+                }
+            }
+        }
+        Check(files > 50, $"no code writes: {files} files scanned");
+    }
+
     // ── 7. denylist ──
     static readonly Regex Deny = new(@"^(Dev|Test|Debug|Probe|Trace)|Log$");
     static void Denylist(string root)
@@ -282,7 +359,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Denylist(root);
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root);
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
