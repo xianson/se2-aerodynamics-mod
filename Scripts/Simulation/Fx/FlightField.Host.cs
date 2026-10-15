@@ -248,7 +248,7 @@ internal sealed partial class FlightField
             Carry();   // (carried onto the new layout, not dropped; the tips do not hang on the shadow: kept)
             long tS = System.Diagnostics.Stopwatch.GetTimestamp();
             ShockGrid(f, a, b, R, pts, out _P3, out _past);
-            RecShocks++; RecShockMs += (System.Diagnostics.Stopwatch.GetTimestamp() - tS) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            RecShocks++; RecShockMs += AeroCost.Ms(tS);
             _ring = SmoothRing(Rim(_P3, _past, a, b, out _ringC), RimSmooth);
             _shapeKey = key; _shapeOk = true;
         }

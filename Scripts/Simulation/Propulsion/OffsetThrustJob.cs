@@ -63,7 +63,6 @@ public struct ThrusterDebugState
 /// </summary>
 public static partial class OffsetThrustJob
 {
-    private const float DT = 1f / 60f;
     private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
     private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 
@@ -275,13 +274,13 @@ public static partial class OffsetThrustJob
             if (float.IsNaN(couplingTorqueI.X)) continue;
 
             // Apply pure torque (no linear change — vanilla's thrust stays intact)
-            PhysicsHack.ApplyTorqueImpulse(gridData, couplingTorqueI * DT, gridWt);
+            PhysicsHack.ApplyTorqueImpulse(gridData, couplingTorqueI * AeroPhysics.Dt, gridWt);
 
             // Mach scaling: apply linear delta if profile != 1.0
             if (Math.Abs(profileScale - 1f) > 0.001f)
             {
                 Vector3 deltaImpulse = WorldTransform.TransformDirection(
-                    forceDir * (scaledThrust - vanillaThrust) * DT, gridWt);
+                    forceDir * (scaledThrust - vanillaThrust) * AeroPhysics.Dt, gridWt);
                 if (!float.IsNaN(deltaImpulse.X))
                     PhysicsHack.ApplyLinearImpulse(gridData, deltaImpulse);
             }

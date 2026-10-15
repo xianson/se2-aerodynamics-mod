@@ -43,8 +43,8 @@ public static class AeroTuning
 /// </summary>
 public static class AeroConfig
 {
-    /// <summary>Simulation timestep (60 Hz).</summary>
-    public const float Dt = 1f / 60f;
+    /// <summary>Simulation timestep (60 Hz): AeroPhysics.Dt.</summary>
+    public const float Dt = AeroPhysics.Dt;
 
     /// <summary>Below this speed (m/s), skip aero computation entirely.</summary>
     public const float MinSpeed = 0.5f;

@@ -127,7 +127,7 @@ public static class ThrustTorque
         aero.LastControlTorque = Vector3.Zero; aero.LastControlTorqueValid = false;
         aero.LastThrustCount = 0;   // (set where the thrusters' forces are published)   // (set below while the aware law flies)
         var thrusters = aero._thrusterCache;
-        if (aero.IsServerScene) Count(ref _tServer, ref ServerCalls); else Count(ref _tClient, ref ClientCalls);
+        if (aero.IsServerScene) AeroCost.Count(ref _tServer, ref ServerCalls); else AeroCost.Count(ref _tClient, ref ClientCalls);
         if (!Enabled) { Unpublish(aero); return rep; }   // (the game's own flames again)
         var data = aero.Data;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || mass.InvMass <= 0f) { Unpublish(aero); return rep; }
@@ -365,13 +365,11 @@ public static class ThrustTorque
     static void Unpublish(AeroGridComponent aero) { if (aero._flamePub != null) Forget(aero); }
     public static volatile string ClientNote = "-";
     public static int ServerCalls, ClientCalls, FlameLookups, FlameHits, FlameLit;
-    /// <summary>The counts above, gathered per thread and added CountBatch at a time (2026-10-15, a profile: every client
+    /// <summary>The counts above, gathered per thread and added AeroCost.CountBatch at a time (2026-10-15, a profile: every client
     /// thruster's flame, every frame, did two or three Interlocked increments on these few shared words from every job
     /// thread - a cache line passed between the cores tens of thousands of times a second). Diagnostics only (AERO-COST, the
-    /// harness's checkall deltas): a thread's last few (under CountBatch) are added with its next batch.</summary>
-    const int CountBatch = 32;
+    /// harness's checkall deltas): a thread's last few (under CountBatch) are added with its next batch (AeroCost.Count).</summary>
     [ThreadStatic] static int _tServer, _tClient, _tLookups, _tHits, _tLit;
-    static void Count(ref int local, ref int shared) { if (++local >= CountBatch) { Interlocked.Add(ref shared, local); local = 0; } }
 
     /// <summary>The server copy's shares this frame: use[i] / caps[i] (use null: all zero).</summary>
     static void Publish(AeroGridComponent aero, in WorldTransform wt, float[] use)
@@ -497,7 +495,7 @@ public static class ThrustTorque
     /// while unmatched after it had one), or at once when it is gone or re-keyed.</summary>
     internal static float FlameShare(AeroFlameComponent flame, long now)
     {
-        Count(ref _tLookups, ref FlameLookups);
+        AeroCost.Count(ref _tLookups, ref FlameLookups);
         double freq = System.Diagnostics.Stopwatch.Frequency;
         if (!flame._hasKey)
         {
@@ -535,8 +533,8 @@ public static class ThrustTorque
             return -1f;
         }
         float s = tab.Share[flame._idx];
-        Count(ref _tHits, ref FlameHits);
-        if (s > 0.05f) Count(ref _tLit, ref FlameLit);
+        AeroCost.Count(ref _tHits, ref FlameHits);
+        if (s > 0.05f) AeroCost.Count(ref _tLit, ref FlameLit);
         return s;
     }
 

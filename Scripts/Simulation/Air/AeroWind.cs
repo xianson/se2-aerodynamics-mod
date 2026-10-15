@@ -50,7 +50,7 @@ public static class AeroWind
         Vector3 local = WorldTransform.TransformDirectionInv(dir, wt);
         Vector3 s = bb.BoundingBox.Size;
         float area = MathF.Abs(local.X) * s.Y * s.Z + MathF.Abs(local.Y) * s.X * s.Z + MathF.Abs(local.Z) * s.X * s.Y;
-        Vector3 imp = dir * (0.5f * air.Density * area * w.Speed * num * (1f / 60f));
+        Vector3 imp = dir * (0.5f * air.Density * area * w.Speed * num * AeroPhysics.Dt);
         float cap = 5f / mass.InvMass, il = imp.Length();
         if (il > cap) imp *= cap / il;
         if (!imp.IsValid()) return Vector3.Zero;
