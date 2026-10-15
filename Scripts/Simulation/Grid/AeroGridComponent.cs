@@ -87,7 +87,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Keen.Game2.Simulation.GameSystems.Movement.ThrustClassData[] _rcsClass = Array.Empty<Keen.Game2.Simulation.GameSystems.Movement.ThrustClassData>();
     internal bool[] _rcsHasClass = Array.Empty<bool>();
     internal float _rcsGeomAir = -1f;
-    private static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
     /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key.</summary>

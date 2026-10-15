@@ -67,7 +67,7 @@ public partial class AeroGridComponent
                 if (inSurface && _model?.HasWings == true)
                 {
                     int k = _cellScale;
-                    var q0 = new Vector3I(FloorDiv(min.X, k), FloorDiv(min.Y, k), FloorDiv(min.Z, k)); var q1 = new Vector3I(FloorDiv(max.X, k), FloorDiv(max.Y, k), FloorDiv(max.Z, k));
+                    var q0 = new Vector3I(SnapshotGridAccessor.FloorDiv(min.X, k), SnapshotGridAccessor.FloorDiv(min.Y, k), SnapshotGridAccessor.FloorDiv(min.Z, k)); var q1 = new Vector3I(SnapshotGridAccessor.FloorDiv(max.X, k), SnapshotGridAccessor.FloorDiv(max.Y, k), SnapshotGridAccessor.FloorDiv(max.Z, k));
                     for (int x = q0.X; x <= q1.X; x++) for (int y = q0.Y; y <= q1.Y; y++) for (int z = q0.Z; z <= q1.Z; z++) _model.RemoveWingCell(new Vector3I(x, y, z));
                 }
                 if (inSurface && (_chunks == null || !LocalUpdates))   // (the cells, for the cell-by-cell surface update: chunked grids need none)

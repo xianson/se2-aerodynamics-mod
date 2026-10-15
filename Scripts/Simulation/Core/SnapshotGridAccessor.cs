@@ -71,7 +71,8 @@ public sealed class SnapshotGridAccessor : IGridAccessor
     public static int CellScale(float blockSize) => blockSize >= 2.4f ? LargeGridCellScale : 1;
     public static int LargeGridCellScale = 2;   // (5 - 1.25 m - lost the shape: forces 55% off; 2: ~8%)
 
-    static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
+    /// <summary>Division rounding toward negative infinity: a cell's coarse cell, k cells to one.</summary>
+    internal static int FloorDiv(int a, int k) => a >= 0 ? a / k : -((-a + k - 1) / k);
 
     /// <summary>The boxes in cells k times larger (a coarse cell is solid where any of its cells is).</summary>
     public static List<(Vector3I min, Vector3I max)> Coarsen(IReadOnlyList<(Vector3I min, Vector3I max)> boxes, int k)

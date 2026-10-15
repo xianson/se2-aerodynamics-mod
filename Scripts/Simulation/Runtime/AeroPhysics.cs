@@ -69,7 +69,7 @@ public static class AeroPhysics
                                            Vector3 worldForce, Vector3 localTorque,
                                            float dt = Dt)
     {
-        if (!IsFinite(worldForce) || !IsFinite(localTorque))
+        if (!PhysicsHack.IsFinite(worldForce) || !PhysicsHack.IsFinite(localTorque))
             return false;
         if (!IsDynamic(entity))
             return false;
@@ -112,8 +112,4 @@ public static class AeroPhysics
         angular = rb.AngularVelocity;
         return true;
     }
-
-    private static bool IsFinite(Vector3 v) =>
-        !float.IsNaN(v.X) && !float.IsNaN(v.Y) && !float.IsNaN(v.Z) &&
-        !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 }
