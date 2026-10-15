@@ -54,7 +54,6 @@ public class AirIntake : IAeroBlockComponent, IFaceOverride
     public float EffectiveCp { get; private set; }
 
     // ── Precomputed ──
-    private readonly float _cosMaxHalf;
 
     public AirIntake(Vector3 position, Vector3I blockPosition, Vector3 facingDirection, float captureArea)
     {
@@ -63,7 +62,6 @@ public class AirIntake : IAeroBlockComponent, IFaceOverride
         FacingDirection = Vector3.Normalize(facingDirection);
         CaptureArea = captureArea;
         _ownedCells = new List<Vector3I> { blockPosition };
-        _cosMaxHalf = MathF.Cos(60f * MathF.PI / 180f);
     }
 
     public ComponentForceResult Compute(in LocalAeroConditions conditions)

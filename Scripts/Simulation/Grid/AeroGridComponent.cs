@@ -55,7 +55,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     public static bool LocalUpdates = true;
     /// <summary>Below this speed (m/s) a damaged grid's table waits (q ~ 50 Pa at sea level: its drag is nothing).</summary>
     public static float MinSpeedForUpdates = 10f;
-    internal int DeferredFrames;
     /// <summary>Chunk size (m): 8 measured best (Red Ship, a block: 95 ms at 16 m -> 27 ms; 4 m no faster).</summary>
     public static float ChunkSize = 8f;
     internal double LastLocalMs, QuickMs;
@@ -72,7 +71,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal int _thrusterGen;
     /// <summary>This grid's published flame shares (ThrustTorque.Publish; server copy only).</summary>
     internal ThrustTorque.Published _flamePub;
-    internal bool Seeded;
     private ChunkedTable.LocalResult _localRes;
     internal int LocalUpdatesDone;
     /// <summary>Grid cells per surface cell (large-block grids: 2). Such a surface is never updated cell by cell.</summary>

@@ -64,9 +64,7 @@ internal sealed partial class FlightField
     private float _chordShift;
     private readonly List<(object h, float w, int kind)> _vapour = new List<(object, float, int)>();   // (kind 0 edge, 1 cone, 2 tip)
     private float _mach, _rho, _coneI, _edgeI;
-    private bool _flowFound;
     private long _flowAt;
-    private string _vapourStatus = "";
 
     private float Smooth(float a, float b, float x) { float t = Math.Clamp((x - a) / Math.Max(1e-4f, b - a), 0f, 1f); return t * t * (3f - 2f * t); }
     private float Band(float[] k, float m) => Smooth(k[0], k[1], m) * (1f - Smooth(k[2], k[3], m));
@@ -106,20 +104,17 @@ internal sealed partial class FlightField
             // pulled the ring out along them - it shrink-wrapped the plane; now they just pass through the cone)
             var radii = new List<float>(); for (int k = 0; k < ConeRing; k++) if (far[k] >= 0f) radii.Add(far[k]);
             radii.Sort(); float median = radii.Count > 0 ? radii[radii.Count / 2] : 0f;
-            int n = 0, culled = 0;
             for (int k = 0; k < ConeRing; k++)
             {
                 if (far[k] < 0f) continue;   // (no hull at this angle near the station)
-                if (far[k] > ConeOutlier * median) { culled++; continue; }
+                if (far[k] > ConeOutlier * median) continue;
                 float ang = (k + 0.5f) / ConeRing * 2f * MathF.PI - MathF.PI;
                 Vector3 outv = _ga * MathF.Cos(ang) + _gb * MathF.Sin(ang);
                 Vector3 pos = at[k] - f * (Vector3.Dot(at[k], f) - zSt) + outv * ConeMargin;
                 Vector3 dir = Vector3.Normalize(ConeFlare * outv + (1f - ConeFlare) * -f);
                 VapourEffect(VapourConeSpray, pos, Quaternion.CreateFromTwoVectors(Vector3.UnitZ, dir), ConeEmitScale, 1f, true, ConeSpeed);
-                n++;
             }
-            int tips = WingtipLines(f, N, axis);
-            _vapourStatus = $"vapour placed: {tips} tip lines ({TipWhy}); cone ring {n}/{ConeRing} ({culled} outliers past {ConeOutlier:F1}x the median {median:F1} m) on the skin at {ConeStation:P0} of {zMax - zMin:F0} m, axis chord {bestChord:F1} m";
+            WingtipLines(f, N, axis);
             return;
         }
         // the silhouette, in the plane across the flow (a, b coordinates)
@@ -150,7 +145,6 @@ internal sealed partial class FlightField
         }
         else foreach (var c in chains) { var l = new List<Vector2>(); foreach (var v in c) l.Add(P2(v)); if (l.Count >= 3) loops.Add(l); }
         Vector2 ax = P2(axis);
-        int placed = 0;
         foreach (var loop in loops)
         {
             // along the closed loop every ConeSpacing metres
@@ -170,12 +164,10 @@ internal sealed partial class FlightField
                     Vector3 dir = Vector3.Normalize(ConeFlare * out3 + (1f - ConeFlare) * -f);
                     VapourEffect(EdgeCollide == 0 ? new Guid("5d0c7a3e-0105-4000-8000-000000000001") : VapourEdge, pos,
                                  Quaternion.CreateFromTwoVectors(Vector3.UnitZ, dir), ConeEmitScale, 1f, true, ConeSpeed);
-                    placed++;
                 }
                 have += l - at;
             }
         }
-        _vapourStatus = $"vapour placed: cone loop {(ConeLoop == 2 ? "hull" : "silhouette")} {placed} emitters at {ConeStation:P0} of {zMax - zMin:F0} m, axis chord {bestChord:F1} m";
     }
 
     public static string TipWhy = "";

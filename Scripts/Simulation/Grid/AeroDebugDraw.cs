@@ -444,7 +444,6 @@ public partial class AeroGridComponent
     private Vector3 _lastVelocityLocal;
     private Vector3 _lastComLocal;
     internal Vector3 _lastGridAngVel;
-    private float _lastDensity;
     private Vector3 _smoothedCopLocal = Vector3.Zero;
     private bool _copInitialized;
 }

@@ -78,7 +78,6 @@ public static partial class OffsetThrustJob
     private static int _traceIndex = -1;
     private static int _traceFrame;
     private static int _dampDiagCooldown;
-    private static int _traceLockedCount = int.MaxValue;
     private static int _traceSkipCount = 0; // skip first N grids before locking
     private static bool _traceActive;
     // Net torque accumulators (written by Execute offset loop, read for NET log)
@@ -163,7 +162,6 @@ public static partial class OffsetThrustJob
                     _traceGridHash = gridHash;
                     _traceIndex = 0;
                     _traceFrame = 0;
-                    _traceLockedCount = thrusters.Count;
                     _traceActive = true;
                     Log.Default?.Info($"[AERO-TRACE] LOCKED grid={gridHash:X8} thruster=0 count={thrusters.Count}");
                 }

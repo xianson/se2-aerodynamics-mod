@@ -108,8 +108,6 @@ internal sealed partial class FlightField
         }
     }
 
-    private int _lineBad;
-
     private bool _draining;
     private bool _spawnTip; private object _vapPrm;   // (a tip spawns on the grid's own root, not the swing's)
 
@@ -137,7 +135,7 @@ internal sealed partial class FlightField
         // (checked, not assumed: the first lines sprayed outward - the basis's convention is the inverse one here)
         if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f || Vector3.Dot(Vector3.Transform(Vector3.UnitX, q), sdir) < 0.99f)
             q = Quaternion.Inverse(q);
-        if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f) { _lineBad++; return; }
+        if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f) return;
         Vector3 mid = (p0 + p1) * 0.5f + lift;
         bool front = zFront - Vector3.Dot(mid, f) < FrontDepth * R;
         // (a stretched spawn box cannot be a line: the GPU emitter sends each particle along normalize(its spawn offset) -
@@ -145,7 +143,7 @@ internal sealed partial class FlightField
         //  close together along the outline, instead.)
         Guid e = SparkColor == 3 && LineDensity > 1 ? RateGuid(front ? 3 : 4, LineRate) : front ? ShockSparks : TailSparks;
         float held = WeightTime(mid - lift, LineDensity);
-        if (held == 0f) { _weightSkipped++; return; }
+        if (held == 0f) return;
         if (_sub == 6)
         {
             // (the vapour sheets: the same placement and spray direction, its own effect; the weight at heat 1 is kept and
@@ -227,8 +225,6 @@ internal sealed partial class FlightField
         t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
         if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
     }
-
-    private bool _fieldUp;
 
     /// <summary>The local pressure at p: the chunks' drag over their frontal area, Gaussian-blended (sigma 0.6 chunk).</summary>
     private float LocalPressure(Vector3 p)

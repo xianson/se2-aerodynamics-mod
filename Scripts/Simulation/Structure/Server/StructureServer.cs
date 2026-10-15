@@ -65,12 +65,10 @@ public partial class AeroGridComponent
     List<CubeBlockComponent> _stBlocks;
     Dictionary<Entity, int> _stIndexOf;
     AeroWork.Item _stJob;
-    StructSnap _stSnap, _stSnapBuf;
-    StructBuildInput _stBuildIn;
+    StructSnap _stSnapBuf;
     ShipStructure _stNew; HullHeat _hhNew; List<CubeBlockComponent> _stBlocksNew;
     readonly List<(int block, float fraction, bool destroy)> _stDamage = new();
     float _stClock, _stCooldown;
-    long _stEvalAt;
     string _stError;
 
     /// <summary>The worst joint's utilisation (1: yield), the hottest skin (K), the hottest skin's share of the way
@@ -209,7 +207,6 @@ public partial class AeroGridComponent
             _stInteg = integ;
         }
         snap.Integrity = _stInteg;
-        _stSnap = snap; _stBuildIn = build;
         var st = _st; var hh = _hh;
         System.Threading.Interlocked.Increment(ref StructureLoads.InFlight);
         StructureLoads.Evaluated();

@@ -60,8 +60,9 @@ internal sealed partial class FlightField
     /// 1000 x scale^2 (ParticleLightEntityComponent), so Light (intensity) sets the scale; extended radius on (the
     /// default cap would cut its reach); 0: none. LightAhead: where, as a fraction of the way from the hull to the shock.</summary>
     public static float Light = 16000f, LightAhead = 0.5f;
+    // (Light and LightAhead are read by nothing since the spot light - FlightField.Render.cs SpawnSpot, Spot* - replaced
+    //  that particle light; LightTint still tints the spot.)
     public static float[] LightTint = { 1f, 1f, 1f };
-    private Vector3 _lightAt;
 
     private Vector3 _nose, _axis;
     /// <summary>Mode 4, calibration: eight flat patches beside the ship, each one uniform (every corner on the same
@@ -87,20 +88,6 @@ internal sealed partial class FlightField
 
     private List<Vector3> _hull;
     private string _hullWhy;
-
-    /// <summary>A grid of points, its UVs from uv(i, j), on the current buffers.</summary>
-    private Func<int, int, bool> _skipQuad;
-
-    /// <summary>The light: on the axis through the shock's front-most point, LightAhead of the way from hull to shock.</summary>
-    private void LightPlace(Vector3[,] P3, List<Vector3> pts, Vector3 f)
-    {
-        Vector3 front = P3[0, 0];
-        foreach (var q in P3) if (Vector3.Dot(q, f) > Vector3.Dot(front, f)) front = q;
-        float hullFront = float.MinValue;
-        foreach (var q in pts) hullFront = Math.Max(hullFront, Vector3.Dot(q, f));
-        float zs = Vector3.Dot(front, f);
-        _lightAt = front - f * ((zs - hullFront) * (1f - LightAhead));
-    }
 
     /// <summary>The chord ends at the first gap along the flow longer than this (metres).</summary>
     public static float ChordGap = 1.5f;
@@ -168,7 +155,6 @@ internal sealed partial class FlightField
     private string _spotWhy;
     public static float LightEach = 6000f, LightLift = 0.08f;
     private readonly List<object> _gridLights = new List<object>();
-    private string _gridLightWhy;
     public static float FrontDepth = 0.5f;
     /// <summary>Sparks' brightness (their colour multiplier: the emissive glow too) and colour: 0 orange to red,
     /// 1 orange through magenta to violet.</summary>
@@ -203,10 +189,8 @@ internal sealed partial class FlightField
     public static bool Weighted = true;
     public static float Heat = 1f, CpMix = 0.6f, WeightGamma = 1f, WeightMin = 0.03f;
     private readonly List<(Vector3 c, float drag, float frontal)> _chunkDrag = new();
-    private string _dragWhy;
     private float _weightMax = 1f;
     private Vector3 _flow;
-    private int _weightSkipped;
     private int LineRate
     {
         get

@@ -188,7 +188,6 @@ public partial class AeroGridComponent
 
         _lastVelocityLocal = localLinVel;
         _lastComLocal = centerOfMass;
-        _lastDensity = density;
 
         var ctx = new AeroContext(
             _gridAccessor,

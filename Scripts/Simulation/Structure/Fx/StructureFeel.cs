@@ -228,7 +228,6 @@ public static class StructureFeel
 
     // ── the sounds ──
     // the seat's SpatialAudioComponent: PlayOneShot(AudioEvent, float volume, bool force), Stop(AudioEvent, bool fadeOut)
-    static object _seatAudio;
     static Action<AudioEvent, float, bool> _seatPlay;
     static Action<AudioEvent, bool> _seatStop;
     static Entity _seatBound;
@@ -268,7 +267,7 @@ public static class StructureFeel
                 Played++;
             }
         }
-        catch (Exception e) { _seatPlay = null; _seatStop = null; _seatAudio = null; Status = "sound failed: " + e.Message; }
+        catch (Exception e) { _seatPlay = null; _seatStop = null; Status = "sound failed: " + e.Message; }
     }
 
     static void QueueStop(AudioEvent ev, Action<AudioEvent, bool> stop, long at)
@@ -300,7 +299,7 @@ public static class StructureFeel
         if (!_engineLooked) LookEngine();
         var seat = _seat;
         if (ReferenceEquals(seat, _seatBound) && (_seatPlay != null || seat == null)) return;
-        _seatBound = seat; _seatPlay = null; _seatStop = null; _seatAudio = null;
+        _seatBound = seat; _seatPlay = null; _seatStop = null;
         if (seat == null) return;
         object comp = null;
         foreach (var c in seat.Components)
@@ -316,7 +315,6 @@ public static class StructureFeel
         if (_miPlay == null) { Status = "SpatialAudioComponent.PlayOneShot not found (the game changed)"; return; }
         _seatPlay = (Action<AudioEvent, float, bool>)Delegate.CreateDelegate(typeof(Action<AudioEvent, float, bool>), comp, _miPlay);
         if (_miStop != null) _seatStop = (Action<AudioEvent, bool>)Delegate.CreateDelegate(typeof(Action<AudioEvent, bool>), comp, _miStop);
-        _seatAudio = comp;
         Status = $"seat {seat.DebugName}: its audio component{(_catalog == null ? " (no catalog: paths unchecked)" : "")}";
     }
 

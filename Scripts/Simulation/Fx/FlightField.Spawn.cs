@@ -17,11 +17,11 @@ internal sealed partial class FlightField
         _plasma.Clear(); _spotMul = 1f; _spotUsed = -1f;
         _vapour.Clear();
         _rng = new Random(1);
-        _spawnQueue.Clear(); _fieldUp = false; _weightSkipped = 0;
+        _spawnQueue.Clear();
         foreach (var h in _puffs) Park(h);   // (parked for reuse, not disposed)
         _puffs.Clear(); _puffWhy = null;
         foreach (var h in _gridLights) DisposeEffect(h);
-        _gridLights.Clear(); _gridLightWhy = null;
+        _gridLights.Clear();
         StopSpot(); _spotWhy = null;
     }
 
@@ -123,7 +123,7 @@ internal sealed partial class FlightField
         if (!_draining && !_relayout) { _spawnQueue.Enqueue(() => Puff(effect, at, turn, scale)); return; }
         bool spark0 = effect != ShockPuff && effect != StreamPuff;
         float held = spark0 ? WeightTime(at, 1f) : -1f;
-        if (held == 0f) { _weightSkipped++; return; }
+        if (held == 0f) return;
         if (held > 0f) effect = Recipe ? RecipeGuid(effect == TailSparks) : RateGuid(TexKind(effect == TailSparks), StreakField);
         bool spark = effect != ShockPuff && effect != StreamPuff;
         void Fill(object prm)
