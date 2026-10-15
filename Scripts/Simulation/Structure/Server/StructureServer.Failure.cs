@@ -142,10 +142,15 @@ public partial class AeroGridComponent
     {
         public List<CubeBlockComponent> Members; public int Stamp, Ticks, Axis; public Vector3 At; public float Plane; public Vector3I Lo, Hi;
         /// <summary>(JAGGED, 2026-10-15) the member blocks the jagged line left standing on the ship, the way out's sign along
-        /// the axis, and the stage: 0 - the jagged surface (stubs spared); 1 - the flat plane's rule, stubs and all.</summary>
-        public List<CubeBlockComponent> Stubs; public int Side, Stage;
+        /// the axis, and the stage: 0 - the jagged surface (stubs spared); 1 - the flat plane's rule, stubs and all.
+        /// A set (from _stubSets): Bridges / BeyondStub test it per cell - a List.Contains there was cells x stubs, ~8 M
+        /// compares a split stamp for a 100-stub cut on a 60 x 60 section, on the simulation thread (2026-10-15 review).</summary>
+        public HashSet<CubeBlockComponent> Stubs; public int Side, Stage;
     }
     readonly List<CutVerify> _cutVerify = new();
+    /// <summary>Spare stub sets (a verify's, back when it is dropped: DropVerify).</summary>
+    readonly Stack<HashSet<CubeBlockComponent>> _stubSets = new();
+    void DropVerify(CutVerify v) { if (v.Stubs != null) { v.Stubs.Clear(); _stubSets.Push(v.Stubs); v.Stubs = null; } }
     int _splitStamp; bool _splitWatched;
     static Keen.Game2.Simulation.WorldObjects.CubeGrids.CubeGridComponent.SplitGridSpawnedSignal.ExternalApi _onSplitStamp;
 
@@ -178,12 +183,12 @@ public partial class AeroGridComponent
                 //  split of the grid dropped every watched cut, one still bridged elsewhere never forced apart, 2026-10-15. A
                 //  block straddling the plane alone does not count here: a member split at its face stays whole in the octree)
                 v.Stamp = stamp;
-                if (_octree == null || Bridges(v, null) == 0) { _cutVerify.RemoveAt(i); continue; }
+                if (_octree == null || Bridges(v, null) == 0) { _cutVerify.RemoveAt(i); DropVerify(v); continue; }
             }
             if (--v.Ticks > 0) continue;
             _cutVerify.RemoveAt(i);
             recv ??= Entity?.TryGet<GridDamageReceiverComponent>();
-            if (recv == null || _octree == null) continue;
+            if (recv == null || _octree == null) { DropVerify(v); continue; }
             // the bridges: the members split rather than destroyed, and every block still TOUCHING ACROSS the cut's plane in
             // its cross-section (cells k | k+1 along its axis - whatever the structure counted as members, these still join
             // the two sides: the second cut of a test failed 29 of 29 members and still did not split, 2026-10-15)
@@ -204,6 +209,7 @@ public partial class AeroGridComponent
             if (n > 0) { CutsForced++; Log.Default?.Info($"[AERO-STRUCT] {Entity?.DebugName}: the cut at {v.At} did not separate - {n} block(s) still bridging it, destroyed"); }
             // (the jagged pass done: watched once more, on the plane's rule, should it still not split)
             if (spare) { v.Stage = 1; v.Ticks = CutVerifyTicks; v.Stamp = stamp; _cutVerify.Add(v); }
+            else DropVerify(v);
         }
     }
     public static int CutsChecked;
@@ -294,9 +300,10 @@ public partial class AeroGridComponent
             var bb = _stBlocks[bi].AABB; lo = Vector3I.Min(lo, bb.Min); hi = Vector3I.Max(hi, bb.Max);
         }
         if (lo.X > hi.X) return null;
-        List<CubeBlockComponent> stubs = null;
+        HashSet<CubeBlockComponent> stubs = null;
         if (cut.Stubs != null)
-            foreach (int bi in cut.Stubs) if (bi >= 0 && bi < _stBlocks.Count && _stBlocks[bi] != null) (stubs ??= new()).Add(_stBlocks[bi]);
+            foreach (int bi in cut.Stubs) if (bi >= 0 && bi < _stBlocks.Count && _stBlocks[bi] != null)
+                (stubs ??= _stubSets.Count > 0 ? _stubSets.Pop() : new HashSet<CubeBlockComponent>(ReferenceEqualityComparer.Instance)).Add(_stBlocks[bi]);
         float side = cut.Axis == 0 ? cut.Dir.X : cut.Axis == 1 ? cut.Dir.Y : cut.Dir.Z;
         return new CutVerify { Ticks = CutVerifyTicks, At = cut.At, Axis = cut.Axis, Plane = cut.Plane, Lo = lo - Vector3I.One, Hi = hi + Vector3I.One,
             Stubs = stubs, Side = side > 0f ? 1 : -1 };
