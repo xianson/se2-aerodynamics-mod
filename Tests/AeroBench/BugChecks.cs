@@ -128,6 +128,16 @@ static partial class Program
                 Check(after == System.Threading.ThreadPriority.Normal, $"A9 table build leaves its thread's priority alone: {after} after (Normal before)");
             }
         }
+        // A30 (audited, not a bug on the game's .NET 9): the force table asked along no direction (or NaN) - (int)NaN
+        // saturates to 0 since .NET 9 (no negative index), and the NaN sample's area fails the area test: the fallback.
+        {
+            var t = new ForceTable(4, 1);
+            for (int f = 0; f < 6; f++) for (int i = 0; i <= 4; i++) for (int j = 0; j <= 4; j++) { var e0 = t.At(f, i, j); e0[0] = e0[1] = e0[2] = -0.5f; e0[12] = 1f; }   // (a hull: frontal 1 m2)
+            float sZero = float.NaN; bool threw = false;
+            try { sZero = t.StreamliningAlong(Vector3.Zero, 0.4f); Span<float> e = stackalloc float[ForceTable.Stride]; t.Sample(new Vector3(float.NaN), e); }
+            catch (Exception ex) { threw = true; Console.WriteLine("      " + ex.GetType().Name + ": " + ex.Message); }
+            Check(!threw && sZero == 0.4f, $"A30 force table along a zero / NaN direction: {(threw ? "threw" : "streamlining " + sZero + " (the fallback 0.4)")}");
+        }
         return fails;
     }
 }
