@@ -200,8 +200,8 @@ client copy in the same process finds its server copy **by pose** (position, ori
 | Flow record (`AeroEntryFx.FlowPub`: travel, Mach, density, lift, forces, entry strength) | `AeroEntryFxComponent.FlightJob` -> `FlightField`; `MachHud`; `AeroApi` answers for a client copy | `AeroEntryFx.FindFlow` (nearest within 20 m, carried forward, < 0.5 s old, sticky) |
 | Flame shares, flap angles, gear state (`ThrustTorque.Published`) | `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators | `ThrustTorque.FlameShare` / `FlapAngle` / `GearState` |
 | Scorch spots (`HeatScorch`) | `HeatScorch.Sync` (from `EntryJob`, twice a second while `Fx.Effects` is on, the flight field on or not) | the flow pairing (paired itself when the field has not) |
-| Tear events (`TearSmoke.Publish`) | `TearSmoke.Tick` | `TearSmoke.Pairs` (pose) |
-| Structure utilisation (the server `AeroGridComponent`) | `StructureFeel.Tick` | `DesignProbe.ServerAero` |
+| Tear events (`TearSmoke.Publish`, the pose kept fresh by `TearSmoke.ServerPose`) | `TearSmoke.Tick` | `TearSmoke.Pairs` (the event's pose) |
+| Structure utilisation (the server `AeroGridComponent`) | `StructureFeel.Tick` | `DesignProbe.ServerAero` (the poses `DesignProbe.PublishPose` keeps while asked) |
 
 What the **game** replicates for us: block damage, splits and deformation (written through the game's own systems),
 and `ThrustStallData` (`AeroStallJob` writes it on the server). Settings: world scope saved with the world

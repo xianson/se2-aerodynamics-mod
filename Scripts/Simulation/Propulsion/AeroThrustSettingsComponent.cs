@@ -26,6 +26,9 @@ public partial class AeroThrustSettingsComponent : Component, IInSceneListener
     public bool Changed => AttitudeFraction != DefaultAttitudeFraction;
     /// <summary>In the server scene (the client scene's copy of the same block is not).</summary>
     internal bool Server = true;
+    /// <summary>A client-scene copy's place, read by its own scene's step (AeroSurfaceSaved.ClientStep, under All's lock): what
+    /// the save compares a server copy with - its transform is never read from the server's thread.</summary>
+    internal Vector3D SeenAt; internal bool HasSeenAt;
 
     /// <summary>Every thruster's settings in the scene (the save walks them).</summary>
     internal static readonly List<AeroThrustSettingsComponent> All = new();

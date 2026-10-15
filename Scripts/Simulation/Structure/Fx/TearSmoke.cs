@@ -42,7 +42,15 @@ public static class TearSmoke
     public static int Published, Spawned, Ended, Dropped, Expired, Refused;
     internal static int Active;
 
-    sealed class Ev { public Entity Grid; public Vector3 Local, Out; public long Stamp; }
+    sealed class Ev
+    {
+        public Entity Grid; public Vector3 Local, Out; public long Stamp;
+        // the server grid's pose, read on the server (Publish, then the grid's own step while the event waits: ServerPose).
+        // The client pairs with this, never with the server grid itself: its alive, transform, velocity and bounds read from
+        // the client's job were the cross-thread read the game's DataGuard asserts on ("Concurrent access (read) ...
+        // IsEntityAlive" - the Orbital Mod's StationKeepCharge, in game, 2026-10-15)
+        public Vector3D Pos; public Quaternion Orient; public float Lin, Ang; public Vector3 BoxMin, BoxMax; public bool HasPose, HasBox;
+    }
     static readonly object _lock = new();
     static readonly List<Ev> _events = new();
     /// <summary>Events waiting (client grids look only while some do).</summary>
@@ -55,13 +63,40 @@ public static class TearSmoke
         if (!Enabled || grid == null || !AeroSettings.SawClient) return;
         var o = outward.LengthSquared() > 1e-6f ? Vector3.Normalize(outward) : Vector3.UnitY;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var ev = new Ev { Grid = grid, Local = local, Out = o, Stamp = now };
+        if (PhysicsHack.Alive(grid.Data))   // (the server's own grid, on the server: its pose now)
+        {
+            var wt = grid.Data.GetWorldTransform();
+            PhysicsHack.TryGetVelocity(grid.Data, out var lin, out var ang);
+            ev.HasBox = grid.Data.TryGet<BoundingBoxData>(out var sb);
+            SetPose(ev, wt, lin.Length(), ang.Length(), sb.BoundingBox.Min, sb.BoundingBox.Max);
+        }
         lock (_lock)
         {
             Age(now);
             if (_events.Count >= 16) { Dropped++; return; }
-            _events.Add(new Ev { Grid = grid, Local = local, Out = o, Stamp = now });
+            _events.Add(ev);
             Pending = _events.Count; Published++;
         }
+    }
+
+    static void SetPose(Ev e, in WorldTransform wt, float lin, float ang, Vector3 min, Vector3 max)
+    {
+        e.Pos = wt.Position; e.Orient = wt.Orientation; e.Lin = lin; e.Ang = ang; e.BoxMin = min; e.BoxMax = max; e.HasPose = true;
+    }
+
+    /// <summary>(server, a grid's own step, only while events wait) the pose of this grid's waiting events brought up to now:
+    /// the client pairs with it as it did with the live grid (a split-off piece's copy comes a few frames later).</summary>
+    internal static void ServerPose(Entity grid, in WorldTransform wt, Vector3 lin, Vector3 ang)
+    {
+        if (Pending == 0 || grid == null) return;
+        bool mine = false;
+        lock (_lock) foreach (var e in _events) if (ReferenceEquals(e.Grid, grid)) { mine = true; break; }
+        if (!mine) return;
+        bool box = grid.Data.TryGet<BoundingBoxData>(out var sb);
+        lock (_lock)
+            foreach (var e in _events)
+                if (ReferenceEquals(e.Grid, grid)) { e.HasBox = box; SetPose(e, wt, lin.Length(), ang.Length(), sb.BoundingBox.Min, sb.BoundingBox.Max); }
     }
 
     /// <summary>(_lock) events older than KeepSeconds dropped.</summary>
@@ -90,7 +125,7 @@ public static class TearSmoke
             for (int i = _events.Count - 1; i >= 0; i--)
             {
                 var e = _events[i];
-                if (!Pairs(e.Grid, grid)) continue;
+                if (!Pairs(e, grid)) continue;
                 (mine ??= new List<Ev>()).Add(e); _events.RemoveAt(i);
             }
             Pending = _events.Count;
@@ -121,18 +156,18 @@ public static class TearSmoke
         fx.Clear();
     }
 
-    /// <summary>The client grid that is this server grid's copy: at its place, turned its way, with its local bounds.</summary>
-    static bool Pairs(Entity server, Entity client)
+    /// <summary>The client grid that is this event's server grid's copy: at its place, turned its way, with its local bounds -
+    /// the server's pose as the event carries it (ServerPose); the client grid read here, on its own job.</summary>
+    static bool Pairs(Ev e, Entity client)
     {
-        if (server == null || client == null || ReferenceEquals(server, client) || !PhysicsHack.Alive(server.Data)) return false;
-        var sw = server.Data.GetWorldTransform(); var cw = client.Data.GetWorldTransform();
-        PhysicsHack.TryGetVelocity(server.Data, out var lin, out var ang);
-        if ((sw.Position - cw.Position).Length() > 2.0 + 0.1 * lin.Length()) return false;
-        var d = Quaternion.Normalize(Quaternion.Inverse(sw.Orientation) * cw.Orientation);
+        if (e.Grid == null || client == null || ReferenceEquals(e.Grid, client) || !e.HasPose) return false;
+        var cw = client.Data.GetWorldTransform();
+        if ((e.Pos - cw.Position).Length() > 2.0 + 0.1 * e.Lin) return false;
+        var d = Quaternion.Normalize(Quaternion.Inverse(e.Orient) * cw.Orientation);
         double turn = 2.0 * Math.Acos(Math.Min(1.0, Math.Abs((double)d.W)));
-        if (turn > 10.0 * Math.PI / 180.0 + 0.1 * ang.Length()) return false;
-        if (!server.Data.TryGet<BoundingBoxData>(out var sb) || !client.Data.TryGet<BoundingBoxData>(out var cb)) return false;
-        return (sb.BoundingBox.Min - cb.BoundingBox.Min).LengthSquared() + (sb.BoundingBox.Max - cb.BoundingBox.Max).LengthSquared() < 0.5f;
+        if (turn > 10.0 * Math.PI / 180.0 + 0.1 * e.Ang) return false;
+        if (!e.HasBox || !client.Data.TryGet<BoundingBoxData>(out var cb)) return false;
+        return (e.BoxMin - cb.BoundingBox.Min).LengthSquared() + (e.BoxMax - cb.BoundingBox.Max).LengthSquared() < 0.5f;
     }
 
     // ── the particle API, late-bound (VRage.Game.Client / VRage.Render are not mod references), resolved once ──

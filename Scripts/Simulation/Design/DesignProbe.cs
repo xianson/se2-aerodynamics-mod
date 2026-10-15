@@ -32,19 +32,44 @@ internal static class DesignProbe
         if (!PhysicsHack.Alive(grid.Data)) return null;
         var wt = grid.Data.GetWorldTransform();
         bool hasBox = grid.Data.TryGet<BoundingBoxData>(out var bb);
+        // (the server grids' poses as their own steps publish them (PublishPose) - never their entities: Live holds both scenes'
+        //  grids, the caller is the client's job, and a server grid's alive / transform / bounds read from it was the
+        //  cross-thread read the game's DataGuard asserts on ("Concurrent access (read) ... IsEntityAlive" - the Orbital Mod's
+        //  StationKeepCharge list, in game, 2026-10-15). None fresh yet - the first ask after a quiet spell: null, and the
+        //  poses are there for the next one)
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), fresh = System.Diagnostics.Stopwatch.Frequency / 2;
+        System.Threading.Volatile.Write(ref _poseWanted, now + 2 * System.Diagnostics.Stopwatch.Frequency);
         AeroGridComponent best = null; double bestD = 1.0;
         lock (AeroGridComponent.Live)
             foreach (var a in AeroGridComponent.Live)
             {
-                if (!a.IsServerScene || a.Entity == null || !PhysicsHack.Alive(a.Entity.Data)) continue;
-                var awt = a.Entity.Data.GetWorldTransform();
-                double d = (awt.Position - wt.Position).Length();
+                if (!a.IsServerScene) continue;
+                var ps = a.DesignPose;
+                Vector3D apos; Quaternion aor; Vector3 amin, amax; bool abox;
+                lock (ps) { if (ps.At == 0 || now - ps.At > fresh) continue; apos = ps.Pos; aor = ps.Orient; amin = ps.BoxMin; amax = ps.BoxMax; abox = ps.HasBox; }
+                double d = (apos - wt.Position).Length();
                 if (d >= bestD) continue;
-                if (MathF.Abs(Quaternion.Dot(awt.Orientation, wt.Orientation)) < 0.9998f) continue;
-                if (hasBox && a.Entity.Data.TryGet<BoundingBoxData>(out var ab) && (ab.BoundingBox.Min - bb.BoundingBox.Min).LengthSquared() + (ab.BoundingBox.Max - bb.BoundingBox.Max).LengthSquared() > 0.05f) continue;
+                if (MathF.Abs(Quaternion.Dot(aor, wt.Orientation)) < 0.9998f) continue;
+                if (hasBox && abox && (amin - bb.BoundingBox.Min).LengthSquared() + (amax - bb.BoundingBox.Max).LengthSquared() > 0.05f) continue;
                 best = a; bestD = d;
             }
         return best;
+    }
+
+    /// <summary>Until when (Stopwatch ticks) the server grids publish their poses for ServerAero: two seconds past its last ask.</summary>
+    static long _poseWanted;
+    internal sealed class Pose { public Vector3D Pos; public Quaternion Orient; public Vector3 BoxMin, BoxMax; public bool HasBox; public long At; }
+
+    /// <summary>Server, a grid's own step: its pose for ServerAero's pairing (at most 10 a second; only while it is asked - nothing
+    /// otherwise: one read).</summary>
+    internal static void PublishPose(AeroGridComponent aero, in WorldTransform wt)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (now > System.Threading.Volatile.Read(ref _poseWanted)) return;
+        var ps = aero.DesignPose;
+        if (now - System.Threading.Volatile.Read(ref ps.At) < System.Diagnostics.Stopwatch.Frequency / 10) return;
+        bool box = aero.Data.TryGet<BoundingBoxData>(out var ab);
+        lock (ps) { ps.Pos = wt.Position; ps.Orient = wt.Orientation; ps.HasBox = box; ps.BoxMin = ab.BoundingBox.Min; ps.BoxMax = ab.BoundingBox.Max; ps.At = now; }
     }
 
     // ── THE SHIP (2026-10-11, the user: "it needs to handle subgrids"): the grid and every grid jointed to it (rotors,
@@ -408,6 +433,12 @@ internal static class DesignProbe
     /// <summary>Still in a scene (AeroGridComponent.Live) - asked under the cache's own lock before an entry is added: a
     /// background ForcesAt finishing after the grid left put its entries back after Forget, and they kept the grid (and its
     /// tables) alive for the session, 2026-10-15. (Live loses it before Forget takes the lock: no entry slips in after.)</summary>
-    static bool InScene(AeroGridComponent a) { lock (AeroGridComponent.Live) return AeroGridComponent.Live.Contains(a); }
+    internal static bool InScene(AeroGridComponent a) { lock (AeroGridComponent.Live) return AeroGridComponent.Live.Contains(a); }
     internal static void Forget(AeroGridComponent aero) { lock (_wingModels) _wingModels.Remove(aero); lock (_overlays) _overlays.Remove(aero); lock (_ships) _ships.Remove(aero); }
+}
+
+public partial class AeroGridComponent
+{
+    /// <summary>This server grid's pose for DesignProbe.ServerAero (DesignProbe.PublishPose, its own step; locked on itself).</summary>
+    internal readonly DesignProbe.Pose DesignPose = new();
 }
