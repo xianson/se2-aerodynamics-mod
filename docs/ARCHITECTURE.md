@@ -190,7 +190,8 @@ The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelo
 `tools/check_contract.sh` checks the members it uses). The Orbital mod's consumers: its build hints and flight HUD
 (`TryDesign`, `GetTopSpeed(At)`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac`,
 `SetFocusGrid`), its railed entry (`RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`, `PredictHullForces`,
-`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), and its harness (`GetFxConsistency`). The
+`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), the seated ship's failure toast
+(`GetStructureEventSequence`, `ReadStructureEvents`: `StructureAlerts`), and its harness (`GetFxConsistency`). The
 stall and LOAC warnings are computed here and drawn by the Orbital mod's HUD; aero's own HUD pieces are the game's
 thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optional Mach readout (`MachHud`).
 
