@@ -362,7 +362,7 @@ A polled queue across every grid, with sequence numbers: keep the number you rea
 
 | Member | Since | What it gives |
 |---|---|---|
-| `long GetStructureEventSequence()` | 7 | The next event's number (= every event recorded so far this session). Read it once to start from now. Recording starts with the first call to this or `ReadStructureEvents`: failures before any reader asked are not kept. |
+| `long GetStructureEventSequence()` | 7 | The next event's number (= every failure so far, kept or not; it only grows, across worlds too). Read it once to start from now. Recording runs while someone polls: from a call to this or `ReadStructureEvents` until 10 s after the last one; failures outside that are not kept but still take their numbers (a reader back after a pause sees the gap). A world's end drops the kept events (their grids and blocks let go); the numbers go on, so a cursor stays valid. |
 | `int ReadStructureEvents(long fromSequence, long[] sequences, int[] kinds, Entity[] grids, Entity[] blocks, Vector3[] pointsLocal, Vector3[] directionsLocal, float[] values, out long nextSequence)` | 7 | The events since `fromSequence`, oldest first, up to the shortest array you pass; `nextSequence` is where to read next. The newest 512 are kept: a first `sequences[0]` above your `fromSequence` means you missed some. |
 
 | Kind | What | Block | Point (grid-local) | Direction | Value |

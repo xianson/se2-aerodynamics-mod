@@ -234,6 +234,24 @@ static class Program
             bool ok = true; for (long s = r.First; s < r.NextUnlocked; s++) ok &= r.At(s) == 100 + s;
             Check(ok, "ring: each kept item at its number");
         }
+        // (2026-10-15 review) cleared on a world's end / a reader gone quiet, skipped while nobody reads: the numbers go on
+        var o = new SeqRing<object>(4);
+        for (int i = 0; i < 3; i++) o.Add(new object());
+        o.Clear();
+        lock (o.Lock) Check(o.NextUnlocked == 3 && o.First == 3 && o.At(0) == null && o.At(2) == null, $"ring: cleared - every reference dropped, the numbers go on (first {o.First})");
+        Check(o.Skip() == 3 && o.Next == 4, "ring: an unkept event takes its number");
+        lock (o.Lock) Check(o.First == 4, "ring: a reader from before an unkept event sees the gap");
+        Check(o.Add(new object()) == 4, "ring: kept again after, numbered on");
+        lock (o.Lock) Check(o.First == 4 && o.NextUnlocked == 5 && o.At(4) != null, "ring: the new one readable");
+        var gate = new ReaderGate(); long idle = 10;
+        Check(!gate.Open(0, idle, out bool c0) && !c0, "events gate: closed until a reader calls");
+        gate.Touch(100);
+        Check(gate.Open(105, idle, out _) && gate.Open(110, idle, out _), "events gate: open within the idle time of a reader's call");
+        Check(!gate.Open(111, idle, out bool c1) && c1 && !gate.Open(112, idle, out bool c2) && !c2, "events gate: closed once idle - once told (the ring dropped)");
+        gate.Touch(200);
+        Check(gate.Open(200, idle, out _), "events gate: the next call opens it again");
+        gate.Close();
+        Check(!gate.Open(201, idle, out bool c3) && !c3, "events gate: closed by a world's end");
     }
 
     static void Film()
