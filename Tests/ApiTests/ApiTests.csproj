@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The public API's offline checks (Program.cs): its shape from source (Roslyn, syntax only), the event queue, the
+       hull heat's published film. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(Sim)\Core\IGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\SnapshotGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\LongKey.cs" />
+    <Compile Include="$(Sim)\Surface\ISurfaceProvider.cs" />
+    <Compile Include="$(Sim)\Surface\NormalGroup.cs" />
+    <Compile Include="$(Sim)\Surface\SurfaceFace.cs" />
+    <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider*.cs" />
+    <Compile Include="$(Sim)\Structure\Model\*.cs" />
+    <Compile Include="$(Sim)\Api\SeqRing.cs" />
+  </ItemGroup>
+</Project>

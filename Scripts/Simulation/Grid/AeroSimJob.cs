@@ -336,6 +336,7 @@ public partial class AeroGridComponent
         }
         // the structure and the hull's heat (StructureServer.cs: a background evaluation a few times a second)
         if (aero.IsServerScene) aero.TickStructure(dt, appliedF, appliedT, WorldTransform.TransformDirectionInv(airVel, wt), AeroTuning.LiftMultiplier);
+        if (aero.ApiWatched) aero.PublishApiTick(airVel, linVel, appliedF, appliedT, gravity, wt);   // (the public API's tick record: AeroGridComponent.Api.cs)
 
         // ── Thrust torque and attitude: AttitudeJob, after the game's gyros (ThrustTorque.Enabled) ──
         // ── Offset thrust (RCS) correction (the old system: phantom attitude torque; ThrustTorque.Enabled = false) ──
