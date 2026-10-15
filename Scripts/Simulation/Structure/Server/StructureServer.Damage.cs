@@ -85,6 +85,8 @@ public partial class AeroGridComponent
                 _stHealth.Accrue(bi, fraction);
                 if (destroy)
                 {
+                    // (THE CRACK, 2026-10-15: a failed cut's member queued to let go in the cut's order - StepCracks)
+                    if (inCut && Cracking(_stCuts[ci], di, bi, b, where)) { cutFailed++; continue; }
                     // (one entry's fault - the game removing it under us - never loses the rest of the list)
                     try { FailBlock(recv, gwt, bi, b, where, torn, !inCut); } catch (Exception fe) { _goneBlocks.Add(b); Log.Default?.Info($"[AERO-STRUCT] fail skipped: {fe.Message}"); }
                     if (inCut) { cutFailed++; if (!Gone(b)) _cutSurvivors.Add(b); }
@@ -119,6 +121,8 @@ public partial class AeroGridComponent
             }
         }
         catch (Exception e) { Log.Default?.Info($"[AERO-STRUCT] damage failed: {e.Message}"); }
+        // (a crack queued but its cut not finished - the pass faulted: started anyway, its members must still go)
+        if (_crackOpen != null) { var c = _crackOpen; _crackOpen = null; try { StartCrack(c, StructBlockVersion); } catch (Exception e) { Log.Default?.Info($"[AERO-STRUCT] crack failed: {e.Message}"); } }
         _stDamage.Clear(); _stCuts.Clear();
     }
 

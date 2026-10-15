@@ -17,7 +17,8 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 | `HullHeat.cs` | Hull skin / core temperatures from the flow (stagnation heating, radiation, conduction). |
 | `HullHeat.Api.cs` | Each face's film coefficient and the recovery temperature of the last step (the API's heat input for another heat model). |
 | `ContactBalance.cs` | The contact loads' momentum balance (what the physics says held the ship). |
-| `TearMath.cs` | Tearing's maths: the hold's ramp, anchors, cell boxes. |
+| `TearMath.cs` | Tearing's maths: the hold's ramp, the anchors over the failed section and each one's release (`PickAnchors`, `AnchorEnd`), cell boxes. |
+| `FractureMath.cs` | How a failed cut lets go (2026-10-15): each member's mode (pulled side tears, pushed side is the hinge, crushed past `CrushUtil`), the crack's release order over `CrackSeconds` (`Plan`), the jagged fracture line a block either side of the plane with its separation check (`JagCut`). |
 
 ## Server/ - the game side (server scene)
 | File | What |
@@ -26,12 +27,12 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 | `StructureServer.cs` | `AeroGridComponent` partial: the snapshot (`TickStructure`), the background evaluation (`EvaluateStructure`), the steer cap. |
 | `StructureServer.Rebuild.cs` | The blocks read for a rebuild (cells, mass, kind, mount points; definitions by reflection) and the heat faces. |
 | `StructureServer.Damage.cs` | The fatigue ledger's writes to the game's blocks, `Gone` (every damage call's guard). |
-| `StructureServer.Failure.cs` | A failing block split or destroyed; a failed cut watched until the grid splits. |
+| `StructureServer.Failure.cs` | A failing block split or destroyed; a failed cut's crack run member by member (`StepCracks`, the hinge crumpled); a failed cut watched until the grid splits (the jagged line's stubs spared first). |
 | `StructureServer.Deform.cs` | Dents and permanent bends through the deformation bones. |
 | `StructureServer.Api.cs` | The public API's side (AeroApi version 7): another heat model's temperatures in (`ApiHeatOverride`), the failures into the event queue and the blocks' / faces' state out (`ApiPublishStructure`), both from the background evaluation. |
 | `StructureServer.Dump.cs` | (harness) `.struct` / `.loads` dumps for the offline bench. |
 | `StructureContacts.cs` | Collisions and ground contact read from the physics as loads; gear touchdowns for the gear. |
-| `StructureTear.cs` | A large piece torn off stays tied by soft constraints for `TearSeconds`. |
+| `StructureTear.cs` | A large piece torn off stays tied by soft constraints - one spring per anchor over the failed section, let go in the crack's order (the hinge last) over `TearSeconds`. |
 | `WingStrainServer.cs` | Wing root strain (Lift/WingStrain) and its wear / breaks (`Structure.WingStrain`, off by default). |
 
 ## Fx/ - what the player gets of it (client, except HeatScorch.Update)
@@ -49,7 +50,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 
 ## Threading
 - Simulation thread (`AeroSimJob`, per grid): `TickStructure` (snapshot, contacts, results applied: damage, failure,
-  bends), `TickWingStrain`, `HeatScorch.Update`. `TearJob` once a tick (the first server grid's), before physics.
+  bends; a running crack's releases every tick - `StepCracks`, never the ledger), `TickWingStrain`, `HeatScorch.Update`. `TearJob` once a tick (the first server grid's), before physics.
 - Background (`AeroWork`, one evaluation per grid, `StructureLoads.MaxInFlight` in all): `EvaluateStructure` -
   rebuild, heat, loads, solve, damage plan, bends plan; it writes only the grid's own `_st*New`, ledger and lists, read
   back on the simulation thread once the job is done.

@@ -138,7 +138,12 @@ static partial class Program
                 for (int di = c.First; di < c.First + c.Count; di++) { var nm = sim.Src.BlockName[sim.Orig[dmg[di].Item1]]; names[nm] = names.GetValueOrDefault(nm) + 1; uMax = MathF.Max(uMax, where[di].util); }
                 var p = c.At - s.Com;
                 string how = uMax >= StructureFatigue.SnapUtil ? "SNAP" : "worn out";
-                if (cutsFailed <= 8) Console.WriteLine($"      t={t,5:F2} {cond}: CUT FAILED ({how}) - {c.Count} blocks together at ({p.X:F1},{p.Y:F1},{p.Z:F1}) m across {"xyz"[c.Axis]} ({string.Join(", ", names.OrderByDescending(kv => kv.Value).Take(3).Select(kv => $"{kv.Value}x {kv.Key}"))}; utilisation {c.Util:F2}){(cutsFailed == 1 && wornAt >= 0f ? $" - {t - wornAt:F2} s after the first wear" : "")}");
+                // (THE ORGANIC BREAK, 2026-10-15: how its members let go - FractureMath)
+                int nTorn = 0, nHinge = 0, nCrushed = 0; float span = 0f;
+                if (c.Mode != null) foreach (var md in c.Mode) { if (md == FractureMath.Torn) nTorn++; else if (md == FractureMath.Hinge) nHinge++; else if (md == FractureMath.Crushed) nCrushed++; }
+                if (c.Release != null) foreach (var r in c.Release) span = MathF.Max(span, r);
+                string organic = $" [{nTorn} torn, {nHinge} hinge, {nCrushed} crushed; crack {span:F2} s; {c.Steps} off the plane, {c.Stubs?.Length ?? 0} stubs]";
+                if (cutsFailed <= 8) Console.WriteLine($"      t={t,5:F2} {cond}: CUT FAILED ({how}) - {c.Count} blocks together at ({p.X:F1},{p.Y:F1},{p.Z:F1}) m across {"xyz"[c.Axis]} ({string.Join(", ", names.OrderByDescending(kv => kv.Value).Take(3).Select(kv => $"{kv.Value}x {kv.Key}"))}; utilisation {c.Util:F2}){(cutsFailed == 1 && wornAt >= 0f ? $" - {t - wornAt:F2} s after the first wear" : "")}{organic}");
             }
             if (Environment.GetEnvironmentVariable("CUTDEBUG") != null)
                 foreach (var c in cuts)
@@ -211,6 +216,8 @@ static partial class Program
         Knob("WEAR_RATE", v => StructureEval.WearPerSecond = v); Knob("WEAR_EXP", v => StructureFatigue.WearExponent = v);
         Knob("FEEDBACK_EXP", v => StructureFatigue.FeedbackExponent = v); Knob("FATIGUE_RATE", v => StructureFatigue.Rate = v);
         Knob("SNAP_UTIL", v => StructureFatigue.SnapUtil = v);
+        // (2026-10-15, the organic break's A/B: COMP_SHARE 1 - fatigue blind to the sign, as before; JAGGED 0 - the flat cut)
+        Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();
         var sea = new AtmosphereState { Density = 1.225, Pressure = 101325, Temperature = 288, SpeedOfSound = 340 };

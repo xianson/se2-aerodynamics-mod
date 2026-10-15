@@ -51,6 +51,35 @@ public static class StructureFatigue
     /// <summary>How a block's utilisation follows its own health inside an evaluation's step (Loss): 1 - inversely (tension,
     /// shear), 0.5 - as its root (a buckling panel's compression). Between: the solve's own mix.</summary>
     public static float FeedbackExponent = 0.5f;
+    /// <summary>FATIGUE IS DRIVEN BY TENSION (2026-10-15, the user: "add compression vs tension to the break work"). A fatigue
+    /// crack starts at a flaw and grows only while its faces are pulled apart; a compressive cycle presses them shut (why a
+    /// compressive residual stress - shot peening, cold rolling - lengthens fatigue life, and why fatigue codes count the
+    /// tensile part of the range and credit a compressive mean). So a member's fatigue runs at the full rate for its TENSILE
+    /// part (its pull with its shear - TensilePart) and at this share for what its compression adds on top (on the slices
+    /// only - the members' signs: ShipStructure.PieceTension / PieceCompression). The yield wear past 1 - crushing, buckling -
+    /// is not scaled. 0.2: a pure compression member lasts about five times as long at the same utilisation; a member pulled
+    /// as hard as it is pushed, as before.</summary>
+    public static float CompressionFatigueShare = 0.2f;
+    /// <summary>The tensile part of a member's utilisation u (a share of it, 0..1): 1 where tension governs (ut at least uc);
+    /// else its pull and its shear without the compression (von Mises: sqrt(u^2 - uc^2 + ut^2) / u). NaN-safe (1).</summary>
+    public static float TensilePart(float ut, float uc, float u)
+    {
+        if (!(uc > ut) || !(u > 0f)) return 1f;
+        float t = MathF.Sqrt(MathF.Max(u * u - uc * uc, 0f) + MathF.Max(ut, 0f) * MathF.Max(ut, 0f));
+        return Math.Clamp(t / u, 0f, 1f);
+    }
+    /// <summary>The fatigue rate (per second, before the class's factor) at utilisation u of which tensile is the tensile part:
+    /// the full rate at the tensile utilisation, CompressionFatigueShare of the rest.</summary>
+    static float FatigueRate(float u, float tensile)
+    {
+        float e = EnduranceUtil;
+        if (!Enabled || !(u > e) || !(e < 1f)) return 0f;
+        float full = Rate * MathF.Pow(MathF.Min((u - e) / (1f - e), 1f), Exponent);
+        if (!(tensile < 1f)) return full;   // (tension governs; NaN: as tension)
+        float ut = u * MathF.Max(tensile, 0f);
+        float pulled = ut > e ? Rate * MathF.Pow(MathF.Min((ut - e) / (1f - e), 1f), Exponent) : 0f;
+        return pulled + Math.Clamp(CompressionFatigueShare, 0f, 1f) * (full - pulled);
+    }
     /// <summary>An instant break at or past this utilisation (Structure.SnapUtil): a genuine overload, no wearing through.</summary>
     public static float SnapUtil = 2.75f;
     /// <summary>A block fails when its health would fall to this (fraction of full): the game's own DestructionThreshold
@@ -59,15 +88,13 @@ public static class StructureFatigue
 
     /// <summary>Health lost per second (fraction of full) by a block of this class at utilisation u. breakUtil: where yield
     /// wear reaches wearRate per second (StructureEval.BreakUtil, WearPerSecond).</summary>
-    public static float HealthRate(int mat, float u, float breakUtil, float wearRate)
+    public static float HealthRate(int mat, float u, float breakUtil, float wearRate) => HealthRate(mat, u, breakUtil, wearRate, 1f);
+    /// <summary>As HealthRate, for a member of which tensile is the tensile part (TensilePart): its fatigue by its pull at the
+    /// full rate, by its push at CompressionFatigueShare; the yield wear past 1 the same.</summary>
+    public static float HealthRate(int mat, float u, float breakUtil, float wearRate, float tensile)
     {
         if (!(u > 0f)) return 0f;
-        float r = 0f, e = EnduranceUtil;
-        if (Enabled && u > e && e < 1f)
-        {
-            float x = MathF.Min((u - e) / (1f - e), 1f);
-            r += Rate * MathF.Pow(x, Exponent);
-        }
+        float r = FatigueRate(u, tensile);
         if (u > 1f)
         {
             float y = (u - 1f) / MathF.Max(breakUtil - 1f, 1e-3f);
@@ -83,13 +110,17 @@ public static class StructureFatigue
     /// (cap: the other's strength over this one's now), the utilisation inversely. Sub-stepped where it wears fast. uIntact:
     /// the utilisation against this block's intact strength (the snap's).</summary>
     public static float Loss(int mat, float u0, float have, float cap, float dt, float breakUtil, float wearRate, out float uIntact)
+        => Loss(mat, u0, have, cap, dt, breakUtil, wearRate, out uIntact, 1f);
+    /// <summary>As Loss, for a member of which tensile is the tensile part (TensilePart: its fatigue by its pull at the full
+    /// rate, by its push at CompressionFatigueShare).</summary>
+    public static float Loss(int mat, float u0, float have, float cap, float dt, float breakUtil, float wearRate, out float uIntact, float tensile)
     {
         float minI = ShipStructure.MinIntegrity;
         float m0 = MathF.Max(MathF.Min(have, 1f), minI);
         float s0 = MathF.Min(1f, cap);
         uIntact = u0 * Follow(s0 / MathF.Min(1f / m0, cap));
         if (!(dt > 0f)) return 0f;
-        float r0 = HealthRate(mat, u0, breakUtil, wearRate);
+        float r0 = HealthRate(mat, u0, breakUtil, wearRate, tensile);
         if (!(r0 > 0f)) return 0f;
         if (r0 * dt < 0.005f) return r0 * dt;   // (fatigue: slow - one step)
         int n = Math.Clamp((int)MathF.Ceiling(dt / MaxSubStep), 1, 64);
@@ -97,7 +128,7 @@ public static class StructureFatigue
         for (int i = 0; i < n && I > BreakBelow; i++)
         {
             float u = u0 * Follow(s0 / MathF.Min(MathF.Max(I, minI) / m0, cap));
-            I -= HealthRate(mat, u, breakUtil, wearRate) * h;
+            I -= HealthRate(mat, u, breakUtil, wearRate, tensile) * h;
         }
         return have - I;
     }
