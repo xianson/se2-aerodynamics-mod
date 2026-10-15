@@ -11,4 +11,8 @@
 
 ## Threading
 Pure reads of a grid's current shape; called from client jobs (API) and the structure's background evaluation. Its
-caches (`_wingModels`, `_ships`, `_overlays`) are locked; `Forget` drops a grid's on removal.
+caches (`_wingModels`, `_ships`, `_overlays`) are locked; `Forget` drops a grid's on removal. `ServerAero` pairs a client
+grid with the poses the server grids publish from their own step while it is asked (`PublishPose`, 10 a second) - never
+their entities (`AeroGridComponent.Live` holds both scenes'). The probes themselves (`ShipOf`, `ShipMass`, `Forces`,
+`ThrustAlong`, `ControlRatio`, the overlay's `CaptureBoxes`) still read the server copy's entity from the caller's thread:
+known, to move onto published data (2026-10-15 scene audit).

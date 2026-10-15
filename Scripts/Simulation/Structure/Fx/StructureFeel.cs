@@ -126,7 +126,9 @@ public static class StructureFeel
             _wearsSeen = StructureLoads.Wears; _breaksSeen = StructureLoads.Breaks;   // (counted from now: nothing old replayed)
             Seated++;
         }
-        if (now >= _pairAt || _server?.Entity == null || !PhysicsHack.Alive(_server.Entity.Data))
+        // (the server copy still in its scene: asked of AeroGridComponent.Live, not of the engine - its alive read from the client
+        //  frame, every frame, was the cross-thread read the game's DataGuard asserts on, 2026-10-15)
+        if (now >= _pairAt || _server?.Entity == null || !DesignProbe.InScene(_server))
         {
             _pairAt = now + 2 * f;
             try { _server = DesignProbe.ServerAero(_clientGrid); } catch { _server = null; }
