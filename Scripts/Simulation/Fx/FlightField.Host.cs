@@ -122,7 +122,7 @@ internal sealed partial class FlightField
     {
         try
         {
-            if (_rebuildSeen != Rebuild) { _rebuildSeen = Rebuild; DropAll(); _shapeOk = false; _hull = null; _hullWhy = null; }
+            if (_rebuildSeen != Rebuild) { _rebuildSeen = Rebuild; DropAll(); _shapeOk = false; _hull = null; _hullWhy = null; BakedForget(); }   // (the bake too: its anchors were kept, 2026-10-15)
             _server = p.Aero;
             Vector3 travel = p.TravelLocal;
             _mach = p.Mach; _rho = p.Density; _speed = p.Speed; _liftDir = p.LiftLocal; _liftCoef = p.LiftCoef; _flowFound = true;
