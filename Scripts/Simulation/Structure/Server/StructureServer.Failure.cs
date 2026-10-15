@@ -19,6 +19,8 @@ public partial class AeroGridComponent
     public static float SplitDepth = 0.2f, SplitSpread = 0.35f, SplitBox = 0.3f;
     /// <summary>Diagnostics: blocks split, destroyed whole, pieces killed; the last.</summary>
     public static int SplitDone, SplitDestroyed, SplitPieces; public static string SplitLast = "-";
+    /// <summary>Diagnostics: failed cuts' members split at their failing face that still held on across it (destroyed whole).</summary>
+    public static int SplitsHeld;
 
     // (BreakableBlockComponent by reflection: its base, BreakableComponent, is in VRage.Game - not a mod reference, CS0012
     //  for any typed use - docs/REFLECTION_AND_WHITELIST.md)
@@ -89,8 +91,9 @@ public partial class AeroGridComponent
     /// (armour), or SplitBlocks off - destroyed whole, fractured along the line from the failing joint into it. fx: its own
     /// torn-edge smoke and tear joint (off for a failed cut's members: once for the whole cut, at its centre - CutDone).
     /// ledger: its health ledger written (off for a crack's staged release - StepCracks runs outside the evaluation's turn;
-    /// the ledger's part was done at the commit); split: off for a CRUSHED member (FractureMath.Crushed: it goes whole).</summary>
-    void FailBlock(GridDamageReceiverComponent recv, Keen.VRage.Core.WorldTransform gwt, int bi, CubeBlockComponent b, (Vector3 at, Vector3 dir, float util) where, List<Vector3> torn, bool fx = true, bool ledger = true, bool split = true)
+    /// the ledger's part was done at the commit); split: off for a CRUSHED member (FractureMath.Crushed: it goes whole);
+    /// sever: a failed cut's member - its split must cut it loose across its failing face (MountedAcross), else it goes whole.</summary>
+    void FailBlock(GridDamageReceiverComponent recv, Keen.VRage.Core.WorldTransform gwt, int bi, CubeBlockComponent b, (Vector3 at, Vector3 dir, float util) where, List<Vector3> torn, bool fx = true, bool ledger = true, bool split = true, bool sever = false)
     {
         if (ledger) _stHealth.TakeAll(bi);
         if (SplitBlocks && split)
@@ -98,6 +101,18 @@ public partial class AeroGridComponent
             int killed = 0;
             try { killed = SplitFace(b, where.at, where.dir); }
             catch (Exception e) { SplitLast = "split failed: " + (e.InnerException ?? e).Message; Log.Default?.Info($"[AERO-STRUCT] {SplitLast}"); }
+            // (A CUT'S MEMBER LETS GO, 2026-10-15, the third integration run - CutsForced +2 on the SSTO pull: two
+            //  ControlSurface_Small members "split at its failing face (3 pieces)" stayed on, the game never split the wing off,
+            //  and the watch destroyed them and the 3 armour blocks mounted to the first's face 0.5 s later. The game disables
+            //  only the mount groups of DEAD pieces (BreakableBlockComponent.IsMountPointEnabled) and a block holds on by any
+            //  enabled one (CubeBlockComponent.CanConnectBlock) - a few pieces at the joint leave the rest of that face's
+            //  groups mounted. Still mounted across its failing face: destroyed whole now, as armour is)
+            if (killed > 0 && sever && CutWatch.Sever && !Gone(b) && MountedAcross(b, where.dir))
+            {
+                SplitsHeld++; SplitPieces += killed;
+                Log.Default?.Info($"[AERO-STRUCT] {Entity?.DebugName}: {BlockName(b)} split at its failing face ({killed} pieces) but still mounted across it - destroyed whole");
+                killed = 0;
+            }
             if (killed > 0)
             {
                 // (TEARING: the failed FACE, not the block's middle - the block stays; TORN-EDGE SMOKE out of the face)
@@ -182,13 +197,19 @@ public partial class AeroGridComponent
             {
                 // (a split: THIS cut separated only if no two blocks of this grid still meet face to face across its plane - any
                 //  split of the grid dropped every watched cut, one still bridged elsewhere never forced apart, 2026-10-15. A
-                //  block straddling the plane alone does not count here: a member split at its face stays whole in the octree)
-                if (_octree == null || Bridges(v, null) == 0) { _cutVerify.RemoveAt(i); DropVerify(v); continue; }
+                //  block straddling the plane alone does not count here: a member split at its face stays whole in the octree).
+                //  JUDGED ON THE JAGGED SURFACE IN EITHER STAGE (2026-10-15, the third integration run: stage 0 forced the cut,
+                //  the wing split off 23 ms later, and stage 1 judged that split on the plane's rule - the jagged line's stubs
+                //  and their mates, on the ship by design, "4 block(s) still bridging it" - destroyed 0.5 s after it had parted;
+                //  CutWatch.SpareOnSplit)
+                if (_octree == null || Bridges(v, null, split: true) == 0) { _cutVerify.RemoveAt(i); DropVerify(v); continue; }
             }
             if (!v.Expired()) continue;
             _cutVerify.RemoveAt(i);
             recv ??= Entity?.TryGet<GridDamageReceiverComponent>();
             if (recv == null || _octree == null) { DropVerify(v); continue; }
+            // (stage 1's plane's rule only on a cut that never split or still bridges on the jagged surface: CutWatch.Force)
+            if (v.Stage > 0 && !v.Force(Bridges(v, null, split: true))) { CutsChecked++; DropVerify(v); continue; }
             // the bridges: the members split rather than destroyed, and every block still TOUCHING ACROSS the cut's plane in
             // its cross-section (cells k | k+1 along its axis - whatever the structure counted as members, these still join
             // the two sides: the second cut of a test failed 29 of 29 members and still did not split, 2026-10-15)
@@ -212,40 +233,50 @@ public partial class AeroGridComponent
         }
     }
     public static int CutsChecked;
-    /// <summary>(JAGGED) a watched cut's first stage spares the jagged line's stubs (stage 1: the plane's rule, stubs and all).</summary>
-    static bool Spare(CutVerify v) => v.Spare && v.Stubs != null && v.Stubs.Count > 0;
+    /// <summary>(JAGGED) a watched cut's rule spares the jagged line's stubs: its stage's (stage 0; stage 1 - the plane's
+    /// rule, stubs and all - for forcing), or a split's (either stage: CutWatch.SpareOnSplit).</summary>
+    static bool Spare(CutVerify v, bool split) => (split ? v.SpareOnSplit : v.Spare) && v.Stubs != null && v.Stubs.Count > 0;
 
-    /// <summary>(JAGGED) the blocks holding a stub from beyond the jagged line: across its outer face (the way out), each cell's
-    /// neighbour that is not gone and not a stub - what the jagged step should have broken (into: added; null: only counted).
-    /// Returns how many cells hold it.</summary>
-    int BeyondStub(CubeBlockComponent s, CutVerify v, HashSet<CubeBlockComponent> into)
+    /// <summary>(JAGGED) the blocks holding a stub from beyond the plane: across any of its faces (its outer face - the way out
+    /// - and its sides: 2026-10-15), each neighbour cell beyond the plane whose block is not gone, not a stub and mounted to it
+    /// (Mated) - what the jagged step should have broken (into: added; null: only counted). Returns how many cells hold it.</summary>
+    int BeyondStub(CubeBlockComponent s, CutVerify v, int k0, HashSet<CubeBlockComponent> into)
     {
         if (Gone(s)) return 0;
-        int ax = v.Axis, u = (ax + 1) % 3, w = (ax + 2) % 3;
+        int ax = v.Axis;
         var bb = s.AABB;
-        int kf = (v.Side > 0 ? ShipStructure.Ci(bb.Max, ax) : ShipStructure.Ci(bb.Min, ax)) + v.Side;
-        int a0 = ShipStructure.Ci(bb.Min, u), a1 = ShipStructure.Ci(bb.Max, u), c0 = ShipStructure.Ci(bb.Min, w), c1 = ShipStructure.Ci(bb.Max, w);
-        if ((long)(a1 - a0 + 1) * (c1 - c0 + 1) > 4096) return 0;
+        if ((long)(bb.Max.X - bb.Min.X + 1) * (bb.Max.Y - bb.Min.Y + 1) * (bb.Max.Z - bb.Min.Z + 1) > 4096) return 0;
         int held = 0;
-        for (int a = a0; a <= a1; a++) for (int c = c0; c <= c1; c++)
+        for (int x = bb.Min.X; x <= bb.Max.X; x++) for (int y = bb.Min.Y; y <= bb.Max.Y; y++) for (int z = bb.Min.Z; z <= bb.Max.Z; z++)
         {
-            var o = _octree.TryGetCubeBlock(Cell(ax, kf, u, a, c));
-            if (o != null && !ReferenceEquals(o, s) && !Gone(o) && !v.Stubs.Contains(o)) { held++; into?.Add(o); }
+            var c = new Vector3I(x, y, z);
+            if (!ReferenceEquals(_octree.TryGetCubeBlock(c), s)) continue;
+            for (int f = 0; f < 6; f++)
+            {
+                int fa = f >> 1, sg = (f & 1) == 0 ? 1 : -1;
+                var nc = c; if (fa == 0) nc.X += sg; else if (fa == 1) nc.Y += sg; else nc.Z += sg;
+                int kn = ShipStructure.Ci(nc, ax);
+                if (v.Side > 0 ? kn <= k0 : kn > k0) continue;   // (on the ship's side of the plane)
+                var o = _octree.TryGetCubeBlock(nc);
+                if (o == null || ReferenceEquals(o, s) || Gone(o) || v.Stubs.Contains(o) || !Mated(s, o, fa, sg)) continue;
+                held++; into?.Add(o);
+            }
         }
         return held;
     }
 
-    /// <summary>The blocks of this grid still touching across a watched cut's plane in its cross-section (into: added; null:
-    /// only counted). Returns the pairs of two blocks face to face found (a block straddling the plane is added, not counted).
-    /// (JAGGED, stage 0: pairs with a stub of the jagged line are not bridges - a stub stays on the ship by design - but what
-    /// holds a stub from beyond the line is: BeyondStub.)</summary>
-    int Bridges(CutVerify v, HashSet<CubeBlockComponent> into)
+    /// <summary>The blocks of this grid still joined across a watched cut's plane in its cross-section (into: added; null:
+    /// only counted). Returns the pairs of two blocks face to face AND MOUNTED found (Mated - an armour block against a tank's
+    /// side touches it and holds nothing: the game never joins them, so they never kept a cut together; 2026-10-15); a block
+    /// straddling the plane is added, not counted. (JAGGED - Spare: pairs with a stub of the jagged line are not bridges - a
+    /// stub stays on the ship by design - but what holds a stub from beyond the plane is: BeyondStub.) split: a split's rule.</summary>
+    int Bridges(CutVerify v, HashSet<CubeBlockComponent> into, bool split = false)
     {
         int ax = v.Axis, k0 = (int)MathF.Round(v.Plane / TearMath.Cell - 0.5f);
         int u = (ax + 1) % 3, w = (ax + 2) % 3;
         int uLo = ShipStructure.Ci(v.Lo, u), uHi = ShipStructure.Ci(v.Hi, u), wLo = ShipStructure.Ci(v.Lo, w), wHi = ShipStructure.Ci(v.Hi, w);
         if ((long)(uHi - uLo + 1) * (wHi - wLo + 1) > 40000) return 0;
-        bool spare = Spare(v);
+        bool spare = Spare(v, split);
         int pairs = 0;
         for (int a = uLo; a <= uHi; a++) for (int c = wLo; c <= wHi; c++)
         {
@@ -254,11 +285,44 @@ public partial class AeroGridComponent
             if (b0 == null || b1 == null || Gone(b0) || Gone(b1)) continue;
             if (spare && (v.Stubs.Contains(b0) || v.Stubs.Contains(b1))) continue;
             if (ReferenceEquals(b0, b1)) { into?.Add(b0); continue; }   // (one block across the plane)
+            if (!Mated(b0, b1, ax, 1)) continue;   // (touching, not mounted: never joined)
             pairs++;
             if (into != null) { into.Add(b0); into.Add(b1); }   // (two blocks face to face across it)
         }
-        if (spare) foreach (var sb in v.Stubs) pairs += BeyondStub(sb, v, into);
+        if (spare) foreach (var sb in v.Stubs) pairs += BeyondStub(sb, v, k0, into);
         return pairs;
+    }
+
+    /// <summary>Two blocks face to face, a's face looking along axis ax (sign sg) at b's, joined AS THE GAME JOINS THEM: each
+    /// one's enabled mount points that way reaching the other's box (CubeBlockComponent.CanConnectBlock - the octree's own
+    /// test, BlockOctreeComponent.TryConnectNodes; a dead fracture piece's mount groups off, BreakableBlockComponent).</summary>
+    static bool Mated(CubeBlockComponent a, CubeBlockComponent b, int ax, int sg)
+    {
+        var d = Base6Directions.GetDirection(new Vector3I(ax == 0 ? sg : 0, ax == 1 ? sg : 0, ax == 2 ? sg : 0));
+        return a.CanConnectBlock(b.AABB, d) && b.CanConnectBlock(a.AABB, Base6Directions.GetOppositeDirection(d));
+    }
+
+    /// <summary>A failed cut's member, split at its failing face (FailBlock, sever): still mounted to a block across a face
+    /// looking the way its failing joint does (out of it: against dir, the way in), by any of its cells (Mated). No octree:
+    /// not known (false - the cut's watch is the net).</summary>
+    bool MountedAcross(CubeBlockComponent b, Vector3 dir)
+    {
+        if (_octree == null) return false;
+        float ux = MathF.Abs(dir.X), uy = MathF.Abs(dir.Y), uz = MathF.Abs(dir.Z);
+        int ax = ux >= uy && ux >= uz ? 0 : uy >= uz ? 1 : 2;
+        int sg = (ax == 0 ? dir.X : ax == 1 ? dir.Y : dir.Z) > 0f ? -1 : 1;
+        var bb = b.AABB;
+        if ((long)(bb.Max.X - bb.Min.X + 1) * (bb.Max.Y - bb.Min.Y + 1) * (bb.Max.Z - bb.Min.Z + 1) > 4096) return false;
+        for (int x = bb.Min.X; x <= bb.Max.X; x++) for (int y = bb.Min.Y; y <= bb.Max.Y; y++) for (int z = bb.Min.Z; z <= bb.Max.Z; z++)
+        {
+            var c = new Vector3I(x, y, z);
+            if (!ReferenceEquals(_octree.TryGetCubeBlock(c), b)) continue;
+            var nc = c; if (ax == 0) nc.X += sg; else if (ax == 1) nc.Y += sg; else nc.Z += sg;
+            var o = _octree.TryGetCubeBlock(nc);
+            if (o == null || ReferenceEquals(o, b) || Gone(o)) continue;
+            if (Mated(b, o, ax, sg)) return true;
+        }
+        return false;
     }
 
     /// <summary>The cell k along axis ax, a along u, c along the third (no array a cell: it made one per cell, 2026-10-15).</summary>
@@ -418,7 +482,7 @@ public partial class AeroGridComponent
                 if (split && !Gone(p.B) && !InOctree(p.B)) _goneBlocks.Add(p.B);
                 if (!Gone(p.B))
                 {
-                    try { FailBlock(recv, gwt, p.Bi, p.B, p.Where, null, false, ledger: false, split: p.Mode != FractureMath.Crushed); }
+                    try { FailBlock(recv, gwt, p.Bi, p.B, p.Where, null, false, ledger: false, split: p.Mode != FractureMath.Crushed, sever: true); }
                     catch (Exception fe) { _goneBlocks.Add(p.B); Log.Default?.Info($"[AERO-STRUCT] fail skipped: {fe.Message}"); }
                     if (!Gone(p.B)) c.Survivors.Add(p.B);
                 }
