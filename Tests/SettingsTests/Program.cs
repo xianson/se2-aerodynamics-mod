@@ -14,6 +14,7 @@
 //    every setter in the registry's source).
 // 8. PERSISTENCE (2026-10-15): a field written directly (a harness's aeroset, a dev override) is never what the files or
 //    the world save write, even after an unrelated Set rewrites them; a Set of that same value makes it the player's.
+// 9. WORLD UNLOAD: the host file's forced names do not carry over to the next world.
 global using Keen.VRage.Library.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -282,6 +283,22 @@ static class Program
         Check(AeroSettings.Text("client", all: false) == "", "persist: back at the defaults");
     }
 
+    // ── 9. the forced set does not outlive its world ──
+    static void ForcedUnload()
+    {
+        ResetAll();
+        var carriers = typeof(AeroSettings).GetField("_carriers", BindingFlags.NonPublic | BindingFlags.Static);
+        carriers.SetValue(null, 1);   // (one world's carrier; CarrierAdded would poll the real files)
+        AeroSettings.ApplyHostFile("Structure.Strength = 9" + NL + "Heat.Multiplier = 3" + NL);
+        Check(AeroSettings.IsForced("Structure.Strength") && AeroSettings.IsForced("Heat.Multiplier"), "unload: forced while the world is loaded");
+        AeroSettings.CarrierRemoved();
+        Check(!AeroSettings.IsForced("Structure.Strength") && !AeroSettings.IsForced("Heat.Multiplier"), "unload: nothing forced after the world unloads");
+        Check(AeroSettings.Set("Structure.Strength", 3, out string why), $"unload: the next world sets it ({why})");
+        Check(AeroSettings.TryGet("Heat.Multiplier", out double hm) && AeroSettings.Info("Heat.Multiplier", out _, out double def, out _, out _, out _, out _, out _) && hm == def, "unload: the forced value went back to its default");
+        carriers.SetValue(null, 0);
+        ResetAll();
+    }
+
     // ── 7. denylist ──
     static readonly Regex Deny = new(@"^(Dev|Test|Debug|Probe|Trace)|Log$");
     static void Denylist(string root)
@@ -309,7 +326,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); Denylist(root);
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root);
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
