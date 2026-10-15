@@ -26,8 +26,9 @@ public static class AeroDebrisDrag
 {
     /// <summary>Drag on loose fracture pieces (AeroSettings "Fx.DebrisDrag").</summary>
     public static bool Enabled = true;
-    /// <summary>The pieces' drag coefficient, on their bounding box (1: a blunt chunk; AeroSettings "Fx.DebrisDragScale").</summary>
-    public static float DragScale = 1f;
+    /// <summary>The pieces' drag coefficient, on their bounding box (1: a blunt chunk; 0.4 by default - the user asked for "slight"
+    /// drag, 2026-10-15; AeroSettings "Debris.DragScale").</summary>
+    public static float DragScale = 0.4f;
     /// <summary>The drag on a piece's tumbling, times this (0: none).</summary>
     public static float SpinDragScale = 1f;
     /// <summary>Diagnostics (aeroget): piece-steps the drag acted on, and the last step's speed taken off (m/s). Plain

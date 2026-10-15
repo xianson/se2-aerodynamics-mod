@@ -496,7 +496,7 @@ Both files are read again within ~2 s of an edit, so they can be changed while p
 | `Fx.TornSmoke` | client | bool | true | | A joint the structure breaks smokes (the game's damaged-block smoke) and sheds debris (its fracture debris) for `Fx.TornSmokeSeconds`, on the ship where the block was and on the piece that tears off, at its torn edge; parented to each, so the smoke trails behind them. Off with `Fx.Effects`. Single player and a host. |
 | `Fx.TornSmokeSeconds` | client | float | 4 | 0.5..20 | Seconds a torn joint smokes. |
 | `Debris.Drag` | client | bool | true | | Loose fracture pieces (a broken block's chips, not grids) slow in the air: quadratic drag on their bounding box against the air (the wind taken off, the game's own wind push counted in), and a little on their tumbling. The pieces exist on this PC only (the game spawns them in the client scene). |
-| `Debris.DragScale` | client | float | 1 | 0..10 | The pieces' drag coefficient on their bounding box (1: a blunt chunk). |
+| `Debris.DragScale` | client | float | 0.4 | 0..10 | The pieces' drag coefficient on their bounding box (1: a blunt chunk; 0.4: slight). |
 | `Fx.SpawnPerTick` | client | int | 12 | 1..200 | Effects started per frame while a grid's effects build. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.
