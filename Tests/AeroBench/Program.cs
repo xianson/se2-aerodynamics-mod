@@ -501,7 +501,15 @@ static partial class Program
         string sim = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scripts", "Simulation");
         using var sha = System.Security.Cryptography.SHA256.Create();
         var all = new System.Text.StringBuilder();
-        foreach (var f in TableSources) all.Append(File.ReadAllText(Path.Combine(sim, f)).Replace("\r\n", "\n")).Append('|');
+        // (each source with its partial files, Name.*.cs - the big ones are split by concern)
+        foreach (var f in TableSources)
+        {
+            string path = Path.Combine(sim, f);
+            var parts = Directory.GetFiles(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + ".*.cs");
+            System.Array.Sort(parts, System.StringComparer.Ordinal);
+            all.Append(File.ReadAllText(path).Replace("\r\n", "\n")).Append('|');
+            foreach (var part in parts) all.Append(File.ReadAllText(part).Replace("\r\n", "\n")).Append('|');
+        }
         return Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(all.ToString())))[..16];
     }
     static string TableHashFile => Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "table_sources.txt");
