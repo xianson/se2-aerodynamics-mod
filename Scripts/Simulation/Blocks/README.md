@@ -18,10 +18,13 @@ block definitions and models ship in the companion mod "Aerodynamics Mod Blocks"
 
 ## Entry points
 - Injected by `InjectAeroComponents` (`AeroBlockGuids.SurfaceServerPrefabs` / `FlapClientPrefabs`).
-- `AeroSurfaceSaved.ApplyPending` (`TryCompute`, server); `AeroSurfaceSaved.Load` (`AeroSettings.WorldLoaded`).
+- `AeroSurfaceSaved.ApplyPending` (`TryCompute`, server) and `AeroSurfaceSaved.ClientStep` (`TryCompute`, client); `AeroSurfaceSaved.Load` (`AeroSettings.WorldLoaded`).
 - The blocks' `[Init]` / `[Serializer]` (`AeroBlockSave.cs`): the game's entity load / save.
 - `HingeSurfaces.Drive` (`AeroGridComponent.Surfaces.cs`); `AeroFlapComponent`'s job (`OnAeroFlap`), which also ticks `AeroPanelProbe`.
 
 ## Threading
 - Server: settings components are read by the grid's control step (`AeroGridComponent`, per grid); `HingeSurfaces.Drive` runs there.
 - Client: `AeroFlapComponent`'s job after `RenderSubmissionBegin`. Detail models: the terminal's thread, host / single player.
+- One scene per thread: the component lists (`All`) hold both scenes' copies of a thruster; each step reads its own scene's only
+  (`ReferenceEquals(x.Entity.Data.Scene, scene)`) - the client copies' share of a restore runs in `ClientStep`, and the save
+  compares a client copy by `SeenAt` (its own step's read). Tests/SceneTests checks it.

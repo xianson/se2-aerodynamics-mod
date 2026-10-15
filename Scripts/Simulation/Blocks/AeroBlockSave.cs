@@ -139,11 +139,14 @@ public partial class AeroThrustSettingsComponent
         lock (All)
         {
             bool any = false;
-            foreach (var th in All) if (!th.Server && th.Changed) { any = true; break; }   // (almost always none: no pose reads)
+            foreach (var th in All) if (!th.Server && th.Changed && th.HasSeenAt) { any = true; break; }   // (almost always none: no pose reads)
             if (!any) return f;
             var at = Entity.Data.GetWorldTransform().Position;
+            // (the client copies' places as their own step last read them, SeenAt - never their transforms from here: this is the
+            //  server copy's save, and a client copy read from it is the cross-scene read the game's DataGuard asserts on -
+            //  AeroSurfaceSaved, 2026-10-15)
             foreach (var th in All)
-                if (!th.Server && th.Changed && th.Entity != null && (th.Entity.Data.GetWorldTransform().Position - at).Length() < AeroSurfaceSaved.ThrustReach)
+                if (!th.Server && th.Changed && th.HasSeenAt && (th.SeenAt - at).Length() < AeroSurfaceSaved.ThrustReach)
                     return th.AttitudeFraction;
         }
         return f;

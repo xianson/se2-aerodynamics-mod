@@ -21,7 +21,8 @@ public partial class AeroGridComponent
 
         if (!_initialized) return;
         // (the save's surface / gear settings onto their blocks - here, before the air's early outs: a parked grid too)
-        if (IsServerScene) AeroSurfaceSaved.ApplyPending();
+        // (each scene's step its own scene's blocks: the client copies' share on the client's thread - AeroSurfaceSaved)
+        if (IsServerScene) AeroSurfaceSaved.ApplyPending(Data.Scene); else AeroSurfaceSaved.ClientStep(Data.Scene);
 
         // ── Global scheduler tick (first grid each frame drives all rebuilds) ──
         long tsc = AeroCost.Start();

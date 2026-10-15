@@ -94,9 +94,18 @@ internal static class AeroSurfaceSaved
     static readonly List<(Vector3D at, bool down, double since)> _gears = new();
     /// <summary>Thrusters restored from their own data (their [Init]) whose client-scene copy still needs the value.</summary>
     static readonly List<(AeroThrustSettingsComponent th, double since)> _follow = new();
-    static volatile int _count;
+    // ONE SCENE PER THREAD (2026-10-15): the component lists hold both scenes' copies (OnAddedToScene fires for each), and the
+    // server step read the client copies' transforms from the server thread - the cross-thread read the game's DataGuard
+    // asserts on ("Concurrent access (read) ... IsEntityAlive", found in game in the Orbital Mod's StationKeepCharge list).
+    // Each pass now reads its own scene's components only: the server step its own; what the client copies need is left here
+    // for the client grids' step (ClientStep), which reads theirs on their own thread.
+    /// <summary>A fraction the client scene's thrusters within ThrustReach of At still need. Src: the server thruster it follows
+    /// (At and Frac kept fresh from it by the server step while it waits); null: a saved line's own place.</summary>
+    sealed class ClientWant { public AeroThrustSettingsComponent Src; public Vector3D At; public float Frac; public double Since; }
+    static readonly List<ClientWant> _client = new();
+    static volatile int _count, _clientCount;
 
-    static void Recount() => _count = _pending.Count + _gears.Count + _brakes.Count + _thrusts.Count + _follow.Count;
+    static void Recount() { _count = _pending.Count + _gears.Count + _brakes.Count + _thrusts.Count + _follow.Count + _client.Count; _clientCount = _client.Count; }
 
     internal static void Load(string text)
     {
@@ -111,13 +120,14 @@ internal static class AeroSurfaceSaved
     }
 
     // (_follow too: the world's components are gone with it)
-    internal static void Clear() { lock (_pending) { _pending.Clear(); _gears.Clear(); _brakes.Clear(); _thrusts.Clear(); _follow.Clear(); _count = 0; } }
+    internal static void Clear() { lock (_pending) { _pending.Clear(); _gears.Clear(); _brakes.Clear(); _thrusts.Clear(); _follow.Clear(); _client.Clear(); _count = 0; _clientCount = 0; } }
 
     /// <summary>A thruster that took a changed fraction from its own data: its client-scene copy gets it too (ApplyPending).</summary>
     internal static void Follow(AeroThrustSettingsComponent th) { lock (_pending) { _follow.Add((th, -1)); Recount(); } }
 
-    /// <summary>Server, each step: the saved settings onto their blocks (nothing to do: one read).</summary>
-    internal static void ApplyPending()
+    /// <summary>Server, each step: the saved settings onto their blocks (nothing to do: one read). scene: the calling server
+    /// grid's - only its components are read.</summary>
+    internal static void ApplyPending(Keen.VRage.DCS.Scenes.Scene scene)
     {
         if (_count == 0) return;
         double now = System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
@@ -131,7 +141,7 @@ internal static class AeroSurfaceSaved
                 lock (AeroSurfaceSettingsComponent.All)
                     foreach (var s in AeroSurfaceSettingsComponent.All)
                     {
-                        if (s.Entity == null || s.RestoredFromBlockData) continue;
+                        if (s.Entity == null || s.RestoredFromBlockData || !ReferenceEquals(s.Entity.Data.Scene, scene)) continue;
                         double d = (s.Entity.Data.GetWorldTransform().Position - e.at).Length();
                         if (d < bd) { bd = d; best = s; }
                     }
@@ -152,7 +162,7 @@ internal static class AeroSurfaceSaved
                 lock (AeroGearComponent.All)
                     foreach (var g in AeroGearComponent.All)
                     {
-                        if (g.Entity == null || g.RestoredFromBlockData) continue;
+                        if (g.Entity == null || g.RestoredFromBlockData || !ReferenceEquals(g.Entity.Data.Scene, scene)) continue;
                         double d = (g.Entity.Data.GetWorldTransform().Position - e.at).Length();
                         if (d < bd) { bd = d; best = g; }
                     }
@@ -173,7 +183,7 @@ internal static class AeroSurfaceSaved
                 lock (AeroAirbrakeComponent.All)
                     foreach (var b in AeroAirbrakeComponent.All)
                     {
-                        if (b.Entity == null || b.RestoredFromBlockData) continue;
+                        if (b.Entity == null || b.RestoredFromBlockData || !ReferenceEquals(b.Entity.Data.Scene, scene)) continue;
                         double d = (b.Entity.Data.GetWorldTransform().Position - e.at).Length();
                         if (d < bd) { bd = d; best = b; }
                     }
@@ -188,34 +198,73 @@ internal static class AeroSurfaceSaved
                 int hit = 0;
                 lock (AeroThrustSettingsComponent.All)
                     foreach (var th in AeroThrustSettingsComponent.All)
-                        if (th.Entity != null && !th.RestoredFromBlockData && (th.Entity.Data.GetWorldTransform().Position - e.at).Length() < ThrustReach) { th.AttitudeFraction = e.frac; hit++; }
+                        if (th.Entity != null && !th.RestoredFromBlockData && ReferenceEquals(th.Entity.Data.Scene, scene) && (th.Entity.Data.GetWorldTransform().Position - e.at).Length() < ThrustReach) { th.AttitudeFraction = e.frac; hit++; }
                 if (hit == 0) { if (now - e.since > 60) _thrusts.RemoveAt(i); continue; }
                 _thrusts.RemoveAt(i);
+                _client.Add(new ClientWant { At = e.at, Frac = e.frac, Since = now });   // (its client-scene copy: ClientStep)
                 Log.Default?.Info($"[AERO] thruster restored: attitude fraction {e.frac:F2}");
             }
-            // the client-scene copies of thrusters restored from their own data (as the old lines gave every copy within reach)
+            // the client-scene copies of thrusters restored from their own data (as the old lines gave every copy within reach):
+            // handed to ClientStep, the server copy's place kept fresh below while they wait
             for (int i = _follow.Count - 1; i >= 0; i--)
             {
                 var e = _follow[i];
                 if (e.since < 0) { e.since = now; _follow[i] = e; }
                 var src = e.th;
                 if (src.Entity == null) { _follow.RemoveAt(i); continue; }
-                bool srcIn = false; int hit = 0;
-                lock (AeroThrustSettingsComponent.All)
-                {
-                    foreach (var th in AeroThrustSettingsComponent.All) if (ReferenceEquals(th, src)) { srcIn = true; break; }
-                    if (srcIn && src.Server)
-                    {
-                        var at = src.Entity.Data.GetWorldTransform().Position;
-                        foreach (var th in AeroThrustSettingsComponent.All)
-                            if (!th.Server && !th.RestoredFromBlockData && th.Entity != null && (th.Entity.Data.GetWorldTransform().Position - at).Length() < ThrustReach) { th.AttitudeFraction = src.AttitudeFraction; hit++; }
-                    }
-                }
-                // (done: given to its client copy; a client-scene source - its own builder brought the value; no client copy
-                //  within the wait - a dedicated server)
-                if (hit > 0 || (srcIn && !src.Server) || now - e.since > 60) _follow.RemoveAt(i);
+                bool srcIn = false;
+                lock (AeroThrustSettingsComponent.All) foreach (var th in AeroThrustSettingsComponent.All) if (ReferenceEquals(th, src)) { srcIn = true; break; }
+                // (done: a client-scene source - its own builder brought the value; no server copy in the wait)
+                if ((srcIn && !src.Server) || now - e.since > 60) { _follow.RemoveAt(i); continue; }
+                if (!srcIn || !ReferenceEquals(src.Entity.Data.Scene, scene)) continue;
+                _follow.RemoveAt(i);
+                _client.Add(new ClientWant { Src = src, At = src.Entity.Data.GetWorldTransform().Position, Frac = src.AttitudeFraction, Since = now });
+            }
+            // (what waits for the client copies: dropped after 60 s - no client copy within the wait, a dedicated server; a
+            //  followed server copy's place read here, on its own thread, for ClientStep to match against)
+            for (int i = _client.Count - 1; i >= 0; i--)
+            {
+                var w = _client[i];
+                if (now - w.Since > 60) { _client.RemoveAt(i); continue; }
+                var src = w.Src;
+                if (src?.Entity == null || !ReferenceEquals(src.Entity.Data.Scene, scene) || !PhysicsHack.Alive(src.Entity.Data)) continue;
+                w.At = src.Entity.Data.GetWorldTransform().Position; w.Frac = src.AttitudeFraction;
             }
             Recount();
         }
     }
+
+    /// <summary>Client grids, each step (their own job: the client scene's thread): the fractions the server step left for the
+    /// client scene's thruster copies (nothing waiting: one read), and, once a second, where the changed ones are (SeenAt: what
+    /// the save compares - ChangedClientCopy - without reading them from the save's thread).</summary>
+    internal static void ClientStep(Keen.VRage.DCS.Scenes.Scene scene)
+    {
+        long ts = System.Diagnostics.Stopwatch.GetTimestamp(), due = System.Threading.Volatile.Read(ref _seenDue);
+        if (ts >= due && System.Threading.Interlocked.CompareExchange(ref _seenDue, ts + System.Diagnostics.Stopwatch.Frequency, due) == due)
+            lock (AeroThrustSettingsComponent.All)
+                foreach (var th in AeroThrustSettingsComponent.All)
+                    if (!th.Server && th.Changed && th.Entity != null && ReferenceEquals(th.Entity.Data.Scene, scene) && PhysicsHack.Alive(th.Entity.Data))
+                    { th.SeenAt = th.Entity.Data.GetWorldTransform().Position; th.HasSeenAt = true; }
+        if (_clientCount == 0) return;
+        double now = ts / (double)System.Diagnostics.Stopwatch.Frequency;
+        lock (_pending)
+        {
+            for (int i = _client.Count - 1; i >= 0; i--)
+            {
+                var w = _client[i];
+                if (now - w.Since > 60) { _client.RemoveAt(i); continue; }
+                int hit = 0;
+                lock (AeroThrustSettingsComponent.All)
+                    foreach (var th in AeroThrustSettingsComponent.All)
+                    {
+                        if (th.Server || th.RestoredFromBlockData || th.Entity == null || !ReferenceEquals(th.Entity.Data.Scene, scene)) continue;
+                        var at = th.Entity.Data.GetWorldTransform().Position;
+                        if ((at - w.At).Length() < ThrustReach) { th.AttitudeFraction = w.Frac; th.SeenAt = at; th.HasSeenAt = true; hit++; }
+                    }
+                if (hit > 0) _client.RemoveAt(i);
+            }
+            Recount();
+        }
+    }
+    static long _seenDue;
 }
