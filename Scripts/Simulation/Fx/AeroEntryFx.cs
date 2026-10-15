@@ -592,6 +592,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
         if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
         AeroSettings.Poll();   // (the settings files, every ~2 s)
+        if (SettingsTab.Claim()) SettingsTab.Ticked(c.Entity.GetSession());   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one job per 250 ms)
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
