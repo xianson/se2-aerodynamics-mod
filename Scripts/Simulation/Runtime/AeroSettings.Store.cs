@@ -65,11 +65,17 @@ public static partial class AeroSettings
         }
         lock (_lock)
         {
-            if (s.Get() == value) return true;
-            if (s.Check != null && (why = s.Check(value)) != null) return false;
-            s.Set(value);
-            System.Threading.Interlocked.Increment(ref _version);
-            if (s.Rebuild) System.Threading.Interlocked.Increment(ref AeroSwitch.Generation);   // (every grid rebuilds: AeroSimJob)
+            // (the live field may hold a direct write - a harness's - that this value equals: it still becomes the player's)
+            bool same = s.Get() == value;
+            if (same && s.Stored == value) return true;
+            if (!same && s.Check != null && (why = s.Check(value)) != null) return false;
+            if (!same)
+            {
+                s.Set(value);
+                System.Threading.Interlocked.Increment(ref _version);
+                if (s.Rebuild) System.Threading.Interlocked.Increment(ref AeroSwitch.Generation);   // (every grid rebuilds: AeroSimJob)
+            }
+            s.Stored = s.Get();   // (what the field took: the files' text as it always was)
             if (s.Scope == "client" && !fromStorage) _clientDirtyAt = System.Diagnostics.Stopwatch.GetTimestamp();
             if (s.Scope == "world" && !fromStorage) _worldUnsaved = true;
         }
@@ -119,7 +125,7 @@ public static partial class AeroSettings
             {
                 if (!string.Equals(s.Group, group, StringComparison.OrdinalIgnoreCase) || (scope != null && s.Scope != scope)) continue;
                 any = true;
-                if (s.Get() == s.Default) continue;
+                if (s.Get() == s.Default && s.Stored == s.Default) continue;
                 if (Set(s.Name, s.Default, out string w)) n++;
                 else if (pass == 1) why ??= s.Name + ": " + w;
             }
@@ -140,7 +146,7 @@ public static partial class AeroSettings
         foreach (var s in _all)
         {
             if (s.Scope != scope) continue;
-            double v = s.Get();
+            double v = s.Stored;   // (the player's value, never a harness's direct write to the field)
             if (!all && v == s.Default) continue;
             if (all) sb.Append("# ").Append(s.Doc).Append(" (").Append(s.Type).Append(", default ").Append(Fmt(s, s.Default))
                        .Append(", ").Append(Fmt(s, s.Min)).Append("..").Append(Fmt(s, s.Max)).Append(s.Rebuild ? ", rebuilds every grid" : "").Append(")\n");
@@ -194,7 +200,7 @@ public static partial class AeroSettings
     {
         // (twice: a default refused against a partner not yet reset - Onset 2 over a world's Full 1 - goes in on the second)
         for (int pass = 0; pass < 2; pass++)
-            foreach (var s in _all) if (s.Scope == scope && s.Get() != s.Default) Set(s.Name, s.Default, out _, fromStorage: true);
+            foreach (var s in _all) if (s.Scope == scope && (s.Get() != s.Default || s.Stored != s.Default)) Set(s.Name, s.Default, out _, fromStorage: true);
     }
 
     // ── the world save (AeroWorldSettingsComponent) ──

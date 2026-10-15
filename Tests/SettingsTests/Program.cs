@@ -12,6 +12,8 @@
 //    CanEditWorld false refuses world sets (and a world group's reset), not client ones; WorldUnsaved follows a set.
 // 7. DENYLIST: no Dev* / Test* / Debug* / Probe* / Trace* / *Log setting or field written (registry names, and a scan of
 //    every setter in the registry's source).
+// 8. PERSISTENCE (2026-10-15): a field written directly (a harness's aeroset, a dev override) is never what the files or
+//    the world save write, even after an unrelated Set rewrites them; a Set of that same value makes it the player's.
 global using Keen.VRage.Library.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -255,6 +257,31 @@ static class Program
         ResetAll();
     }
 
+    // ── 8. a direct field write is never persisted ──
+    const string NL = "\n";
+    static void Persistence()
+    {
+        ResetAll();
+        HeatScorch.Visible = false;   // (as a harness writes it: the field, not Set)
+        Check(AeroSettings.TryGet("Fx.ScorchVisible", out double live) && live == 0, "persist: the direct write is live");
+        Check(AeroSettings.Set("Fx.Vapour", 0, out _), "persist: an unrelated client set");
+        string client = AeroSettings.Text("client", all: true);
+        Check(client.Contains(NL + "Fx.ScorchVisible = true" + NL) && client.Contains(NL + "Fx.Vapour = false" + NL), "persist: the client file keeps the player's Fx.ScorchVisible (true), with the set Fx.Vapour");
+        AeroSettings.Info("Structure.Strength", out _, out double strDef, out _, out _, out _, out _, out _);
+        HeatScorch.Enabled = false; ShipStructure.Strength = (float)strDef * 0.5f;   // (world fields, directly)
+        Check(AeroSettings.Set("Heat.Multiplier", 2, out _), "persist: an unrelated world set");
+        string world = AeroSettings.Text("world", all: false);
+        Check(world == "Heat.Multiplier = 2" + NL, $"persist: the world save holds only the set value ('{world.Replace(NL, "|")}')");
+        // the player then sets the dev value through the store: it is theirs now
+        Check(AeroSettings.Set("Fx.ScorchVisible", 0, out _) && AeroSettings.Text("client", all: true).Contains(NL + "Fx.ScorchVisible = false" + NL), "persist: a Set of the live value makes it the player's");
+        // a reset brings the live field back too, and the text matches
+        AeroSettings.ResetScope("world");
+        Check(HeatScorch.Enabled && ShipStructure.Strength == (float)strDef && AeroSettings.Text("world", all: false) == "", "persist: a world reset restores the directly written fields");
+        HeatScorch.Visible = true;
+        ResetAll();
+        Check(AeroSettings.Text("client", all: false) == "", "persist: back at the defaults");
+    }
+
     // ── 7. denylist ──
     static readonly Regex Deny = new(@"^(Dev|Test|Debug|Probe|Trace)|Log$");
     static void Denylist(string root)
@@ -282,7 +309,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Denylist(root);
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); Denylist(root);
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
