@@ -139,10 +139,8 @@ public static partial class AeroApi
         centresLocal?.Clear(); normalsLocal?.Clear(); areas?.Clear(); cp?.Clear();
         // (from the faces the grid's tick publishes - AeroGridComponent.PublishApiHull: this read the live face list,
         //  which the simulation thread updates and a rebuild refills, and tore or threw, 2026-10-15)
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecHull);   // (the faces only: not the flight record too, 2026-10-15 review)
         if (s == null) return 0;
-        long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency);
-        if (until > s.HullUntil) s.HullUntil = until;
         // (copied out under the lock - four block copies - and added to the lists after it: 4 x 10^5 List.Adds, with the lists'
         //  growth on the large-object heap, held the grid's API lock its simulation tick waits on, 2026-10-15 review)
         int hint = Math.Max(s.HullCount, 1);

@@ -5,16 +5,14 @@ namespace AeroMod;
 /// <summary>
 /// One grid's published copies for the public API (AeroApi version 7: flight state, control surfaces, thruster forces,
 /// structure blocks, heat faces, another mod's block temperatures). Made by the API's first read of the grid
-/// (AeroGridComponent.ApiStateFor); filled only while someone reads it (WatchUntil / FacesUntil, Stopwatch ticks): a grid
-/// nobody asks about costs one null test a tick.
+/// (AeroGridComponent.ApiStateFor); each record filled only while someone reads it (its watch window, Stopwatch ticks:
+/// ApiGridState.Watch.cs): a grid nobody asks about costs one null test a tick.
 /// The writers (the simulation thread for the tick record, the structure's background evaluation for the rest) fill the
 /// spare ("back") arrays outside the lock and swap them in under it; readers copy out under it. Arrays only grow.
 /// </summary>
-internal sealed class ApiGridState
+internal sealed partial class ApiGridState
 {
     public readonly object Lock = new object();
-    /// <summary>Publishing on while Stopwatch.GetTimestamp() is under these (the reads push them on: AeroApi.Watch).</summary>
-    public long WatchUntil, FacesUntil;
 
     // ── the tick record (simulation thread: AeroGridComponent.PublishApiTick) ──
     public float[] Flight = new float[AeroApi.FlightStateLength], FlightBack = new float[AeroApi.FlightStateLength];
@@ -23,8 +21,8 @@ internal sealed class ApiGridState
     public Vector3I[] SurfCellB = Array.Empty<Vector3I>(); public float[] SurfCmdB = Array.Empty<float>(), SurfDegB = Array.Empty<float>(), SurfLiftB = Array.Empty<float>(), SurfDragB = Array.Empty<float>();
     public int ThrCount, ThrGen; public float[] ThrForce = Array.Empty<float>(), ThrForceB = Array.Empty<float>();
     /// <summary>The hull's exposed faces for AeroApi.GetSurface (simulation thread: AeroGridComponent.PublishApiHull, while
-    /// HullUntil - it read the live face list the simulation thread updates and a rebuild refills, 2026-10-15). -1: none yet.</summary>
-    public long HullUntil, HullAt; public int HullCount = -1, HullVersion = -1; public object HullOf;
+    /// RecHull is watched - it read the live face list the simulation thread updates and a rebuild refills, 2026-10-15). -1: none yet.</summary>
+    public long HullAt; public int HullCount = -1, HullVersion = -1; public object HullOf;
     public Vector3[] HullPos = Array.Empty<Vector3>(), HullNrm = Array.Empty<Vector3>(), HullPosB = Array.Empty<Vector3>(), HullNrmB = Array.Empty<Vector3>();
     public float[] HullArea = Array.Empty<float>(), HullCp = Array.Empty<float>(), HullAreaB = Array.Empty<float>(), HullCpB = Array.Empty<float>();
 
@@ -42,7 +40,7 @@ internal sealed class ApiGridState
     /// <summary>Whether this evaluation's temperatures were another mod's (SetBlockTemperatures).</summary>
     public bool TempsExternal;
 
-    // ── the hull's heat faces (same evaluation, while FacesUntil) ──
+    // ── the hull's heat faces (same evaluation, while RecFaces is watched) ──
     public int FaceLayout = -1, FaceCount;
     public Vector3[] FacePos = Array.Empty<Vector3>(), FaceNrm = Array.Empty<Vector3>(); public float[] FaceArea = Array.Empty<float>(); public int[] FaceBlock = Array.Empty<int>();
     public float[] FaceHeatW = Array.Empty<float>(), FaceSkinK = Array.Empty<float>(), FaceFilm = Array.Empty<float>();

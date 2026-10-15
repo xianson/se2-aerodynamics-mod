@@ -21,7 +21,7 @@ public static partial class AeroApi
     public static bool TryGetStructureCounters(Keen.VRage.DCS.Components.Entity grid, out int layout, out int evaluation, out int blockCount, out bool externalHeat)
     {
         layout = evaluation = blockCount = 0; externalHeat = false;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return false;
         lock (s.Lock)
         {
@@ -36,7 +36,7 @@ public static partial class AeroApi
     public static int GetStructureBlocks(Keen.VRage.DCS.Components.Entity grid, Keen.VRage.DCS.Components.Entity[] blocks, Vector3[] centresLocal, float[] massKg, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -57,7 +57,7 @@ public static partial class AeroApi
     public static int GetStructureBlockState(Keen.VRage.DCS.Components.Entity grid, float[] utilisation, float[] health, float[] tempK, float[] skinMaxK, float[] heatInW, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -80,7 +80,7 @@ public static partial class AeroApi
     public static int GetStructureBlockLoads(Keen.VRage.DCS.Components.Entity grid, Vector3[] forceLocal, Vector3[] momentLocal, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -103,7 +103,7 @@ public static partial class AeroApi
     public static int GetHeatFaces(Keen.VRage.DCS.Components.Entity grid, Vector3[] centresLocal, Vector3[] normalsLocal, float[] areas, int[] blockIndex, out int layout)
     {
         layout = 0;
-        var s = Watch(grid, true);
+        var s = Watch(grid, ApiGridState.RecFaces);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -126,7 +126,7 @@ public static partial class AeroApi
     public static int GetHeatFaceState(Keen.VRage.DCS.Components.Entity grid, float[] heatInW, float[] skinK, float[] filmCoefficient, out float recoveryK, out int layout)
     {
         recoveryK = 0f; layout = 0;
-        var s = Watch(grid, true);
+        var s = Watch(grid, ApiGridState.RecFaces);
         if (s == null) return 0;
         lock (s.Lock)
         {
@@ -153,7 +153,7 @@ public static partial class AeroApi
     public static bool SetBlockTemperatures(Keen.VRage.DCS.Components.Entity grid, int layout, float[] tempK, float[] skinMaxK)
     {
         if (tempK == null) return false;
-        var s = Watch(grid, false);
+        var s = Watch(grid, ApiGridState.RecStruct);
         if (s == null) return false;
         lock (s.Lock)
         {

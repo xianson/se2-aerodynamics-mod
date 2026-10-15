@@ -203,6 +203,16 @@ static class Program
             var locks = m.node?.DescendantNodes().OfType<LockStatementSyntax>().ToList() ?? new();
             Check(locks.Count > 0 && locks.All(l => !l.Statement.ToString().Contains(".Add(")), "GetSurface: no List.Add under the grid's API lock (copied out, added after)");
         }
+        // (2026-10-15 review) each reader pushes on only the record it reads (ApiGridState.Watch.cs): one window for all kept a
+        // flight-state reader's grid publishing its whole structure every evaluation, and a structure reader the tick record
+        foreach (var (name, rec) in new[] { ("GetFlightState", "RecFlight"), ("GetControlSurfaces", "RecFlight"), ("GetThrusterForces", "RecFlight"),
+            ("GetSurface", "RecHull"), ("TryGetStructureCounters", "RecStruct"), ("GetStructureBlocks", "RecStruct"), ("GetStructureBlockState", "RecStruct"),
+            ("GetStructureBlockLoads", "RecStruct"), ("SetBlockTemperatures", "RecStruct"), ("GetHeatFaces", "RecFaces"), ("GetHeatFaceState", "RecFaces") })
+        {
+            var m = members.FirstOrDefault(x => x.name == name);
+            var watches = m.node?.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(i => i.Expression.ToString() == "Watch").Select(i => i.ArgumentList.Arguments.Last().ToString()).ToList() ?? new();
+            Check(watches.Count == 1 && watches[0] == "ApiGridState." + rec, $"{name}: watches {rec} only ({string.Join(", ", watches)})");
+        }
         // a new member says its version in its summary
         foreach (var m in members.Where(x => !Frozen.ContainsKey(x.name)))
         {
@@ -329,10 +339,34 @@ static class Program
         Check(which.GetAt(t0 + 31 * f, ref st) == null && api.Type == null, $"link: the mod gone - unbound ({st})");
     }
 
+    // 5. THE WATCH WINDOWS (Api/ApiGridState.Watch.cs, 2026-10-15 review): one per record - a read keeps its own record on,
+    //    never the others; the simulation tick runs for the tick record or the hull's faces only.
+    static void Watches()
+    {
+        var s = new ApiGridState();
+        long t = 1_000_000, w = 5 * System.Diagnostics.Stopwatch.Frequency;
+        bool none = true; for (int r = 0; r < ApiGridState.RecCount; r++) none &= !s.On(r, t);
+        Check(none && !s.TickWatched(t), "watch: nothing on before a read");
+        s.Push(ApiGridState.RecFlight, t + w);
+        Check(s.On(ApiGridState.RecFlight, t) && !s.On(ApiGridState.RecStruct, t) && !s.On(ApiGridState.RecFaces, t) && !s.On(ApiGridState.RecHull, t) && s.TickWatched(t),
+            "watch: a flight read keeps the flight record on, not the structure's, the faces' or the hull's");
+        Check(!s.On(ApiGridState.RecFlight, t + w) && !s.TickWatched(t + w), "watch: the flight record off 5 s after its last read");
+        s.Push(ApiGridState.RecFlight, t + w / 2);
+        Check(s.Until[ApiGridState.RecFlight] == t + w, "watch: an earlier push never shortens a window");
+        var s2 = new ApiGridState();
+        s2.Push(ApiGridState.RecStruct, t + w);
+        Check(s2.On(ApiGridState.RecStruct, t) && !s2.On(ApiGridState.RecFlight, t) && !s2.TickWatched(t), "watch: a structure read keeps the structure on, never the tick record");
+        s2.Push(ApiGridState.RecFaces, t + w);
+        Check(s2.On(ApiGridState.RecFaces, t) && !s2.TickWatched(t), "watch: a heat-face read is the evaluation's, not the tick's");
+        var s3 = new ApiGridState();
+        s3.Push(ApiGridState.RecHull, t + w);
+        Check(s3.TickWatched(t) && !s3.On(ApiGridState.RecFlight, t), "watch: a GetSurface read runs the tick for the hull's faces only");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "dump") { Shape(true); return 0; }
-        Shape(false); Ring(); Film(); Link();
+        Shape(false); Ring(); Film(); Link(); Watches();
         Console.WriteLine($"ApiTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

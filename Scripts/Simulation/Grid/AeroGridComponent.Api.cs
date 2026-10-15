@@ -5,7 +5,8 @@ namespace AeroMod;
 
 // THE PUBLIC API'S TICK RECORD (AeroApi version 7: Api/AeroApi.Flight.cs): this grid's flight state, control surfaces and
 // thruster forces, copied at the end of its simulation tick (AeroSimJob, after the structure's step) - only while someone
-// reads them (ApiGridState.WatchUntil). Simulation thread; no allocation once the arrays have grown.
+// reads them (ApiGridState.Watch.cs: RecFlight; the hull's faces RecHull). Simulation thread; no allocation once the arrays
+// have grown.
 public partial class AeroGridComponent
 {
     /// <summary>The API's copies of this grid (Api/ApiGridState.cs); null until the API first asks about it.</summary>
@@ -21,7 +22,7 @@ public partial class AeroGridComponent
     }
 
     /// <summary>Someone reads this grid's tick record (the simulation tick's test: one null test when nobody does).</summary>
-    internal bool ApiWatched { get { var s = ApiState; return s != null && System.Diagnostics.Stopwatch.GetTimestamp() < s.WatchUntil; } }
+    internal bool ApiWatched { get { var s = ApiState; return s != null && s.TickWatched(System.Diagnostics.Stopwatch.GetTimestamp()); } }
 
     /// <summary>The tick record (AeroSimJob, simulation thread): airVel / linVel the air past the grid and its motion (world
     /// m/s), appliedF / appliedT the air's force and torque applied this tick (local, the world's multipliers in; zero:
@@ -30,6 +31,14 @@ public partial class AeroGridComponent
     {
         var s = ApiState;
         if (s == null) return;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        // (each record while its own reader reads it: GetSurface alone no longer copies the flight record, 2026-10-15 review)
+        if (s.On(ApiGridState.RecFlight, now)) PublishApiFlight(s, airVel, linVel, appliedF, appliedT, gravity, wt);
+        if (s.On(ApiGridState.RecHull, now)) PublishApiHull(s, now);
+    }
+
+    void PublishApiFlight(ApiGridState s, Vector3 airVel, Vector3 linVel, Vector3 appliedF, Vector3 appliedT, Vector3 gravity, in WorldTransform wt)
+    {
         var f = s.FlightBack;
         float airspeed = airVel.Length();
         float mach = HasResult ? (float)LastResult.Mach : 0f;
@@ -90,7 +99,6 @@ public partial class AeroGridComponent
             ApiGridState.Swap(ref s.SurfLift, ref s.SurfLiftB); ApiGridState.Swap(ref s.SurfDrag, ref s.SurfDragB); s.SurfCount = ns;
             ApiGridState.Swap(ref s.ThrForce, ref s.ThrForceB); s.ThrCount = nt; s.ThrGen = _thrusterGen;
         }
-        if (now < s.HullUntil) PublishApiHull(s, now);
     }
 
     /// <summary>The hull's faces for AeroApi.GetSurface (simulation thread, while it is asked for): when the surface changed,
