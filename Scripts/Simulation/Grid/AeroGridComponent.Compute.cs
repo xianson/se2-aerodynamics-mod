@@ -12,7 +12,7 @@ namespace AeroMod;
 // The per-frame force computation (TryCompute): rebuild triggers, the surface update, wings, the model, components and patches.
 public partial class AeroGridComponent
 {
-    // ── Compute (called from debug draw for now) ──
+    // ── Compute (called by the sim job, AeroSimJob.cs, on the frames this grid recomputes) ──
 
     internal void TryCompute(WorldTransform wt, float density, Vector3 linearVelocity, Vector3 angularVelocity, Vector3 centerOfMass, float groundHeight = -1f)
     {
