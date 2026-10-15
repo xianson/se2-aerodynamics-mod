@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- One scene per thread, from source (Program.cs; Roslyn, syntax only - the code it checks needs the game): SE2 runs a
+       client and a server scene in one process, and a component's OnAddedToScene fires for both copies, so a static list
+       filled there holds both scenes' entities. A loop over one that reads an entity's engine data must first keep to the
+       scene of its own thread (the game's DataGuard asserts on the other's: found in game 2026-10-15). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+</Project>
