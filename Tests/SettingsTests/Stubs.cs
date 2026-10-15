@@ -52,6 +52,8 @@ public static class StructureTear
     public static float TearSeconds = 1.2f;   // Structure/Server/StructureTear.cs
     public static float MinMass = 2000f;   // Structure/Server/StructureTear.cs
     public static float ForceFactor = 6f;   // Structure/Server/StructureTear.cs
+    public static int MaxAnchors = 6;   // Structure/Server/StructureTear.cs
+    public static float PeelFirst = 0.35f;   // Structure/Server/StructureTear.cs
 }
 public static class AeroGridComponent
 {
@@ -61,6 +63,8 @@ public static class AeroGridComponent
     public static double QuietBeforeFullRebuild = 5.0;   // Grid/AeroGridComponent.cs
     public static bool SplitBlocks = true;   // Structure/Server/StructureServer.Failure.cs
     public static bool Dents = true;   // Structure/Server/StructureServer.Deform.cs
+    public static int CrackSmokes = 3;   // Structure/Server/StructureServer.Failure.cs
+    public static float CrumpleDepth = 0.15f;   // Structure/Server/StructureServer.Failure.cs
     public static float GearContactShare = 1f;   // Structure/Server/StructureContacts.cs
 }
 public static class StructureContactLoads
