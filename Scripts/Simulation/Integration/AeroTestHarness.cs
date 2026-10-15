@@ -545,7 +545,7 @@ internal class SustainedInputScenario : ITestScenario
 
 public static class AeroTestHarness
 {
-    public static bool Enabled = false; // disabled: manual flight for AeroSpeedSpike test
+    public static bool Enabled = true;
 
     private enum Phase { Idle, SelectGrid, FreezeOthers, Stabilize, RunTests, Summary, Done }
 
