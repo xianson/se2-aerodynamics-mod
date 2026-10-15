@@ -132,6 +132,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                 // the spring off first (2026-10-13: on a flying ship the wheel stopped about halfway up - the suspension's
                 // spring, pulling it back to its rest the harder the further it is held, beat the limits; IWheelConstraint:
                 // "zero means no soft suspension force ... the suspension only reacts at the hard limits")
+                if (_shockOn) { _wc.SuspensionStrengthFactor = _shockS; _wc.SuspensionDampingFactor = _shockD; _shockOn = false; }
                 if (!_springOff) { _springStrength = _wc.SuspensionStrengthFactor; _springDamping = _wc.SuspensionDampingFactor; _wc.SuspensionStrengthFactor = 0f; _springOff = true; }
                 // (held at that height: Min = Max = +travel. Measured in game 2026-10-13 (LimitMode, all four writings,
                 //  the 1 m gear, the game's own CurrentSuspensionDistance after a retract): travel / travel -> +2.15 (up, in
@@ -155,6 +156,9 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
             if (!_collisionOff && _travel >= offAt) SetCollision(wheel, false);
             else if (_collisionOff && _travel < offAt) SetCollision(wheel, true);
         }
+
+        _step = "airshock";
+        Airshock(wheel);
 
         _step = "publish";
         Publish();
@@ -217,6 +221,57 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     }
 
     /// <summary>The wheel carries the ship: in contact (the game's own) or its suspension compressed.</summary>
+    // ── AIRSHOCK (2026-10-15, the user: SE1's suspension setting that anticipated ground impacts - "right now it's
+    //    impossible to land"): the gear down and the grid coming down, the wheel's suspension goes stiff and fully damped
+    //    just before it touches (within ArmSeconds of contact at the sink rate now, or ArmHeight above the ground) so the
+    //    hit is taken over its whole travel without bottoming or bouncing; the player's damping / stiffness come back once it
+    //    has settled on the wheel (in contact and barely sinking for SettleSeconds) or HoldSeconds after the touch. ──
+    public bool AirshockEnabled = true;
+    public static float ArmSeconds = 0.5f, ArmHeight = 0.3f, MinSink = 0.5f, SettleSink = 0.3f, SettleSeconds = 0.5f, HoldSeconds = 3f;
+    public static float ShockStrength = 1f, ShockDamping = 1f;
+    bool _shockOn; float _shockS, _shockD; double _shockTouch = -1, _shockCalm = -1;
+    public string ShockState = "";
+
+    void Airshock(Entity wheel)
+    {
+        if (_wc == null || wheel == null) return;
+        bool usable = AirshockEnabled && Seq.Down && _travel <= 0f && !_springOff;
+        var grid = Entity.GetTopLevelParent(); var aero = grid?.TryGet<AeroGridComponent>();
+        double now = System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
+        bool contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
+        float sink = 0f, hWheel = float.MaxValue;
+        if (aero != null && aero.GroundUpLocal.LengthSquared() > 0.5f)
+        {
+            var gwt = grid.Data.GetWorldTransform();
+            sink = -Vector3.Dot(WorldTransform.TransformDirectionInv(aero.LastLinVel, gwt), aero.GroundUpLocal);
+            if (aero.GroundHeight >= 0f)
+            {
+                var rel = WorldTransform.GetRelativeTransform(wheel.Data.GetWorldTransform(), gwt);
+                hWheel = aero.GroundHeight + Vector3.Dot((Vector3)rel.Position, aero.GroundUpLocal) - (Variant?.WheelRadius ?? 1.25f);
+            }
+        }
+        if (!_shockOn)
+        {
+            bool coming = usable && !contact && sink > MinSink && (hWheel <= ArmHeight || hWheel / sink <= ArmSeconds);
+            if (!coming) return;
+            _shockS = _wc.SuspensionStrengthFactor; _shockD = _wc.SuspensionDampingFactor;
+            _wc.SuspensionStrengthFactor = ShockStrength; _wc.SuspensionDampingFactor = ShockDamping;
+            _shockOn = true; _shockTouch = -1; _shockCalm = -1;
+            ShockState = $"armed: {hWheel:F2} m up, sinking {sink:F1} m/s";
+            Log.Default?.Info($"[AERO-GEAR] {_key} airshock armed: wheel {hWheel:F2} m above the ground, sinking {sink:F1} m/s");
+            return;
+        }
+        if (contact && _shockTouch < 0) _shockTouch = now;
+        bool calm = contact && MathF.Abs(sink) < SettleSink;
+        if (calm) { if (_shockCalm < 0) _shockCalm = now; } else _shockCalm = -1;
+        bool done = !usable || (_shockCalm >= 0 && now - _shockCalm >= SettleSeconds) || (_shockTouch >= 0 && now - _shockTouch >= HoldSeconds)
+                    || (!contact && sink < 0f && _shockTouch < 0);   // (pulled up before touching)
+        if (!done) return;
+        _wc.SuspensionStrengthFactor = _shockS; _wc.SuspensionDampingFactor = _shockD; _shockOn = false;
+        ShockState = _shockTouch >= 0 ? "settled" : "released";
+        Log.Default?.Info($"[AERO-GEAR] {_key} airshock {ShockState}: suspension back to stiffness {_shockS:F2}, damping {_shockD:F2}");
+    }
+
     bool WeightOnWheel()
         => _travel <= 1e-3f && (Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>() || _cm.CurrentSuspensionDistance > 0.02f);
 
@@ -255,7 +310,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                     sb.Append(" | ").Append(g.Seq.Down ? "down" : "up").Append($" p {g.Seq.Progress:F2} travel {g._travel:F2} m (wheel: measured {g._measured:F2}, game {(g._cm != null ? g._cm.CurrentSuspensionDistance : float.NaN):F2})")
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
-                      .Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
+                      .Append(g._shockOn ? " AIRSHOCK on" : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();
         }
