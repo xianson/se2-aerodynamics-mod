@@ -68,8 +68,6 @@ public static class WingStrain
         /// <summary>The worst station (Finish), its moment per newton (m) and capacity (N m), and their ratio (strain per
         /// newton of the wing's normal force).</summary>
         public int Critical; public float CriticalArm, CriticalCapacity, Compliance;
-
-        public int SpanIndex(int j) => RootIndex + Dir * j;
     }
 
     /// <summary>A wing's root analysis: one side (A) or two (A and B, a wing across the centre of mass).</summary>

@@ -17,7 +17,6 @@ public partial class AeroGridComponent
 {
     private const float ForceScale = 1f / 50000f;
     private const float VectorScale = 0.05f; // m/s → draw length
-    private const int MaxFacesToDraw = 20000; // limit for perf
     private const float DebugDrawMaxDistance = 200f;
 
     /// <summary>Master toggle for all debug drawing.</summary>
@@ -190,104 +189,6 @@ public partial class AeroGridComponent
         dd.AddSphere(new WorldTransform(comWorld), 0.4, cFill: ColorSRGB.Yellow, depth: false);
         dd.AddText(comWorld, "CoM", ColorSRGB.Yellow, 0.3f);
     }
-
-    /// <summary>
-    /// Front-face color scale: t ∈ [0,1] → cyan → green → yellow → red.
-    /// Used for positive Cp faces only.
-    /// </summary>
-    private static ColorSRGB CpToColorFront(float t)
-    {
-        t = MathF.Max(0f, MathF.Min(1f, t));
-        float r, g, b;
-        if (t < 0.333f)
-        {
-            // cyan → green
-            float s = t / 0.333f;
-            r = 0f;
-            g = 0.8f + s * 0.2f;
-            b = 1f - s;
-        }
-        else if (t < 0.667f)
-        {
-            // green → yellow
-            float s = (t - 0.333f) / 0.334f;
-            r = s;
-            g = 1f;
-            b = 0f;
-        }
-        else
-        {
-            // yellow → red
-            float s = (t - 0.667f) / 0.333f;
-            r = 1f;
-            g = 1f - s;
-            b = 0f;
-        }
-        return new ColorSRGB(r, g, b);
-    }
-
-    /// <summary>
-    /// Compute tangent vectors for a face normal (axis-aligned normals only).
-    /// Returns two perpendicular unit vectors spanning the face plane.
-    /// </summary>
-    /// <summary>
-    /// Get tangent vectors for quad placement. Snaps to nearest axis for consistent
-    /// quad orientation even when normals are smoothed off-axis.
-    /// Winding order ensures cross(t1, t2) aligns with the dominant normal direction.
-    /// </summary>
-    private static void GetFaceTangents(Vector3 normal, out Vector3 t1, out Vector3 t2)
-    {
-        float ax = MathF.Abs(normal.X);
-        float ay = MathF.Abs(normal.Y);
-        float az = MathF.Abs(normal.Z);
-
-        // Tangent pairs chosen so cross(t1, t2) aligns with the face normal direction.
-        // X-dominant: cross(±Y, Z) = ±X  ✓
-        // Y-dominant: cross(±Z, X) = ±Y  ✓
-        // Z-dominant: cross(±X, Y) = ±Z  ✓
-        if (ax >= ay && ax >= az)
-        {
-            float sign = normal.X >= 0 ? 1f : -1f;
-            t1 = Vector3.UnitY * sign;
-            t2 = Vector3.UnitZ;
-        }
-        else if (ay >= ax && ay >= az)
-        {
-            // Was t1=X, t2=±Z which gives cross(X,Z)=-Y — inverted winding!
-            float sign = normal.Y >= 0 ? 1f : -1f;
-            t1 = Vector3.UnitZ * sign;
-            t2 = Vector3.UnitX;
-        }
-        else
-        {
-            float sign = normal.Z >= 0 ? 1f : -1f;
-            t1 = Vector3.UnitX * sign;
-            t2 = Vector3.UnitY;
-        }
-    }
-
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector3D RotateByMatrix(Vector3 v,
-        float m00, float m01, float m02,
-        float m10, float m11, float m12,
-        float m20, float m21, float m22)
-    {
-        return new Vector3D(
-            m00 * v.X + m01 * v.Y + m02 * v.Z,
-            m10 * v.X + m11 * v.Y + m12 * v.Z,
-            m20 * v.X + m21 * v.Y + m22 * v.Z);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FaceDirIndex(Vector3 n)
-    {
-        float ax = MathF.Abs(n.X), ay = MathF.Abs(n.Y), az = MathF.Abs(n.Z);
-        if (ax >= ay && ax >= az) return n.X >= 0 ? 0 : 1;
-        if (ay >= az) return n.Y >= 0 ? 2 : 3;
-        return n.Z >= 0 ? 4 : 5;
-    }
-
 
     private static void DrawWingInfo(AeroGridComponent aero, MeshBuilder dd, in WorldTransform wt)
     {

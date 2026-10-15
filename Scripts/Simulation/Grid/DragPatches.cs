@@ -28,7 +28,7 @@ public partial class AeroGridComponent
 
     internal bool SetDragPatch(string key, Vector3 point, float cdA, Vector3 normal)
     {
-        if (string.IsNullOrEmpty(key) || !IsFinite(point) || !float.IsFinite(cdA) || !IsFinite(normal)) return false;
+        if (string.IsNullOrEmpty(key) || !PhysicsHack.IsFinite(point) || !float.IsFinite(cdA) || !PhysicsHack.IsFinite(normal)) return false;
         if (point.Length() > MaxPatchReach) return false;
         cdA = Math.Clamp(cdA, 0f, MaxPatchCdA);
         float nl = normal.Length();
@@ -64,8 +64,6 @@ public partial class AeroGridComponent
         point = normal = Vector3.Zero; cdA = 0f; return false;
     }
 
-    internal int DragPatchCount => _dragPatches.Count;
-
     /// <summary>The patches' force and torque this tick (grid-local; torque about the centre of mass).</summary>
     static (Vector3 force, Vector3 torque) EvaluateDragPatches(List<DragPatch> patches, in AeroContext ctx)
     {
@@ -81,6 +79,4 @@ public partial class AeroGridComponent
         }
         return (f, t);
     }
-
-    static bool IsFinite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
 }

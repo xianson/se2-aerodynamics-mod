@@ -108,7 +108,4 @@ public class AtmosphericScoop : IAeroBlockComponent, IFaceOverride
 
         return new ComponentForceResult(force, Position);
     }
-
-    /// <summary>Reset the cumulative collection counter.</summary>
-    public void ResetCumulative() => CumulativeCollected = 0;
 }

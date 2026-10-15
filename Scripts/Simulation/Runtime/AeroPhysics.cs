@@ -17,7 +17,7 @@ namespace AeroMod;
 ///
 /// What this replaces, and why the old way was wrong:
 ///
-///   * It re-implemented the engine's angular math. ApplyDeltaVAndTorque computed
+///   * It re-implemented the engine's angular math. PhysicsHack.ApplyDeltaVAndTorque (removed 2026-10-15) computed
 ///     deltaOmega = R * (I^-1 * (R^-1 * tau)) * dt itself, mirroring the principal-axis
 ///     rotation by hand. The engine already ships that exact computation in
 ///     RigidBodyDataFunctions.ApplyAngularImpulseLocal; any divergence between the two was a
@@ -69,7 +69,7 @@ public static class AeroPhysics
                                            Vector3 worldForce, Vector3 localTorque,
                                            float dt = Dt)
     {
-        if (!IsFinite(worldForce) || !IsFinite(localTorque))
+        if (!PhysicsHack.IsFinite(worldForce) || !PhysicsHack.IsFinite(localTorque))
             return false;
         if (!IsDynamic(entity))
             return false;
@@ -112,8 +112,4 @@ public static class AeroPhysics
         angular = rb.AngularVelocity;
         return true;
     }
-
-    private static bool IsFinite(Vector3 v) =>
-        !float.IsNaN(v.X) && !float.IsNaN(v.Y) && !float.IsNaN(v.Z) &&
-        !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 }

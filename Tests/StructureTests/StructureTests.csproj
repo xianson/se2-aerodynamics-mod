@@ -6,7 +6,7 @@
     <Compile Include="$(Sim)\Surface\ISurfaceProvider.cs" />
     <Compile Include="$(Sim)\Surface\NormalGroup.cs" />
     <Compile Include="$(Sim)\Surface\SurfaceFace.cs" />
-    <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider.cs" />
+    <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider*.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
   </ItemGroup>
 </Project>
