@@ -207,7 +207,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   `AeroCost.Log` is off), the engine stat overlay's "Grid" / "All" sections; `StructureLoads` counters for the structure.
 - **Offline tests** (`Tests/`, no game): `AeroBench` (shapes, table vs exact, cache, wings, structure `struct` / `fail` /
   `replay`, polars; `gate` mode in the gate), `SurfaceTests`, `StructureTests`, `TearTests`, `ThrustTests`,
-  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`. They compile the engine-free folders by path.
+  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `SettingsTests` (the settings registry: metadata,
+  text round trip, groups, host-file forcing, authority, denylist), `ApiTests`. They compile the engine-free folders by path.
 - **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `D:\aero\tools\ModCheck`)
   then every suite. AeroBench's gate also hashes the table-building sources (`Tests/table_sources.txt`): a change there
   must bump `AeroTableCache.Version` (or re-record the hash for a pure refactor: `dotnet run -- tablehash`).

@@ -92,6 +92,14 @@ public static partial class AeroSettings
     static volatile HashSet<string> _forced = new(StringComparer.OrdinalIgnoreCase);
     public static bool IsForced(string name) => name != null && _forced.Contains(name);
 
+    /// <summary>The host file's text applied over the world's values; the names it set become the forced ones.</summary>
+    internal static void ApplyHostFile(string text)
+    {
+        var forced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Apply(text, "world", forced);
+        _forced = forced;
+    }
+
     /// <summary>A world setting changed (the API, a screen) since the world was last saved: it goes into the save carrier on
     /// the world's next save (nothing is written now). A settings screen's "saved with this world" hint.</summary>
     public static bool WorldUnsaved => _worldUnsaved;
@@ -299,13 +307,7 @@ public static partial class AeroSettings
                     var world = new FileInfo(WorldPath);
                     if (!world.Exists) { Directory.CreateDirectory(Folder); File.WriteAllText(WorldPath, WorldHeader + Commented(Text("world", all: true))); world.Refresh(); }
                     var at = world.LastWriteTimeUtc;
-                    if (at != _worldFileAt && WorldWritable)
-                    {
-                        _worldFileAt = at;
-                        var forced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        Apply(File.ReadAllText(WorldPath), "world", forced);
-                        _forced = forced;
-                    }
+                    if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; ApplyHostFile(File.ReadAllText(WorldPath)); }
                 }
                 FileWhy = "";
             }

@@ -60,7 +60,7 @@ For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLE
   - **ModCheck:** the game's exact script compile and whitelist analyzers (`D:\aero\tools\ModCheck`);
   - every suite in `Tests/`: `AeroBench` (its `gate`: known shapes, table vs exact forces, table cache, wing
     repeatability, rebuild garbage, cache version vs sources), `SurfaceTests`, `StructureTests`, `TearTests`,
-    `ThrustTests`, `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`.
+    `ThrustTests`, `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `SettingsTests`, `ApiTests`.
 - **AeroBench modes** (`cd Tests/AeroBench; dotnet run -c Release -- <mode> <ships>`), e.g. `damage`, `impact`, `scale`,
   `cache`, `gcbuild` (`ALLOC=1` for per-type dumps), `polar`, `struct`, `fail`, `replay`, `tablehash`. Ships come from
   `Tests/data/*.boxes` (gitignored; exported in game with `aeroexport on`).
