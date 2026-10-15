@@ -220,7 +220,6 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         }
     }
 
-    /// <summary>The wheel carries the ship: in contact (the game's own) or its suspension compressed.</summary>
     // ── AIRSHOCK (2026-10-15, the user: SE1's suspension setting that anticipated ground impacts - "right now it's
     //    impossible to land"): the gear down and the grid coming down, the wheel's suspension goes stiff and fully damped
     //    just before it touches (within ArmSeconds of contact at the sink rate now, or ArmHeight above the ground) so the
@@ -272,6 +271,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         Log.Default?.Info($"[AERO-GEAR] {_key} airshock {ShockState}: suspension back to stiffness {_shockS:F2}, damping {_shockD:F2}");
     }
 
+    /// <summary>The wheel carries the ship: in contact (the game's own) or its suspension compressed.</summary>
     bool WeightOnWheel()
         => _travel <= 1e-3f && (Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>() || _cm.CurrentSuspensionDistance > 0.02f);
 
