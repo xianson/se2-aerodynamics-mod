@@ -142,9 +142,8 @@ public partial class AeroGridComponent
         AeroStats.BeginGrid();
         long tpre = AeroCost.Start();
 
-        // Zero angular velocity on first frame to clear saved-world spin
-        if (aero._simFrameCount == 1)
-            PhysicsHack.TryZeroAngularVelocity(aero.Data);
+        // (no spin zeroed on a grid's first frame - 2026-10-15: it was there to clear saved-world spin, and took the tumble
+        //  of every piece broken off, every re-added grid and every client copy on its first frame: a grid's spin is physics)
 
         // ── Read physics state ──
         PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
