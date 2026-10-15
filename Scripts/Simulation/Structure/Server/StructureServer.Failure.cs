@@ -138,14 +138,15 @@ public partial class AeroGridComponent
     public static int CutVerifyTicks = 30;
     public static int CutsForced;
     readonly List<CubeBlockComponent> _cutSurvivors = new();
-    sealed class CutVerify
+    // (its split count, ticks and stage: CutWatch - the baseline the cut's failure, a crack's START, 2026-10-15)
+    sealed class CutVerify : CutWatch
     {
-        public List<CubeBlockComponent> Members; public int Stamp, Ticks, Axis; public Vector3 At; public float Plane; public Vector3I Lo, Hi;
-        /// <summary>(JAGGED, 2026-10-15) the member blocks the jagged line left standing on the ship, the way out's sign along
-        /// the axis, and the stage: 0 - the jagged surface (stubs spared); 1 - the flat plane's rule, stubs and all.
+        public List<CubeBlockComponent> Members; public int Axis; public Vector3 At; public float Plane; public Vector3I Lo, Hi;
+        /// <summary>(JAGGED, 2026-10-15) the member blocks the jagged line left standing on the ship and the way out's sign
+        /// along the axis (the stage, CutWatch.Stage: 0 - the jagged surface, stubs spared; 1 - the plane's rule, stubs and all).
         /// A set (from _stubSets): Bridges / BeyondStub test it per cell - a List.Contains there was cells x stubs, ~8 M
         /// compares a split stamp for a 100-stub cut on a 60 x 60 section, on the simulation thread (2026-10-15 review).</summary>
-        public HashSet<CubeBlockComponent> Stubs; public int Side, Stage;
+        public HashSet<CubeBlockComponent> Stubs; public int Side;
     }
     readonly List<CutVerify> _cutVerify = new();
     /// <summary>Spare stub sets (a verify's, back when it is dropped: DropVerify).</summary>
@@ -177,15 +178,14 @@ public partial class AeroGridComponent
         for (int i = _cutVerify.Count - 1; i >= 0; i--)
         {
             var v = _cutVerify[i];
-            if (stamp != v.Stamp)
+            if (v.SplitSince(stamp))
             {
                 // (a split: THIS cut separated only if no two blocks of this grid still meet face to face across its plane - any
                 //  split of the grid dropped every watched cut, one still bridged elsewhere never forced apart, 2026-10-15. A
                 //  block straddling the plane alone does not count here: a member split at its face stays whole in the octree)
-                v.Stamp = stamp;
                 if (_octree == null || Bridges(v, null) == 0) { _cutVerify.RemoveAt(i); DropVerify(v); continue; }
             }
-            if (--v.Ticks > 0) continue;
+            if (!v.Expired()) continue;
             _cutVerify.RemoveAt(i);
             recv ??= Entity?.TryGet<GridDamageReceiverComponent>();
             if (recv == null || _octree == null) { DropVerify(v); continue; }
@@ -196,7 +196,6 @@ public partial class AeroGridComponent
             foreach (var b in v.Members) if (!Gone(b)) bridge.Add(b);
             // (JAGGED, 2026-10-15: first the jagged surface - its stubs spared on the plane, and what still holds a stub from
             //  beyond it taken; only if that does not part it either, the plane's rule with the stubs - stage 1)
-            bool spare = Spare(v);
             Bridges(v, bridge);
             int n = 0;
             foreach (var b in bridge)
@@ -208,13 +207,13 @@ public partial class AeroGridComponent
             CutsChecked++;
             if (n > 0) { CutsForced++; Log.Default?.Info($"[AERO-STRUCT] {Entity?.DebugName}: the cut at {v.At} did not separate - {n} block(s) still bridging it, destroyed"); }
             // (the jagged pass done: watched once more, on the plane's rule, should it still not split)
-            if (spare) { v.Stage = 1; v.Ticks = CutVerifyTicks; v.Stamp = stamp; _cutVerify.Add(v); }
+            if (v.NextStage(stamp, CutVerifyTicks)) _cutVerify.Add(v);
             else DropVerify(v);
         }
     }
     public static int CutsChecked;
     /// <summary>(JAGGED) a watched cut's first stage spares the jagged line's stubs (stage 1: the plane's rule, stubs and all).</summary>
-    static bool Spare(CutVerify v) => v.Stage == 0 && v.Stubs != null && v.Stubs.Count > 0;
+    static bool Spare(CutVerify v) => v.Spare && v.Stubs != null && v.Stubs.Count > 0;
 
     /// <summary>(JAGGED) the blocks holding a stub from beyond the jagged line: across its outer face (the way out), each cell's
     /// neighbour that is not gone and not a stub - what the jagged step should have broken (into: added; null: only counted).
@@ -276,7 +275,7 @@ public partial class AeroGridComponent
         //  across the cut, one cell wider all round) and plane, and the members that were split rather than destroyed
         {
             var v = MakeVerify(cut);
-            if (v != null) { v.Members = new List<CubeBlockComponent>(_cutSurvivors); v.Stamp = System.Threading.Volatile.Read(ref _splitStamp); _cutVerify.Add(v); }
+            if (v != null) { v.Members = new List<CubeBlockComponent>(_cutSurvivors); v.Begin(System.Threading.Volatile.Read(ref _splitStamp)); v.Finish(v.Stamp, CutVerifyTicks); _cutVerify.Add(v); }
             _cutSurvivors.Clear();
         }
         if (torn != null) torn.Add(cut.At);
@@ -306,7 +305,7 @@ public partial class AeroGridComponent
                 (stubs ??= _stubSets.Count > 0 ? _stubSets.Pop() : new HashSet<CubeBlockComponent>(ReferenceEqualityComparer.Instance)).Add(_stBlocks[bi]);
         float side = cut.Axis == 0 ? cut.Dir.X : cut.Axis == 1 ? cut.Dir.Y : cut.Dir.Z;
         return new CutVerify { Ticks = CutVerifyTicks, At = cut.At, Axis = cut.Axis, Plane = cut.Plane, Lo = lo - Vector3I.One, Hi = hi + Vector3I.One,
-            Stubs = stubs, Side = side > 0f ? 1 : -1 };
+            Stubs = stubs, HasStubs = stubs != null && stubs.Count > 0, Side = side > 0f ? 1 : -1 };
     }
 
     // ── THE CRACK RUNS ACROSS THE SECTION (2026-10-15, the user: "our uniform break is maybe a little too linear?" -
@@ -322,6 +321,8 @@ public partial class AeroGridComponent
     /// <summary>Diagnostics (harness aeroget): cracks started, finished, members released along them, hinges crumpled; the
     /// last finished crack, and the running ones.</summary>
     public static int CracksStarted, CracksDone, CrackReleases, Crumples, CracksRunning, CracksAbandoned;
+    /// <summary>Cracks whose grid split before their last member let go (the piece parted mid-crack; their verify credits it).</summary>
+    public static int CracksSplitDuring;
     public static string CrackLast = "-";
     /// <summary>Torn-edge smoke puffs along a crack: at its first release, then evenly to its last (the hinge).</summary>
     public static int CrackSmokes = 3;
@@ -335,6 +336,8 @@ public partial class AeroGridComponent
         public StructureEval.CutFail Cut; public CutVerify Verify;
         public readonly List<CrackPart> Parts = new();
         public float Clock; public int Next, Smoked, Version0, Torn, Hinges, Crushed;
+        /// <summary>The grid's split count at the crack's start (its verify's baseline: CutWatch).</summary>
+        public int Stamp0;
         public readonly List<CubeBlockComponent> Survivors = new();
     }
     readonly List<Crack> _cracks = new();
@@ -365,12 +368,15 @@ public partial class AeroGridComponent
         return true;
     }
 
-    /// <summary>(CutDone) a queued crack started: its verify measured now, its parts in release order, the tear's springs
-    /// recorded now (every member's place and its order - kept through the crack: the split may come before its last
-    /// member, if that one no longer bridged), the first released now.</summary>
+    /// <summary>(CutDone) a queued crack started: its verify measured now - its baseline the split count now, before any
+    /// member lets go (CutWatch: the split may come before its last member, if that one no longer bridged) - its parts in
+    /// release order, the tear's springs recorded now (every member's place and its order - kept through the crack), the
+    /// first released now.</summary>
     void StartCrack(Crack c, int version0)
     {
         c.Verify = MakeVerify(c.Cut);
+        c.Stamp0 = System.Threading.Volatile.Read(ref _splitStamp);
+        c.Verify?.Begin(c.Stamp0);
         c.Version0 = version0;
         c.Parts.Sort((p, q) => { int r = p.At.CompareTo(q.At); return r != 0 ? r : p.Entry.CompareTo(q.Entry); });
         if (StructureTear.Enabled && c.Parts.Count > 0)
@@ -403,10 +409,13 @@ public partial class AeroGridComponent
             var gwt = Entity.Data.GetWorldTransform();
             c.Version0 = StructBlockVersion;   // (the blocks' version before this step's failures: the hold's, FinishCrack)
             int n = c.Parts.Count, s = Math.Max(1, CrackSmokes);
+            // (split since the crack started: the parts not yet let go may have left with the piece - InOctree)
+            bool split = System.Threading.Volatile.Read(ref _splitStamp) != c.Stamp0;
             while (c.Next < n && c.Parts[c.Next].At <= c.Clock + 1e-4f)
             {
                 int j = c.Next++;
                 var p = c.Parts[j];
+                if (split && !Gone(p.B) && !InOctree(p.B)) _goneBlocks.Add(p.B);
                 if (!Gone(p.B))
                 {
                     try { FailBlock(recv, gwt, p.Bi, p.B, p.Where, null, false, ledger: false, split: p.Mode != FractureMath.Crushed); }
@@ -421,6 +430,20 @@ public partial class AeroGridComponent
         if (c.Next < c.Parts.Count) return false;
         FinishCrack(c);
         return true;
+    }
+
+    /// <summary>A block still in this grid's octree (any of its cells). A split takes its blocks out of the octree at once
+    /// (BlockOctreeComponent.SplitDisconnectedBlocks) but their entities are only marked for close - alive, Grid still this
+    /// one, Gone blind to them - and a crack's hinge let go after its piece had split away hit one: 'Killing dead Entity'
+    /// (2026-10-15, the integration run). Only after a split mid-crack (StepCrack).</summary>
+    bool InOctree(CubeBlockComponent b)
+    {
+        if (_octree == null) return false;
+        var bb = b.AABB;
+        if ((long)(bb.Max.X - bb.Min.X + 1) * (bb.Max.Y - bb.Min.Y + 1) * (bb.Max.Z - bb.Min.Z + 1) > 4096) return true;   // (huge: assumed)
+        for (int x = bb.Min.X; x <= bb.Max.X; x++) for (int y = bb.Min.Y; y <= bb.Max.Y; y++) for (int z = bb.Min.Z; z <= bb.Max.Z; z++)
+            if (ReferenceEquals(_octree.TryGetCubeBlock(new Vector3I(x, y, z)), b)) return true;
+        return false;
     }
 
     /// <summary>(TickStructure) Structure.Loads switched off mid-crack (or the grid without its octree): the running cracks
@@ -446,7 +469,12 @@ public partial class AeroGridComponent
     void FinishCrack(Crack c)
     {
         var cut = c.Cut;
-        if (c.Verify != null) { c.Verify.Members = new List<CubeBlockComponent>(c.Survivors); c.Verify.Stamp = System.Threading.Volatile.Read(ref _splitStamp); _cutVerify.Add(c.Verify); }
+        if (c.Verify != null)
+        {
+            // (the baseline kept from the crack's start - its split mid-crack is its separation, if nothing bridges: CutWatch)
+            c.Verify.Members = new List<CubeBlockComponent>(c.Survivors); c.Verify.Finish(System.Threading.Volatile.Read(ref _splitStamp), CutVerifyTicks); _cutVerify.Add(c.Verify);
+            if (c.Verify.SplitDuring) CracksSplitDuring++;
+        }
         _stBreakHold = StructureLoads.BreakHoldMax; _stHoldVersion = c.Version0;
         CracksDone++;
         StructureLoads.LastCut = CrackLast = $"{Entity?.DebugName}: the cut at {cut.At} (axis {cut.Axis}) failed whole - {c.Parts.Count} of {cut.Count} members cracked across it over {c.Clock:F2} s ({c.Torn} torn, {c.Hinges} hinge, {c.Crushed} crushed; {cut.Steps} off the plane, {cut.Stubs?.Length ?? 0} stubs; worst utilisation {cut.Util:F2})";
