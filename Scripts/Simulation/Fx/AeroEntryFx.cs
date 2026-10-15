@@ -524,11 +524,11 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     [After(typeof(RenderSubmissionBegin))]
     private class OnAeroEntryFx : JobGroup;
 
-    /// <summary>The flight field: kept while the grid publishes a flow, is within FlightRange and among the nearest
-    /// FlightMax to the camera; dropped a second after it stops.</summary>
     /// <summary>A field whose flow is lost is kept at least this long (s) before it goes.</summary>
     public static double LostKeepSeconds = 1.5;
 
+    /// <summary>The flight field: kept while the grid publishes a flow, is within FlightRange and among the nearest
+    /// FlightMax to the camera; dropped a second after it stops.</summary>
     private static void FlightJob(AeroEntryFxComponent c, IObservers observers)
     {
         if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
