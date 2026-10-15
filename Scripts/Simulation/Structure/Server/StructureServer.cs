@@ -98,7 +98,7 @@ public partial class AeroGridComponent
     float _stNextAt;
     /// <summary>Until when (Stopwatch ticks) someone is flying this grid (AeroApi.SetFocusGrid).</summary>
     internal long StructFocusUntil;
-    float[] _stInteg; float _stIntegAge;
+    float[] _stInteg, _stIntegOther; float _stIntegAge;
 
     /// <summary>Bumped by every block change (AeroGridComponent.OnBlocksChangedCore): the structure is rebuilt when it moved.</summary>
     internal int StructBlockVersion;
@@ -202,11 +202,13 @@ public partial class AeroGridComponent
         if (_stInteg == null || _stInteg.Length != nb || build != null || _stIntegAge >= StructureLoads.IntegrityEvery)
         {
             _stIntegAge = 0f;
-            // (its array kept while the block count stands: only the evaluation reads it, and that one is done - 17 KB a pass
-            //  on a 4400-block ship, every 2 s, 2026-10-15)
-            var integ = _stInteg != null && _stInteg.Length == nb ? _stInteg : new float[nb];
+            // (two arrays kept while the block count stands, taken in turn: only the evaluation reads it, and that one is done -
+            //  17 KB a pass on a 4400-block ship, every 2 s, 2026-10-15. In turn, not one: the ledger knows a fresh reading by a
+            //  new array (StructureFatigue.Ledger.Sync) - one array refilled was never fresh again, so a weld (Repairs) or
+            //  someone else's damage never reached it and its pending wear was written over the repair, 2026-10-15)
+            var integ = _stIntegOther != null && _stIntegOther.Length == nb ? _stIntegOther : new float[nb];
             for (int i = 0; i < nb; i++) { var b = blocks[i]; integ[i] = b != null ? Math.Clamp(b.HealthIntegrity, 0f, 1f) : 0f; }
-            _stInteg = integ;
+            _stIntegOther = _stInteg; _stInteg = integ;
         }
         snap.Integrity = _stInteg;
         _stSnap = snap; _stBuildIn = build;

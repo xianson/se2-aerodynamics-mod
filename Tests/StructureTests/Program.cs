@@ -729,6 +729,25 @@ static class Program
             led.Resize(3, new[] { 2, 0 });
             Check(MathF.Abs(led.Pending[2] - 0.02f) < 1e-6f && led.Dirty.Contains(2), "ledger: a rebuild carries the pending by block");
         }
+        // the server's readings (A1, 2026-10-15): a fresh reading is a NEW array (Ledger.Sync) - the server refilled one array
+        // in place and the ledger never saw a reading again (a weld never taken, its pending written over the repair); it
+        // takes two in turn (StructureServer _stInteg / _stIntegOther)
+        {
+            var led = new StructureFatigue.Ledger(); var integ = new float[1];
+            var bufA = new float[] { 0.6f }; var bufB = new float[1];
+            led.Sync(bufA, integ, 1, 0.25f);
+            led.Accrue(0, 0.03f); led.Sync(bufA, integ, 1, 0.25f);   // (between readings: the last one again)
+            int rep0 = StructureFatigue.Repairs;
+            bufB[0] = 1f; led.Sync(bufB, integ, 1, 0.25f);           // (welded: the next reading, in the other array)
+            Check(integ[0] == 1f && led.Pending[0] == 0f && StructureFatigue.Repairs == rep0 + 1, $"ledger: a weld seen through the server's alternating readings ({integ[0]:F3})");
+            led.Accrue(0, 0.02f); led.Sync(bufB, integ, 1, 0.25f);
+            bufA[0] = 0.5f; led.Sync(bufA, integ, 1, 0.25f);         // (shot: the reading after, in the first array again)
+            Check(MathF.Abs(integ[0] - 0.48f) < 1e-4f, $"ledger: someone else's damage seen through the alternating readings ({integ[0]:F3})");
+            // (one array refilled in place: never fresh - why the server alternates)
+            var one = new float[] { 0.5f }; var led1 = new StructureFatigue.Ledger(); led1.Sync(one, integ, 1, 0.25f);
+            one[0] = 1f; led1.Sync(one, integ, 1, 0.25f);
+            Check(integ[0] == 0.5f, "ledger: one array refilled in place is not a fresh reading (the server must not reuse one)");
+        }
     }
 
     /// <summary>The blocks of sh still alive, as a structure (orig: its block -> sh's).</summary>
