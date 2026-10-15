@@ -219,7 +219,8 @@ internal static class DesignProbe
             var t = cache[i];
             float along = Vector3.Dot(t.ThrustDirection, dHat);
             if (along < 0.5f) continue;
-            float prof = t.Profile == null ? 1f : (float)t.Profile.Evaluate(mach);
+            var ap = OffsetThrustJob.AppliedProfile(t);   // (the profile the simulation applies: none by default)
+            float prof = ap == null ? 1f : (float)ap.Evaluate(mach);
             float f = SeaLevelMax(t) * Math.Max(0f, prof) * along;
             sum += f; moment += t.GridLocalPosition * f;
         }

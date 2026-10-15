@@ -64,6 +64,12 @@ public struct ThrusterDebugState
 public static partial class OffsetThrustJob
 {
     private const float DT = 1f / 60f;
+
+    /// <summary>The thrust-vs-Mach profile the simulation applies to this thruster: its own on the legacy path (ThrustTorque
+    /// off - Execute scales the game's thrust by it), none with ThrustTorque on (the default: the game's thrust as it is).
+    /// What reports read (DesignProbe, AeroApi.GetThrusters), not ThrusterInfo.Profile - 2026-10-15: they showed every
+    /// atmospheric thruster Mach-scaled (Turbofan: 0.6 at Mach 0.8) while the simulation applied no such scaling.</summary>
+    internal static ThrustProfile AppliedProfile(in ThrusterInfo t) => ThrustTorque.Enabled ? null : t.Profile;
     private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
     private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 

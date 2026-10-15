@@ -441,8 +441,10 @@ public static partial class AeroApi
     }
 
     /// <summary>The grid's thrusters as aero sees them: each block entity, its profile ("Rocket": none, flat) and its
-    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0). Lists
-    /// are cleared first; pass null for any you do not want. Returns the count (0: no aero here or no thrusters).</summary>
+    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0) - as
+    /// applied: the profiles apply only on the legacy thrust path (Aero.ThrustTorque off); with it on (the default) the
+    /// game's thrust is used as it is and every effectiveness is 1. Lists are cleared first; pass null for any you do
+    /// not want. Returns the count (0: no aero here or no thrusters).</summary>
     public static int GetThrusters(Keen.VRage.DCS.Components.Entity grid, List<Keen.VRage.DCS.Components.Entity> thrusters, List<string> profiles, List<float> effectiveness)
     {
         thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear();
@@ -459,7 +461,8 @@ public static partial class AeroApi
                 var t = cache[i];
                 thrusters?.Add(t.ThrusterEntity);
                 profiles?.Add(t.Profile?.Name ?? "Rocket");
-                effectiveness?.Add(t.Profile == null ? 1f : flying ? (float)t.Profile.Evaluate(mach, travel, t.IntakeDirection) : (float)t.Profile.Evaluate(0.0));
+                var ap = OffsetThrustJob.AppliedProfile(t);   // (as applied - none with ThrustTorque on)
+                effectiveness?.Add(ap == null ? 1f : flying ? (float)ap.Evaluate(mach, travel, t.IntakeDirection) : (float)ap.Evaluate(0.0));
             }
             return n;
         }

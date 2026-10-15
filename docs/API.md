@@ -114,7 +114,7 @@ SE2 gives only a density: the atmosphere generators (planets, stations) write it
 | `int GetThrustProfiles(List<string> names)` | The profile names: Rocket, Propeller, Turbofan, Turbojet, Ramjet, Scramjet, HelicopterRotor. |
 | `float ThrustEffectiveness(string profile, float mach)` | Thrust relative to the static (Mach 0) rating: 0 outside the operating envelope, above 1 where ram pressure helps (a turbojet at Mach 2.5 gives 1.25). `-1` for an unknown profile. Pure. |
 | `bool TryGetThrustProfile(string profile, out float minMach, out float maxMach)` | A profile's operating envelope. |
-| `int GetThrusters(Entity grid, List<Entity> thrusters, List<string> profiles, List<float> effectiveness)` | The grid's thrusters as aero sees them: the block entity, its profile (atmospheric thrusters are Turbofan; hydrogen and ion are Rocket, flat), and its effectiveness now (the profile at the grid's Mach and the air's angle into the intake; Mach 0 at rest). |
+| `int GetThrusters(Entity grid, List<Entity> thrusters, List<string> profiles, List<float> effectiveness)` | The grid's thrusters as aero sees them: the block entity, its profile (atmospheric thrusters are Turbofan; hydrogen and ion are Rocket, flat), and its effectiveness now (the profile at the grid's Mach and the air's angle into the intake; Mach 0 at rest) as applied: the profiles apply only on the legacy thrust path (`Aero.ThrustTorque` off) - with it on (the default) the game's thrust is used as it is and every effectiveness is 1. |
 
 ### Change counters
 
@@ -180,7 +180,7 @@ The build hints: the ship **as if it were flying**, at any direction and Mach, f
 | Member | Since | What it gives |
 |---|---|---|
 | `bool TryDesign(Entity grid, Vector3 travelLocal, float mach, out Vector3 copLocal, out Vector3 forceLocal, out Vector3 torqueLocal, out float stabilityA, out float stabilityB, out float streamlining)` | 4 | The whole ship (hull and wings) travelling along `travelLocal` at this Mach in sea-level air: its centre of pressure (grid-local: the force's line nearest the centre of mass), force (N) and torque (N·m, about the centre of mass), static stability about the two axes across the flow (positive: the air turns it back; per radian, over q × area × size) and its streamlining. `false`: no aero, or the table is not built yet (asked for: try again shortly). |
-| `float GetTopSpeed(Entity grid, Vector3 dirLocal)` | 4 | Sea-level top speed along `dirLocal` (m/s): forward thrust (each thruster's profile at the Mach) against drag. NaN no aero or table; 0 too little thrust; +∞ past 3 km/s. |
+| `float GetTopSpeed(Entity grid, Vector3 dirLocal)` | 4 | Sea-level top speed along `dirLocal` (m/s): forward thrust (each thruster's profile at the Mach, where one applies - the legacy thrust path only; by default the game's thrust as it is) against drag. NaN no aero or table; 0 too little thrust; +∞ past 3 km/s. |
 | `float GetThrustAlong(Entity grid, Vector3 dirLocal, float mach, out Vector3 centreLocal)` | 4 | Thrust along `dirLocal` at sea level and this Mach (N), and where it acts on average. |
 | `bool TryGetCenterOfMass(Entity grid, out Vector3 comLocal)` | 4 | The ship's centre of mass (grid-local; subgrids included). |
 | `float GetWavePeak(float streamlining)` | 4 | The transonic drag peak (× subsonic) a streamlining gives. Pure. |
