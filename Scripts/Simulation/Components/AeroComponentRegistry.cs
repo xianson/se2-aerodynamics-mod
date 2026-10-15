@@ -120,6 +120,21 @@ public class AeroComponentRegistry
             ref totalForce, ref totalTorque);
     }
 
+    /// <summary>A face's Newtonian Cp at cos(theta) to the flow, with streamlining (both subtract paths).</summary>
+    private static float FaceCp(float cosAlpha, float cdBluff, float streamlining)
+    {
+        float cp = DampedShadowedDragModel.SubsonicSquareLaw ? cdBluff * cosAlpha * cosAlpha : cdBluff * cosAlpha;
+
+        if (streamlining > 0f && !DampedShadowedDragModel.SubsonicSquareLaw)
+        {
+            float recovery = cosAlpha * cosAlpha;
+            float minFraction = 0.08f;
+            float factor = minFraction + (1f - minFraction) * recovery;
+            cp *= 1f - streamlining * (1f - factor);
+        }
+        return cp;
+    }
+
     private static void SubtractFaceForcesIndexed(SmoothSurfaceProvider smooth,
         in AeroContext ctx,
         IReadOnlyList<Vector3I> ownedCells, Vector3 vHat, float q,
@@ -139,15 +154,7 @@ public class AeroComponentRegistry
                 float cosAlpha = Vector3.Dot(vHat, face.Normal);
                 if (cosAlpha <= 0.01f) continue;
 
-                float cp = DampedShadowedDragModel.SubsonicSquareLaw ? cdBluff * cosAlpha * cosAlpha : cdBluff * cosAlpha;
-
-                if (streamlining > 0f && !DampedShadowedDragModel.SubsonicSquareLaw)
-                {
-                    float recovery = cosAlpha * cosAlpha;
-                    float minFraction = 0.08f;
-                    float factor = minFraction + (1f - minFraction) * recovery;
-                    cp *= 1f - streamlining * (1f - factor);
-                }
+                float cp = FaceCp(cosAlpha, cdBluff, streamlining);
 
                 var pressureForce = face.Normal * (-cp * q * face.Area);
                 totalForce -= pressureForce;
@@ -187,15 +194,7 @@ public class AeroComponentRegistry
                 if (cosAlpha <= 0.01f)
                     continue;
 
-                float cp = DampedShadowedDragModel.SubsonicSquareLaw ? cdBluff * cosAlpha * cosAlpha : cdBluff * cosAlpha;
-
-                if (streamlining > 0f && !DampedShadowedDragModel.SubsonicSquareLaw)
-                {
-                    float recovery = cosAlpha * cosAlpha;
-                    float minFraction = 0.08f;
-                    float factor = minFraction + (1f - minFraction) * recovery;
-                    cp *= 1f - streamlining * (1f - factor);
-                }
+                float cp = FaceCp(cosAlpha, cdBluff, streamlining);
 
                 var pressureForce = face.Normal * (-cp * q * face.Area);
                 totalForce -= pressureForce;

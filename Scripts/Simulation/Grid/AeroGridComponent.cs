@@ -1,5 +1,4 @@
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
@@ -55,7 +54,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     public static bool LocalUpdates = true;
     /// <summary>Below this speed (m/s) a damaged grid's table waits (q ~ 50 Pa at sea level: its drag is nothing).</summary>
     public static float MinSpeedForUpdates = 10f;
-    internal int DeferredFrames;
     /// <summary>Chunk size (m): 8 measured best (Red Ship, a block: 95 ms at 16 m -> 27 ms; 4 m no faster).</summary>
     public static float ChunkSize = 8f;
     internal double LastLocalMs, QuickMs;
@@ -72,7 +70,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal int _thrusterGen;
     /// <summary>This grid's published flame shares (ThrustTorque.Publish; server copy only).</summary>
     internal ThrustTorque.Published _flamePub;
-    internal bool Seeded;
     private ChunkedTable.LocalResult _localRes;
     internal int LocalUpdatesDone;
     /// <summary>Grid cells per surface cell (large-block grids: 2). Such a surface is never updated cell by cell.</summary>
@@ -143,7 +140,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // Direct torque applied to physics, independent of aero surfaces.
     internal Vector3 SasTorque;  // local frame, computed per frame
     internal Vector3 EulerError; // local frame, orientation error in radians
-    internal bool SuppressPhantomTorque; // test harness: disable SAS + phantom attitude torque
+    internal bool SuppressPhantomTorque; // disables SAS + phantom attitude torque (meant for a test harness: nothing sets it now - always false)
     internal bool HarnessControlsAttitude; // test harness: skip UpdateAttitudeHold, harness drives _lastGridAngVel + SasTorque
     internal Quaternion _holdOrientation = Quaternion.Identity; // orientation to hold when unpiloted
     internal bool _holdOrientationValid;                        // true once captured
@@ -351,7 +348,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         // Enable debug draw globally (off by default)
         Keen.VRage.Core.GlobalDebugSettings.Default.EnabledDebugDraw = true;
 
-        // The client copy shows thruster flames for the controller's sharing (ThrustTorque.ClientFlames). The game
+        // The client copy shows thruster flames for the controller's sharing (ThrustTorque.Publish, AeroFlameComponent). The game
         // names its scenes "Server" and "Client" (WorldSessionComponent); in single player both sessions have the
         // game server service, so that cannot tell them apart.
         try { IsServerScene = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { IsServerScene = true; }

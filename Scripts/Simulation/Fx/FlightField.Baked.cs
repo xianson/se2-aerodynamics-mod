@@ -1,8 +1,6 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using Keen.VRage.Core;
-using Keen.VRage.Library.Mathematics;
 namespace AeroMod;
 
 /// <summary>
@@ -174,7 +172,7 @@ internal sealed partial class FlightField
     {
         if (_ancHasN[k]) return _ancN[k];
         long tN = System.Diagnostics.Stopwatch.GetTimestamp();
-        try { return AnchorNormal0(k); } finally { BkNormal += Ms(tN); }
+        try { return AnchorNormal0(k); } finally { BkNormal += AeroCost.Ms(tN); }
     }
     private Vector3 AnchorNormal0(int k)
     {
@@ -185,7 +183,6 @@ internal sealed partial class FlightField
 
     /// <summary>One direction baked: the anchors on the outline seen along d, their strengths and spray directions.</summary>
     public static double BkCells, BkChunk, BkLoop, BkNormal, BkPressure; static long _bkN0;
-    static double Ms(long t0) => (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     public static string BakeProfile => $"bake ms total: cells {BkCells:F0} chunkdrag {BkChunk:F0} outline {BkLoop:F0} (normals {BkNormal:F0}, pressure {BkPressure:F0})";
     private void Bake(int vi)
     {
@@ -221,9 +218,9 @@ internal sealed partial class FlightField
         }
         bool M(int i, int j) => i >= 0 && j >= 0 && i < W && j < H && mask[i, j];
         // the weights' pressure (the chunks' drag along d) and the front's middle (the spray's "outward")
-        BkCells += Ms(tA); long tB = System.Diagnostics.Stopwatch.GetTimestamp();
+        BkCells += AeroCost.Ms(tA); long tB = System.Diagnostics.Stopwatch.GetTimestamp();
         ChunkDrag(d);
-        BkChunk += Ms(tB); long tC = System.Diagnostics.Stopwatch.GetTimestamp();
+        BkChunk += AeroCost.Ms(tB); long tC = System.Diagnostics.Stopwatch.GetTimestamp();
         Vector3 stag = Vector3.Zero; int sc = 0;
         foreach (var l in cells.Values) { int best = -1; float bz = float.MinValue; foreach (int k in l) { float z = Vector3.Dot(_anc[k], d); if (z > bz) { bz = z; best = k; } } stag += _anc[best]; sc++; }
         stag = sc > 0 ? stag / sc : _ancC; _stagMid = stag;
@@ -253,7 +250,7 @@ internal sealed partial class FlightField
             slots.Add(midK * 3 + 2); raw.Add(LocalPressure(_anc[midK]) * (1f - CpMix + CpMix * cos2 * cos2)); dirs.Add(Spray(midK, d, stag, VapourDownMix, false));
             wMax = MathF.Max(wMax, w);
         }
-        BkLoop += Ms(tC);
+        BkLoop += AeroCost.Ms(tC);
         float rate = BakeSpacing / Math.Max(0.1f, SegLen);   // (per emitter: the old outline's SegLen / LineDensity spacing)
         for (int m = 0; m < raw.Count; m++)
         {
@@ -322,7 +319,7 @@ internal sealed partial class FlightField
         try { BakedFrameCore(f, fdt); }
         finally
         {
-            double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - tf0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            double ms = AeroCost.Ms(tf0);
             RecBakedSumMs += ms; RecBakedFrames++; if (ms > RecBakedMaxMs) RecBakedMaxMs = ms;
         }
     }
@@ -406,16 +403,6 @@ internal sealed partial class FlightField
     {
         int ch = s % 3;
         Guid e = ch == 2 ? (EdgeCollide == 0 ? new Guid("5d0c7a3e-0105-4000-8000-000000000001") : VapourEdge) : (Recipe ? RecipeGuid(ch == 1) : RateGuid(TexKind(ch == 1), StreakField));
-        void FillPlasma(object prm)
-        {
-            var t = prm.GetType();
-            t.GetField("EmitterScaleMultiplier").SetValue(prm, LineScale);
-            t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, SparkSpeed));
-            t.GetField("ColorMultiplier").SetValue(prm, new ColorSRGB(SparkBright, SparkBright, SparkBright, 1f));
-            t.GetField("EmitterSizeMultiplier").SetValue(prm, SpawnSize);
-            t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
-            if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
-        }
         void FillVapour(object prm)
         {
             var t = prm.GetType();
@@ -426,7 +413,7 @@ internal sealed partial class FlightField
         var q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f);
         _spawnTip = true;   // (not swung: the bake places it)
         object h;
-        try { h = SpawnEffect(_client, e, new RelativeTransform(SlotAt(s), q), out object prm, out _puffWhy, ch == 2 ? FillVapour : FillPlasma); if (h != null && prm != null) SetParamsIfChanged(h, prm); }
+        try { h = SpawnEffect(_client, e, new RelativeTransform(SlotAt(s), q), out object prm, out _puffWhy, ch == 2 ? FillVapour : FillSparks); if (h != null && prm != null) SetParamsIfChanged(h, prm); }
         finally { _spawnTip = false; }
         if (h == null) return null;
         _slotQ[s] = q;

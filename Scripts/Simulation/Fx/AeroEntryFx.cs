@@ -1,7 +1,6 @@
 #pragma warning disable
 using System;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.Data;
 using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Systems;
 using Keen.VRage.DCS.Annotations;
@@ -511,7 +510,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     internal readonly AeroEntryFx.FlowPub FlowCopy = new();
     internal long LinesAt;   // (its diagnostics lines next made: FlightJob)
     internal long LostSince;   // (dropped after 1 s lost, and 60 frames: not 60 frames - half a second at 120 fps, two at 30)   // (the server grid matched last frame: kept while in reach)
-    internal int FlightLost;
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene()
@@ -561,7 +559,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             if (c.Flight != null && ((faded && lostFor > (long)(LostKeepSeconds * System.Diagnostics.Stopwatch.Frequency)) || lostFor > 4 * System.Diagnostics.Stopwatch.Frequency)) { c.LostSince = 0; c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }
             return;
         }
-        c.FlightLost = 0; c.LostSince = 0;
+        c.LostSince = 0;
         if (c.Flight == null)
         {
             if (AeroEntryFx.FlightActive >= FlightField.FlightMax + 1 && !p.Aero.FxTipOwner) return;

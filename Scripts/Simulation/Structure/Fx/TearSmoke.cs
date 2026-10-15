@@ -2,7 +2,6 @@
 using System;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.DCS.Components;
 using Keen.VRage.Library.Definitions;
 namespace AeroMod;
 
@@ -21,7 +20,7 @@ namespace AeroMod;
 ///    pooled one-shot gets no timeout of the game's) - on the grid's removal from the scene too (EndAll); effects off: ended.
 /// An event no client grid takes in KeepSeconds is dropped (a dedicated server: never taken - the list is capped and aged
 /// on publish too). Pairing is in-process (single player and a host), as the rest of the mod's server-to-client effects.
-/// The particle API is VRage.Game.Client / VRage.Render (not mod references): late-bound as FlightFieldHost does it
+/// The particle API is VRage.Game.Client / VRage.Render (not mod references): late-bound as FlightField.Render.cs does it
 /// (docs/REFLECTION_AND_WHITELIST.md).
 /// </summary>
 public static class TearSmoke
@@ -140,12 +139,6 @@ public static class TearSmoke
     static Type _tSession, _tParams; static MethodInfo _spawn; static FieldInfo _scaleField; static bool _resolved;
     static MethodInfo _stop, _disposeAfter, _dispose; static PropertyInfo _isDisposed;
 
-    static Type FindType(string asm, string name)
-    {
-        foreach (var x in AppDomain.CurrentDomain.GetAssemblies()) if (x.GetName().Name == asm) return x.GetType(name);
-        return null;
-    }
-
     /// <summary>An effect under the grid's render root at a grid-local transform (it follows the grid); null and why on failure.</summary>
     static object Spawn(Entity grid, Guid effect, RelativeTransform at, float scale, out string why)
     {
@@ -155,8 +148,8 @@ public static class TearSmoke
             if (!_resolved)
             {
                 _resolved = true;
-                _tSession = FindType("VRage.Game.Client", "Keen.VRage.Game.Client.Effects.Components.ParticleEffectsSessionComponent");
-                _tParams = FindType("VRage.Render", "Keen.VRage.Render.Data.ParticleEffectUserParameters");
+                _tSession = EntryFxBridge.FindType("VRage.Game.Client", "Keen.VRage.Game.Client.Effects.Components.ParticleEffectsSessionComponent");
+                _tParams = EntryFxBridge.FindType("VRage.Render", "Keen.VRage.Render.Data.ParticleEffectUserParameters");
                 if (_tSession != null)
                     foreach (var m in _tSession.GetMethods(AnyInst))
                         if (m.Name == "TrySpawnEffect") { var ps = m.GetParameters(); if (ps.Length > 3 && ps[0].ParameterType == typeof(RelativeTransform)) { _spawn = m; break; } }

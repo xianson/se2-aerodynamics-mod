@@ -1,8 +1,6 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using Keen.VRage.Core;
-using Keen.VRage.Library.Mathematics;
 namespace AeroMod;
 
 /// <summary>

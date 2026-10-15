@@ -213,10 +213,10 @@ public static class AeroStats
     public static void SetLift(float us)   { DragLiftUs.Set(us);   _lastLiftUs = us; }
 
     // ── Grid subsystem stashes (for logging) ──
-    private static float _lastDragUs, _lastCtrlUs, _lastCompUs;
+    private static float _lastCtrlUs, _lastCompUs;
     private static float _lastFaceOvrUs, _lastSurfUs, _lastWingUs;
 
-    public static void SetDrag(float us)    { GridDragUs.Set(us);    _lastDragUs = us; }
+    public static void SetDrag(float us)    { GridDragUs.Set(us); }
     public static void SetCtrl(float us)    { GridCtrlUs.Set(us);    _lastCtrlUs = us; }
     public static void SetComp(float us)    { GridCompUs.Set(us);    _lastCompUs = us; }
     public static void SetFaceOvr(float us) { GridFaceOvrUs.Set(us); _lastFaceOvrUs = us; }

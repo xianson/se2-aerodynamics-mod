@@ -1,9 +1,7 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Game.Systems;
 namespace AeroMod;
 
@@ -184,9 +182,7 @@ internal sealed partial class FlightField
         _renderResolved = true;
         try
         {
-            Assembly render = null;
-            foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) if (a.GetName().Name == "VRage.Render") { render = a; break; }
-            var engine = render?.GetType("Keen.VRage.Render.EngineComponents.RenderEngineComponent");
+            var engine = EntryFxBridge.FindType("VRage.Render", "Keen.VRage.Render.EngineComponents.RenderEngineComponent");
             object instance = engine?.GetField("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             _contracts = instance?.GetType().GetProperty("RenderContracts")?.GetValue(instance);
             if (_contracts == null) return false;

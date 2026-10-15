@@ -266,12 +266,7 @@ public partial class AeroGridComponent
                     ColorSRGB.Cyan, null, 0.05);
 
                 // Deflected chord direction (yellow arrow) — Rodrigues rotation
-                float deflRad = -cs.DeflectionInput * cs.MaxDeflection * MathF.PI / 180f;
-                float cosD = MathF.Cos(deflRad);
-                float sinD = MathF.Sin(deflRad);
-                Vector3 deflChord = cs.ChordDirection * cosD +
-                    Vector3.Cross(cs.HingeAxis, cs.ChordDirection) * sinD +
-                    cs.HingeAxis * Vector3.Dot(cs.HingeAxis, cs.ChordDirection) * (1f - cosD);
+                Vector3 deflChord = DeflectedChord(cs);
                 Vector3 deflChordWorld = WorldTransform.TransformDirection(deflChord, wt);
                 dd.AddArrow(posWorld, posWorld + (Vector3D)(deflChordWorld * 2.0f),
                     ColorSRGB.Yellow, null, 0.10);
@@ -449,7 +444,6 @@ public partial class AeroGridComponent
     private Vector3 _lastVelocityLocal;
     private Vector3 _lastComLocal;
     internal Vector3 _lastGridAngVel;
-    private float _lastDensity;
     private Vector3 _smoothedCopLocal = Vector3.Zero;
     private bool _copInitialized;
 }

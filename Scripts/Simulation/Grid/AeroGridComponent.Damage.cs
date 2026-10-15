@@ -1,10 +1,7 @@
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids;
-using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.GameSystems.OWT;
 
 #pragma warning disable
 namespace AeroMod;
@@ -153,7 +150,6 @@ public partial class AeroGridComponent
         var t = OrphanChunks.Take(wt.Position, wt.Orientation, keys, 8, 3, IsServerScene);
         if (t == null) return;
         _model.InstallForceTable(t);
-        Seeded = true;
         Log.Default?.Info($"[AERO] grid {Entity?.DebugName} seeded from its parent: {keys.Count} chunks, try {_seedTries}");
     }
 
@@ -183,7 +179,7 @@ public partial class AeroGridComponent
         // background work only while the air matters: a wreck on the ground (or anything barely moving) keeps its
         // damage noted - the same-frame drops above still apply - and catches up the moment it moves again
         bool airMatters = LastSpeed >= MinSpeedForUpdates && LastDensity > 0f;
-        if (!airMatters) { DeferredFrames++; return; }
+        if (!airMatters) return;
         if (_localDirty.Count > 0 && !_staggeredBuildActive && _model?.Table != null)
         {
             // the region: the dirty chunks and a margin; its blocks captured here (the octree is ours only now)

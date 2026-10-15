@@ -116,7 +116,7 @@ public sealed class AeroCost
         lock (_threads) _threads.Clear();
     }
 
-    /// <summary>A diagnostics counter added per thread, CountBatch at a time (as ThrustTorque.Count): every grid's sim job on
+    /// <summary>A diagnostics counter added per thread, CountBatch at a time (AeroSimJob's quiet skips, ThrustTorque's call and flame counts): every grid's sim job on
     /// every job thread incrementing one shared word passed its cache line between the cores thousands of times a second.
     /// A thread's last few (under CountBatch) are added with its next batch.</summary>
     internal const int CountBatch = 32;

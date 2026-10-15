@@ -1,5 +1,4 @@
 #pragma warning disable
-using System;
 using Keen.Game2.Simulation;
 using Keen.VRage.Core;
 using Keen.VRage.Physics.Components;

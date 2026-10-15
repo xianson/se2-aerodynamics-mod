@@ -121,7 +121,7 @@ public class ThinAirfoilWingModel : IWingLiftModel
 
                     var delta = wj.Centroid - wi.Centroid;
                     float gap = MathF.Abs(Vector3.Dot(delta, wi.Normal));
-                    float overlap = ComputePlanformOverlap(wi, wj);
+                    float overlap = CompressibleWingModel.ComputePlanformOverlap(wi, wj);
                     if (overlap <= 0) continue;
 
                     float maxSpan = MathF.Max(wi.Span, wj.Span);
@@ -285,22 +285,5 @@ public class ThinAirfoilWingModel : IWingLiftModel
         }
 
         return _resultsList;
-    }
-
-    private static float ComputePlanformOverlap(in LiftingSurface a, in LiftingSurface b)
-    {
-        var delta = b.Centroid - a.Centroid;
-        float spanSep = MathF.Abs(Vector3.Dot(delta, a.SpanAxis));
-        float chordSep = MathF.Abs(Vector3.Dot(delta, a.ChordAxis));
-
-        float spanOverlap = MathF.Max(0, (a.Span + b.Span) * 0.5f - spanSep);
-        float maxSpan = MathF.Max(a.Span, b.Span);
-        float spanFrac = maxSpan > 0 ? spanOverlap / maxSpan : 0;
-
-        float chordOverlap = MathF.Max(0, (a.MeanChord + b.MeanChord) * 0.5f - chordSep);
-        float maxChord = MathF.Max(a.MeanChord, b.MeanChord);
-        float chordFrac = maxChord > 0 ? chordOverlap / maxChord : 0;
-
-        return spanFrac * chordFrac;
     }
 }

@@ -1,9 +1,7 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Game.Systems;
 namespace AeroMod;
 
@@ -108,8 +106,6 @@ internal sealed partial class FlightField
         }
     }
 
-    private int _lineBad;
-
     private bool _draining;
     private bool _spawnTip; private object _vapPrm;   // (a tip spawns on the grid's own root, not the swing's)
 
@@ -137,7 +133,7 @@ internal sealed partial class FlightField
         // (checked, not assumed: the first lines sprayed outward - the basis's convention is the inverse one here)
         if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f || Vector3.Dot(Vector3.Transform(Vector3.UnitX, q), sdir) < 0.99f)
             q = Quaternion.Inverse(q);
-        if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f) { _lineBad++; return; }
+        if (Vector3.Dot(Vector3.Transform(Vector3.UnitZ, q), -f) < 0.99f) return;
         Vector3 mid = (p0 + p1) * 0.5f + lift;
         bool front = zFront - Vector3.Dot(mid, f) < FrontDepth * R;
         // (a stretched spawn box cannot be a line: the GPU emitter sends each particle along normalize(its spawn offset) -
@@ -145,11 +141,11 @@ internal sealed partial class FlightField
         //  close together along the outline, instead.)
         Guid e = SparkColor == 3 && LineDensity > 1 ? RateGuid(front ? 3 : 4, LineRate) : front ? ShockSparks : TailSparks;
         float held = WeightTime(mid - lift, LineDensity);
-        if (held == 0f) { _weightSkipped++; return; }
+        if (held == 0f) return;
         if (_sub == 6)
         {
             // (the vapour sheets: the same placement and spray direction, its own effect; the weight at heat 1 is kept and
-            //  VapourFlow multiplies it by the Mach band every quarter second)
+            //  Strengths multiplies it by the band's eased strength every tenth of a second)
             float w = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f;
             w *= SuctionSide(mid - lift, f);
             if (RateJitter > 0f) w *= 1f + RateJitter * ((float)_rng.NextDouble() * 2f - 1f);
@@ -204,17 +200,7 @@ internal sealed partial class FlightField
             var hn = HullNormal(mid - lift, f);
             if (hn != null) q = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, SprayDir(mid - lift, f, hn.Value));
         }
-        void FillLine(object prm)
-        {
-            var t = prm.GetType();
-            t.GetField("EmitterScaleMultiplier").SetValue(prm, LineScale);
-            t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, SparkSpeed));
-            t.GetField("ColorMultiplier").SetValue(prm, new ColorSRGB(SparkBright, SparkBright, SparkBright, 1f));
-            t.GetField("EmitterSizeMultiplier").SetValue(prm, SpawnSize);
-            t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
-            if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
-        }
-        object h = SpawnEffect(_client, e, new RelativeTransform(mid, q), out object prm, out _puffWhy, FillLine);
+        object h = SpawnEffect(_client, e, new RelativeTransform(mid, q), out object prm, out _puffWhy, FillSparks);
         if (h == null) return;
         _puffs.Add(h);
         try
@@ -226,13 +212,23 @@ internal sealed partial class FlightField
         catch (Exception ex) { _puffWhy = "set: " + Inner(ex); }
     }
 
-    private bool _fieldUp;
+    /// <summary>A plasma spark emitter's parameters (the line segments and the baked slots).</summary>
+    private static void FillSparks(object prm)
+    {
+        var t = prm.GetType();
+        t.GetField("EmitterScaleMultiplier").SetValue(prm, LineScale);
+        t.GetField("VelocityMultiplier").SetValue(prm, Math.Max(0.01f, SparkSpeed));
+        t.GetField("ColorMultiplier").SetValue(prm, new ColorSRGB(SparkBright, SparkBright, SparkBright, 1f));
+        t.GetField("EmitterSizeMultiplier").SetValue(prm, SpawnSize);
+        t.GetField("ParticleAspectRatio").SetValue(prm, SparkAspect);
+        if (Strict) t.GetField("VelocityDirection").SetValue(prm, Vector3.UnitZ);
+    }
 
     /// <summary>The local pressure at p: the chunks' drag over their frontal area, Gaussian-blended (sigma 0.6 chunk).</summary>
     private float LocalPressure(Vector3 p)
     {
         long tP = System.Diagnostics.Stopwatch.GetTimestamp();
-        try { return LocalPressure0(p); } finally { BkPressure += Ms(tP); }
+        try { return LocalPressure0(p); } finally { BkPressure += AeroCost.Ms(tP); }
     }
     private float LocalPressure0(Vector3 p)
     {

@@ -1,6 +1,5 @@
 #pragma warning disable
 using System;
-using System.Reflection;
 using Keen.VRage.Core;
 using Keen.VRage.Core.Game.Systems;
 using Keen.VRage.Library.Definitions;

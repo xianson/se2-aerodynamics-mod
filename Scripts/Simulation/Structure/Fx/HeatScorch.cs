@@ -1,6 +1,5 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using Keen.VRage.Core;
 using Keen.VRage.Library.Definitions;
 using Keen.Game2.Client.GameSystems.Decals;
@@ -38,7 +37,7 @@ public static class HeatScorch
     // -- server: the spots of a grid, from its RE-ENTRY heat --
     // (RE-ENTRY ONLY - the user: "i just want reentry heat to do scorch marks, not aero loads", "use an orbital api instead
     //  of some glow". The hull heat model's skin temperatures - which a railed entry now heats too, from the Orbital mod's
-    //  entry STATE (the true air speed and density: AeroApi.RegisterEntryState) - and only while the ship is in a re-entry:
+    //  entry STATE (the true air speed and density: OrbitalApi.TryGetEntryState, AeroEntryFx.EntryStateAt) - and only while the ship is in a re-entry:
     //  the Orbital mod's entry state, or the ship's own hypersonic heating past the glow's onset. Ordinary flight never.)
     /// <summary>Skin temperature (K) a face must reach to scorch light / dark (a real entry's nose: ~1000 K).</summary>
     public static float LightK = 700f, DarkK = 950f;

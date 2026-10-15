@@ -1,10 +1,8 @@
 #pragma warning disable
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
 
 namespace AeroMod;
 
@@ -63,7 +61,6 @@ public struct ThrusterDebugState
 /// </summary>
 public static partial class OffsetThrustJob
 {
-    private const float DT = 1f / 60f;
     private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
     private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 
@@ -79,7 +76,6 @@ public static partial class OffsetThrustJob
     private static int _traceIndex = -1;
     private static int _traceFrame;
     private static int _dampDiagCooldown;
-    private static int _traceLockedCount = int.MaxValue;
     private static int _traceSkipCount = 0; // skip first N grids before locking
     private static bool _traceActive;
     // Net torque accumulators (written by Execute offset loop, read for NET log)
@@ -164,7 +160,6 @@ public static partial class OffsetThrustJob
                     _traceGridHash = gridHash;
                     _traceIndex = 0;
                     _traceFrame = 0;
-                    _traceLockedCount = thrusters.Count;
                     _traceActive = true;
                     Log.Default?.Info($"[AERO-TRACE] LOCKED grid={gridHash:X8} thruster=0 count={thrusters.Count}");
                 }
@@ -275,13 +270,13 @@ public static partial class OffsetThrustJob
             if (float.IsNaN(couplingTorqueI.X)) continue;
 
             // Apply pure torque (no linear change — vanilla's thrust stays intact)
-            PhysicsHack.ApplyTorqueImpulse(gridData, couplingTorqueI * DT, gridWt);
+            PhysicsHack.ApplyTorqueImpulse(gridData, couplingTorqueI * AeroPhysics.Dt, gridWt);
 
             // Mach scaling: apply linear delta if profile != 1.0
             if (Math.Abs(profileScale - 1f) > 0.001f)
             {
                 Vector3 deltaImpulse = WorldTransform.TransformDirection(
-                    forceDir * (scaledThrust - vanillaThrust) * DT, gridWt);
+                    forceDir * (scaledThrust - vanillaThrust) * AeroPhysics.Dt, gridWt);
                 if (!float.IsNaN(deltaImpulse.X))
                     PhysicsHack.ApplyLinearImpulse(gridData, deltaImpulse);
             }

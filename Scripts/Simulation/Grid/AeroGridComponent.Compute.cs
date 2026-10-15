@@ -1,10 +1,8 @@
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.GameSystems.OWT;
 
 #pragma warning disable
 namespace AeroMod;
@@ -188,7 +186,6 @@ public partial class AeroGridComponent
 
         _lastVelocityLocal = localLinVel;
         _lastComLocal = centerOfMass;
-        _lastDensity = density;
 
         var ctx = new AeroContext(
             _gridAccessor,

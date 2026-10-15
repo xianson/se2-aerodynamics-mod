@@ -524,7 +524,7 @@ static partial class Program
         if (Environment.GetEnvironmentVariable("AERO_CAMBER") is string aero_camber) CompressibleWingModel.GeometricCamber = aero_camber == "1";   // (on by default now: =0 for the old)
         if (float.TryParse(Environment.GetEnvironmentVariable("AERO_ALPHA0"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a0)) CompressibleWingModel.TestAlpha0 = a0 / 57.3f;
         if (Environment.GetEnvironmentVariable("AERO_STEPWING") == "1") ConnectedComponentWingDetector.StepConnect = true;
-        if (Environment.GetEnvironmentVariable("AERO_COLWING") is string aero_colwing) ConnectedComponentWingDetector.ColumnMode = aero_colwing == "1";   // (on by default now: =0 for the old)
+        if (Environment.GetEnvironmentVariable("AERO_COLWING") is string aero_colwing) ConnectedComponentWingDetector.ColumnMode = aero_colwing == "1";   // (off by default: =1 for the planform-column detector)
         if (int.TryParse(Environment.GetEnvironmentVariable("AERO_RECPASSES"), out var rp)) DampedShadowedDragModel.RecoveryPasses = rp;
         if (float.TryParse(Environment.GetEnvironmentVariable("AERO_RECFRAC"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var recFrac)) DampedShadowedDragModel.RecoveryFrac = recFrac;
         if (Environment.GetEnvironmentVariable("AERO_COLRUN") == "0") DampedShadowedDragModel.ColumnRun = false;

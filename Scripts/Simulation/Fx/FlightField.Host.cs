@@ -1,9 +1,7 @@
 #pragma warning disable
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Render;
 using Keen.VRage.Core.Game.Systems;
 namespace AeroMod;
 
@@ -125,7 +123,7 @@ internal sealed partial class FlightField
             if (_rebuildSeen != Rebuild) { _rebuildSeen = Rebuild; DropAll(); _shapeOk = false; _hull = null; _hullWhy = null; }
             _server = p.Aero;
             Vector3 travel = p.TravelLocal;
-            _mach = p.Mach; _rho = p.Density; _speed = p.Speed; _liftDir = p.LiftLocal; _liftCoef = p.LiftCoef; _flowFound = true;
+            _mach = p.Mach; _rho = p.Density; _speed = p.Speed; _liftDir = p.LiftLocal; _liftCoef = p.LiftCoef;
             // the strength: an entry source owns it when there is one (the Orbital Mod's reentry), else Mach and density
             float rawS = p.ExtStrength >= 0f ? p.ExtStrength : AeroEntryFx.EntryStrength(_mach, _rho);
             // CONSISTENCY: every strength eased frame by frame (rising over RiseTau, falling over FallTau) - it was the raw value,
@@ -248,12 +246,11 @@ internal sealed partial class FlightField
             Carry();   // (carried onto the new layout, not dropped; the tips do not hang on the shadow: kept)
             long tS = System.Diagnostics.Stopwatch.GetTimestamp();
             ShockGrid(f, a, b, R, pts, out _P3, out _past);
-            RecShocks++; RecShockMs += (System.Diagnostics.Stopwatch.GetTimestamp() - tS) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            RecShocks++; RecShockMs += AeroCost.Ms(tS);
             _ring = SmoothRing(Rim(_P3, _past, a, b, out _ringC), RimSmooth);
             _shapeKey = key; _shapeOk = true;
         }
         N = _P3.GetLength(0) - 1;
-        if (_lightAt == default) LightPlace(_P3, pts, f);
         return true;
     }
 
@@ -433,7 +430,7 @@ internal sealed partial class FlightField
     {
         _genPlasma++; _genEdges++; _genTips++;
         _noStop = false; StopPuffs(); BakedDrop();
-        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _lightAt = default; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear();
+        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear();
     }
 
     // ── the aero model, read directly ──
@@ -460,9 +457,9 @@ internal sealed partial class FlightField
     public static int _lastChunkCount;
     private void ChunkDrag(Vector3 f)
     {
-        _chunkDrag.Clear(); _dragWhy = null;
+        _chunkDrag.Clear();
         var table = _server?.FxChunks;
-        if (table == null) { _dragWhy = "no chunk table"; return; }
+        if (table == null) return;
         int n = table.N, count = table.ChunkCount; _lastChunkCount = count;
         Vector3 d = f; float ax = MathF.Abs(d.X), ay = MathF.Abs(d.Y), az = MathF.Abs(d.Z), aa, bb; int face;
         if (ax >= ay && ax >= az) { face = d.X >= 0 ? 0 : 1; aa = d.Y / ax; bb = d.Z / ax; }
@@ -484,7 +481,6 @@ internal sealed partial class FlightField
             var (lo, hi) = table.Bounds[c];
             if (fr > 1e-3f) _chunkDrag.Add(((lo + hi) * 0.5f, Math.Max(0f, drag), fr));
         }
-        if (_chunkDrag.Count == 0) _dragWhy = "no windward chunks";
     }
 
     /// <summary>

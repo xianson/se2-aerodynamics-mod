@@ -1,10 +1,8 @@
 using System;
-using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids;
 using Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees;
 using Keen.Game2.Simulation.WorldObjects.Movement;
 using Keen.VRage.Core;
-using Keen.VRage.Core.Game.GameSystems.OWT;
 
 #pragma warning disable
 namespace AeroMod;
@@ -290,11 +288,7 @@ public partial class AeroGridComponent
                 {
                     // 5f. Compute derived values for logging (Rodrigues deflection, negated to match Compute)
                     float deflRad = -cs.DeflectionInput * cs.MaxDeflection * MathF.PI / 180f;
-                    float cosD = MathF.Cos(deflRad);
-                    float sinD = MathF.Sin(deflRad);
-                    Vector3 deflChord = cs.ChordDirection * cosD +
-                        Vector3.Cross(cs.HingeAxis, cs.ChordDirection) * sinD +
-                        cs.HingeAxis * Vector3.Dot(cs.HingeAxis, cs.ChordDirection) * (1f - cosD);
+                    Vector3 deflChord = DeflectedChord(cs);
                     Vector3 deflSurfNormal = Vector3.Cross(cs.HingeAxis, deflChord);
                     float deflSurfNormLen = deflSurfNormal.Length();
                     if (deflSurfNormLen > 1e-6f) deflSurfNormal /= deflSurfNormLen;
@@ -435,6 +429,18 @@ public partial class AeroGridComponent
     /// off, unpowered or broken (it trails at neutral). baseInput: its flap / trim as an input (+ trim: the force toward the
     /// cockpit's up - for a fin, its right); usable: it may help on some axis.
     /// </summary>
+    /// <summary>A surface's chord turned about its hinge by its current deflection (Rodrigues; negated to match its
+    /// Compute) - the surface log and the debug draw.</summary>
+    private static Vector3 DeflectedChord(ControlSurface cs)
+    {
+        float deflRad = -cs.DeflectionInput * cs.MaxDeflection * MathF.PI / 180f;
+        float cosD = MathF.Cos(deflRad);
+        float sinD = MathF.Sin(deflRad);
+        return cs.ChordDirection * cosD +
+            Vector3.Cross(cs.HingeAxis, cs.ChordDirection) * sinD +
+            cs.HingeAxis * Vector3.Dot(cs.HingeAxis, cs.ChordDirection) * (1f - cosD);
+    }
+
     private bool SurfaceSetup(ControlSurface cs, Vector3 velLocal, out float baseInput, out bool usable)
     {
         baseInput = 0f; usable = true;
