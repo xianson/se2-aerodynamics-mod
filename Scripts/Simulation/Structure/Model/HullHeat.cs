@@ -32,7 +32,7 @@ namespace AeroMod;
 /// OUT: FaceT (skin K), BlockTempK (mass-weighted: what the structure's strength reads), BlockSkinMaxK (the hottest
 /// skin: heat damage), FaceHeatW (each face's heat in, W - what a block thermal mod would take as its boundary flux).
 /// </summary>
-public sealed class HullHeat
+public sealed partial class HullHeat
 {
     /// <summary>Sutton-Graves constant for air (SI: W/m2 with kg/m3, m, m/s).</summary>
     public const float SuttonGraves = 1.7415e-4f;
@@ -280,6 +280,7 @@ public sealed class HullHeat
         float t0 = tAir + speed * speed / (2f * CpAir);
         float h0 = HasPass && rho > 0f ? 2f * CpAir * SuttonGraves * MathF.Sqrt(rho) * speed * HeatMultiplier : 0f;
         float hPlate = HasPass && rho > 0f ? Stanton * rho * speed * CpAir * HeatMultiplier : 0f;
+        LastRecoveryK = t0; _lastH0 = h0; _lastHPlate = hPlate;   // (the film the public API publishes: HullHeat.Api.cs)
         float amb4 = tAmb * tAmb * tAmb * tAmb;
         var em = StructMaterial.Emissivity;
         var coreIn = _coreIn ??= new float[BlockCount]; var coreG = _coreG ??= new float[BlockCount];

@@ -10,7 +10,7 @@ Space Engineers 2 compiles each mod on its own, so your mod cannot reference thi
 2. Read `Version`. It is a `const`, so use `FieldInfo.GetRawConstantValue()`.
 3. Find each member by its name **and its parameter types** (`GetMethod(name, Type[])`; an `out` parameter is `typeof(T).MakeByRefType()`) and cache it. For a call made often, bind it once as a typed delegate (`Delegate.CreateDelegate(typeof(YourDelegate), method, false)`: no argument array and no boxing per call).
 
-Every signature uses only .NET and engine types (`Entity`, `Vector3`, `Vector3D`, `Vector3I`, `List<T>`, `Delegate`), never an aero type.
+Every signature uses only .NET and engine types (`Entity`, `Vector3`, `Vector3D`, `Vector3I`, `Delegate`, arrays of these and of primitives; `List<T>` in members up to version 6), never an aero type. From version 7 a member takes caller-owned **arrays** (no allocation per call); no member is overloaded or has a default parameter.
 
 ```csharp
 static MethodInfo _tryGetFlight;
@@ -51,9 +51,9 @@ static bool AeroFlight(Entity grid, out float mach, out float airspeed)
   - A grid's server copy answers directly.
   - A client copy in the same process (single player or host) answers from the nearest published record.
   - A remote multiplayer client gets `false`, because nothing is sent to clients yet.
-- **Threads:** any. Each answer is one consistent snapshot of the last simulation tick.
+- **Threads:** any. Each answer is one consistent snapshot of the last simulation tick (version 7: of the tick or structure evaluation it was published at - see *How version 7 answers*).
 - **Locks (the lock rule):** never call this API while holding a lock of your own, and aero never calls another mod while holding one of its own (its reads of the Orbital Mod are made with none held). A call that waits on the other mod's lock while the other waits on yours is a deadlock neither mod can see. The Orbital Mod collects its calls into aero under its frame lock and makes them after it.
-- **Stability:** members are only **added** within a version. Changing an existing member bumps `Version`.
+- **Stability:** members are only **added**; an existing member's signature and meaning never change, and each version's additions are listed under its heading below. `Tests/ApiTests` fails the gate on a changed version-2-6 signature, an overload, a type a caller cannot name, a default parameter, or an undocumented member.
 - **Never overloaded:** no two public members share a name. A name-only lookup (`GetMethod(name)`) throws `AmbiguousMatchException` the day an overload appears, so a new shape gets a **new name** and the old member stays. Look members up with their parameter types anyway. The Orbital Mod's `tools/check_contract.sh` fails its build on an overload in either mod's API.
 
 ## Version 2
@@ -62,7 +62,7 @@ A grid can be passed as either its server copy or a client copy in the same proc
 
 | Member | What it gives |
 |---|---|
-| `const int Version` | The API contract (3 since version 3; check `>= 2` for these members). |
+| `const int Version` | The API contract (7 now; check `>=` the version that added what you use - members are only added). |
 | `bool TryGetFlight(Entity grid, out Vector3 travelLocal, out float airspeed, out float mach, out float density, out float dynamicPressure)` | The grid's air: travel (local, unit), airspeed (m/s), Mach, density (kg/m³), dynamic pressure (Pa). `false` when the grid is under 1 m/s or not in air. |
 | `bool TryGetForces(Entity grid, out Vector3 forceLocal, out Vector3 torqueLocal, out float drag, out float lift, out float frontalArea)` | The aerodynamic load (local), with wings and control surfaces included: force (N), torque (N·m), drag and lift (N), and frontal area (m²). |
 | `bool TryGetLift(Entity grid, out Vector3 liftLocal, out float liftCoefficient)` | Lift direction (local, unit) and its coefficient on the frontal area. |
@@ -173,6 +173,34 @@ The model (`Lift/WingStrain.cs`): a wing is a cantilever rooted at its span end 
 
 Note: `TryGetForces` and the flow calls report the model's force **before** the world's drag and lift multipliers.
 
+## Versions 4 and 5: the design probe
+
+The build hints: the ship **as if it were flying**, at any direction and Mach, from its force table (`Design/DesignProbe.cs`). Each answers for a client grid too (paired with its server copy), and covers the whole ship (the grid and its subgrids). Any thread; a probe evaluates the table (no simulation state is touched).
+
+| Member | Since | What it gives |
+|---|---|---|
+| `bool TryDesign(Entity grid, Vector3 travelLocal, float mach, out Vector3 copLocal, out Vector3 forceLocal, out Vector3 torqueLocal, out float stabilityA, out float stabilityB, out float streamlining)` | 4 | The whole ship (hull and wings) travelling along `travelLocal` at this Mach in sea-level air: its centre of pressure (grid-local: the force's line nearest the centre of mass), force (N) and torque (N·m, about the centre of mass), static stability about the two axes across the flow (positive: the air turns it back; per radian, over q × area × size) and its streamlining. `false`: no aero, or the table is not built yet (asked for: try again shortly). |
+| `float GetTopSpeed(Entity grid, Vector3 dirLocal)` | 4 | Sea-level top speed along `dirLocal` (m/s): forward thrust (each thruster's profile at the Mach) against drag. NaN no aero or table; 0 too little thrust; +∞ past 3 km/s. |
+| `float GetThrustAlong(Entity grid, Vector3 dirLocal, float mach, out Vector3 centreLocal)` | 4 | Thrust along `dirLocal` at sea level and this Mach (N), and where it acts on average. |
+| `bool TryGetCenterOfMass(Entity grid, out Vector3 comLocal)` | 4 | The ship's centre of mass (grid-local; subgrids included). |
+| `float GetWavePeak(float streamlining)` | 4 | The transonic drag peak (× subsonic) a streamlining gives. Pure. |
+| `float GetTopSpeedAt(Entity grid, Vector3 dirLocal, float throttle)` | 5 | As `GetTopSpeed` at throttle 0..1 (cruise). |
+| `float GetControlRatio(Entity grid, Vector3 dirLocal, float speed)` | 5 | How well the ship holds its attitude along `dirLocal` at `speed` (m/s, sea level): the gyros' and thrusters' torque over the air's torque at a 5° upset. Over 1: it can. NaN: no aero or table. |
+| `float GetMass(Entity grid)` | 5 | The ship's mass (kg, subgrids included); 0 unknown. |
+| `int GetDesignPressures(Entity grid, Vector3 travelLocal, float mach, List<Vector3> centresLocal, List<Vector3> normalsLocal, List<float> areas, List<float> cp, int max)` | 5 | The drag overlay: hull faces and their pressure coefficients along `travelLocal` at this Mach (positive pushes in, negative pulls), shadowed windward faces and wing skins left out, at most `max` (spread over the hull). Returns the count. |
+
+```csharp
+// the build hint: stable along the nose (-Z) at Mach 0.8?
+var args = new object[] { grid, new Vector3(0, 0, -1), 0.8f, null, null, null, null, null, null };
+if ((bool)_tryDesign.Invoke(null, args) && (float)args[6] > 0f && (float)args[7] > 0f) Hint("stable");
+```
+
+### For tests
+
+| Member | What it gives |
+|---|---|
+| `string GetFxConsistency(bool reset)` | The flight effects' consistency since the last reset (frames, pops, rebuilds while lit, frames lost, group toggles, the largest step, the peak). The Orbital Mod's `fxcheck` harness command. Not for gameplay. |
+
 ## Version 6
 
 ### Drag from your mod
@@ -200,6 +228,205 @@ door left open, cargo hanging in the air. Aero applies it every tick as part of 
 // a tail chute, 30 m behind the grid's origin, opening over 2 s
 _setDrag.Invoke(null, new object[] { grid, "MyMod.Chute", new Vector3(0, 0, 30), 60f * Math.Min(1f, t / 2f) });
 ```
+
+## Version 7
+
+Every earlier member is unchanged. New: the flight state as one packed record, the control surfaces and thrusters per tick,
+the structure and the hull's heat **block by block and face by face**, the structure's failures as a polled event queue,
+and a way for **another heat model** (the planned thermal mod) to take the temperatures over. Code:
+`Api/AeroApi.Flight.cs`, `Api/AeroApi.Structure.cs`; the publishing: `Grid/AeroGridComponent.Api.cs` (the tick) and
+`Structure/Server/StructureServer.Api.cs` (the structure's evaluation).
+
+### How version 7 answers
+
+- **Watched, then published.** Aero copies these records for a grid only while someone reads them: the first read of a
+  grid (or `WatchGrid`) starts it, and every read keeps it on for 5 s more. So the **first read answers 0 / `false`**, and
+  the next simulation tick (flight) or structure evaluation (blocks, faces) has the answer. A grid nobody reads costs one
+  null test a tick.
+- **Buffers are yours.** Every array is the caller's; aero fills `min(array length, count)` and returns the full count, so
+  a short array tells you to grow it. Pass `null` for what you do not want. No call allocates (`GetFlightStateNames`
+  aside: call it once), none has exception handling on the way, and none hands out aero's own arrays.
+- **Any thread.** Each call copies one consistent snapshot out under the grid's own small lock (the writer fills a spare
+  buffer and swaps it in under the lock, so no reader waits on a computation). The lock rule above still holds.
+- **The layout.** Per-block arrays are in the structure's block order, `layout`. Every per-block call returns the layout
+  its data is of; it moves when the structure is rebuilt (blocks added, removed or broken off) - read
+  `GetStructureBlocks` again then. A state call answers 0 until the first evaluation of a new layout is published.
+- **Server copy.** As before: the machine that runs the simulation. A client copy in the same process is answered from its
+  server copy.
+- **The structure is evaluated only for a grid a player flies** (seated, `SetFocusGrid`, or steered by its target), with
+  `Structure.Loads` on, a few times a second (`Structure.Rate`). Other grids have a flight state but no block state.
+
+### Watching and the version
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool WatchGrid(Entity grid, float seconds, bool faces)` | 7 | Publish the grid's version-7 records for `seconds` (at most 600) from now - call it a tick before your first read. `faces`: the heat faces too (big ships have 10⁵: only if you use them). `false`: no aero for this grid here. |
+| `int GetApiVersion()` | 7 | `Version` as a call, for a caller that binds typed delegates only. |
+
+### The flight state
+
+| Member | Since | What it gives |
+|---|---|---|
+| `int GetFlightState(Entity grid, float[] into)` | 7 | The last tick's flight state, packed (the table below). Fills `min(into.Length, length)`; returns how many (0: not published yet, or no aero). |
+| `string[] GetFlightStateNames()` | 7 | The values' names in index order (a new array: call it once). Its length is the state's length in this version. |
+| `int GetFlightStateIndex(string name)` | 7 | A value's index by name; -1 none. Look your indices up once. |
+
+**Stability of the layout:** an index never changes meaning; later versions only **append** (the state grows). Size your
+array from `GetFlightStateNames().Length`, or just for the indices you use.
+
+Frames: *local* = the grid's frame; the travel is the direction the grid moves **into** the air.
+
+| Index | Name | Unit | What |
+|---|---|---|---|
+| 0 | `Age` | s | Since the tick it was taken (filled at your read). A quiet grid at rest publishes only every 30 ticks. |
+| 1 | `Airspeed` | m/s | Through the air (the wind in). |
+| 2 | `GroundSpeed` | m/s | Its physics speed. |
+| 3 | `Mach` | | The aero model's (0 before its first result). |
+| 4 | `Density` | kg/m³ | The air aero flew it in (the game's, or the upper tail). |
+| 5 | `DynamicPressure` | Pa | q of the model's last result. |
+| 6-8 | `TravelX/Y/Z` | unit, local | Into the air; zero under 0.1 m/s. |
+| 9-11 | `WindX/Y/Z` | m/s, **world** | The wind at the grid (`AeroWind`). |
+| 12-14 | `AngularVelocityX/Y/Z` | rad/s, local | |
+| 15 | `Mass` | kg | The physics mass (this grid). |
+| 16-18 | `CenterOfMassX/Y/Z` | m, local | |
+| 19 | `GroundHeight` | m | As `TryGetGroundHeight`; -1 none. |
+| 20-22 | `UpX/Y/Z` | unit, local | Against gravity; zero out of gravity. |
+| 23 | `Gravity` | m/s² | |
+| 24-26 | `ForceX/Y/Z` | N, local | The air's force **applied** this tick (the world's drag / lift multipliers in; other mods' drag in; zero when not applied). |
+| 27-29 | `TorqueX/Y/Z` | N·m, local | Its torque about the centre of mass. |
+| 30-32 | `AirframeTorqueX/Y/Z` | N·m, local | Of that, the airframe's own (hull, wings) - what the attitude control feeds forward. |
+| 33-35 | `SurfaceTorqueX/Y/Z` | N·m, local | Of that, the control surfaces' (actuators). |
+| 36 | `Drag` | N | The model's (before the multipliers). |
+| 37 | `Lift` | N | The model's. |
+| 38 | `FrontalArea` | m² | |
+| 39 | `LoadFactor` | g | The applied air force over the weight at 9.81 m/s². |
+| 40 | `StallState` | | As `TryGetStall`: 0 none, 1 approaching, 2 stalled (a player's grid; 0 otherwise). |
+| 41 | `StallMarginDeg` | deg | The best lift's angle from now (negative: behind). |
+| 42 | `StallLiftShare` | 0..1 | Of the best lift, in use now. |
+| 43 | `StallGAvailable` | g | The best lift's g; 0: never evaluated. |
+| 44 | `LoacState` | | As `TryGetLoac`: 0 none, 1 at the limit, 2 lost. |
+| 45 | `LoacRatio` | | The worst needed / available torque. |
+| 46 | `MaxUtilisation` | | As `TryGetStructure` (1: yield). |
+| 47 | `MaxSkinK` | K | The hottest hull skin (aero's own faces). |
+| 48 | `HeatShare` | 0..1 | The hottest block's way from softening to burning. |
+| 49 | `MaxWingStrain` | | As `GetMaxWingStrain`. |
+| 50 | `SteerCap` | 0..1 | The flight controller's steering thrust × this (1 unless it would overload the structure). |
+| 51 | `ControlValid` | 0/1 | The aero-aware attitude law flew this tick (then 52-54 mean something). |
+| 52-54 | `ControlDemandX/Y/Z` | N·m, local | The attitude law's whole torque demand (I × its acceleration, the airframe's torque taken out). |
+| 55 | `AttitudeAware` | 0/1 | The aero-aware law flew the gyros and thrusters (else the game's own laws). |
+| 56-58 | `GyroTorqueX/Y/Z` | N·m, local | The gyros' torque it gave. |
+| 59-61 | `ThrusterTorqueX/Y/Z` | N·m, local | The thrusters' steering torque. |
+| 62-64 | `ReachX/Y/Z` | N·m per axis | The gyros' and thrusters' reach (authority) this tick. |
+| 65-67 | `NeedX/Y/Z` | N·m, local | The law's ask of gyros and thrusters (after the surfaces' share). |
+| 68-70 | `DeliveredX/Y/Z` | N·m, local | What they gave. |
+| 71 | `SurfacesCommanded` | | Control surfaces the allocator commanded last step. |
+| 72 | `SurfacesSaturated` | | Of them, at their limit. |
+| 73 | `AeroApplied` | 0/1 | Aero applied its forces this tick. |
+| 74 | `EntryStrength` | 0..1 | Aero's own heating law at this Mach and density (an entry source's own strength: `TryGetEntry`). |
+
+The thrust and attitude values (51-72) are the attitude job's, which runs after the aero tick: they are one tick older
+than the air's.
+
+```csharp
+// once
+var names = (string[])_getNames.Invoke(null, null);
+int iMach = Array.IndexOf(names, "Mach"), iG = Array.IndexOf(names, "LoadFactor");
+var state = new float[names.Length];
+var getState = (Func<Entity, float[], int>)Delegate.CreateDelegate(typeof(Func<Entity, float[], int>), _getFlightState);
+// each frame (no allocation)
+if (getState(grid, state) > iG) Hud($"M {state[iMach]:F2}  {state[iG]:F1} g");
+```
+
+### Control surfaces and thrusters (per tick)
+
+| Member | Since | What it gives |
+|---|---|---|
+| `int GetControlSurfaces(Entity grid, Vector3I[] cells, float[] commands, float[] deflectionsDeg, float[] liftN, float[] dragN)` | 7 | Every control surface on the last tick: block cell, command (-1..1: the pilot's and the allocator's together), deflection (deg: −command × its maximum), lift and drag (N). Returns the count. |
+| `int GetThrusterForces(Entity grid, float[] forceN, out int thrusterList)` | 7 | Each thruster's force on the last tick (N, along its thrust direction) in `GetThrusters`' order, as the attitude law set it; `thrusterList`: the thruster list's generation - when it moves, read `GetThrusters` again. 0 when the attitude law is off (`Aero.ThrustTorque`). |
+
+### The structure, block by block
+
+| Member | Since | What it gives |
+|---|---|---|
+| `bool TryGetStructureCounters(Entity grid, out int layout, out int evaluation, out int blockCount, out bool externalHeat)` | 7 | The block order (`layout`), the evaluations published (only up), the block count, and whether the last evaluation ran on your temperatures (`SetBlockTemperatures`). `false`: no structure published yet. |
+| `int GetStructureBlocks(Entity grid, Entity[] blocks, Vector3[] centresLocal, float[] massKg, out int layout)` | 7 | The blocks in layout order: entity, centre (grid-local m), mass (kg, as the structure counts it). |
+| `int GetStructureBlockState(Entity grid, float[] utilisation, float[] health, float[] tempK, float[] skinMaxK, float[] heatInW, out int layout)` | 7 | Per block at the last evaluation: **utilisation** (its worst joint's load over its strength now; 1 yield; heat and damage in), **health** (0..1: the game's, less fatigue not yet written to the block), **temperature** (K, mass-weighted: what its strength reads), **hottest skin** (K: what burns it), **heat in** from the air (W over all its hull faces; negative: the air cools it). |
+| `int GetStructureBlockLoads(Entity grid, Vector3[] forceLocal, Vector3[] momentLocal, out int layout)` | 7 | Per block: the external load the structure solved with (N, and N·m about its centre; grid-local) - the air (hull and wings), thrust, gyros, contacts, a railed entry's braking. The ship's own inertia is not in it. |
+
+### The structure's failures (events)
+
+A polled queue across every grid, with sequence numbers: keep the number you read up to.
+
+| Member | Since | What it gives |
+|---|---|---|
+| `long GetStructureEventSequence()` | 7 | The next event's number (= every event so far this session). Read it once to start from now. |
+| `int ReadStructureEvents(long fromSequence, long[] sequences, int[] kinds, Entity[] grids, Entity[] blocks, Vector3[] pointsLocal, Vector3[] directionsLocal, float[] values, out long nextSequence)` | 7 | The events since `fromSequence`, oldest first, up to the shortest array you pass; `nextSequence` is where to read next. The newest 512 are kept: a first `sequences[0]` above your `fromSequence` means you missed some. |
+
+| Kind | What | Block | Point (grid-local) | Direction | Value |
+|---|---|---|---|---|---|
+| 1 | a block fails from its load | the block | the failing joint | into what goes | its utilisation |
+| 2 | a block burns through (`Heat.Damage`) | the block | its middle | zero | its hottest skin (K) |
+| 3 | a whole cut (section) fails together; its members follow as kind 1 | null | the cut's centre | out into what it takes off | its member count |
+
+Events are what an evaluation **decided**; the game removes the blocks on the next simulation tick (one already gone is
+skipped there). Wing-root breaks (`Structure.WingStrain`) are not in the queue yet.
+
+```csharp
+long _next = (long)_getSeq.Invoke(null, null);   // start from now
+var seq = new long[64]; var kind = new int[64]; var where = new Vector3[64];
+// every second or so
+var a = new object[] { _next, seq, kind, null, null, where, null, null, 0L };
+int n = (int)_readEvents.Invoke(null, a); _next = (long)a[8];
+for (int i = 0; i < n; i++) if (kind[i] == 3) Warn("structural failure");
+```
+
+### The hull's heat, face by face, and another heat model
+
+Aero heats the hull (`Structure/Model/HullHeat.cs`): per face, the air brings `h (T0 − Twall)` W/m² - `h` the face's
+film coefficient (the stagnation point's Sutton-Graves heating on the windward faces by their local nose radius, plus the
+attached flow's Reynolds-analogy heating on every face), `T0` the flow's recovery temperature - and each face re-radiates
+and conducts into its block. A **block thermal model of your own** takes the air's side from aero and owns the
+temperatures:
+
+| Member | Since | What it gives |
+|---|---|---|
+| `int GetHeatFaces(Entity grid, Vector3[] centresLocal, Vector3[] normalsLocal, float[] areas, int[] blockIndex, out int layout)` | 7 | The hull's heat faces (the faces seen from outside, on the structure's blocks): centre, outward normal (grid-local), area (m²), the block each is on (layout index; -1 none). They change only with the layout. Reading this (or the next) publishes the faces each evaluation for 5 s. |
+| `int GetHeatFaceState(Entity grid, float[] heatInW, float[] skinK, float[] filmCoefficient, out float recoveryK, out int layout)` | 7 | Per face at the last evaluation: the heat in (W, at aero's own wall temperature), aero's skin temperature (K), the film coefficient `h` (W/m²·K); `recoveryK` the flow's `T0` (K). At your wall temperature `Tw` a face takes `h × area × (T0 − Tw)` W. |
+| `bool SetBlockTemperatures(Entity grid, int layout, float[] tempK, float[] skinMaxK)` | 7 | **Your temperatures in place of aero's** for the next evaluation: every block's temperature (K, mass-weighted - its strength softens with it) and hottest skin (K - it burns past its burn temperature with `Heat.Damage`; the heat gauge). `skinMaxK` null: the same as `tempK`. Set again each evaluation; left 2 s, aero's own come back. `false`: not the current layout, short arrays, or a value not finite. |
+| `bool ClearBlockTemperatures(Entity grid)` | 7 | Aero's own temperatures again at once. |
+
+- **Aero's own model keeps running** under yours: it is the fallback, and it is what computes the heat input you read
+  (`GetHeatFaceState`'s `h` and `T0` do not depend on its wall temperatures; `heatInW` does).
+- **What your temperatures drive:** the blocks' strength (utilisation, wear, failure), heat damage (burn-through, kind 2
+  events) and `TryGetStructure`'s `heatShare`. **Still aero's own:** the scorch marks and the max-skin gauge
+  (`TryGetStructure`'s `maxSkinK`, flight state 47).
+- `TryGetStructureCounters`' `externalHeat` tells you the evaluation used yours.
+
+```csharp
+// the thermal mod, each evaluation (TryGetStructureCounters' evaluation moved)
+int n = GetHeatFaceState(grid, null, null, film, out float t0, out int layout);   // (your typed delegate)
+for (int i = 0; i < n; i++) { int b = faceBlock[i]; if (b >= 0) blockIn[b] += film[i] * area[i] * (t0 - myWallK[b]); }
+StepMyModel(blockIn);   // conduction, capacity, radiation - yours
+SetBlockTemperatures(grid, layout, myTempK, mySkinK);
+```
+
+## Roadmap / gaps
+
+What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).
+
+| Gap | Why not yet |
+|---|---|
+| Remote multiplayer clients | Nothing is replicated to clients (SE2 2.4's networking is a mock in one process). Every call answers on the simulation's machine only. |
+| Commands to aero blocks (deflect a control surface, deploy an airbrake) | The blocks' control path is still owned and changing (gear, airbrakes, control surfaces). Another mod can already add drag (`SetDrag`, `SetPlateDrag`). |
+| Gear and airbrake state beyond `GetAeroBlockState` | Owned by the gear / airbrake work in progress; to be published when it settles. |
+| Wing-root breaks in the event queue | `Structure.WingStrain` (off by default) breaks through its own path (`WingStrainServer`); `TryGetWingStrain` reports the strain. |
+| Dents and permanent bends | The game's deformation bones hold them; health (`GetStructureBlockState`) already has the unwritten fatigue in. |
+| Heat for grids nobody flies | The structure and hull heat are evaluated only for a flown grid (cost). A thermal mod that wants every grid needs aero to heat every grid - a setting, not an API. |
+| Stopping aero's own heat model under an external one | Aero's bucket still runs (cheap, and it computes the heat input). A switch to skip its temperature step would be a setting. |
+| The scorch marks and max-skin gauge from external temperatures | They read aero's own faces; they would need per-face temperatures from the thermal mod. |
+| Callbacks (events pushed to you) | Deliberately polled: a callback runs on aero's thread inside its tick, and a slow or throwing consumer would stall or break the simulation. |
+| Performance counters (aero's cost per frame) | Developer-only today (`AeroCost`, the harness's `aerocost` / `aeroget`); not a stable contract. |
+| Per-face pressure for a flying grid | `GetSurface`'s `cp` is 0 for a grid on its force table (most grids); `GetDesignPressures` predicts it for any state. |
 
 ## Settings
 

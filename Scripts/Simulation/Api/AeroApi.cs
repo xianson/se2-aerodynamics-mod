@@ -18,7 +18,9 @@ namespace AeroMod;
 /// server copy answers directly; a client copy in the same process (single player / host) answers from the nearest
 /// published record. A remote multiplayer client gets false (nothing is published to it yet).
 ///
-/// Threads: any. Every answer is one consistent snapshot of the last simulation tick (copied under a lock).
+/// Threads: any. Every answer is one consistent snapshot of the last simulation tick (copied under a lock). Version 7's
+/// members (AeroApi.Flight.cs, AeroApi.Structure.cs: partial files of this class) answer from records published while
+/// someone reads them, into the caller's own arrays - no allocation, no exception handling on the way.
 /// LOCKS: never call this API while holding a lock of your own, and aero never calls another mod while holding one of
 /// its own (aero's reads of the Orbital mod - OrbitalLink, AeroEntryFx.EntryStateAt - are made with none held): a call
 /// that waits on the other's lock while the other waits on yours is a deadlock neither mod can see.
@@ -29,12 +31,12 @@ namespace AeroMod;
 /// The Orbital Mod's fast gate checks the members it uses from source (its tools/check_contract.sh).
 /// Documented in docs/API.md (the same text, with an example).
 /// </summary>
-public static class AeroApi
+public static partial class AeroApi
 {
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 6;   // (6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 7;   // (7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
