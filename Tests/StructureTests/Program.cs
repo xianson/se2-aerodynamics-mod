@@ -1160,6 +1160,53 @@ static class Program
             Check(partedEval == 40 && steppedEval > 0, $"jagged: a failed cut parts the plate for every seed ({partedEval} of 40; {steppedEval} members off the plane in all)");
         }
         finally { FractureMath.JaggedShare = share; FractureMath.JaggedStress = stress; FractureMath.HingeStays = hs; }
+        JaggedBound();
+    }
+
+    /// <summary>16b. (2026-10-15 review) the jagged line's cost is bounded: on a wide plate (120 members a cut, every member
+    /// stepping) the separation check takes a few passes - not one per bad pair (O(n^2) per failed cut) - and still parts
+    /// it; and the scratch's adjacency is built once per structure, not per evaluation.</summary>
+    static void JaggedBound()
+    {
+        var sh = new TShip();
+        int W = 60;
+        var blk = new int[10, 2, W];
+        for (int x = 0; x <= 9; x++) for (int y = 0; y <= 1; y++) for (int z = 0; z < W; z++) blk[x, y, z] = sh.Block(x, y, z, x == 0 ? 1e9f : SmallMass);
+        sh.Build();
+        var s = sh.S; int root = blk[0, 0, 0], tip = blk[9, 1, W - 1];
+        for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = s.Center[i].X > 0.3f ? new Vector3(0, 100f, 0) : Vector3.Zero; s.ExtMoment[i] = Vector3.Zero; }
+        s.SolveFree(Vector3.Zero);
+        int g = -1;
+        for (int q = 0; q < s.SectionCount; q++) { s.SectionPlane(q, out int ax, out float pl); if (ax == 0 && MathF.Abs(pl - 2.375f) < 1e-3f) g = q; }
+        Check(g >= 0, "jagged bound: the wide plate's cut");
+        if (g < 0) return;
+        float share = FractureMath.JaggedShare, stress = FractureMath.JaggedStress; bool hs = FractureMath.HingeStays;
+        FractureMath.JaggedShare = 1f; FractureMath.JaggedStress = 0f; FractureMath.HingeStays = false;
+        try
+        {
+            int n = s.SectionPieceCount(g), worst = 0, parted = 0, seeds = 100, stepped = 0;
+            var sc = new FractureMath.JagScratch();
+            var ob = new int[n]; var at = new Vector3[n]; var step = new int[n]; var stubs = new List<int>();
+            for (int seed = 0; seed < seeds; seed++)
+            {
+                stepped += FractureMath.JagCut(s, g, seed, sc, ob, at, step, stubs);
+                worst = Math.Max(worst, FractureMath.LastPasses);
+                if (!Joined(s, new HashSet<int>(ob), root, tip)) parted++;
+            }
+            Check(worst <= FractureMath.MaxRepairPasses + 1, $"jagged bound: at most {FractureMath.MaxRepairPasses + 1} separation passes a cut of {n} members (worst {worst})");
+            Check(parted == seeds && stepped > 0, $"jagged bound: still parted for every seed ({parted} of {seeds}; {stepped} steps kept)");
+            // the scratch with the structure: built once, kept over evaluations
+            var adj0 = s.Jag?.AdjStart;
+            var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+            float k = StructureFatigue.SnapUtil * 1.2f / s.MaxUtil;
+            for (int i = 0; i < s.Count; i++) s.ExtForce[i] *= k;
+            s.SolveFree(Vector3.Zero);
+            StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+            var adj1 = s.Jag?.AdjStart;
+            StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+            Check(cuts.Count > 0 && adj1 != null && ReferenceEquals(s.Jag?.AdjStart, adj1), $"jagged bound: the scratch's adjacency kept with the structure between evaluations ({cuts.Count} cuts)");
+        }
+        finally { FractureMath.JaggedShare = share; FractureMath.JaggedStress = stress; FractureMath.HingeStays = hs; }
     }
 
     /// <summary>(A31, 2026-10-15) the scorch thresholds follow each class's own heat limits (StructMaterial.ScorchAt):

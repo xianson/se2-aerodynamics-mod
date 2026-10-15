@@ -495,7 +495,7 @@ public static class StructureEval
             if (FractureMath.Jagged && nm > 1)
             {
                 jb = new int[nm]; js = new int[nm]; jat = new Vector3[nm]; var stubs = new List<int>();
-                jag ??= new FractureMath.JagScratch();
+                jag ??= st.Jag ??= new FractureMath.JagScratch();   // (kept with the structure: its adjacency built once, 2026-10-15 review)
                 cf.Steps = FractureMath.JagCut(st, g, st.Seed, jag, jb, jat, js, stubs);
                 if (stubs.Count > 0) { cf.Stubs = stubs.ToArray(); (stubbed ??= new HashSet<int>()).UnionWith(stubs); }
             }
