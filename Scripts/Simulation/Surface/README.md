@@ -6,8 +6,7 @@
 | `SmoothSurfaceProvider.Incremental.cs` | Block changes, raw faces |
 | `SmoothSurfaceProvider.Normals.cs` | Vertex-normal diffusion |
 | `SmoothSurfaceProvider.Topology.cs` | Adjacency, creases, the six direction groups |
-| `ManifoldClassifier.cs` | Marks faces hull or sealed cavity |
-| `CubeSurfaceProvider.cs` | The plain cube-face provider (no callers today) |
+| `ManifoldClassifier.cs` | Marks faces hull or sealed cavity: every connected face component by its enclosed volume (positive: a solid - hull; negative: the inside of a sealed room - cavity); the largest is always hull |
 | `SurfaceFace.cs`, `NormalGroup.cs`, `ISurfaceProvider.cs` | The shared types |
 
 ## Entry points

@@ -18,7 +18,8 @@ Client effects are visual only. The flow record is also what `AeroApi` answers f
 ## Entry points
 - Server: `AeroEntryFx.Flow` / `AeroEntryFx.Server` (each step of `AeroGridComponent.AeroSimJobCore`), `AeroEntryFx.Forget` (removal).
 - Client: `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (injected into every grid by `InjectAeroComponents`) ->
-  `FlightJob` -> `FlightField.Update`; the same job ticks `MachHud`, `StructureFeel`, `TearSmoke`, `HeatScorch.Sync`.
+  `FlightJob` -> `FlightField.Update`; the same job ticks `MachHud`, `StructureFeel`, `TearSmoke`, `HeatScorch.Sync` (twice a
+  second, flight field on or not) and claims the settings tab's 250 ms tick (`Ui/SettingsTab.Claim`).
 - Other mods: `AeroApi.RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`; `AeroEntryFx.TryGetFlow` (Orbital, by reflection).
 
 ## Threading

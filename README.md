@@ -7,6 +7,7 @@ companion mod **Aerodynamics Mod Blocks**; this mod holds the scripts and the ef
 
 Scripts: `Scripts/Simulation/` (each folder has a README). How it fits together: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLECTION_AND_WHITELIST.md`](docs/REFLECTION_AND_WHITELIST.md).
+What changed: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Features
 
@@ -28,17 +29,22 @@ For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLE
   heating with skin / core temperatures, heat-weakened structure and burn damage, and scorch decals where the hull got
   hot. A railed re-entry in the Orbital mod heats the hull as a real one.
 - **Structure.** On the grid a player flies: air, thrust, gyro and contact loads spread over the blocks and solved;
-  overloaded sections wear, fatigue, fail and split; worn joints bend permanently and dent; large pieces tear off with a
-  short hold; creaks, groans and cockpit shake follow the load; smoke at torn edges. The flight controller never
-  overloads its own ship.
+  overloaded sections wear, fatigue (from tension; compression tires far slower), fail and split; worn joints bend
+  permanently and dent. A failing section cracks across over a fraction of a second - the pulled side tears first, the
+  pushed side crumples and goes last as a hinge, along a jagged line - and a large piece peels off on several springs
+  that let go in the crack's order. Creaks, groans and cockpit shake follow the load; smoke at torn edges. The flight
+  controller never overloads its own ship.
 - **Debris drag.** The loose chips a broken block throws off (the game's fracture debris, not grids) slow in the air:
-  quadratic drag on their bounding box against the air and the wind, a little on their tumbling (`Debris/`).
+  quadratic drag on their bounding box against the air and the wind (Cd 0.4), a little on their tumbling (`Debris/`).
 - **Gear and airbrakes.** Retractable gear (0.5 / 1 / 1.5 / 2.5 m wheels) on the vanilla suspension, with doors and
   drag; 3x3x3 clamshell airbrakes that open with the parking brake, opening set by a terminal slider.
-- **Settings.** World settings (forces, entry heating, structure, performance) are saved with the world; host overrides
-  in `%APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.world.cfg`. Client settings (effects, HUD, feel) in
-  `AerodynamicsMod.client.cfg` next to it. Both files are re-read every ~2 s while playing. The full list, with ranges
-  and descriptions, is in `Runtime/AeroSettings.cs` (also readable through `AeroApi.GetSettings`).
+- **Settings.** In game: pause menu -> Settings -> **Mods** (the tab shared with the Orbital mod, section
+  "Aerodynamics"; inside a world only). World settings (forces, entry heating, structure, performance) are saved with
+  the world and can be changed by the host / in single player only; host overrides in
+  `%APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.world.cfg` win and show locked. Client settings (effects, HUD,
+  feel) in `AerodynamicsMod.client.cfg` next to it. Both files are re-read every ~2 s while playing. The full list, with
+  ranges, menu labels and descriptions: `docs/API.md` (Settings), from `Runtime/AeroSettings.cs` (also readable through
+  `AeroApi.GetSettings`).
 
   | Some world settings | Default | | Some client settings | Default |
   |---|---|---|---|---|
@@ -62,7 +68,8 @@ For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLE
   - **ModCheck:** the game's exact script compile and whitelist analyzers (`D:\aero\tools\ModCheck`);
   - every suite in `Tests/`: `AeroBench` (its `gate`: known shapes, table vs exact forces, table cache, wing
     repeatability, rebuild garbage, cache version vs sources), `SurfaceTests`, `StructureTests`, `TearTests`,
-    `ThrustTests`, `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `SettingsTests`, `ApiTests`.
+    `ThrustTests`, `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SettingsTests`,
+    `SettingsUiTests` (`-- dump` prints the settings menu), `ApiTests`.
 - **AeroBench modes** (`cd Tests/AeroBench; dotnet run -c Release -- <mode> <ships>`), e.g. `damage`, `impact`, `scale`,
   `cache`, `gcbuild` (`ALLOC=1` for per-type dumps), `polar`, `struct`, `fail`, `replay`, `tablehash`. Ships come from
   `Tests/data/*.boxes` (gitignored; exported in game with `aeroexport on`).

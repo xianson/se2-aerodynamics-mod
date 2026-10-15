@@ -29,13 +29,15 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Hud/` | Stall warning, loss-of-attitude-control warning, the game's thrust-overload warning, Mach in the speedometer | yes |
 | `Blocks/` | The mod's own blocks' components and terminals (3x3x1 control surfaces, hinge flaps, gear variants) | yes |
 | `Gear/`, `Integration/` | Retractable gear and airbrake (kinematics, server and client components, terminals); `Integration/` also holds the local dev harness files | yes |
-| `Api/` | `AeroApi` (what other mods call), `OrbitalLink` (what aero calls in the Orbital mod), `AtmosphereProbe` | yes |
-| `Runtime/` | Settings (`AeroSettings`), switches and tuning (`AeroConfig`), profiling (`AeroCost`, `AeroStats`), GC mode, physics access (`PhysicsHack`, `AeroPhysics`) | yes |
+| `Api/` | `AeroApi` (what other mods call; partials by version area), its published copies (`ApiGridState`) and event ring (`SeqRing`), `OrbitalLink` (what aero calls in the Orbital mod) on the binding rule `CrossModLink`, `AtmosphereProbe` | yes (`SeqRing`, `CrossModLink` are engine-free) |
+| `Runtime/` | Settings (`AeroSettings`: the registry; `AeroSettings.Store`: API, text, files, the world save), switches and tuning (`AeroConfig`), profiling (`AeroCost`, `AeroStats`), GC mode, physics access (`PhysicsHack`, `AeroPhysics`) | yes |
+| `Ui/` | The Options screen's **Mods** tab (`SettingsTab`, `SettingsModel`, `AvaloniaReflect`: copies of the Orbital mod's; `SettingsTab.Mod.cs`: this mod's adapter) | Avalonia by reflection (`SettingsModel` is engine-free) |
 | `Dev/` | Test aids: flight-test autopilot, shape export for the bench, thrust fixtures | yes |
 | `Injection/` | Adds the mod's components to the game's prefabs at definition load (`EntityInjector`, `InjectAeroComponents`) | yes |
 
 The engine-free folders (`Core` minus `Se2GridAccessor`, `Surface`, `Shadow`, `Drag`, `Lift`, `Atmosphere`,
-`Structure/Model`, parts of `Components`, `Propulsion/ThrustAllocator.cs` and `Debris/DebrisDragMath.cs`) are compiled as-is by the offline test
+`Structure/Model`, parts of `Components`, `Propulsion/ThrustAllocator.cs`, `Debris/DebrisDragMath.cs`, `Api/SeqRing.cs`,
+`Api/CrossModLink.cs`, `Ui/SettingsModel.cs` and the settings registry) are compiled as-is by the offline test
 projects in `Tests/`; keep game types out of them.
 
 ## 2. How the mod gets into the game
@@ -62,8 +64,9 @@ exists twice, a **server copy** and a **client copy**, each with its own `AeroGr
 |---|---|
 | **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
 | **Aero workers** (`AeroWork`, `Workers` = 2 long-running tasks, highest priority first) | full rebuilds (`AeroGridComponent.StartBackgroundBuild`'s lambda), local chunk updates after damage (`Damage.cs`), structure evaluations (`EvaluateStructure`). They only touch the snapshot they were handed; results are installed on the simulation thread (`FinalizeStaggeredBuild`, `TickLocal`, `TickStructureCore`) |
-| **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch, smoke, creaks, Mach readout, settings poll), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
-| **Thread pool** | `AeroSettings.Poll` reads the settings files off the job threads (applied by the next job's poll) |
+| **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch stamping twice a second, smoke, creaks, Mach readout, settings poll, the settings tab's 250 ms claim - `SettingsTab.Claim` / `Ticked`), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
+| **Avalonia UI thread** | The settings tab (`SettingsTab.UiTick`, posted by the claim): attach to the open Options screen, read the controls (~4 Hz while the tab is selected), `AeroSettings.Set` |
+| **Thread pool** | `AeroSettings.Poll` reads the settings files off the job threads; what it read is applied by the next job's poll, on that job's thread |
 
 Statics shared across grids are locked or interlocked (folder READMEs say which). Shared state never crosses from a
 worker into the game: workers write only the grid's own `_built*` / `_st*New` fields, polled by the simulation thread.
@@ -155,6 +158,30 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
   anchor over the failed section, let go in the crack's order over `StructureTear.TearSeconds` (`StructureTear.Step`, from
   `TearJob`). While a crack runs, and after a failed cut until a rebuild, damage waits (`_stBreakHold`, "no zipper").
 
+**How a failed cut lets go** (2026-10-15; WHEN it fails is unchanged - `StructureEval.Damage` by section, on one solve):
+
+1. **The plan** (engine-free, `Structure/Model/FractureMath.cs`, in the background evaluation): each member of the cut by
+   its side of the section (`ShipStructure.PieceTension` / `PieceCompression`): pulled - **torn**; pushed - the **hinge**;
+   pushed past `FractureMath.CrushUtil` (2) - **crushed**. `FractureMath.Plan` orders the releases over `CrackSeconds`
+   (0.3 s): torn members by utilisation first, the hinge last. `JagCut` moves each member's break onto the plane or a block
+   either side (its stress plus a hash of the grid's seed and the cell), checking each step leaves no bridge across the
+   cut; a hinge breaks at the block beyond, its crumpled block left as a stub. The plan rides in `StructureEval.CutFail`
+   (`Release`, `Mode`, `Own`, `Stubs`, `Steps`).
+2. **The crack** (simulation thread, `StructureServer.Failure.cs`): `ApplyStructureDamage` queues the cut (`Cracking`);
+   `StepCracks` releases its members in order through `FailBlock` (crushed ones without a split), crumples the hinge's block
+   (`CrumpleDepth` 0.15 m toward the cut, at most `CrumpleMax` 0.25 m with the dents), puffs smoke along it
+   (`CrackSmokes` 3), and bumps `StructureLoads.Breaks` per release (creaks / jolts). `FinishCrack` stamps the separation
+   watch; `CheckCutSeparated` spares the stubs at first and destroys what still holds one from beyond the line, then falls
+   back to the plane's rule.
+3. **The peel** (`StructureTear`): up to `MaxAnchors` (6) springs picked over the failed members' places
+   (`TearMath.PickAnchors`: the hinge, the crack's origin, the farthest), each its own position motor and its own end
+   (`TearMath.AnchorEnd`: the origin's at `PeelFirst` 0.35 of `TearSeconds`, the hinge's at `TearSeconds`); the start hold
+   is `ForceFactor` g shared by them.
+4. **Bends** (`StructureBend`) fold about the cut's most pushed member's edge (`HingeToCompression`).
+
+**Fatigue by sign:** `StructureFatigue.TensilePart` counts tension at the full rate and compression at
+`CompressionFatigueShare` (0.2). Yield wear past 1 is the same either way.
+
 Wing root strain (`WingStrainServer.cs`, `Structure.WingStrain`) is a separate, older path, off by default.
 
 ## 7. Server and client: what crosses
@@ -167,19 +194,27 @@ client copy in the same process finds its server copy **by pose** (position, ori
 |---|---|---|
 | Flow record (`AeroEntryFx.FlowPub`: travel, Mach, density, lift, forces, entry strength) | `AeroEntryFxComponent.FlightJob` -> `FlightField`; `MachHud`; `AeroApi` answers for a client copy | `AeroEntryFx.FindFlow` (nearest within 20 m, carried forward, < 0.5 s old, sticky) |
 | Flame shares, flap angles, gear state (`ThrustTorque.Published`) | `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators | `ThrustTorque.FlameShare` / `FlapAngle` / `GearState` |
-| Scorch spots (`HeatScorch`) | `HeatScorch.Sync` (from the flight job, twice a second) | the flow pairing |
+| Scorch spots (`HeatScorch`) | `HeatScorch.Sync` (from `EntryJob`, twice a second while `Fx.Effects` is on, the flight field on or not) | the flow pairing (paired itself when the field has not) |
 | Tear events (`TearSmoke.Publish`) | `TearSmoke.Tick` | `TearSmoke.Pairs` (pose) |
 | Structure utilisation (the server `AeroGridComponent`) | `StructureFeel.Tick` | `DesignProbe.ServerAero` |
 
 What the **game** replicates for us: block damage, splits and deformation (written through the game's own systems),
 and `ThrustStallData` (`AeroStallJob` writes it on the server). Settings: world scope saved with the world
-(`AeroWorldSettingsComponent`), client scope in a local file; `AeroSettings.WorldWritable` refuses world sets in a
-process that only ever saw a client scene. A remote multiplayer client therefore gets no aero effects and `AeroApi`
+(`AeroWorldSettingsComponent`), client scope in a local file; `AeroSettings.CanEditWorld` (`WorldWritable`: refuses world
+sets in a process that only ever saw a client scene) - section 10. A remote multiplayer client therefore gets no aero effects and `AeroApi`
 answers false there.
 
 ## 8. Cross-mod links
 
-**Aero calls the Orbital mod** (by reflection, no lock of aero's held; every lookup in `Api/OrbitalLink.cs`, on the rule in `Api/CrossModLink.cs`: the last loaded copy, bound again after an Orbital reload):
+**One link each way.** Aero names `OrbitalMod.OrbitalApi` in one file only, `Api/OrbitalLink.cs`; the Orbital mod names
+aero's types only through its `Api/AeroLink.cs`. Both follow one rule (`Api/CrossModLink.cs` here: `LastLoadedType` +
+`CrossModBinding<T>`): the **last loaded** copy of the other mod's type, re-found when the loaded assemblies change (at
+most every 5 s, a `Generation` counter), each member bound by name **and** parameter types as a typed delegate, bound
+again on a new generation, looked up again every `OrbitalLink.RetrySeconds` while missing, and after a throw (or a member
+of the wrong shape) left for 10 s, doubling to 300 s. The Orbital mod's `tools/check_contract.sh` fails on a second
+lookup site.
+
+**Aero calls the Orbital mod** (by reflection, no lock of aero's held):
 
 | Call | Used for |
 |---|---|
@@ -212,8 +247,31 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   `AeroCost.Log` is off), the engine stat overlay's "Grid" / "All" sections; `StructureLoads` counters for the structure.
 - **Offline tests** (`Tests/`, no game): `AeroBench` (shapes, table vs exact, cache, wings, structure `struct` / `fail` /
   `replay`, polars; `gate` mode in the gate), `SurfaceTests`, `StructureTests`, `TearTests`, `ThrustTests`,
-  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `SettingsTests` (the settings registry: metadata,
-  text round trip, groups, host-file forcing, authority, denylist), `ApiTests`. They compile the engine-free folders by path.
+  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SettingsTests` (the settings
+  registry: metadata, text round trip, groups, host-file forcing, authority, denylist, dev writes never saved, the
+  background poll), `SettingsUiTests` (the menu's model over the real registry; `-- dump` prints the menu), `ApiTests`
+  (the API's shape, the event ring, the cross-mod binding). They compile the engine-free folders by path.
 - **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `D:\aero\tools\ModCheck`)
   then every suite. AeroBench's gate also hashes the table-building sources (`Tests/table_sources.txt`): a change there
   must bump `AeroTableCache.Version` (or re-record the hash for a pure refactor: `dotnet run -- tablehash`).
+
+## 10. Settings
+
+- **The registry** (`Runtime/AeroSettings.cs`): every setting is a name over a static field, with its scope (`world` /
+  `client`), range, description and menu metadata (`.Ui(label, group, tier, unit, step, choices)`; `Order` = registration
+  order = screen order; `.SeenByClients()` sets `ClientVisible` on world values the client's effects read). The store
+  (`AeroSettings.Store.cs`): `Set` / `Get` / info, the `name = value` text, the two files, the world save.
+- **Where they live.** World scope: saved with the world (`AeroWorldSettingsComponent` on the server planets, only values
+  off their default), host overrides in `%APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.world.cfg` (uncommented
+  lines win: `IsForced`, refused by `Set`; the forced set is dropped with the world). Client scope:
+  `AerodynamicsMod.client.cfg` next to it. Both read by `AeroSettings.Poll` (a pool task every 2 s; applied by the next
+  job's poll on its own thread, at most every 1/4 s per thread).
+- **Who may change world settings:** `CanEditWorld` - the host or single player (SE2 2.4: wherever the server runs; the
+  one place an admin check goes later). `WorldUnsaved` tells the menu a change waits for the world's next save.
+- **What is saved** is each setting's `Stored` value - the last one set through the store (API, menu, file, save) - never
+  a harness's direct field write (`aeroset`), so a dev override cannot become the player's setting.
+- **The menu** (`Ui/`): the Options screen's **Mods** tab, one tab for both mods (Tag contract `ModSettings/v1`, a section
+  per mod), rows generated from the registry (`SettingsModel`: basic shown, advanced collapsed, hidden left out; a
+  slider's edit applies once it holds still), reset per group (`ResetGroup`), refusal reasons shown. The shared files are
+  the Orbital mod's (`tools/sync_settings_ui.sh` there writes them, its `check_contract.sh` checks the copies); edit them
+  there. API: `docs/API.md` version 8 and Settings.

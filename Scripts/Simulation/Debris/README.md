@@ -7,7 +7,7 @@ them drag.
 
 | File | What |
 |---|---|
-| `AeroDebrisDrag.cs` | The job: every piece with the wind binding, after the game's wind push, before physics - quadratic drag against the air (the wind taken off, the game's own push counted once) and a little on the spin. Knobs: `Enabled`, `DragScale` (Cd, 1), `SpinDragScale` (1); settings `Debris.Drag`, `Debris.DragScale`. Diagnostics: `Steps`, `LastDv` |
+| `AeroDebrisDrag.cs` | The job: every piece with the wind binding, after the game's wind push, before physics - quadratic drag against the air (the wind taken off, the game's own push counted once) and a little on the spin. Knobs: `Enabled`, `DragScale` (Cd, 0.4: "slight"), `SpinDragScale` (1); settings `Debris.Drag`, `Debris.DragScale`. Diagnostics: `Steps`, `LastDv` |
 | `DebrisDragMath.cs` | Engine-free: projected area of the box, the step's exact quadratic drag (never past zero), the composition with the game's wind, spin damping. `Tests/DebrisTests` runs it as is |
 
 Not covered: the damaged-model debris of non-breakable blocks (`DamagedBlockDebrisPrefab`: no wind binding, so no
