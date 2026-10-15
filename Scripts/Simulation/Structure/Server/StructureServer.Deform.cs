@@ -21,14 +21,35 @@ public partial class AeroGridComponent
     /// bones move only the armour mesh.</summary>
     void Dent(CubeBlockComponent b, Vector3 dir, float util)
     {
+        float step = Math.Clamp((util - 1f) * DentPerUtil, 0f, DentMax);
+        if (step <= 0f) return;
+        DentBy(b, Vector3.Normalize(dir) * step, DentMax);
+    }
+
+    /// <summary>A HINGE member's CRUMPLE (2026-10-15, the user: "add compression vs tension to the break work" - FractureMath.Hinge):
+    /// the pushed side of a failing cut folds instead of vanishing - its armour's bones moved CrumpleDepth, back toward the
+    /// cut (against the way out) and bulged out from the section's middle (a crushed wall buckles outward), each bone's
+    /// total capped at CrumpleMax (the dents' ledger: past a wear dent's DentMax). Armour only.</summary>
+    void Crumple(CubeBlockComponent b, Vector3 at, Vector3 outDir, Vector3 centre)
+    {
+        if (!(CrumpleDepth > 0f) || outDir.LengthSquared() < 0.5f) return;
+        var o = Vector3.Normalize(outDir);
+        var bulge = at - centre; bulge -= o * Vector3.Dot(bulge, o);
+        var d = -o + (bulge.LengthSquared() > 1e-4f ? Vector3.Normalize(bulge) * 0.7f : Vector3.Zero);
+        DentBy(b, Vector3.Normalize(d) * CrumpleDepth, MathF.Max(CrumpleMax, DentMax));
+        Crumples++;
+    }
+
+    /// <summary>An armour block's bones (the 2x2x2 or so round its cells) moved by d (m, grid axes), each bone's dent total
+    /// capped at cap, the part under one bone step carried.</summary>
+    void DentBy(CubeBlockComponent b, Vector3 d, float cap)
+    {
         try
         {
             if (b.Entity.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Armors.ArmorBlockComponent>() == null) return;
             var bones = Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.BoneStorage.BoneStorageComponent>();
             if (bones == null) return;
-            float step = Math.Clamp((util - 1f) * DentPerUtil, 0f, DentMax);
-            if (step <= 0f) return;
-            Vector3 d = Vector3.Normalize(dir) * step; float unit = BoneUnit;
+            float unit = BoneUnit;
             var bb = b.AABB;
             var lo = bones.BlockToBone(bb.Min); var hi = bones.BlockToBone(bb.Max) + Vector3I.One;
             for (int x = lo.X; x <= hi.X; x++) for (int y = lo.Y; y <= hi.Y; y++) for (int z = lo.Z; z <= hi.Z; z++)
@@ -37,7 +58,7 @@ public partial class AeroGridComponent
                 _dentLedger.TryGetValue(bone, out var led);
                 var total = led.total + d;
                 float len = total.Length();
-                if (len > DentMax) total *= DentMax / len;   // (capped: a dent, not a crater)
+                if (len > cap) total *= cap / len;   // (capped: a dent, not a crater)
                 if (StepBone(bones, _dentLedger, bone, led, total, unit)) DentWrites++;
             }
         }

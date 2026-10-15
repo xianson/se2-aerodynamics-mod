@@ -83,6 +83,7 @@ public partial class AeroGridComponent
         if (!StructureLoads.Enabled || !IsServerScene || _octree == null) return;
         if (_hh != null && (_scorchClock += dt) >= 0.25f) { HeatScorch.Update(this, _hh, airVelLocal, _scorchClock); _scorchClock = 0f; }   // (re-entry scorch dose: HeatScorch)
         CheckCutSeparated();   // (a failed cut's separation watched: CutDone)
+        StepCracks(dt);   // (a failed cut's crack running across it: StructureServer.Failure, FractureMath)
         AccumulateContacts(dt, forceLocal);   // (every step: the physics' contacts are this step's only)
         // (the common case - between evaluations, nothing in the background: two adds and a compare, untimed)
         _stClock += dt; _stCooldown -= dt;
@@ -143,7 +144,9 @@ public partial class AeroGridComponent
         // gone; StructBlockVersion moved past the failure's) - or BreakHoldMax s without one. The old structure still holds the
         // departed piece: its load would run on through the next cut along the span and break it in turn
         bool structDamage = StructureLoads.Damage;
-        if (_stBreakHold > 0f)
+        // (a crack running: its cut is committed - nothing re-decided until its last member has gone, FinishCrack sets the hold)
+        if (_cracks.Count > 0) { structDamage = false; StructureLoads.BreakHeld++; }
+        else if (_stBreakHold > 0f)
         {
             if (build != null && _stVersion != _stHoldVersion) _stBreakHold = 0f;   // (this evaluation solves what is left)
             else { _stBreakHold -= evalDt; structDamage = false; StructureLoads.BreakHeld++; }
@@ -153,6 +156,7 @@ public partial class AeroGridComponent
         var snap = _stSnapBuf ??= new StructSnap();
         snap.Reset();
         snap.Dt = evalDt; snap.Density = LastDensity; snap.Piloted = piloted; snap.StructDamage = structDamage;
+        _fractureSeed = Entity.DEntity.GetHashCode();   // (the jagged line's noise: the grid's id - FractureMath.Step)
         snap.AirT = _atmosphereBridge != null && LastDensity > 0f ? (float)_atmosphereBridge.GetState(LastDensity).Temperature : 3f;
         var L = snap.L;
         L.AeroF = forceLocal; L.AeroT = torqueLocal; L.AeroCom = LastCoM; L.AirVel = airVelLocal; L.LiftScale = liftScale; L.AngVel = LastAngVel;
@@ -275,6 +279,7 @@ public partial class AeroGridComponent
         UpdateSteerCap(st, hh, L, snap.Dt);
         if (StructureLoads.DumpLoadsAbove > 0f && st.MaxUtil > StructureLoads.DumpLoadsAbove) { StructureLoads.DumpLoadsAbove = -1f; DumpLoads(L, st.MaxUtil); }
         // (BY SECTION, 2026-10-15: whole cuts wear and fail - _stCuts the failed ones, their members' entries together)
+        st.Seed = _fractureSeed;
         StructureEval.Damage(st, hh, snap.Dt, snap.StructDamage, StructureLoads.HeatDamage, StructureLoads.BreakUtil, StructureLoads.WearPerSecond, StructureLoads.MaxBreaksPerEval, _stDamage, _stWhere, _stCuts);
         // (PERMANENT BENDS, 2026-10-14: a worn cut past its last peak sets the structure outboard of it - Structure/Model/StructureBend;
         //  applied as bone moves on the simulation thread, ApplyBends)
@@ -307,6 +312,8 @@ public partial class AeroGridComponent
     /// <summary>NO ZIPPER (2026-10-15): seconds of evaluation the structure's damage still waits after a cut failed, and the
     /// block version it failed at (a rebuild from a later one ends the wait).</summary>
     float _stBreakHold; int _stHoldVersion;
+    /// <summary>The grid's id for the jagged fracture line's noise (taken on the simulation thread, read by the evaluation).</summary>
+    int _fractureSeed;
 
     // inputs the attitude controller writes (ThrustTorque.Apply): each thruster's force this frame (N, along its
     // ThrustDirection; _thrusterCache order) and the gyros' torque (grid-local N m)

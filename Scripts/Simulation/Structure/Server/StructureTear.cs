@@ -15,10 +15,15 @@ namespace AeroMod;
 /// <summary>
 /// TEARING (2026-10-14, the user's idea): when the structure breaks blocks (StructureServer.ApplyStructureDamage) and the game
 /// splits a LARGE chunk off (CubeGridComponent.SplitGridSpawnedSignal, the next tick), the two grids stay tied for a moment
-/// by soft physics constraints at the torn joint - one shared position motor on the linear axes of three 6-DoF
-/// constraints (the joint and two points spread across it: their lever arms hold the turning; angular axes free) - and
-/// the motor's force is ramped to nothing over TearSeconds (TearMath.Ramp: holds, sags, flutters, lets go), then the
-/// constraints are destroyed and the motor disposed. Small bits (under MinMass) pop off at once, as before.
+/// by soft physics constraints at the torn joint - 6-DoF constraints with a position motor on their linear axes (their
+/// lever arms hold the turning; angular axes free) - each ramped to nothing (TearMath.Ramp: holds, sags, flutters, lets go),
+/// then destroyed and its motor disposed. Small bits (under MinMass) pop off at once, as before.
+/// SPRINGS ACROSS THE SECTION (2026-10-15, the user: "also maybe two or more spring constraints, instead of just one?"):
+/// the anchors are the failed members' own places spread over the real section (TearMath.PickAnchors: the hinge, the
+/// crack's origin, then the farthest - up to MaxAnchors; a single place: the old three AnchorSpread apart), EACH WITH ITS
+/// OWN MOTOR and its own release in the crack's order (TearMath.AnchorEnd: the origin's at PeelFirst of TearSeconds, the
+/// hinge's at TearSeconds) - so the piece peels from the torn side and swings on its last ligament instead of the whole
+/// hold fading at once. The hold at the start is the same ForceFactor g, shared by the anchors.
 ///  - the pattern is the game's own (MechanicalBlockCounterpartAlignmentComponent.MakeLinearMotorConstraint: two 6-DoF
 ///    constraints between two grids, one position motor on their linear axes, MaxForce / MinForce set each tick, the
 ///    constraints destroyed and then the motor disposed); 6-DoF, not fixed (fixed counts as "connected to static");
@@ -46,13 +51,19 @@ public static class StructureTear
     public static float MinMass = 2000f;
     /// <summary>Seconds from the split until the piece is free (the hold ramps to nothing over them).</summary>
     public static float TearSeconds = 1.2f;
-    /// <summary>The hold at the start, in g of the piece's own weight (the three anchors together; 6: holds ~6 g).</summary>
+    /// <summary>The hold at the start, in g of the piece's own weight (the anchors together; 6: holds ~6 g).</summary>
     public static float ForceFactor = 6f;
     /// <summary>The motor's stiffness (0..1: the share of the error it corrects a step) and damping (the game's alignment
     /// uses 0.8 / 1).</summary>
     public static float Tau = 0.5f, Damping = 1f;
-    /// <summary>How far (m) the two extra anchors sit out across the joint (the joint's own half-extent, if wider).</summary>
+    /// <summary>How far (m) the two extra anchors sit out across the joint (the joint's own half-extent, if wider) - a single
+    /// place's three, or the one added off a row (TearMath.PickAnchors).</summary>
     public static float AnchorSpread = 1.5f;
+    /// <summary>Most anchors (springs) a tear hangs from (3..8): picked over the failed section, each its own motor.</summary>
+    public static int MaxAnchors = 6;
+    /// <summary>The crack's first anchor lets go at this share of TearSeconds; the hinge's at TearSeconds (1: all together, as
+    /// before).</summary>
+    public static float PeelFirst = 0.35f;
     /// <summary>A broken block counts as the piece's joint when its centre is this close (m) to one of the piece's blocks.</summary>
     public static float PairRange = 3f;
     /// <summary>Most tears at once (more: instant).</summary>
@@ -65,14 +76,20 @@ public static class StructureTear
     /// <summary>Tears holding now; done (ramped out and destroyed); skipped (light, static, no joint near, too many);
     /// lost (a body went mid-tear - the handles dropped, nothing called); faults (a throw - that tear dropped).</summary>
     public static int Active, Torn, Skipped, Lost, Faults, Splits;
+    /// <summary>Anchors made, anchors let go one by one before their tear ended (the peel); the last tear's anchors (order and
+    /// release, s) and the order the last peel let them go in.</summary>
+    public static int AnchorsMade, AnchorsPeeled; public static string Anchors = "-", Peel = "-";
 
-    sealed class Pending { public Entity Grid; public readonly List<Vector3> Local = new(); public int Age; }
+    sealed class Pending { public Entity Grid; public readonly List<Vector3> Local = new(); public readonly List<float> Order = new(); public int Age; }
     struct Spawned { public Entity Original, Piece; public int Age; }
     sealed class Tear
     {
         public Entity Piece, Original; public IPhysics Phys;
-        public IPositionConstraintMotor Motor; public readonly IPhysicsConstraint[] C = new IPhysicsConstraint[3];
-        public float F0; public int Age, Steps;
+        /// <summary>Each anchor's motor and constraint (null: let go), and its end (its share of Steps).</summary>
+        public readonly IPositionConstraintMotor[] M = new IPositionConstraintMotor[MaxSlots];
+        public readonly IPhysicsConstraint[] C = new IPhysicsConstraint[MaxSlots];
+        public readonly float[] End = new float[MaxSlots];
+        public float F0; public int Age, Steps, N, Left;
     }
 
     static readonly object _lock = new();
@@ -85,8 +102,11 @@ public static class StructureTear
     /// <summary>Set by any server grid's sim job this tick while Work; the first tear job takes it.</summary>
     internal static int Armed;
     static CubeGridComponent.SplitGridSpawnedSignal.ExternalApi _onSplit;
-    static readonly Vector3D[] _joint = new Vector3D[32];
-    static readonly Vector3D[] _anchors = new Vector3D[3];
+    const int MaxSlots = 8;
+    static readonly Vector3D[] _joint = new Vector3D[64];
+    static readonly float[] _jointOrder = new float[64];
+    static readonly Vector3D[] _anchors = new Vector3D[MaxSlots];
+    static readonly float[] _anchorOrder = new float[MaxSlots];
 
     /// <summary>(StructureServer.ApplyStructureDamage, before blocks are destroyed) the grid's split signal, once per grid.</summary>
     internal static void Watch(AeroGridComponent aero)
@@ -99,11 +119,19 @@ public static class StructureTear
 
     /// <summary>(StructureServer.ApplyStructureDamage) blocks of this grid broke: where (grid-local centres), for the split
     /// that may follow.</summary>
-    internal static void Record(Entity grid, List<Vector3> local)
+    internal static void Record(Entity grid, List<Vector3> local) => Record(grid, local, null, 0);
+    /// <summary>As Record, each place with its order in the crack (any scale: the latest the hinge; null - all alike), kept
+    /// extraTicks longer for its split (a crack's run). Over 48 places: evenly sampled, the first and the last kept.</summary>
+    internal static void Record(Entity grid, List<Vector3> local, List<float> order, int extraTicks)
     {
         if (!Enabled || grid == null || local == null || local.Count == 0) return;
-        var p = new Pending { Grid = grid };
-        p.Local.AddRange(local);
+        var p = new Pending { Grid = grid, Age = -Math.Max(0, extraTicks) };
+        int n = local.Count, keep = Math.Min(n, 48);
+        for (int k = 0; k < keep; k++)
+        {
+            int i = keep == n ? k : (int)((long)k * (n - 1) / (keep - 1));
+            p.Local.Add(local[i]); p.Order.Add(order != null && i < order.Count ? order[i] : 1f);
+        }
         lock (_lock) { if (_pending.Count < 32) _pending.Add(p); Work = 1; }
     }
 
@@ -165,7 +193,7 @@ public static class StructureTear
         if (!PhysicsHack.Alive(od) || !PhysicsHack.Alive(pd)) return true;
         // (only a split that follows our break: one of this grid's breaks, still fresh - each kept while its splits wait)
         bool ours = false;
-        lock (_lock) foreach (var p in _pending) if (p.Grid == w.Original) { ours = true; p.Age = 0; }
+        lock (_lock) foreach (var p in _pending) if (p.Grid == w.Original) { ours = true; p.Age = Math.Min(p.Age, 0); }   // (a crack's, still running: kept to its end)
         if (!ours) return true;
         if (!phys.HasBody(w.Piece.DEntity) || !phys.HasBody(w.Original.DEntity))
         {
@@ -184,9 +212,10 @@ public static class StructureTear
             foreach (var p in _pending)
             {
                 if (p.Grid != w.Original) continue;
-                foreach (var a in p.Local)
+                for (int pi = 0; pi < p.Local.Count; pi++)
                 {
                     if (n >= _joint.Length) break;
+                    var a = p.Local[pi];
                     Vector3D world = WorldTransform.Transform((Vector3D)a, in wtO);
                     Vector3 lp = (Vector3)WorldTransform.TransformInv(world, wtP);
                     float best = float.MaxValue;
@@ -198,7 +227,7 @@ public static class StructureTear
                         float d = TearMath.BoxDistance(mn, mx, lp);
                         if (d < best) { best = d; if (d <= 0f) break; }
                     }
-                    if (best <= PairRange) _joint[n++] = world;
+                    if (best <= PairRange) { _jointOrder[n] = pi < p.Order.Count ? p.Order[pi] : 1f; _joint[n++] = world; }
                 }
             }
         // (TORN-EDGE SMOKE, 2026-10-14: every piece that follows our break - light or heavy - smokes at its torn edge, out of
@@ -213,23 +242,26 @@ public static class StructureTear
         if (!(mass >= MinMass)) { Skipped++; Status = $"{Name(w.Piece)}: {mass:F0} kg, pops off"; return true; }
         if (n == 0) { Skipped++; Status = $"{Name(w.Piece)}: no broken block near it"; return true; }
         Vector3D com = WorldTransform.Transform((Vector3D)comLocal, in wtP);
-        int na = TearMath.Anchors(new ReadOnlySpan<Vector3D>(_joint, 0, n), com, AnchorSpread, _anchors);
+        // (the anchors over the real section - the hinge, the crack's origin, the farthest - each its own spring and release)
+        int na = TearMath.PickAnchors(new ReadOnlySpan<Vector3D>(_joint, 0, n), new ReadOnlySpan<float>(_jointOrder, 0, n), com, AnchorSpread,
+            Math.Clamp(MaxAnchors, 3, MaxSlots), _anchors, _anchorOrder);
         if (na == 0) { Skipped++; return true; }
 
-        var t = new Tear { Piece = w.Piece, Original = w.Original, Phys = phys, F0 = TearMath.StartForce(mass, ForceFactor, na) };
+        var t = new Tear { Piece = w.Piece, Original = w.Original, Phys = phys, F0 = TearMath.StartForce(mass, ForceFactor, na), N = na, Left = na };
         t.Steps = Math.Max(1, (int)(TearSeconds * 60f + 0.5f));
         var margs = new PositionConstraintMotorArgs { Tau = Tau, Damping = Damping, MinForce = -t.F0, MaxForce = t.F0 };
-        t.Motor = (IPositionConstraintMotor)phys.AllocateMotor(in margs);
         try
         {
             for (int k = 0; k < na; k++)
             {
+                t.End[k] = TearMath.AnchorEnd(_anchorOrder[k], PeelFirst);
+                t.M[k] = (IPositionConstraintMotor)phys.AllocateMotor(in margs);
                 // (pivots: the anchor in each body's own frame - the game's helper; the piece is body A, the "child")
                 ConstraintHelper.CreatePivots(pd, od, _anchors[k], out Matrix pa, out Matrix pb);
                 var args = new SixDegreesOfFreedomConstraintArgs { PivotA = pa, PivotB = pb };
-                args.SetAxisMotor(ConstraintAxisIdentifier.LinearX, t.Motor);
-                args.SetAxisMotor(ConstraintAxisIdentifier.LinearY, t.Motor);
-                args.SetAxisMotor(ConstraintAxisIdentifier.LinearZ, t.Motor);
+                args.SetAxisMotor(ConstraintAxisIdentifier.LinearX, t.M[k]);
+                args.SetAxisMotor(ConstraintAxisIdentifier.LinearY, t.M[k]);
+                args.SetAxisMotor(ConstraintAxisIdentifier.LinearZ, t.M[k]);
                 t.C[k] = phys.AllocateConstraint(w.Piece.DEntity, w.Original.DEntity, args);
             }
         }
@@ -237,13 +269,16 @@ public static class StructureTear
         {
             // (half made: what was made goes - both bodies are there, checked above this tick)
             foreach (var c in t.C) if (c != null && !IsDestroyed(c)) try { phys.DestroyConstraint(c); } catch { }
-            try { t.Motor.Dispose(); } catch { }
+            foreach (var m in t.M) if (m != null) try { m.Dispose(); } catch { }
             throw;
         }
         _active.Add(t);
-        Active = _active.Count;
-        Status = $"{Name(w.Piece)} ({mass / 1000f:F1} t) tearing from {Name(w.Original)}: {n} broken block(s), hold {t.F0 * na / 1000f:F0} kN over {TearSeconds:F1} s";
-        Log.Default?.Info($"[AERO-TEAR] {Status}");
+        Active = _active.Count; AnchorsMade += na;
+        var sb = new System.Text.StringBuilder();
+        for (int k = 0; k < na; k++) sb.Append(k == 0 ? "" : ", ").Append($"{_anchorOrder[k]:F2}@{t.End[k] * TearSeconds:F2}s");
+        Anchors = $"{Name(w.Piece)}: {na} anchors (order@release: {sb})";
+        Status = $"{Name(w.Piece)} ({mass / 1000f:F1} t) tearing from {Name(w.Original)}: {n} broken place(s), {na} anchors, hold {t.F0 * na / 1000f:F0} kN, peeling over {TearSeconds:F1} s";
+        Log.Default?.Info($"[AERO-TEAR] {Status}; {Anchors}");
         return true;
     }
 
@@ -257,15 +292,30 @@ public static class StructureTear
             return true;
         }
         t.Age++;
-        if (t.Age >= t.Steps || !Enabled)
+        if (t.Age >= t.Steps || !Enabled || t.Left == 0)
         {
             Release(t);
             Torn++; Status = $"{Name(t.Piece)} torn loose after {t.Age / 60f:F2} s";
             Log.Default?.Info($"[AERO-TEAR] {Status}");
             return true;
         }
-        float f = t.F0 * TearMath.Ramp(t.Age / (float)t.Steps);
-        t.Motor.MaxForce = f; t.Motor.MinForce = -f;
+        // (each anchor on its own ramp to its own end - the crack's origin first, the hinge last: the piece peels)
+        float s = t.Age / (float)t.Steps;
+        for (int k = 0; k < t.N; k++)
+        {
+            var m = t.M[k]; if (m == null) continue;
+            if (s >= t.End[k])
+            {
+                var c = t.C[k]; t.C[k] = null; t.M[k] = null; t.Left--;
+                if (c != null && !IsDestroyed(c)) t.Phys.DestroyConstraint(c);
+                m.Dispose();
+                AnchorsPeeled++;
+                Peel = $"{Name(t.Piece)}: anchor {k} let go at {t.Age / 60f:F2} s, {t.Left} of {t.N} holding";
+                continue;
+            }
+            float f = t.F0 * TearMath.AnchorHold(s, t.End[k]);
+            m.MaxForce = f; m.MinForce = -f;
+        }
         return false;
     }
 
@@ -285,7 +335,8 @@ public static class StructureTear
     static void Release(Tear t)
     {
         for (int k = 0; k < t.C.Length; k++) { var c = t.C[k]; t.C[k] = null; if (c != null && !IsDestroyed(c)) t.Phys.DestroyConstraint(c); }
-        var m = t.Motor; t.Motor = null; m?.Dispose();
+        for (int k = 0; k < t.M.Length; k++) { var m = t.M[k]; t.M[k] = null; m?.Dispose(); }
+        t.Left = 0;
     }
 
     static PropertyInfo _destroyed; static bool _destroyedTried;

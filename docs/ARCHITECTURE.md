@@ -148,8 +148,11 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
   `DesignProbe.ForcesAt`);
 - back on the simulation thread: damage through the game's damage receiver (`StructureServer.Damage.cs`), failures
   split or destroy blocks (`StructureServer.Failure.cs`, `Structure.SplitBlocks`), dents and bends through deformation
-  bones (`StructureServer.Deform.cs`); a large piece torn off is held by soft constraints for `StructureTear.TearSeconds`
-  (`StructureTear.Step`, from `TearJob`). After a failed cut, damage waits for a rebuild (`_stBreakHold`, "no zipper").
+  bones (`StructureServer.Deform.cs`); a failed cut lets go as a crack across it over `FractureMath.CrackSeconds` (the pulled
+  side first, the pushed side - the hinge, crumpled - last; the fracture line jagged a block either side of the plane:
+  `Structure/Model/FractureMath.cs`, `StepCracks`); a large piece torn off is held by soft constraints, one spring per
+  anchor over the failed section, let go in the crack's order over `StructureTear.TearSeconds` (`StructureTear.Step`, from
+  `TearJob`). While a crack runs, and after a failed cut until a rebuild, damage waits (`_stBreakHold`, "no zipper").
 
 Wing root strain (`WingStrainServer.cs`, `Structure.WingStrain`) is a separate, older path, off by default.
 
