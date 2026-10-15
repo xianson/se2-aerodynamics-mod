@@ -1,7 +1,7 @@
 using System.IO;
 using AeroMod;
 
-// Thruster steering (Integration/ThrustAllocator.cs), offline: the literal mod source, in a 60 Hz rigid-body flight
+// Thruster steering (Propulsion/ThrustAllocator.cs), offline: the literal mod source, in a 60 Hz rigid-body flight
 // simulation with the game's own target gyro controller (GridGyroscopesComponent.ComputeTorqueTarget, ported below)
 // and the game's dampened thrust at the centre of mass, as in the game; the mod adds only the thrusters' torque.
 //  1. allocator: net thrust kept to the game's, forces within their limits, the torque asked for, the offset torque of

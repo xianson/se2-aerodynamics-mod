@@ -16,7 +16,7 @@
     <Compile Include="$(Sim)\Components\ControlSurface.cs" />
     <Compile Include="$(Sim)\Components\IControlSurfaceSettings.cs" />
     <Compile Include="$(Sim)\Components\ControlSurfaceGeometry.cs" />
-    <Compile Include="$(Sim)\Integration\ThrustAllocator.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
     <Compile Include="..\AeroBench\Shims.cs" />
   </ItemGroup>
 </Project>
