@@ -39,7 +39,10 @@ public static class EngineOverrides
 {
     // ── 1. Speed cap ────────────────────────────────────────────────────────────
     private static FieldInfo _speedLimitField;
-    private static bool _speedLimitResolved;
+    private static volatile bool _speedLimitResolved;
+    // (each lookup resolved under this lock and published before its flag - 2026-10-15: the flag was set first, so a
+    //  parallel first caller saw it with the member still null and dropped its write; grids' jobs run in parallel)
+    private static readonly object _resolveLock = new();
     private static bool _speedUncapped;
 
     /// <summary>
@@ -50,13 +53,15 @@ public static class EngineOverrides
         if (velocityLimitProvider == null) return;
 
         if (!_speedLimitResolved)
-        {
-            _speedLimitResolved = true;
-            _speedLimitField = typeof(VelocityLimitProvider).GetField(
-                "_linearVelocityLimit", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (_speedLimitField == null)
-                Log.Default?.Info("[AERO] EngineOverrides: _linearVelocityLimit not found");
-        }
+            lock (_resolveLock)
+                if (!_speedLimitResolved)
+                {
+                    _speedLimitField = typeof(VelocityLimitProvider).GetField(
+                        "_linearVelocityLimit", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (_speedLimitField == null)
+                        Log.Default?.Info("[AERO] EngineOverrides: _linearVelocityLimit not found");
+                    _speedLimitResolved = true;
+                }
         if (_speedLimitField == null) return;
 
         try
@@ -88,14 +93,16 @@ public static class EngineOverrides
     {
         if (config == null || string.IsNullOrEmpty(name)) return false;
 
-        if (!_configProps.TryGetValue(name, out var prop))
-        {
-            prop = typeof(PhysicsSessionConfiguration).GetProperty(
-                name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            _configProps[name] = prop;
-            if (prop == null)
-                Log.Default?.Info($"[AERO] EngineOverrides: config property {name} not found");
-        }
+        PropertyInfo prop;
+        lock (_resolveLock)   // (a plain Dictionary: one writer at a time)
+            if (!_configProps.TryGetValue(name, out prop))
+            {
+                prop = typeof(PhysicsSessionConfiguration).GetProperty(
+                    name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                _configProps[name] = prop;
+                if (prop == null)
+                    Log.Default?.Info($"[AERO] EngineOverrides: config property {name} not found");
+            }
         if (prop == null) return false;
 
         try
@@ -114,7 +121,7 @@ public static class EngineOverrides
 
     // ── 3. Component.SetData<T> ─────────────────────────────────────────────────
     private static MethodInfo _setDataGeneric;
-    private static bool _setDataResolved;
+    private static volatile bool _setDataResolved;
 
     /// <summary>
     /// Call the protected Component.SetData&lt;T&gt; on the component of the given type.
@@ -127,21 +134,23 @@ public static class EngineOverrides
         if (entity == null) return false;
 
         if (!_setDataResolved)
-        {
-            _setDataResolved = true;
-            foreach (var m in typeof(Component).GetMethods(
-                         BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (m.Name == "SetData" && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
+            lock (_resolveLock)
+                if (!_setDataResolved)
                 {
-                    _setDataGeneric = m;
-                    break;
+                    foreach (var m in typeof(Component).GetMethods(
+                                 BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
+                    {
+                        if (m.Name == "SetData" && m.IsGenericMethodDefinition
+                            && m.GetParameters().Length == 1 && !m.GetParameters()[0].IsOut)
+                        {
+                            _setDataGeneric = m;
+                            break;
+                        }
+                    }
+                    if (_setDataGeneric == null)
+                        Log.Default?.Info("[AERO] EngineOverrides: Component.SetData<T> not found");
+                    _setDataResolved = true;
                 }
-            }
-            if (_setDataGeneric == null)
-                Log.Default?.Info("[AERO] EngineOverrides: Component.SetData<T> not found");
-        }
         if (_setDataGeneric == null) return false;
 
         try
