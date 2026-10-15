@@ -9,7 +9,7 @@ public static class StructureLoads
     public static bool Enabled = true;
     /// <summary>Loaded joints tire, overloaded ones wear, and when its health is out (or past StructureFatigue.SnapUtil) the
     /// outboard block fails - its pieces on the failing side broken, or the whole block (the game splits the rest off;
-    /// Structure/StructureFatigue, 2026-10-14) - a whole CUT at once, every member across it (2026-10-15:
+    /// Structure/Model/StructureFatigue, 2026-10-14) - a whole CUT at once, every member across it (2026-10-15:
     /// StructureEval.DamageBySection). ON by default (2026-10-14, the user: "turn damage on by default - I want to test it from time to time").</summary>
     public static bool Damage = true;
     /// <summary>(harness) dump the next rebuilt player grid's structure input to %TEMP%/AeroMod (DumpStructure).</summary>

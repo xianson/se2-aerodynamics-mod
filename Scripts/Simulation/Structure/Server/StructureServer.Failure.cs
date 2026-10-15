@@ -176,7 +176,7 @@ public partial class AeroGridComponent
             foreach (var b in v.Members) if (!Gone(b)) bridge.Add(b);
             int ax = v.Axis, k0 = (int)MathF.Round(v.Plane / TearMath.Cell - 0.5f);
             int u = (ax + 1) % 3, w = (ax + 2) % 3;
-            int uLo = Get(v.Lo, u), uHi = Get(v.Hi, u), wLo = Get(v.Lo, w), wHi = Get(v.Hi, w);
+            int uLo = ShipStructure.Ci(v.Lo, u), uHi = ShipStructure.Ci(v.Hi, u), wLo = ShipStructure.Ci(v.Lo, w), wHi = ShipStructure.Ci(v.Hi, w);
             if ((long)(uHi - uLo + 1) * (wHi - wLo + 1) <= 40000)
                 for (int a = uLo; a <= uHi; a++) for (int c = wLo; c <= wHi; c++)
                 {
@@ -198,7 +198,6 @@ public partial class AeroGridComponent
         }
     }
     public static int CutsChecked;
-    static int Get(Vector3I p, int i) => i == 0 ? p.X : i == 1 ? p.Y : p.Z;
     static Vector3I Cell(int ax, int k, int u, int a, int w, int c)
     {
         var r = new int[3]; r[ax] = k; r[u] = a; r[w] = c;

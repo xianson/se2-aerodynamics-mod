@@ -4,19 +4,19 @@ using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 namespace AeroMod;
 
 /// <summary>
-/// STRUCTURE AND HULL HEAT, SERVER (the models: Structure/ShipStructure, Structure/HullHeat - offline-tested in
+/// STRUCTURE AND HULL HEAT, SERVER (the models: Structure/Model/ShipStructure, HullHeat - offline-tested in
 /// Tests/StructureTests and AeroBench 'struct'). Per grid, StructureLoads.Rate times a second:
 ///  - on the simulation thread (TickStructure): a snapshot of what loads the ship - the air's applied force and torque,
-///    the wings' forces, each thruster's force, the gyros' torque, the angular velocity, the air - and the blocks'
-///    health; after a block change (and a cooldown), the blocks themselves (cells, mass, name) for a rebuild;
+///    the wings' forces, each thruster's force, the gyros' torque, the angular velocity, the air, the contacts
+///    (StructureContacts) - and the blocks' health; after a block change (and a cooldown), the blocks themselves (cells,
+///    mass, name, mount points: StructureServer.Rebuild) for a rebuild;
 ///  - in the background (AeroWork): the rebuild (slices, surface faces, heat state carried over), then the hull's heat
 ///    for the time since the last evaluation (its own surface pass when the flow turned), the loads spread onto the
 ///    blocks (wings over their cells, the rest of the air over the windward faces, thrust at the thrusters, gyro
 ///    torque over the gyros), every block's temperature into its strength, the solve (each piece free on its loads),
 ///    and the damage to do;
 ///  - back on the simulation thread, the next tick: the damage, through the game's damage receiver (game-mode rules
-///    apply: creative takes none), and the gauges (StructMaxUtil, StructMaxSkinK).
-/// Contact forces (landings, collisions) are not included yet: only the forces this mod knows.
+///    apply: creative takes none: StructureServer.Damage, .Failure, .Deform), and the gauges (StructMaxUtil, StructMaxSkinK).
 /// </summary>
 public partial class AeroGridComponent
 {
@@ -271,14 +271,14 @@ public partial class AeroGridComponent
         if (speed > 1f && hh.NeedsPass(heatAir)) hh.Pass(heatAir);
         hh.Step(heatRho, airT, speed, heatRho > 1e-6f ? airT : 3f, MathF.Min(snap.Dt, 2f));
         Array.Copy(hh.BlockTempK, st.TempK, n);
-        // the loads, the solve (each piece free on them), the damage to do (Structure/StructureEval: offline-simulated)
+        // the loads, the solve (each piece free on them), the damage to do (Structure/Model/StructureEval: offline-simulated)
         StructureEval.Apply(st, hh, L);
         st.SolveFree(L.AngVel);
         UpdateSteerCap(st, hh, L, snap.Dt);
         if (StructureLoads.DumpLoadsAbove > 0f && st.MaxUtil > StructureLoads.DumpLoadsAbove) { StructureLoads.DumpLoadsAbove = -1f; DumpLoads(L, st.MaxUtil); }
         // (BY SECTION, 2026-10-15: whole cuts wear and fail - _stCuts the failed ones, their members' entries together)
         StructureEval.Damage(st, hh, snap.Dt, snap.StructDamage, StructureLoads.HeatDamage, StructureLoads.BreakUtil, StructureLoads.WearPerSecond, StructureLoads.MaxBreaksPerEval, _stDamage, _stWhere, _stCuts);
-        // (PERMANENT BENDS, 2026-10-14: a worn cut past its last peak sets the structure outboard of it - Structure/StructureBend;
+        // (PERMANENT BENDS, 2026-10-14: a worn cut past its last peak sets the structure outboard of it - Structure/Model/StructureBend;
         //  applied as bone moves on the simulation thread, ApplyBends)
         if (snap.StructDamage && StructureBend.Enabled && _stDamage.Count > 0) StructureBend.Plan(st, _stDamage, _stWhere, _bendPeaks, _stBends);
         else _stBends.Clear();

@@ -4,14 +4,14 @@ using System.Collections.Generic;
 namespace AeroMod;
 
 /// <summary>
-/// ONE EVALUATION'S LOADS AND DAMAGE - pure, no game: the game's background evaluation (Integration/StructureServer)
+/// ONE EVALUATION'S LOADS AND DAMAGE - pure, no game: the game's background evaluation (Structure/Server/StructureServer)
 /// and the offline failure simulation (AeroBench 'struct', 'fail') run exactly this.
 ///
 /// Loads: the wings' forces spread over their cells; the rest of the air (the applied total less the wings) over the
 /// hull's windward faces by Newtonian weights (cos^2 x area, the heat model's last pass), its moment about the centre of
 /// mass matched by a couple spread the same way; each thruster's force at its block; the gyros' torque shared by the
 /// gyro blocks; a railed re-entry's braking (EntryLoads) as a pressure over the same windward faces. Damage
-/// (PROGRESSIVE, 2026-10-14 - Structure/StructureFatigue; BY SECTION, 2026-10-15 - DamageBySection): every member of a
+/// (PROGRESSIVE, 2026-10-14 - Structure/Model/StructureFatigue; BY SECTION, 2026-10-15 - DamageBySection): every member of a
 /// loaded CUT (the method of sections' cut through one part of the ship: its patches and the blocks straddling it) loses
 /// health at StructureFatigue.HealthRate of its own utilisation - fatigue past the endurance limit, yield wear past 1 -
 /// times the time, so the whole neck tires together; the CUT fails when a member's health is exhausted, or at once at
@@ -395,7 +395,7 @@ public static class StructureEval
     ///  - NO ZIPPER: an evaluation's failures are decided on its own solve (no load moved onto neighbours inside it; a failing
     ///    cut wholly inside what an earlier one takes off is not failed too - FarSide - nor worn: it leaves whole), and
     ///    the game holds the structure's damage after a failure until the structure is rebuilt without what left
-    ///    (Integration/StructureServer _stBreakHold): what is left is damaged again only if a cut is genuinely overloaded
+    ///    (Structure/Server/StructureServer _stBreakHold): what is left is damaged again only if a cut is genuinely overloaded
     ///    on that new solve.
     /// Returns what each block lost (the heat's pass takes it off first).
     /// </summary>

@@ -155,7 +155,7 @@ public static class HeatScorch
                     //  grid one in the next. The block: the cell just inside the face)
                     var octree = grid.TryGet<Keen.Game2.Simulation.WorldObjects.CubeGrids.BlockOctrees.BlockOctreeComponent>();
                     Vector3 inside = s.HotPos - n * 0.125f;
-                    var block = octree?.TryGetCubeBlock(new Vector3I((int)MathF.Round(inside.X * 4f), (int)MathF.Round(inside.Y * 4f), (int)MathF.Round(inside.Z * 4f)));
+                    var block = octree?.TryGetCubeBlock(AeroGridComponent.CellOf(inside));
                     if (block?.Entity == null) { Missed++; continue; }
                     var onGrid = new DecalPlacementParameters(s.HotPos - n * 0.02f, n);
                     var onBlock = onGrid.InvTransformBy(block.Entity.Data.GetRelativeTransform());

@@ -80,7 +80,7 @@ public partial class AeroGridComponent
     }
 
     /// <summary>
-    /// PERMANENT BENDS, the game side (2026-10-14; the plan: Structure/StructureBend). Rare (a joint passing its last peak):
+    /// PERMANENT BENDS, the game side (2026-10-14; the plan: Structure/Model/StructureBend). Rare (a joint passing its last peak):
     /// guarded. SE2 cannot turn blocks, but its deformation BONES (BoneStorageComponent: one every 4 cells, 1 m; a bone's
     /// Vector3B is its offset in 1/127 of MaxBoneOffset - 1 m - and the armour mesh is skinned to the eight round each
     /// point) can be moved: every bone of the far side's blocks moves by the bend's displacement there - zero at the joint,

@@ -1,7 +1,7 @@
 using System.IO;
 using AeroMod;
 
-// AeroBench 'fail': failures simulated offline with the game's own evaluation (Structure/StructureEval - the loads as
+// AeroBench 'fail': failures simulated offline with the game's own evaluation (Structure/Model/StructureEval - the loads as
 // the game spreads them, the damage as the game decides it), every 0.25 s:
 //   dotnet run -c Release -- fail [ship ...]
 //  1. fidelity: the game's load spreading (wings over their cells, the rest over windward faces) against the exact

@@ -1,6 +1,6 @@
 using AeroMod;
 
-// Tearing's game-free part (Structure/TearMath.cs; the game side Integration/StructureTear.cs), offline:
+// Tearing's game-free part (Structure/Model/TearMath.cs; the game side Structure/Server/StructureTear.cs), offline:
 //  1. the hold's ramp: full at the break, nothing at TearSeconds, flat at both ends (holds first, no snap at the end),
 //     falling all the way, NaN-safe; the start force (ForceFactor g shared by the anchors);
 //  2. block boxes and centres from the game's cells (0.25 m, inclusive), a point's distance from a box;

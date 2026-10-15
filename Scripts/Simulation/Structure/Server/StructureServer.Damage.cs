@@ -8,7 +8,7 @@ namespace AeroMod;
 // (simulation thread), with the guards every damage call goes through (Gone).
 public partial class AeroGridComponent
 {
-    /// <summary>THE FATIGUE LEDGER (Structure/StructureFatigue, 2026-10-14): this grid's health not yet written to its blocks
+    /// <summary>THE FATIGUE LEDGER (Structure/Model/StructureFatigue, 2026-10-14): this grid's health not yet written to its blocks
     /// (background: SyncHealth, the evaluation; simulation thread: ApplyStructureDamage - never at once).</summary>
     readonly StructureFatigue.Ledger _stHealth = new();
     readonly List<(int block, float loss)> _stDue = new();
@@ -42,7 +42,7 @@ public partial class AeroGridComponent
     }
 
     /// <summary>The last evaluation's damage (simulation thread). Rare work: guarded.
-    /// PROGRESSIVE (2026-10-14, Structure/StructureFatigue): each entry's health loss goes into the ledger (_stHealth), and
+    /// PROGRESSIVE (2026-10-14, Structure/Model/StructureFatigue): each entry's health loss goes into the ledger (_stHealth), and
     /// the game's blocks take it in STEPS (the ledger's TakeDue: 5% of a block's health, at most once a second a block, a
     /// settled remainder, a damage stage crossed) - each through the game's damage WITH a fracture line from the block's
     /// loaded joint into it, so its pieces on the loaded side crack first and its damage stages play on the way down; the

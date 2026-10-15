@@ -138,7 +138,8 @@ public partial class AeroGridComponent
         }
     }
 
-    static Vector3I CellOf(Vector3 local) => new Vector3I((int)MathF.Round(local.X * 4f), (int)MathF.Round(local.Y * 4f), (int)MathF.Round(local.Z * 4f));
+    /// <summary>The 0.25 m cell a grid-local point is in (cell i centred at i x 0.25).</summary>
+    internal static Vector3I CellOf(Vector3 local) => new Vector3I((int)MathF.Round(local.X * 4f), (int)MathF.Round(local.Y * 4f), (int)MathF.Round(local.Z * 4f));
 
     void AddContact(Vector3I cell, Vector3 j)
     {
@@ -282,7 +283,7 @@ public partial class AeroGridComponent
         float scale = 1f; Vector3 sup = Vector3.Zero;
         if (had && m > 0f)
         {
-            // (Structure/ContactBalance: m (v - v0 - written) less the known impulses; the clamp's part dropped at the cap)
+            // (Structure/Model/ContactBalance: m (v - v0 - written) less the known impulses; the clamp's part dropped at the cap)
             float cap = StructureContactLoads.PhysicsSpeedCap;
             sup = ContactBalance.Support(m, vel, v0, written, thrJ, airJ, g0, x0, dt, cap);
             if (ContactBalance.AtCap(ContactBalance.AfterStep(vel, written, thrJ, airJ, m), cap)) StructureContactLoads.AtCapSteps++;
