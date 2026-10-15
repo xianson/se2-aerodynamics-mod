@@ -23,12 +23,6 @@ internal sealed partial class FlightField
 
     private static string Inner(Exception e) => (e.InnerException ?? e).Message;
 
-    private static Type FindType(string asm, string name)
-    {
-        foreach (var x in AppDomain.CurrentDomain.GetAssemblies()) if (x.GetName().Name == asm) return x.GetType(name);
-        return null;
-    }
-
     /// <summary>An effect under the grid's render root at a grid-space transform (it follows the grid), its user
     /// parameters filled by init before the spawn; null and why on failure.</summary>
     private object SpawnEffect(Keen.VRage.DCS.Components.Entity grid, Guid effect, RelativeTransform at, out object prm, out string why, Action<object> init = null)
@@ -39,8 +33,8 @@ internal sealed partial class FlightField
             if (grid == null || _renderParent == null) { why = "no render parent"; return null; }
             if (_spawn == null)
             {
-                _tSession = FindType("VRage.Game.Client", "Keen.VRage.Game.Client.Effects.Components.ParticleEffectsSessionComponent");
-                _tParams = FindType("VRage.Render", "Keen.VRage.Render.Data.ParticleEffectUserParameters");
+                _tSession = EntryFxBridge.FindType("VRage.Game.Client", "Keen.VRage.Game.Client.Effects.Components.ParticleEffectsSessionComponent");
+                _tParams = EntryFxBridge.FindType("VRage.Render", "Keen.VRage.Render.Data.ParticleEffectUserParameters");
                 if (_tSession == null || _tParams == null) { why = "particle types not found"; return null; }
                 foreach (var m in _tSession.GetMethods(AnyInst))
                     if (m.Name == "TrySpawnEffect") { var ps = m.GetParameters(); if (ps.Length > 3 && ps[0].ParameterType == typeof(RelativeTransform)) { _spawn = m; break; } }
