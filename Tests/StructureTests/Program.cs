@@ -1370,7 +1370,7 @@ static class Program
                     if (splitPending) { stamp++; splitPending = false; Grid(); }   // (the game's split: the far side gone from this grid)
                     if (armed)
                     {
-                        if (w.SplitSince(stamp) && Bridges(w.Spare) == 0) { done = true; break; }
+                        if (w.SplitSince(stamp) && Bridges(w.SpareOnSplit) == 0) { done = true; break; }
                         if (w.Expired())
                         {
                             Grid(); int n = Bridges(w.Spare);
@@ -1398,6 +1398,134 @@ static class Program
         Check(runs >= 40 && parted == runs && forced == 0, $"crack separates: every failed cut parts by itself and its watch never forces it ({parted} of {runs} parted, {forced} forced - {plainForce} by the plane's rule)");
         Check(midCrack > 0 && stubbed > 0 && stubKill > 0, $"crack separates: the pieces parting mid-crack ({midCrack}) are credited - their stubs ({stubbed} cuts) never taken by the plane's rule ({stubKill} pairs it would have)");
     }
+    /// <summary>18. A FAILED CUT'S MEMBERS LET GO, AND A FORCED CUT'S SPLIT IS CREDITED (2026-10-15, the third integration
+    /// run: the SSTO pulled at Strength 1.5 - CutsForced +2 on one cut: "5 block(s) still bridging it", then "4"). Two
+    /// ControlSurface_Small members split at their failing face kept other mount groups on it (the game disables only a dead
+    /// piece's) - the wing hung on until the watch destroyed them and the 3 armour blocks mounted to one's face; the wing
+    /// split off 23 ms later, and stage 1 judged that split on the plane's rule: the jagged line's stubs and their mates (on
+    /// the ship by design) "still bridging" - destroyed 0.5 s after it had parted. Played tick by tick as CrackSeparates, a
+    /// third of the members SPLIT-KIND (split at the face, still mounted across it): CutWatch.Sever on - destroyed whole at
+    /// their release (FailBlock: MountedAcross), every cut parts by itself; off - the watch forces them at stage 0 (the
+    /// in-game signature) and the split that follows is credited on the jagged surface (CutWatch.SpareOnSplit) - stage 1
+    /// never forces a parted cut.</summary>
+    static void CutLetsGo()
+    {
+        bool sev0 = CutWatch.Sever;
+        int[] runs = new int[2], parted = new int[2], forced = new int[2], stage1 = new int[2], stubbed = new int[2], held = new int[2];
+        try
+        {
+            for (int mode = 0; mode < 2; mode++)
+            {
+                CutWatch.Sever = mode == 0;
+                for (int shape = 0; shape < 24; shape++)
+                {
+                    int H = 2 + shape % 3, W = 4 + (shape / 3) % 4;
+                    var rng = new Random(shape * 7919 + 1);
+                    var sh = new TShip();
+                    var blk = new int[10, H, W];
+                    for (int x = 0; x <= 9; x++) for (int y = 0; y < H; y++) for (int z = 0; z < W; z++)
+                    {
+                        if (x >= 2 && x <= 8 && rng.NextDouble() < 0.12) { blk[x, y, z] = -1; continue; }
+                        blk[x, y, z] = sh.Block(x, y, z, x == 0 ? 1e9f : SmallMass);
+                    }
+                    sh.Build();
+                    var s = sh.S; int root = blk[0, 0, 0];
+                    for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = s.Center[i].X > 0.3f ? new Vector3(0, 100f, 0) : Vector3.Zero; s.ExtMoment[i] = Vector3.Zero; }
+                    s.SolveFree(Vector3.Zero);
+                    float k = StructureFatigue.SnapUtil * 1.2f / s.MaxUtil;
+                    for (int i = 0; i < s.Count; i++) s.ExtForce[i] *= k;
+                    s.SolveFree(Vector3.Zero);
+                    StructureBend.Adjacency(s, out var a0, out var a1);
+                    var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+                    for (int seed = 1; seed <= 6; seed++)
+                    {
+                        s.Seed = seed;
+                        StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                        if (cuts.Count != 1 || cuts[0].Release == null) continue;
+                        var cut = cuts[0]; int side = (cut.Axis == 0 ? cut.Dir.X : cut.Axis == 1 ? cut.Dir.Y : cut.Dir.Z) > 0f ? 1 : -1;
+                        float Ax(Vector3 v) => cut.Axis == 0 ? v.X : cut.Axis == 1 ? v.Y : v.Z;
+                        int far = -1; for (int b = 0; b < s.Count; b++) if ((Ax(s.Center[b]) - cut.Plane) * side > 0f && (far < 0 || (Ax(s.Center[b]) - Ax(s.Center[far])) * side > 0f)) far = b;
+                        if (far < 0) continue;
+                        var stubs = new HashSet<int>(cut.Stubs ?? Array.Empty<int>());
+                        var removed = new bool[s.Count]; var grid = new bool[s.Count];
+                        void Grid()
+                        {
+                            Array.Clear(grid); var q = new Queue<int>(); q.Enqueue(root); grid[root] = true;
+                            while (q.Count > 0) { int i = q.Dequeue(); for (int e = a0[i]; e < a0[i + 1]; e++) { int j = a1[e]; if (grid[j] || removed[j]) continue; grid[j] = true; q.Enqueue(j); } }
+                        }
+                        // (the server's Bridges on the model - its contacts are the mated ones: pairs across the plane in this
+                        //  grid, stubs spared on the jagged rule, and then what holds a stub from beyond the plane, any face)
+                        int Bridges(bool spare, HashSet<int> into)
+                        {
+                            int pairs = 0;
+                            for (int c = 0; c < s.ContactCount; c++)
+                            {
+                                s.ContactPlane(c, out int ax, out float pl); if (ax != cut.Axis || MathF.Abs(pl - cut.Plane) > 1e-3f) continue;
+                                s.ContactBlocks(c, out int ca, out int cb);
+                                if (!grid[ca] || !grid[cb] || spare && (stubs.Contains(ca) || stubs.Contains(cb))) continue;
+                                pairs++; into?.Add(ca); into?.Add(cb);
+                            }
+                            if (spare) foreach (int sb in stubs)
+                                {
+                                    if (!grid[sb]) continue;
+                                    for (int e = a0[sb]; e < a0[sb + 1]; e++) { int j = a1[e]; if (grid[j] && !stubs.Contains(j) && (Ax(s.Center[j]) - cut.Plane) * side > 0f) { pairs++; into?.Add(j); } }
+                                }
+                            return pairs;
+                        }
+                        var order = new int[cut.Count]; for (int i = 0; i < cut.Count; i++) order[i] = i;
+                        Array.Sort(order, (p, q) => { int r = cut.Release[p].CompareTo(cut.Release[q]); return r != 0 ? r : p.CompareTo(q); });
+                        var survivors = new List<int>();
+                        var w = new CutWatch(); w.HasStubs = stubs.Count > 0;
+                        int stamp = 0, next = 0; bool armed = false, done = false, splitPending = false, split = false, force = false; float clock = 0f;
+                        void Parted() { Grid(); if (!split && !grid[far]) { split = true; splitPending = true; } }
+                        w.Begin(stamp);
+                        for (int tick = 0; tick < 400 && !done; tick++)
+                        {
+                            if (splitPending) { stamp++; splitPending = false; Grid(); }   // (the game's split: the far side gone from this grid)
+                            if (armed)
+                            {
+                                if (w.SplitSince(stamp) && Bridges(w.SpareOnSplit, null) == 0) { done = true; break; }
+                                if (w.Expired())
+                                {
+                                    // (forced, as CheckCutSeparated: the members that held on and this stage's bridges destroyed -
+                                    //  stage 1's only on a cut not split or still bridged on the jagged surface)
+                                    Grid();
+                                    if (w.Stage > 0 && !w.Force(Bridges(w.SpareOnSplit, null))) { done = true; break; }
+                                    var set = new HashSet<int>(); foreach (int b in survivors) if (grid[b]) set.Add(b);
+                                    Bridges(w.Spare, set);
+                                    if (set.Count > 0) { force = true; if (w.Stage == 1) stage1[mode]++; foreach (int b in set) removed[b] = true; Parted(); }
+                                    if (!w.NextStage(stamp, 30)) done = true;
+                                }
+                            }
+                            if (next < cut.Count)
+                            {
+                                if (tick > 0) clock += 1f / 60f;
+                                while (next < cut.Count && cut.Release[order[next]] <= clock + 1e-4f)
+                                {
+                                    int e = order[next++], b = dmg[cut.First + e].block;
+                                    bool crushed = cut.Mode != null && e < cut.Mode.Length && cut.Mode[e] == FractureMath.Crushed;
+                                    // (split-kind: split at its face, other mount groups of that face still on - it stays mounted
+                                    //  across it unless destroyed whole for that, CutWatch.Sever)
+                                    if (!crushed && b % 3 == 0 && !CutWatch.Sever) { survivors.Add(b); held[mode]++; }
+                                    else removed[b] = true;
+                                }
+                                Parted();
+                                if (next == cut.Count) { w.Finish(stamp, 30); armed = true; }
+                            }
+                        }
+                        runs[mode]++; if (stubs.Count > 0) stubbed[mode]++;
+                        Grid(); if (!grid[far]) parted[mode]++;
+                        if (force) forced[mode]++;
+                    }
+                    s.Seed = 0;
+                }
+            }
+        }
+        finally { CutWatch.Sever = sev0; }
+        Check(runs[0] >= 40 && parted[0] == runs[0] && forced[0] == 0, $"cut lets go: split members still mounted destroyed whole at their release - every cut parts by itself ({parted[0]} of {runs[0]} parted, {forced[0]} forced)");
+        Check(held[1] > 0 && forced[1] > 0 && parted[1] == runs[1], $"cut lets go: without that they hang on and the watch forces them at stage 0 ({held[1]} held on, {forced[1]} of {runs[1]} cuts forced, {parted[1]} parted)");
+        Check(stage1[0] == 0 && stage1[1] == 0 && stubbed[1] > 0, $"cut lets go: a forced cut's split credited on the jagged surface - stage 1 never forces a parted cut ({stage1[1]} stage-1 forcings, {stubbed[1]} cuts with stubs)");
+    }
     static int Main()
     {
         Classes();
@@ -1405,7 +1533,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
-        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates();
+        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
