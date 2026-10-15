@@ -181,7 +181,9 @@ public partial class AeroGridComponent
                         {
                             var sc = secs[i];
                             if (sc == null || !sc.Covers(g.Min, g.Max)) continue;
-                            if (heavyFlag == 0) heavyFlag = (block.Entity?.DebugName ?? "").IndexOf("Heavy", StringComparison.OrdinalIgnoreCase) >= 0 ? 2 : 1;
+                            // (the DEFINITION's name - BlockName, cached per definition: the entity's is "CubeBlock_x:y:z", never
+                            //  "Heavy" - every heavy-armour wing had light armour's strength, 2026-10-15)
+                            if (heavyFlag == 0) heavyFlag = BlockName(block).IndexOf("Heavy", StringComparison.OrdinalIgnoreCase) >= 0 ? 2 : 1;
                             sc.Add(g.Min, g.Max, heavyFlag == 2);
                             hits.Add((block, g.Min, g.Max, i));
                         }

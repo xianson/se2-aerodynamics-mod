@@ -106,6 +106,9 @@ internal sealed partial class FlightField
     {
         public Vector3[] Anc, AncN, Jit; public bool[] HasN; public Vector3 C; public float R;
         public (int[] slot, float[] w, Vector3[] dir)[] Bake; public int Count;
+        /// <summary>The knobs it was baked with (BakeLevel: Bake's length is that sphere's; BakeSpacing, BakeCell).</summary>
+        public int Level; public float Spacing, Cell;
+        public bool Current => Level == BakeLevel && Spacing == BakeSpacing && Cell == BakeCell;
     }
     private static readonly Dictionary<(int, long), BakeData> _bakeCache = new();
     private static long _bkWin, _bkUsed;
@@ -115,7 +118,19 @@ internal sealed partial class FlightField
     {
         long h = pts.Count;
         foreach (var p in pts) h = h * 31 + (long)MathF.Round(p.X * 4f) * 73856093L ^ (long)MathF.Round(p.Y * 4f) * 19349663L ^ (long)MathF.Round(p.Z * 4f) * 83492791L;
+        // (and the bake's knobs: keyed by the hull alone, a BakeLevel change found the old level's bake - its directions
+        //  indexed by the new sphere's: IndexOutOfRange, DropAll every frame, no plasma at all, 2026-10-15)
+        h = h * 31 + BakeLevel; h = h * 31 + BitConverter.SingleToInt32Bits(BakeSpacing); h = h * 31 + BitConverter.SingleToInt32Bits(BakeCell);
         return (pts.Count, h);
+    }
+    /// <summary>The rebuild bump the shared bakes were made under (FlightField.Rebuild clears them: the bake's other knobs).</summary>
+    private static int _bakeCacheFor;
+    /// <summary>(FlightField.Rebuild) this field's bake forgotten - made again, from the shared cache cleared once per bump.</summary>
+    private void BakedForget()
+    {
+        BakedDrop();
+        lock (_bakeCache) if (_bakeCacheFor != Rebuild) { _bakeCacheFor = Rebuild; _bakeCache.Clear(); }
+        _anc = null; _ancFor = null; _bd = null;
     }
     public static int RecBakes, RecBakeNow;
     private string _bakeWhy;
@@ -125,6 +140,7 @@ internal sealed partial class FlightField
         var pts = HullPoints();
         if (pts == null) { _bakeWhy = _hullWhy ?? "no hull"; return false; }
         _ancFor = _server?.FxChunks;
+        Ico(BakeLevel);   // (the shared sphere at this level: a cached bake's directions are its)
         var key = HullKey(pts);
         if (_bd != null && key.Equals(_bdKey)) return true;   // (a new chunk table of the same hull: kept)
         BakedDrop();
@@ -165,6 +181,7 @@ internal sealed partial class FlightField
         for (int k = 0; k < bd.Anc.Length; k++) bd.Jit[k] = new Vector3((float)rng.NextDouble() * 2 - 1, (float)rng.NextDouble() * 2 - 1, (float)rng.NextDouble() * 2 - 1);
         Ico(BakeLevel);
         bd.Bake = new (int[], float[], Vector3[])[_ico.Length];
+        bd.Level = BakeLevel; bd.Spacing = BakeSpacing; bd.Cell = BakeCell;
         return bd;
     }
 
@@ -325,7 +342,7 @@ internal sealed partial class FlightField
     }
     private void BakedFrameCore(Vector3 f, float fdt)
     {
-        if (_anc == null || !ReferenceEquals(_ancFor, _server?.FxChunks)) { if (!BakeAnchors()) return; }
+        if (_anc == null || !ReferenceEquals(_ancFor, _server?.FxChunks) || !_bd.Current) { if (!BakeAnchors()) return; }
         lock (_bd) BakeNeeded(f);
         IcoTri(f, out int v0, out int v1, out int v2, out float b0, out float b1, out float b2);
         // blend

@@ -8,6 +8,9 @@
 //    every member and the current version in docs/API.md; no try/catch in the version-7+ files (per-tick query paths).
 // 2. THE EVENT QUEUE (Api/SeqRing.cs): numbers from 0, only up; the newest Capacity kept; a reader from an old number
 //    starts at the oldest kept and sees the gap.
+// 4. THE CROSS-MOD LINK (Api/CrossModLink.cs, OrbitalLink's rule): the LAST loaded copy of the other mod's API wins, an
+//    assembly change binds anew at once (a hot reload), a member is matched by name and parameter types (a wrong shape is
+//    no binding, never a throw), a throwing member waits 10 s doubling to 300 s, and an assembly change ends that wait.
 // 3. THE HULL'S FILM (Structure/Model/HullHeat.Api.cs): the published h and T0 give back each face's heat in exactly, as
 //    another heat model would take it: FaceHeatW = h x area x (T0 - the skin before the step).
 using System.IO;
@@ -183,6 +186,16 @@ static class Program
         Check(doc.Contains($"## Version {version}"), $"docs/API.md has a 'Version {version}' section");
         foreach (var m in members)
             Check(m.name == "Version" || doc.Contains(m.name + "("), $"docs/API.md documents {m.name}");
+        // (A8, 2026-10-15) the readers of lists the simulation thread clears and refills read published copies or take the
+        // list's lock - iterated bare they tore or threw (~200 ms an exception), caught by a try
+        foreach (var (name, live) in new[] { ("GetSurface", "FxSurface"), ("GetThrusters", "_thrusterCache"), ("GetAeroBlocks", "catch"), ("GetAeroBlockState", "catch") })
+        {
+            var m = members.FirstOrDefault(x => x.name == name);
+            if (m.node is not MethodDeclarationSyntax md) { Check(false, $"{name}: declared"); continue; }
+            string body = md.Body?.ToString() ?? "";
+            Check(!md.DescendantNodes().OfType<TryStatementSyntax>().Any() && !body.Contains(live) && (name.StartsWith("GetAero") ? body.Contains("lock (reg.SyncRoot)") : true),
+                $"{name}: reads a published copy or under the list's lock, never the live list in a try");
+        }
         // a new member says its version in its summary
         foreach (var m in members.Where(x => !Frozen.ContainsKey(x.name)))
         {
@@ -251,10 +264,68 @@ static class Program
         Check(still, "film: no air, no film");
     }
 
+    /// <summary>A stand-in for another mod's build: an assembly with OrbitalMod.OrbitalApi whose Which() returns
+    /// <paramref name="which"/> and whose Boom() throws.</summary>
+    static System.Reflection.Assembly FakeApi(int which)
+    {
+        var ab = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(new System.Reflection.AssemblyName("FakeOrbital" + which), System.Reflection.Emit.AssemblyBuilderAccess.Run);
+        var tb = ab.DefineDynamicModule("m").DefineType("OrbitalMod.OrbitalApi", System.Reflection.TypeAttributes.Public | System.Reflection.TypeAttributes.Abstract | System.Reflection.TypeAttributes.Sealed);
+        var sa = System.Reflection.MethodAttributes.Public | System.Reflection.MethodAttributes.Static;
+        var il = tb.DefineMethod("Which", sa, typeof(int), Type.EmptyTypes).GetILGenerator();
+        il.Emit(System.Reflection.Emit.OpCodes.Ldc_I4, which); il.Emit(System.Reflection.Emit.OpCodes.Ret);
+        il = tb.DefineMethod("Boom", sa, typeof(int), Type.EmptyTypes).GetILGenerator();
+        il.Emit(System.Reflection.Emit.OpCodes.Newobj, typeof(InvalidOperationException).GetConstructor(Type.EmptyTypes)); il.Emit(System.Reflection.Emit.OpCodes.Throw);
+        tb.CreateType();
+        return ab;
+    }
+
+    static void Link()
+    {
+        var loaded = new List<System.Reflection.Assembly> { typeof(object).Assembly };
+        var api = new LastLoadedType("OrbitalMod.OrbitalApi", () => loaded.ToArray()) { CheckSeconds = 0 };
+        var which = new CrossModBinding<Func<int>>(api, "OrbitalApi", "Which", Type.EmptyTypes);
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
+        string st = "-";
+        Check(which.GetAt(now, ref st) == null && api.Type == null && st.Contains("not found"), $"link: no other mod - no binding ({st})");
+        loaded.Add(FakeApi(1));
+        var fn = which.GetAt(now, ref st);   // (the type appeared: a new generation, bound at once - no retry wait)
+        Check(fn != null && fn() == 1 && api.GenerationAt(now) == 1 && st == "bound to OrbitalApi.Which", $"link: bound to the first copy ({st})");
+        loaded.Add(FakeApi(2));
+        fn = which.GetAt(now, ref st);
+        Check(fn != null && fn() == 2 && api.GenerationAt(now) == 2, "link: a reload (a second copy) - bound again to the LAST copy");
+        loaded.Add(typeof(Program).Assembly);
+        var again = which.GetAt(now, ref st);
+        Check(ReferenceEquals(again, fn) && api.GenerationAt(now) == 2, "link: an unrelated assembly loading - same copy, same generation, same delegate");
+        string s2 = "-";
+        Check(new CrossModBinding<Func<int>>(api, "OrbitalApi", "Which", new[] { typeof(int) }).GetAt(now, ref s2) == null && s2.Contains("not found"), $"link: matched by parameter types ({s2})");
+        s2 = "-";
+        Check(new CrossModBinding<Func<string>>(api, "OrbitalApi", "Which", Type.EmptyTypes).GetAt(now, ref s2) == null && s2.Contains("unexpected signature"), $"link: a wrong return type - no binding, no throw ({s2})");
+        // a member that throws: dropped, then 10 s, 20 s ... 300 s before the next lookup
+        var boom = new CrossModBinding<Func<int>>(api, "OrbitalApi", "Boom", Type.EmptyTypes);
+        var b = boom.GetAt(now, ref st);
+        bool threw = false;
+        try { b(); } catch (InvalidOperationException e) { threw = true; boom.Fault(e, ref st); }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Check(threw && st.Contains("threw"), $"link: the throw reported ({st})");
+        Check(boom.GetAt(t0 + 9 * f, ref st) == null, "link: after a throw, no lookup for 10 s");
+        Check(boom.GetAt(t0 + 11 * f, ref st) != null, "link: looked up again after 10 s");
+        boom.Fault(new InvalidOperationException(), ref st); t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Check(boom.GetAt(t0 + 19 * f, ref st) == null && boom.GetAt(t0 + 21 * f, ref st) != null, "link: a second fault in a row waits 20 s");
+        boom.Fault(new InvalidOperationException(), ref st); t0 = System.Diagnostics.Stopwatch.GetTimestamp();   // (the third: 40 s)
+        loaded.Add(FakeApi(3));
+        // (the clock only forward: the reads above were at times ahead of now)
+        Check(boom.GetAt(t0 + 30 * f, ref st) != null, "link: an assembly change ends the fault wait (a fixed mod binds at once)");
+        double[] want = { 10, 20, 40, 80, 160, 300, 300 };
+        bool ok = true; for (int n = 1; n <= want.Length; n++) ok &= CrossModBinding<Func<int>>.FaultSeconds(n) == want[n - 1];
+        Check(ok, "link: fault waits 10, 20, 40, 80, 160, 300, 300 s");
+        loaded.RemoveAll(a => a.GetName().Name.StartsWith("FakeOrbital"));
+        Check(which.GetAt(t0 + 31 * f, ref st) == null && api.Type == null, $"link: the mod gone - unbound ({st})");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "dump") { Shape(true); return 0; }
-        Shape(false); Ring(); Film();
+        Shape(false); Ring(); Film(); Link();
         Console.WriteLine($"ApiTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

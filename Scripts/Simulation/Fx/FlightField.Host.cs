@@ -120,7 +120,7 @@ internal sealed partial class FlightField
     {
         try
         {
-            if (_rebuildSeen != Rebuild) { _rebuildSeen = Rebuild; DropAll(); _shapeOk = false; _hull = null; _hullWhy = null; }
+            if (_rebuildSeen != Rebuild) { _rebuildSeen = Rebuild; DropAll(); _shapeOk = false; _hull = null; _hullWhy = null; BakedForget(); }   // (the bake too: its anchors were kept, 2026-10-15)
             _server = p.Aero;
             Vector3 travel = p.TravelLocal;
             _mach = p.Mach; _rho = p.Density; _speed = p.Speed; _liftDir = p.LiftLocal; _liftCoef = p.LiftCoef;
@@ -298,7 +298,9 @@ internal sealed partial class FlightField
             // (a rebuild drops the plasma for a moment: the light made stays through it - it was destroyed and made again
             //  at every rebuild, blinking and jumping whenever the angle of attack moved, 2026-10-09)
             // (one light a ship: its main grid's - a ship of six grids made six, FxTipOwner as the tips)
-            bool want = SpotOn && (_server == null || _server.FxTipOwner) && (_plasmaUp || BakedOn || _spot != null) && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
+            // (the PLASMA's light: never with the plasma off - the baked path's BakedOn let it light the hull with Fx.Plasma off,
+            //  2026-10-15)
+            bool want = SpotOn && PlasmaOn && (_server == null || _server.FxTipOwner) && (_plasmaUp || BakedOn || _spot != null) && _entryS > (_spotUsed > 0f ? 0.015f : 0.03f);   // (on at 3 %, off under 1.5 %: no blink at the edge)
             if (!want) { if (_spotUsed > 0f) StopSpot(); _spotUsed = -1f; }
             else if (_spotUsed < 0f || _spot == null)
             {
@@ -367,7 +369,7 @@ internal sealed partial class FlightField
     }
 
     private void DropEdges([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genEdges++; RecDrop("V", why); DropVapour(k => k != 2); _edgesUp = false; }
-    private void DropTips([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genTips++; RecDrop("T", why); DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear(); _tipShown.Clear(); }
+    private void DropTips([System.Runtime.CompilerServices.CallerLineNumber] int why = 0) { _genTips++; RecDrop("T", why); DropVapour(k => k == 2); _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipLineAt.Clear(); _tipAt.Clear(); _tipOrder.Clear(); _tipShown.Clear(); }
 
     private void DropVapour(Func<int, bool> which)
     {
@@ -430,7 +432,7 @@ internal sealed partial class FlightField
     {
         _genPlasma++; _genEdges++; _genTips++;
         _noStop = false; StopPuffs(); BakedDrop();
-        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipAt.Clear(); _tipOrder.Clear();
+        _plasmaUp = _edgesUp = _tipsUp = false; _tipSpeedUsed = -1f; _tipF = default; _tipPrm.Clear(); _tipLineAt.Clear(); _tipAt.Clear(); _tipOrder.Clear();
     }
 
     // ── the aero model, read directly ──

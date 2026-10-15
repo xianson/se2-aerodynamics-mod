@@ -69,7 +69,7 @@ internal static class DesignProbe
             if (a == null || ReferenceEquals(a, root) || a.Entity == null || !a.IsServerScene || !PhysicsHack.Alive(a.Entity.Data)) continue;
             sh.M.Add(new Member { A = a, W = a.Entity.Data.GetWorldTransform() });
         }
-        lock (_ships) _ships[root] = sh;
+        lock (_ships) if (InScene(root)) _ships[root] = sh;
         return sh;
     }
     static Vector3 ToRootDir(Ship s, Member m, Vector3 d) => ReferenceEquals(m.A, s.Root) ? d : WorldTransform.TransformDirectionInv(WorldTransform.TransformDirection(d, m.W), s.RW);
@@ -144,7 +144,7 @@ internal static class DesignProbe
         if (wings != null && wings.Count > 0)
         {
             CompressibleWingModel wm;
-            lock (_wingModels) { if (!_wingModels.TryGetValue(aero, out wm)) _wingModels[aero] = wm = new CompressibleWingModel(); }
+            lock (_wingModels) { if (!_wingModels.TryGetValue(aero, out wm)) { wm = new CompressibleWingModel(); if (InScene(aero)) _wingModels[aero] = wm; } }
             List<WingForceResult> wf;
             lock (wm) wf = wm.ComputeWingForces(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(wings), ctx);
             if (wf != null)
@@ -217,7 +217,8 @@ internal static class DesignProbe
             var t = cache[i];
             float along = Vector3.Dot(t.ThrustDirection, dHat);
             if (along < 0.5f) continue;
-            float prof = t.Profile == null ? 1f : (float)t.Profile.Evaluate(mach);
+            var ap = OffsetThrustJob.AppliedProfile(t);   // (the profile the simulation applies: none by default)
+            float prof = ap == null ? 1f : (float)ap.Evaluate(mach);
             float f = SeaLevelMax(t) * Math.Max(0f, prof) * along;
             sum += f; moment += t.GridLocalPosition * f;
         }
@@ -286,7 +287,7 @@ internal static class DesignProbe
     static Overlay OverlayOf(AeroGridComponent aero, out string why)
     {
         OverlayState st;
-        lock (_overlays) if (!_overlays.TryGetValue(aero, out st)) _overlays[aero] = st = new OverlayState();
+        lock (_overlays) if (!_overlays.TryGetValue(aero, out st)) { st = new OverlayState(); if (InScene(aero)) _overlays[aero] = st; }
         // (the shape's key: its mass and its live surface's version - both move as blocks go on or off)
         long key = (long)MathF.Round(aero.LastMass) * 31 + (aero.FxSurface?.Version ?? 0);
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -404,5 +405,9 @@ internal static class DesignProbe
         return float.PositiveInfinity;
     }
 
+    /// <summary>Still in a scene (AeroGridComponent.Live) - asked under the cache's own lock before an entry is added: a
+    /// background ForcesAt finishing after the grid left put its entries back after Forget, and they kept the grid (and its
+    /// tables) alive for the session, 2026-10-15. (Live loses it before Forget takes the lock: no entry slips in after.)</summary>
+    static bool InScene(AeroGridComponent a) { lock (AeroGridComponent.Live) return AeroGridComponent.Live.Contains(a); }
     internal static void Forget(AeroGridComponent aero) { lock (_wingModels) _wingModels.Remove(aero); lock (_overlays) _overlays.Remove(aero); lock (_ships) _ships.Remove(aero); }
 }

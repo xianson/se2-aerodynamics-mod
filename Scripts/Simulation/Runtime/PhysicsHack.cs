@@ -28,8 +28,8 @@ namespace AeroMod;
 /// </summary>
 public static class PhysicsHack
 {
-    private static bool _groundSystemInitialized;
-    private static IPhysics _physics;
+    private static volatile bool _groundSystemInitialized;
+    private static volatile IPhysics _physics;
     public static IPhysics Physics => _physics;
 
     /// <summary>
@@ -235,7 +235,9 @@ public static class PhysicsHack
     /// Zero out the grid's gyroscope MaxTorque so game gyros don't compete.
     /// Uses Set&lt;MaxTorqueData&gt; via reflection.
     /// </summary>
-    private static float _savedMaxTorque = -1f;
+    /// (Per grid, 2026-10-15: one static float - the first grid ever zeroed, kept across world loads, never given back: the
+    ///  game keeps MaxTorque as a sum of gyro deltas and never recomputes it, so a zeroed grid kept 0 for good.)
+    private static readonly System.Collections.Generic.Dictionary<Keen.VRage.DCS.Accessors.DEntity, float> _savedMaxTorque = new();
 
 
     public static bool TryZeroGyroTorque(DEntityContext data)
@@ -244,12 +246,23 @@ public static class PhysicsHack
             return false;
         if (mt.MaxTorque == 0f)
             return true;
-        if (_savedMaxTorque < 0f)
-            _savedMaxTorque = mt.MaxTorque;
+        lock (_savedMaxTorque) _savedMaxTorque.TryAdd(data.Entity, mt.MaxTorque);
         float was = mt.MaxTorque;
         if (!TrySetGyroTorque(data, 0f, "zeroed"))
             return false;
         Log.Default?.Info($"[AERO] Physics: zeroed MaxTorque (was {was:F0})");
+        return true;
+    }
+
+    /// <summary>A grid's MaxTorque given back as TryZeroGyroTorque found it, plus whatever gyros changed since (the game
+    /// adds their deltas to the zero). False: not zeroed by us. (AeroGridComponent leaving its scene; a harness teardown.)</summary>
+    public static bool RestoreGyroTorque(DEntityContext data)
+    {
+        float saved;
+        lock (_savedMaxTorque) if (!_savedMaxTorque.Remove(data.Entity, out saved)) return false;
+        if (!SafeTryGet<MaxTorqueData>(data, out var mt)) return false;
+        if (!TrySetGyroTorque(data, mt.MaxTorque + saved, "restored")) return false;
+        Log.Default?.Info($"[AERO] Physics: restored MaxTorque ({mt.MaxTorque + saved:F0})");
         return true;
     }
 
@@ -455,26 +468,34 @@ public static class PhysicsHack
     /// public GameEntityExtensions helpers, so this no longer walks Scene.UserObject ->
     /// Session.EntitySerializer.TryResolveSessionService by reflection.
     /// </summary>
-    static object _physicsSession;
+    static volatile object _physicsSession;
+    static readonly object _groundLock = new();
     /// <summary>The ray probes' physics: the SERVER scene's (forces are computed there; a client grid's DEntity is not that
     /// world's), re-resolved when the session changes (a world reload kept the old one).</summary>
     public static void InitGroundSystem(Entity entity)
     {
         var session = entity?.GetSession();
         if (session == null || (_groundSystemInitialized && ReferenceEquals(session, _physicsSession))) return;
-        _groundSystemInitialized = true;
-        _physicsSession = session;
-
-        try
+        // (the physics published before the session and the flag, under a lock - 2026-10-15: the flag and session went first,
+        //  so a parallel grid's job returned above and cast its ray on the old session's physics, or on none)
+        lock (_groundLock)
         {
-            _physics = session.TryGet<IPhysics>();
-            Log.Default?.Info(_physics != null
-                ? "[AERO] Physics: IPhysics resolved for ray probes"
-                : "[AERO] Physics: IPhysics not available in session");
-        }
-        catch (Exception ex)
-        {
-            Log.Default?.Info($"[AERO] Physics: ground system init failed: {ex.Message}");
+            if (_groundSystemInitialized && ReferenceEquals(session, _physicsSession)) return;
+            IPhysics phys = null;
+            try
+            {
+                phys = session.TryGet<IPhysics>();
+                Log.Default?.Info(phys != null
+                    ? "[AERO] Physics: IPhysics resolved for ray probes"
+                    : "[AERO] Physics: IPhysics not available in session");
+            }
+            catch (Exception ex)
+            {
+                Log.Default?.Info($"[AERO] Physics: ground system init failed: {ex.Message}");
+            }
+            _physics = phys;
+            _physicsSession = session;
+            _groundSystemInitialized = true;
         }
     }
 
@@ -533,7 +554,8 @@ public static class PhysicsHack
     /// </summary>
     public static float GetGroundDistance(GroundProbe probe, Vector3D worldPosition, Vector3 gravityDir, Entity grid = null)
     {
-        if (_physics == null || probe == null) return -1f;
+        var physics = _physics;   // (read once: a session change re-resolves it from another grid's job)
+        if (physics == null || probe == null) return -1f;
 
         if (TryHarvest(ref probe.Pending, ref probe.InFlight, GroundRayLength, out float d))
         {
@@ -560,11 +582,11 @@ public static class PhysicsHack
                 {
                     probe.Ignore = new Keen.VRage.Library.Memory.Buffer<Keen.VRage.DCS.Accessors.DEntity>(Keen.VRage.Library.Memory.Allocator.Pool, "AeroGround");
                     probe.HasIgnore = true;
-                    try { var phys = _physics; if (phys != null && phys.HasBody(grid.DEntity)) phys.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore); } catch { }
+                    try { if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore); } catch { }
                     probe.Ignore.Add(grid.DEntity);
                     args.IgnoredEntities = probe.Ignore;
                 }
-                probe.Pending = _physics.CastRayAsync(in args, CollisionPreset.Closest);
+                probe.Pending = physics.CastRayAsync(in args, CollisionPreset.Closest);
                 probe.InFlight = true;
                 GroundCasts++;
             }
@@ -585,7 +607,8 @@ public static class PhysicsHack
     /// </summary>
     public static float GetForwardDistance(Vector3D worldPosition, Vector3 fwdDir, float maxDist)
     {
-        if (_physics == null) return -1f;
+        var physics = _physics;
+        if (physics == null) return -1f;
 
         if (TryHarvest(ref _pendingFwd, ref _fwdInFlight, _lastFwdMaxDist, out float d))
             _lastFwdDist = d < 0f ? _lastFwdMaxDist : d;   // clear path == full range
@@ -600,7 +623,7 @@ public static class PhysicsHack
             try
             {
                 var args = new RayCastArgs(in worldPosition, fwdDir / len * maxDist);
-                _pendingFwd = _physics.CastRayAsync(in args, CollisionPreset.Closest);
+                _pendingFwd = physics.CastRayAsync(in args, CollisionPreset.Closest);
                 _fwdInFlight = true;
             }
             catch (Exception ex)

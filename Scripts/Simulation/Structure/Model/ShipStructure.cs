@@ -89,6 +89,12 @@ public sealed partial class ShipStructure
     /// least MinIntegrity of its strength).</summary>
     public float[] Integrity;
     public static float MinIntegrity = 0.2f;
+    /// <summary>Each block's own destruction threshold (its definition's DestructionThreshold; null or 0: the default,
+    /// StructureFatigue.BreakBelow) - 2026-10-15: a block whose definition removes it above 0.3 was worn into the game's
+    /// removal by a health write (no split, smoke or tear) before the structure failed it.</summary>
+    public float[] BreakAt;
+    /// <summary>The health (fraction of full) block b fails at: its own threshold, never under BreakBelow.</summary>
+    public float FloorOf(int b) => BreakAt != null && b >= 0 && b < BreakAt.Length ? MathF.Max(BreakAt[b], StructureFatigue.BreakBelow) : StructureFatigue.BreakBelow;
 
     // ── the tree ──
     /// <summary>Parent block (-1: a root).</summary>

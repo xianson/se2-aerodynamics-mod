@@ -33,6 +33,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // wings it detects, and the task. The active surface, classifier and wings serve the simulation until the swap.
     private ManifoldClassifier _buildManifold;
     private AeroWork.Item _finalizeTask;
+    /// <summary>Bumped by every background build and by a re-add: a build whose number is no longer this one is stale -
+    /// it neither starts nor hands over its results (2026-10-15: a grid removed and re-added mid-build - a teleport - got
+    /// the old worker's table, chunks and wings for the old shape, or its quick table installed on the new model).</summary>
+    private volatile int _buildGen;
     private List<LiftingSurface> _builtWings;
     private PrecomputedShadowMap _builtShadow, _spareShadow;
     private ForceTable _builtTable;
@@ -65,7 +69,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     private int _seedTries;
     private readonly HashSet<Keen.VRage.DCS.Components.Entity> _thrusterSet = new();
     private int _thrusterSetCount = -1;
-    internal void ThrustersRebuilt() { _thrusterSetCount = -1; _thrusterGen++; }
+    internal void ThrustersRebuilt() { _thrusterSetCount = -1; _thrusterGen++; ThrusterSnap = _thrusterCache.ToArray(); }
+    /// <summary>The thruster list as of its last rebuild, for other threads (AeroApi.GetThrusters): a copy, never changed
+    /// once published (the live _thrusterCache is cleared and refilled in place, 2026-10-15).</summary>
+    internal volatile ThrusterInfo[] ThrusterSnap = Array.Empty<ThrusterInfo>();
     /// <summary>Counts thruster cache rebuilds (ThrustTorque re-keys its published flame shares on a change).</summary>
     internal int _thrusterGen;
     /// <summary>This grid's published flame shares (ThrustTorque.Publish; server copy only).</summary>
@@ -86,8 +93,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float _rcsGeomAir = -1f;
     // force tables are built on a face model of their own (the live one may be computing): one kept for reuse
     private static readonly Stack<DampedShadowedDragModel> _tableBuilders = new();
-    /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key.</summary>
-    private static readonly FacePhysics TablePhysics = new FacePhysics(new DampedShadowedDragModel());
+    /// <summary>The face physics tables are built with (the table builders' defaults): part of the cache key. Read when
+    /// asked: the static switches (SubsonicSquareLaw, ReynoldsSkin) as they are now, not as at type init (2026-10-15).</summary>
+    private static FacePhysics TablePhysics => new FacePhysics(_tablePhysicsModel);
+    private static readonly DampedShadowedDragModel _tablePhysicsModel = new DampedShadowedDragModel();
     /// <summary>Builds shorter than this are not cached (a small grid's: a file costs more than it saves).</summary>
     private const double CacheAboveMs = 40;
     /// <summary>Whether the last build came from the table cache.</summary>
@@ -223,6 +232,19 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>DEV (harness: aeroset AeroGridComponent.TestTurnPitch 10, then TestTurnGen n - a new n re-bases): a seated
     /// grid's target, as the reticle sets it, turned from its orientation at that moment. 0: the pilot's own.</summary>
     public static int TestTurnGen; public static float TestTurnPitch, TestTurnYaw, TestTurnRoll;
+    /// <summary>The sessions seen (weakly): a new one - a world loaded - sets the dev knobs above back to off. They survived
+    /// a reload and, non-zero, overwrote every seated grid's target each tick, 2026-10-15.</summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _devSessions = new();
+    static void DevResetOnNewSession(object session)
+    {
+        if (session == null) return;
+        lock (_devSessions)
+        {
+            if (_devSessions.TryGetValue(session, out _)) return;
+            _devSessions.Add(session, _devSessions);
+        }
+        TestTurnGen = 0; TestTurnPitch = TestTurnYaw = TestTurnRoll = 0f;
+    }
     private int _testTurnGen; private Quaternion _testTurnBase = Quaternion.Identity;
     /// <summary>The allocation's last step: the surfaces it gave inputs to, and how many at their limit.</summary>
     internal int _allocN, _allocSat;
@@ -261,6 +283,8 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>In a planet's gravity (set by the job): a grid there may meet air soon, so it is built beforehand.</summary>
     internal bool InGravity;
+    /// <summary>The gravity here (m/s2), last simulation frame: the debug draw's lift-to-weight.</summary>
+    internal float LastGravity;
 
     /// <summary>Static grids (stations) never move: no aero.</summary>
     internal bool IsStatic => !Data.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) || mp.InvMass <= 0f;
@@ -317,9 +341,11 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnAddedToScene()
     {
         lock (Live) Live.Add(this);
+        DevResetOnNewSession(Entity?.GetSession());
         Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
         // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
         _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
+        _buildGen++;   // (a build still running for the last time in the scene: stale)
 
         _gridAccessor = new Se2GridAccessor(_octree);
         _surface = new SmoothSurfaceProvider();
@@ -364,6 +390,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         lock (Live) Live.Remove(this);
+        try { PhysicsHack.RestoreGyroTorque(Data); } catch { }   // (a harness test's zeroed gyros given back - rare: removal only)
         DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)

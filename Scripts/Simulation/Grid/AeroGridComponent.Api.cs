@@ -77,7 +77,8 @@ public partial class AeroGridComponent
         }
         // the thrusters' forces (the attitude law's, last tick: ThrustTorque.Apply), _thrusterCache order
         var shares = LastThrustShares;
-        int nt = shares != null ? Math.Min(Math.Min(LastThrustCount, shares.Length), _thrusterCache.Count) : 0;
+        // (this list's shares only: right after a rebuild they are the old list's - LastThrustGen, 2026-10-15)
+        int nt = shares != null && LastThrustGen == _thrusterGen ? Math.Min(Math.Min(LastThrustCount, shares.Length), _thrusterCache.Count) : 0;
         s.ThrForceB = ApiGridState.Fit(s.ThrForceB, nt);
         if (nt > 0) Array.Copy(shares, s.ThrForceB, nt);
 
@@ -89,7 +90,41 @@ public partial class AeroGridComponent
             ApiGridState.Swap(ref s.SurfLift, ref s.SurfLiftB); ApiGridState.Swap(ref s.SurfDrag, ref s.SurfDragB); s.SurfCount = ns;
             ApiGridState.Swap(ref s.ThrForce, ref s.ThrForceB); s.ThrCount = nt; s.ThrGen = _thrusterGen;
         }
+        if (now < s.HullUntil) PublishApiHull(s, now);
     }
+
+    /// <summary>The hull's faces for AeroApi.GetSurface (simulation thread, while it is asked for): when the surface changed,
+    /// else at most every HullEvery s (the face model's Cp moves each tick). No allocation once the arrays have grown.</summary>
+    void PublishApiHull(ApiGridState s, long now)
+    {
+        var surf = _surface;
+        if (surf != null && !_staggeredBuildActive && ReferenceEquals(surf, s.HullOf) && surf.Version == s.HullVersion
+            && now - s.HullAt < (long)(HullEvery * System.Diagnostics.Stopwatch.Frequency)) return;
+        int n = 0;
+        if (surf != null && !_staggeredBuildActive)
+        {
+            var faces = surf.Faces;
+            var cps = (_model?.InnerModel as DampedShadowedDragModel)?.FaceCp;
+            n = faces.Count;
+            s.HullPosB = ApiGridState.Fit(s.HullPosB, n); s.HullNrmB = ApiGridState.Fit(s.HullNrmB, n);
+            s.HullAreaB = ApiGridState.Fit(s.HullAreaB, n); s.HullCpB = ApiGridState.Fit(s.HullCpB, n);
+            for (int i = 0; i < n; i++)
+            {
+                var f = faces[i];
+                s.HullPosB[i] = f.Position; s.HullNrmB[i] = f.Normal; s.HullAreaB[i] = f.Area;
+                s.HullCpB[i] = cps != null && i < cps.Count ? cps[i] : 0f;
+            }
+        }
+        lock (s.Lock)
+        {
+            ApiGridState.Swap(ref s.HullPos, ref s.HullPosB); ApiGridState.Swap(ref s.HullNrm, ref s.HullNrmB);
+            ApiGridState.Swap(ref s.HullArea, ref s.HullAreaB); ApiGridState.Swap(ref s.HullCp, ref s.HullCpB);
+            s.HullCount = n;
+        }
+        s.HullOf = _staggeredBuildActive ? null : surf; s.HullVersion = surf?.Version ?? -1; s.HullAt = now;
+    }
+    /// <summary>How often (s) the published faces' Cp is refreshed while GetSurface is read.</summary>
+    internal static float HullEvery = 0.25f;
 
     static void Put(float[] f, int i, Vector3 v) { f[i] = v.X; f[i + 1] = v.Y; f[i + 2] = v.Z; }
 }

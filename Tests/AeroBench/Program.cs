@@ -540,7 +540,7 @@ static partial class Program
         if (args.Length > 0 && args[0] == "gate")
         {
             // the fast gate: known shapes, and the force table against the exact sum on the small ships
-            int fails = known + TorqueChecks(atmo, false);
+            int fails = known + TorqueChecks(atmo, false) + BugChecks(atmo);
             // the stall warning's whole-ship lift peak against a fine sweep (Lift/LiftPeak)
             fails += StallCheck(dataDir, atmo, new[] { "bluefighter", "pelican" });
             // the aero-aware attitude law on the F-6 (statically unstable in pitch): every case within its gyros settles

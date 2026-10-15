@@ -2,7 +2,9 @@
 
 | File | What |
 |---|---|
-| `AeroSettings.cs` | The mod's settings: named values over static tuning fields, world (server, saved with the world by `AeroWorldSettingsComponent`) and client scope (this PC's effects) |
+| `AeroSettings.cs` | The mod's settings registry: named values over static tuning fields, world (server, saved with the world) and client scope (this PC's effects), each with its UI metadata |
+| `AeroSettings.Store.cs` | The settings' API (get / set / info), their `name = value` text, the world save's load and unload, the two `.cfg` files |
+| `AeroWorldSettingsComponent.cs` | Carries the world scope in the save (injected into server planets) |
 | `AeroConfig.cs` | `AeroSwitch` (aero on/off), `AeroTuning`, `AeroConfig` (min density / speed, block sizes) |
 | `AeroCost.cs` | Where aero's time goes per second; the `[AERO-COST]` log line |
 | `AeroStats.cs` | The engine stat overlay's "Grid" and "All" sections |

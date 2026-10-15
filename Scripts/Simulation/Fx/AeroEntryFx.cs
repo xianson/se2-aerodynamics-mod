@@ -36,8 +36,14 @@ public static class AeroEntryFx
         float heat = OnsetHeat * mr * mr * mr;
         return Math.Clamp((heat - OnsetHeat) / (FullHeat - OnsetHeat), 0f, 1f) * DensityScale(density);
     }
-    public static float DensityScale(float rho) =>
-        rho <= DensityFloor ? 0f : Math.Clamp((MathF.Log10(rho) - MathF.Log10(DensityFloor)) / (MathF.Log10(1.225f) - MathF.Log10(DensityFloor)), 0f, 1f);
+    public static float DensityScale(float rho)
+    {
+        if (!(rho > DensityFloor)) return 0f;
+        // (NaN is 0, not passed on - 2026-10-15: a NaN density, or 0/0 with DensityFloor at 1.225, came out NaN and the
+        //  glow's lag kept it; otherwise as before: Clamp keeps NaN, this does not)
+        float r = (MathF.Log10(rho) - MathF.Log10(DensityFloor)) / (MathF.Log10(1.225f) - MathF.Log10(DensityFloor));
+        return r >= 0f ? MathF.Min(r, 1f) : 0f;
+    }
     /// <summary>Seconds the hull takes to heat up / cool down (the glow lingers after slowing).</summary>
     public static float HeatLag = 2f;
     /// <summary>TEST (harness: aeroset AeroEntryFx.TestSpeed 2000): every grid as if flying forward at this speed in
@@ -112,43 +118,13 @@ public static class AeroEntryFx
     // Orbital mod flies - per grid, the TRUE air velocity past it (world m/s: its real speed, not the rails' capped one) and
     // the air's density there (kg/m3). The hull heat model heats from these (Sutton-Graves at the true speed), so a railed
     // entry heats, weakens and scorches the hull as a real one. Asked of the Orbital mod's API (OrbitalApi.TryGetEntryState,
-    // by reflection - mods compile apart: a typed delegate bound once, looked up again now and then until found).
-    delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
-    static EntryStateFn _orbitalState; static long _orbitalStateRetryAt;
+    // by reflection - mods compile apart: bound in OrbitalLink, the one rule for every member of Orbital's aero reads).
+    /// <summary>Diagnostics: why OrbitalApi.TryGetEntryState is (not) bound (OrbitalLink writes it).</summary>
     public static string EntryStateStatus = "not looked up";
 
     /// <summary>A grid's real re-entry state (the Orbital mod's): the true air velocity (world) and density. False: none.</summary>
     internal static bool EntryStateAt(Keen.VRage.DCS.Components.Entity grid, out Vector3 airWorld, out float density)
-    {
-        airWorld = default; density = 0f;
-        if (grid == null) return false;
-        var fn = System.Threading.Volatile.Read(ref _orbitalState);
-        if (fn == null)
-        {
-            long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (now < System.Threading.Volatile.Read(ref _orbitalStateRetryAt)) return false;
-            System.Threading.Volatile.Write(ref _orbitalStateRetryAt, now + 5 * System.Diagnostics.Stopwatch.Frequency);
-            System.Reflection.MethodInfo mi = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type t; try { t = asm.GetType("OrbitalMod.OrbitalApi"); } catch { continue; }
-                // (by name AND parameter types: an overload added on Orbital's side must never make it ambiguous - API.md)
-                var m = t?.GetMethod("TryGetEntryState", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType() });
-                if (m != null) mi = m;   // (the last loaded copy wins)
-            }
-            if (mi == null) { EntryStateStatus = "OrbitalApi.TryGetEntryState not found (no Orbital mod, or an older one)"; return false; }
-            try { fn = (EntryStateFn)Delegate.CreateDelegate(typeof(EntryStateFn), mi); }
-            catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState: unexpected signature (" + e.GetType().Name + ")"; return false; }
-            System.Threading.Volatile.Write(ref _orbitalState, fn);
-            EntryStateStatus = "bound to OrbitalApi.TryGetEntryState";
-        }
-        try
-        {
-            if (!fn(grid, out airWorld, out density)) return false;
-        }
-        catch (Exception e) { EntryStateStatus = "OrbitalApi.TryGetEntryState threw: " + e.GetType().Name; System.Threading.Volatile.Write(ref _orbitalState, null); return false; }
-        return density > 0f && float.IsFinite(density) && float.IsFinite(airWorld.X + airWorld.Y + airWorld.Z) && airWorld.LengthSquared() > 1f;
-    }
+        => OrbitalLink.TryGetEntryState(grid, out airWorld, out density);
 
     /// <summary>Diagnostics: the registered sources' owners.</summary>
     public static string EntrySources { get { var src = _sources; var n = new string[src.Length]; for (int i = 0; i < n.Length; i++) n[i] = src[i].owner; return string.Join(",", n); } }
@@ -575,7 +551,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             System.Threading.Interlocked.Increment(ref AeroEntryFx.FlightActive);
         }
         c.Flight.Update(p, wt);
-        if (++c.ScorchTick >= 30) { c.ScorchTick = 0; HeatScorch.Sync(c, p.Aero); }   // (the hull's scorch marks, twice a second)
         // (the diagnostics strings - FlightStatus, NearTipWhy, FlightLines - made four times a second per field, not every
         //  frame: each was a string a frame per flying grid with the field's whole Status in it - a profile, 2026-10-15. Read
         //  by the harness only; Status itself is built when read, FlightField.Status)
@@ -620,6 +595,20 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
+        // (the hull's scorch marks, twice a second - off with the effects only: from the flight field's update they were never
+        //  stamped with the field off, out of its range or culled, 2026-10-15. The server copy: the field's pairing, else
+        //  found here)
+        if (AeroEntryFx.AllEffects && ++c.ScorchTick >= 30)
+        {
+            c.ScorchTick = 0;
+            if (c.FlowOf == null && AeroEntryFx.AnyFlow && PhysicsHack.Alive(c.Data))
+            {
+                var swt = c.Data.GetWorldTransform();
+                var sp = AeroEntryFx.FindFlow(swt.Position, null, swt.Orientation, c.Entity, c.FlowCopy);
+                if (sp != null) c.FlowOf = sp.Aero;
+            }
+            HeatScorch.Sync(c, c.FlowOf);
+        }
         if (!AeroEntryFx.AllEffects || !FlightField.On)
         {
             if (c.Flight != null) { c.Flight.Destroy(); c.Flight = null; System.Threading.Interlocked.Decrement(ref AeroEntryFx.FlightActive); lock (AeroEntryFx.FlightLines) AeroEntryFx.FlightLines.Remove(c); }

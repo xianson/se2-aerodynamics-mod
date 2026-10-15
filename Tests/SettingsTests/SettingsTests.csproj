@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The settings registry's offline checks (Program.cs): the REAL Runtime/AeroSettings*.cs over the real structure model
+       and, for the fields of game-bound classes, Stubs.cs (each stub checked against the mod's own declaration). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(Sim)\Runtime\AeroSettings.cs" />
+    <Compile Include="$(Sim)\Runtime\AeroSettings.Store.cs" />
+    <Compile Include="$(Sim)\Core\IGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\SnapshotGridAccessor.cs" />
+    <Compile Include="$(Sim)\Core\LongKey.cs" />
+    <Compile Include="$(Sim)\Surface\ISurfaceProvider.cs" />
+    <Compile Include="$(Sim)\Surface\NormalGroup.cs" />
+    <Compile Include="$(Sim)\Surface\SurfaceFace.cs" />
+    <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider*.cs" />
+    <Compile Include="$(Sim)\Structure\Model\*.cs" />
+  </ItemGroup>
+</Project>

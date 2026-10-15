@@ -57,7 +57,7 @@ public partial class AeroGridComponent
     }
 
     /// <summary>
-    /// Attitude hold: when no pilot is present, hold the current orientation.
+    /// Unpiloted: damp the rotation, hold no attitude (AttitudeTarget's rule).
     /// Runs every frame before early returns so it works even without atmosphere.
     /// Sets _lastGridAngVel and SasTorque when no pilot input is detected.
     /// </summary>
@@ -85,47 +85,21 @@ public partial class AeroGridComponent
             return;
         }
 
-        // No pilot — hold orientation
-        Quaternion gridOrientation = wt.Orientation;
-        if (!_holdOrientationValid)
-        {
-            _holdOrientation = gridOrientation;
-            _holdOrientationValid = true;
-            Log.Default?.Info("[AERO-HOLD] Captured hold orientation (no pilot)");
-        }
-        else
-        {
-            // Re-capture if error is too large (stale target from long ago)
-            Quaternion checkErr = Quaternion.Inverse(gridOrientation) * _holdOrientation;
-            Vector3 checkEuler = checkErr.ConvertToEuler();
-            if (checkEuler.LengthSquared() > 1f) // > ~1 radian total error
-            {
-                _holdOrientation = gridOrientation;
-                if (AeroLog.Verbose) Log.Default?.Info("[AERO-HOLD] Re-captured hold orientation (error too large)");   // (tumbling debris: lines/s)
-            }
-        }
-
+        // No pilot: the rotation damped, NO remembered attitude - as AttitudeTarget (2026-10-10). (2026-10-15: this still
+        // captured the orientation the ship was left at and steered _lastGridAngVel back to it - the control surfaces'
+        // HOLD command - up to ~1 rad away, dampeners on or off, with an Info log line on every capture.)
         Vector3 localAngVel = WorldTransform.TransformDirectionInv(angularVelocity, wt);
-
-        Quaternion errorQuat = Quaternion.Inverse(gridOrientation) * _holdOrientation;
-        Vector3 eulerError = errorQuat.ConvertToEuler();
+        Vector3 eulerError = Vector3.Zero;
         EulerError = eulerError;
 
         // Output targetAngVel in rad/s — the per-thruster system uses
         // dot(targetAngVel, torqueVec) where torqueVec = Cross(r, forceDir)
         // (unnormalized, arm length included). This matches SE1 RealRCS pattern:
         // thrusters further from CoM naturally get more authority.
-        const float HoldKp = 3.0f;   // rad/s per rad error
         const float HoldKd = 1.5f;   // damping
         const float HoldMax = 2.0f;  // max command rad/s
 
-        const float HoldMaxEuler = 1.0f;  // ~57 degrees max euler contribution
-        Vector3 holdEulerClamped = new Vector3(
-            Math.Clamp(eulerError.X, -HoldMaxEuler, HoldMaxEuler),
-            Math.Clamp(eulerError.Y, -HoldMaxEuler, HoldMaxEuler),
-            Math.Clamp(eulerError.Z, -HoldMaxEuler, HoldMaxEuler));
-
-        Vector3 attitudeCmd = holdEulerClamped * HoldKp - localAngVel * HoldKd;
+        Vector3 attitudeCmd = -localAngVel * HoldKd;
         _lastGridAngVel = new Vector3(
             Math.Clamp(attitudeCmd.X, -HoldMax, HoldMax),
             Math.Clamp(attitudeCmd.Y, -HoldMax, HoldMax),

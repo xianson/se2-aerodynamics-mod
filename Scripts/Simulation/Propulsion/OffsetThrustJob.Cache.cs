@@ -110,19 +110,12 @@ public static partial class OffsetThrustJob
                     if (maxPower <= 0f) continue;
 
                     var aabb = block.AABB;
-                    Vector3 gridCenter = new Vector3(
-                        (aabb.Min.X + aabb.Max.X + 1) * 0.5f,
-                        (aabb.Min.Y + aabb.Max.Y + 1) * 0.5f,
-                        (aabb.Min.Z + aabb.Max.Z + 1) * 0.5f);
                     // (the AABB is in 0.25 m cells, not blocks: x blockSize put every thruster ~10x too far out on a large grid -
-                    //  wrong torque arms for ThrustTorque, rotor distances. Cell i covers [0.25 i, 0.25 (i+1)]: the +1 above)
-                    Vector3 localPos = gridCenter * 0.25f;
-
-                    const float CellSize = 0.25f;
-                    Vector3 drawPos = new Vector3(
-                        (aabb.Min.X + aabb.Max.X) * 0.5f * CellSize,
-                        (aabb.Min.Y + aabb.Max.Y) * 0.5f * CellSize,
-                        (aabb.Min.Z + aabb.Max.Z) * 0.5f * CellSize);
+                    //  wrong torque arms for ThrustTorque, rotor distances. 2026-10-15: cell i is CENTRED at 0.25 i (the game's
+                    //  CubeGridCoords.GridToLocal(AABB).Center); the old (min + max + 1) / 2 put every thruster 0.125 m off on
+                    //  each axis - a fake couple of 0.125 m x the total thrust, pitch and yaw, on a symmetric ship)
+                    Vector3 localPos = CellCoords.BlockCentre(aabb.Min, aabb.Max);
+                    Vector3 drawPos = localPos;
 
                     Vector3 thrustDir = DirectionToVector(directionInt);
 

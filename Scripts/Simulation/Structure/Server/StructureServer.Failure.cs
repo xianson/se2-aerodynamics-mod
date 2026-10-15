@@ -172,7 +172,14 @@ public partial class AeroGridComponent
         for (int i = _cutVerify.Count - 1; i >= 0; i--)
         {
             var v = _cutVerify[i];
-            if (stamp != v.Stamp) { _cutVerify.RemoveAt(i); continue; }   // (it split: the cut separated)
+            if (stamp != v.Stamp)
+            {
+                // (a split: THIS cut separated only if no two blocks of this grid still meet face to face across its plane - any
+                //  split of the grid dropped every watched cut, one still bridged elsewhere never forced apart, 2026-10-15. A
+                //  block straddling the plane alone does not count here: a member split at its face stays whole in the octree)
+                v.Stamp = stamp;
+                if (_octree == null || Bridges(v, null) == 0) { _cutVerify.RemoveAt(i); continue; }
+            }
             if (--v.Ticks > 0) continue;
             _cutVerify.RemoveAt(i);
             recv ??= Entity?.TryGet<GridDamageReceiverComponent>();
@@ -182,23 +189,10 @@ public partial class AeroGridComponent
             // the two sides: the second cut of a test failed 29 of 29 members and still did not split, 2026-10-15)
             var bridge = new HashSet<CubeBlockComponent>(ReferenceEqualityComparer.Instance);
             foreach (var b in v.Members) if (!Gone(b)) bridge.Add(b);
-            int ax = v.Axis, k0 = (int)MathF.Round(v.Plane / TearMath.Cell - 0.5f);
-            int u = (ax + 1) % 3, w = (ax + 2) % 3;
             // (JAGGED, 2026-10-15: first the jagged surface - its stubs spared on the plane, and what still holds a stub from
             //  beyond it taken; only if that does not part it either, the plane's rule with the stubs - stage 1)
-            bool spare = v.Stage == 0 && v.Stubs != null && v.Stubs.Count > 0;
-            int uLo = ShipStructure.Ci(v.Lo, u), uHi = ShipStructure.Ci(v.Hi, u), wLo = ShipStructure.Ci(v.Lo, w), wHi = ShipStructure.Ci(v.Hi, w);
-            if ((long)(uHi - uLo + 1) * (wHi - wLo + 1) <= 40000)
-                for (int a = uLo; a <= uHi; a++) for (int c = wLo; c <= wHi; c++)
-                {
-                    var c0 = Cell(ax, k0, u, a, w, c); var c1 = Cell(ax, k0 + 1, u, a, w, c);
-                    var b0 = _octree.TryGetCubeBlock(c0); var b1 = _octree.TryGetCubeBlock(c1);
-                    if (b0 == null || b1 == null || Gone(b0) || Gone(b1)) continue;
-                    if (spare && (v.Stubs.Contains(b0) || v.Stubs.Contains(b1))) continue;
-                    if (ReferenceEquals(b0, b1)) { bridge.Add(b0); continue; }   // (one block across the plane)
-                    bridge.Add(b0); bridge.Add(b1);   // (two blocks face to face across it)
-                }
-            if (spare) foreach (var sb in v.Stubs) BeyondStub(sb, v, ax, u, w, bridge);
+            bool spare = Spare(v);
+            Bridges(v, bridge);
             int n = 0;
             foreach (var b in bridge)
             {
@@ -213,32 +207,58 @@ public partial class AeroGridComponent
         }
     }
     public static int CutsChecked;
+    /// <summary>(JAGGED) a watched cut's first stage spares the jagged line's stubs (stage 1: the plane's rule, stubs and all).</summary>
+    static bool Spare(CutVerify v) => v.Stage == 0 && v.Stubs != null && v.Stubs.Count > 0;
+
     /// <summary>(JAGGED) the blocks holding a stub from beyond the jagged line: across its outer face (the way out), each cell's
-    /// neighbour that is not gone and not a stub - what the jagged step should have broken.</summary>
-    void BeyondStub(CubeBlockComponent s, CutVerify v, int ax, int u, int w, HashSet<CubeBlockComponent> bridge)
+    /// neighbour that is not gone and not a stub - what the jagged step should have broken (into: added; null: only counted).
+    /// Returns how many cells hold it.</summary>
+    int BeyondStub(CubeBlockComponent s, CutVerify v, HashSet<CubeBlockComponent> into)
     {
-        if (Gone(s)) return;
+        if (Gone(s)) return 0;
+        int ax = v.Axis, u = (ax + 1) % 3, w = (ax + 2) % 3;
         var bb = s.AABB;
         int kf = (v.Side > 0 ? ShipStructure.Ci(bb.Max, ax) : ShipStructure.Ci(bb.Min, ax)) + v.Side;
         int a0 = ShipStructure.Ci(bb.Min, u), a1 = ShipStructure.Ci(bb.Max, u), c0 = ShipStructure.Ci(bb.Min, w), c1 = ShipStructure.Ci(bb.Max, w);
-        if ((long)(a1 - a0 + 1) * (c1 - c0 + 1) > 4096) return;
+        if ((long)(a1 - a0 + 1) * (c1 - c0 + 1) > 4096) return 0;
+        int held = 0;
         for (int a = a0; a <= a1; a++) for (int c = c0; c <= c1; c++)
         {
-            var o = _octree.TryGetCubeBlock(CellAt(ax, kf, u, a, c));
-            if (o != null && !ReferenceEquals(o, s) && !Gone(o) && !v.Stubs.Contains(o)) bridge.Add(o);
+            var o = _octree.TryGetCubeBlock(Cell(ax, kf, u, a, c));
+            if (o != null && !ReferenceEquals(o, s) && !Gone(o) && !v.Stubs.Contains(o)) { held++; into?.Add(o); }
         }
+        return held;
     }
-    /// <summary>The cell at k along ax, a along u, c along the third axis (no array).</summary>
-    static Vector3I CellAt(int ax, int k, int u, int a, int c)
+
+    /// <summary>The blocks of this grid still touching across a watched cut's plane in its cross-section (into: added; null:
+    /// only counted). Returns the pairs of two blocks face to face found (a block straddling the plane is added, not counted).
+    /// (JAGGED, stage 0: pairs with a stub of the jagged line are not bridges - a stub stays on the ship by design - but what
+    /// holds a stub from beyond the line is: BeyondStub.)</summary>
+    int Bridges(CutVerify v, HashSet<CubeBlockComponent> into)
     {
-        int x = ax == 0 ? k : u == 0 ? a : c, y = ax == 1 ? k : u == 1 ? a : c, z = ax == 2 ? k : u == 2 ? a : c;
-        return new Vector3I(x, y, z);
+        int ax = v.Axis, k0 = (int)MathF.Round(v.Plane / TearMath.Cell - 0.5f);
+        int u = (ax + 1) % 3, w = (ax + 2) % 3;
+        int uLo = ShipStructure.Ci(v.Lo, u), uHi = ShipStructure.Ci(v.Hi, u), wLo = ShipStructure.Ci(v.Lo, w), wHi = ShipStructure.Ci(v.Hi, w);
+        if ((long)(uHi - uLo + 1) * (wHi - wLo + 1) > 40000) return 0;
+        bool spare = Spare(v);
+        int pairs = 0;
+        for (int a = uLo; a <= uHi; a++) for (int c = wLo; c <= wHi; c++)
+        {
+            var c0 = Cell(ax, k0, u, a, c); var c1 = Cell(ax, k0 + 1, u, a, c);
+            var b0 = _octree.TryGetCubeBlock(c0); var b1 = _octree.TryGetCubeBlock(c1);
+            if (b0 == null || b1 == null || Gone(b0) || Gone(b1)) continue;
+            if (spare && (v.Stubs.Contains(b0) || v.Stubs.Contains(b1))) continue;
+            if (ReferenceEquals(b0, b1)) { into?.Add(b0); continue; }   // (one block across the plane)
+            pairs++;
+            if (into != null) { into.Add(b0); into.Add(b1); }   // (two blocks face to face across it)
+        }
+        if (spare) foreach (var sb in v.Stubs) pairs += BeyondStub(sb, v, into);
+        return pairs;
     }
-    static Vector3I Cell(int ax, int k, int u, int a, int w, int c)
-    {
-        var r = new int[3]; r[ax] = k; r[u] = a; r[w] = c;
-        return new Vector3I(r[0], r[1], r[2]);
-    }
+
+    /// <summary>The cell k along axis ax, a along u, c along the third (no array a cell: it made one per cell, 2026-10-15).</summary>
+    static Vector3I Cell(int ax, int k, int u, int a, int c)
+        => new Vector3I(ax == 0 ? k : u == 0 ? a : c, ax == 1 ? k : u == 1 ? a : c, ax == 2 ? k : u == 2 ? a : c);
 
     void CutDone(StructureEval.CutFail cut, ref int failed, List<Vector3> torn, int version0)
     {

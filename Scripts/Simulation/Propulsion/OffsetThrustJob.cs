@@ -13,8 +13,8 @@ public struct ThrusterInfo
 {
     public Entity ThrusterEntity;
     public Component ThrusterComponent; // ThrusterComponent instance (for reading/writing override)
-    public Vector3 GridLocalPosition;  // block center in grid-local space (meters) — physics formula
-    public Vector3 DrawPosition;       // block center for debug draw (cell-center formula, matches aero components)
+    public Vector3 GridLocalPosition;  // block center in grid-local space (meters): CellCoords.BlockCentre, the game's
+    public Vector3 DrawPosition;       // block center for debug draw (the same point since 2026-10-15)
     public Vector3 ThrustDirection;    // unit vector in grid-local space (direction force pushes the ship)
     public float MaxPower;             // Newtons (impulse per frame = MaxPower / 60)
     public ThrustProfile Profile;      // Mach-dependent thrust scaling (null = rocket/flat)
@@ -61,6 +61,11 @@ public struct ThrusterDebugState
 /// </summary>
 public static partial class OffsetThrustJob
 {
+    /// <summary>The thrust-vs-Mach profile the simulation applies to this thruster: its own on the legacy path (ThrustTorque
+    /// off - Execute scales the game's thrust by it), none with ThrustTorque on (the default: the game's thrust as it is).
+    /// What reports read (DesignProbe, AeroApi.GetThrusters), not ThrusterInfo.Profile - 2026-10-15: they showed every
+    /// atmospheric thruster Mach-scaled (Turbofan: 0.6 at Mach 0.8) while the simulation applied no such scaling.</summary>
+    internal static ThrustProfile AppliedProfile(in ThrusterInfo t) => ThrustTorque.Enabled ? null : t.Profile;
     private const float AngularDampeningThreshold = 0.01f;  // Bob's RotationDampeningAggresiveness
     private const float LinearDampeningThreshold = 0.001f; // Bob's MovementDampeningAggresiveness
 
@@ -79,14 +84,19 @@ public static partial class OffsetThrustJob
     private static int _traceSkipCount = 0; // skip first N grids before locking
     private static bool _traceActive;
     // Net torque accumulators (written by Execute offset loop, read for NET log)
-    /// <summary>Total coupling torque from offset loop (all thrusters, current frame).</summary>
-    public static Vector3 NetOffsetCouplingTorque { get; private set; }
-    private static Vector3 _traceNetOffsetTorque;
+    // (per thread - 2026-10-15: plain statics, while every grid's sim job runs Execute in parallel: grid A read grid B's
+    //  coupling as its own and cancelled it, and wrote B's override thrust. A grid's Execute and its read of the result
+    //  run on one thread, one after the other: AeroSimJob)
+    /// <summary>Total coupling torque from offset loop (all thrusters, current frame) - of the grid this thread last ran.</summary>
+    public static Vector3 NetOffsetCouplingTorque { get => _netOffsetCoupling; private set => _netOffsetCoupling = value; }
+    [ThreadStatic] private static Vector3 _netOffsetCoupling;
+    [ThreadStatic] private static Vector3 _traceNetOffsetTorque;
     /// <summary>Coupling torque from gravity-hover-only thrust (constant bias).
     /// Apply phantom -HoverCouplingTorque to cancel it while preserving attitude differential.</summary>
-    public static Vector3 HoverCouplingTorque { get; private set; }
-    private static Vector3 _traceNetAttitudeTorque;
-    private static Vector3 _netOverrideThrust; // accumulated thrust from damping/attitude overrides (local frame, Newtons)
+    public static Vector3 HoverCouplingTorque { get => _hoverCoupling; private set => _hoverCoupling = value; }
+    [ThreadStatic] private static Vector3 _hoverCoupling;
+    [ThreadStatic] private static Vector3 _traceNetAttitudeTorque;
+    [ThreadStatic] private static Vector3 _netOverrideThrust; // accumulated thrust from damping/attitude overrides (local frame, Newtons)
 
     // (Per-thruster blending manages its own overrides — no tracking needed)
 
@@ -121,6 +131,7 @@ public static partial class OffsetThrustJob
         Vector3 aeroTorqueLocal = default,
         bool skipOffsetLoop = false)
     {
+        NetOffsetCouplingTorque = Vector3.Zero; HoverCouplingTorque = Vector3.Zero;   // (this grid's, even when it returns early)
         if (thrusters.Count == 0) return;
         if (!PhysicsHack.ThrusterAccessAvailable) return;
         long tcs = AeroCost.Start();

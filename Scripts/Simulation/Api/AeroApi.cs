@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 7;   // (7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 8;   // (8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -131,28 +131,27 @@ public static partial class AeroApi
 
     /// <summary>The hull's exposed faces (local): centre (m), outward normal (unit), area (m2), and the pressure coefficient
     /// Cp of the last face-model evaluation (0 where none: a grid on its force table evaluates no faces each tick). Lists
-    /// are cleared first; pass null for any you do not want. Returns the count (0 while the grid is (re)building). Large
-    /// ships have 10^5 faces: call it rarely and keep the lists.</summary>
+    /// are cleared first; pass null for any you do not want. Returns the count (0 while the grid is (re)building, and
+    /// until the grid's next simulation tick after the first call: the faces are published by its tick while they are
+    /// asked for). Large ships have 10^5 faces: call it rarely and keep the lists.</summary>
     public static int GetSurface(Keen.VRage.DCS.Components.Entity grid, List<Vector3> centresLocal, List<Vector3> normalsLocal, List<float> areas, List<float> cp)
     {
         centresLocal?.Clear(); normalsLocal?.Clear(); areas?.Clear(); cp?.Clear();
-        var aero = AeroOf(grid);
-        var surf = aero?.FxSurface;
-        if (surf == null || aero.Rebuilding) return 0;
-        try
+        // (from the faces the grid's tick publishes - AeroGridComponent.PublishApiHull: this read the live face list,
+        //  which the simulation thread updates and a rebuild refills, and tore or threw, 2026-10-15)
+        var s = Watch(grid, false);
+        if (s == null) return 0;
+        long until = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(WatchSeconds * System.Diagnostics.Stopwatch.Frequency);
+        if (until > s.HullUntil) s.HullUntil = until;
+        lock (s.Lock)
         {
-            var faces = surf.Faces;
-            var cps = (aero.FxModel?.InnerModel as DampedShadowedDragModel)?.FaceCp;
-            int n = faces.Count;
+            int n = Math.Max(s.HullCount, 0);
             for (int i = 0; i < n; i++)
             {
-                var f = faces[i];
-                centresLocal?.Add(f.Position); normalsLocal?.Add(f.Normal); areas?.Add(f.Area);
-                cp?.Add(cps != null && i < cps.Count ? cps[i] : 0f);
+                centresLocal?.Add(s.HullPos[i]); normalsLocal?.Add(s.HullNrm[i]); areas?.Add(s.HullArea[i]); cp?.Add(s.HullCp[i]);
             }
             return n;
         }
-        catch (Exception) { centresLocal?.Clear(); normalsLocal?.Clear(); areas?.Clear(); cp?.Clear(); return 0; }   // (rebuilt under us)
     }
 
     /// <summary>How many wings aero detected on the grid (index them 0..count-1 in the calls below).</summary>
@@ -441,8 +440,10 @@ public static partial class AeroApi
     }
 
     /// <summary>The grid's thrusters as aero sees them: each block entity, its profile ("Rocket": none, flat) and its
-    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0). Lists
-    /// are cleared first; pass null for any you do not want. Returns the count (0: no aero here or no thrusters).</summary>
+    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0) - as
+    /// applied: the profiles apply only on the legacy thrust path (Aero.ThrustTorque off); with it on (the default) the
+    /// game's thrust is used as it is and every effectiveness is 1. Lists are cleared first; pass null for any you do
+    /// not want. Returns the count (0: no aero here or no thrusters).</summary>
     public static int GetThrusters(Keen.VRage.DCS.Components.Entity grid, List<Keen.VRage.DCS.Components.Entity> thrusters, List<string> profiles, List<float> effectiveness)
     {
         thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear();
@@ -450,20 +451,19 @@ public static partial class AeroApi
         if (aero == null) return 0;
         bool flying = AeroEntryFx.FlowOf(grid, out var p);
         float mach = flying ? p.Mach : 0f; Vector3 travel = flying ? p.TravelLocal : Vector3.Zero;
-        try
+        // (the list as last published - AeroGridComponent.ThrusterSnap, a copy made at each rebuild: the live one is cleared
+        //  and refilled by the simulation thread, iterated bare it tore or threw, 2026-10-15)
+        ThrusterInfo[] cache = aero.ThrusterSnap;
+        int n = cache.Length;
+        for (int i = 0; i < n; i++)
         {
-            var cache = aero._thrusterCache;
-            int n = cache.Count;
-            for (int i = 0; i < n; i++)
-            {
-                var t = cache[i];
-                thrusters?.Add(t.ThrusterEntity);
-                profiles?.Add(t.Profile?.Name ?? "Rocket");
-                effectiveness?.Add(t.Profile == null ? 1f : flying ? (float)t.Profile.Evaluate(mach, travel, t.IntakeDirection) : (float)t.Profile.Evaluate(0.0));
-            }
-            return n;
+            var t = cache[i];
+            thrusters?.Add(t.ThrusterEntity);
+            profiles?.Add(t.Profile?.Name ?? "Rocket");
+            var ap = OffsetThrustJob.AppliedProfile(t);   // (as applied - none with ThrustTorque on)
+            effectiveness?.Add(ap == null ? 1f : flying ? (float)ap.Evaluate(mach, travel, t.IntakeDirection) : (float)ap.Evaluate(0.0));
         }
-        catch (Exception) { thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear(); return 0; }   // (rebuilt under us)
+        return n;
     }
 
     // ── change counters (version 3): cache what you read, read again when a counter moves ──
@@ -508,7 +508,9 @@ public static partial class AeroApi
         kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear();
         var reg = AeroOf(grid)?.Components;
         if (reg == null) return 0;
-        try
+        // (under the registry's lock: the simulation thread clears and refills the list on a rebuild - iterated bare it
+        //  tore or threw, 2026-10-15)
+        lock (reg.SyncRoot)
         {
             var list = reg.Components;
             int n = list.Count;
@@ -519,7 +521,6 @@ public static partial class AeroApi
             }
             return n;
         }
-        catch (Exception) { kinds?.Clear(); cells?.Clear(); positionsLocal?.Clear(); return 0; }   // (changed under us)
     }
 
     /// <summary>An aero block's state on the last tick, as named values (both lists cleared, then filled; units in
@@ -534,8 +535,7 @@ public static partial class AeroApi
         var reg = AeroOf(grid)?.Components;
         if (reg == null) return 0;
         IAeroBlockComponent c = null;
-        try { var list = reg.Components; for (int i = 0; i < list.Count; i++) if (list[i].BlockPosition == cell) { c = list[i]; break; } }
-        catch (Exception) { return 0; }
+        lock (reg.SyncRoot) { var list = reg.Components; for (int i = 0; i < list.Count; i++) if (list[i].BlockPosition == cell) { c = list[i]; break; } }
         switch (c)
         {
             case ControlSurface s: V(names, values, "DeflectionInput", s.DeflectionInput); V(names, values, "MaxDeflection", s.MaxDeflection); V(names, values, "Lift", s.CurrentLift); V(names, values, "Drag", s.CurrentDrag); V(names, values, "AoA", s.EffectiveAoA); break;
@@ -578,6 +578,32 @@ public static partial class AeroApi
 
     /// <summary>Bumped on every change of any setting (the API, a settings file, a world load): watch it to re-read.</summary>
     public static int GetSettingsVersion() => AeroSettings.Version;
+
+    // ── settings for a settings screen (version 8): build one from GetSettings + these; GetSettings' order is the screen's ──
+
+    /// <summary>(version 8) What a settings screen shows for a setting: the player-facing label, the group (section) it
+    /// belongs to, its tier ("basic": always shown; "advanced": a collapsed section; "hidden": files and API only), the
+    /// unit of a number ("" none), a slider's step (0: pick one; an int's is 1), and for an int shown as a choice one label
+    /// per value min..max (a new array; null: a number). False: no such setting.</summary>
+    public static bool TryGetSettingUi(string name, out string label, out string group, out string tier, out string unit, out double step, out string[] choices)
+        => AeroSettings.UiInfo(name, out label, out group, out tier, out unit, out step, out choices);
+
+    /// <summary>(version 8) A world setting the host's file (AerodynamicsMod.world.cfg) forces: show it locked;
+    /// SetSetting refuses it ("forced by the host file ...").</summary>
+    public static bool IsSettingForced(string name) => AeroSettings.IsForced(name);
+
+    /// <summary>(version 8) World settings can be changed from this process (the host / single player). False: show them
+    /// read-only ("set by the server"); SetSetting refuses them.</summary>
+    public static bool CanEditWorldSettings() => AeroSettings.CanEditWorld();
+
+    /// <summary>(version 8) Every setting of a group (TryGetSettingUi's group; scope "world", "client" or null for either)
+    /// back to its default. Returns how many changed; why: the first one refused (forced, not allowed here), or no such
+    /// group.</summary>
+    public static int ResetSettingsGroup(string scope, string group, out string why) => AeroSettings.ResetGroup(scope, group, out why);
+
+    /// <summary>(version 8) A world setting changed since the world was last saved: it is saved with the world on its next
+    /// save (a screen's "saved with this world on the next save" hint).</summary>
+    public static bool AreWorldSettingsUnsaved() => AeroSettings.WorldUnsaved;
 
     // ── telling aero what it cannot see ──
 
@@ -633,6 +659,8 @@ public static partial class AeroApi
         lock (_suppressed)
         {
             _suppressed.Remove(grid);
+            // (grids gone from their scenes dropped here: the list kept every grid ever suppressed, 2026-10-15)
+            for (int i = _suppressed.Count - 1; i >= 0; i--) if (!PhysicsHack.Alive(_suppressed[i].Data)) _suppressed.RemoveAt(i);
             if (suppress) _suppressed.Add(grid);
             _suppressCount = _suppressed.Count;
         }

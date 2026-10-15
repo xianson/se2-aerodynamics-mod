@@ -111,8 +111,9 @@ public partial class AeroGridComponent
                 float hp = loss * full;
                 if (!(hp > 0f)) continue;
                 // (never under the game's destruction threshold here: a write that would remove the block is a failure's -
-                //  FailBlock - not a wear step's)
-                hp = MathF.Min(hp, MathF.Max(b.AbsoluteHealth - (StructureFatigue.BreakBelow + 0.01f) * full, 0f));
+                //  FailBlock - not a wear step's. The block's OWN threshold: a definition's above BreakBelow was written
+                //  under it - removed by the game with no split, smoke or tear, 2026-10-15)
+                hp = MathF.Min(hp, MathF.Max(b.AbsoluteHealth - (MathF.Max(StructureFatigue.BreakBelow, DestructionThreshold(b)) + 0.01f) * full, 0f));
                 if (!(hp > 0f)) continue;
                 try { recv.DealDamage(b, hp, null, _stLoaded.TryGetValue(bi, out var ld) ? Fracture(b, gwt, ld.at, ld.dir) : null); }
                 catch (Exception we) { _goneBlocks.Add(b); Log.Default?.Info($"[AERO-STRUCT] wear skipped: {we.Message}"); continue; }

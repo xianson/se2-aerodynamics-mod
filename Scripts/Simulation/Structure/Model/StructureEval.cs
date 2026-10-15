@@ -108,7 +108,9 @@ public static class StructureEval
             if (w <= 0f || hh.FaceBlock[i] < 0) continue;
             ws.Faces[nf++] = i; cw += hh.FacePosition(i) * w; sw2 += w;
         }
-        cw /= sw2;
+        // (no loaded face - none on a block: no centre; Apply then puts the body's load on the root. It divided by 0: NaN
+        //  loads, 2026-10-15)
+        cw = sw2 > 0f ? cw / sw2 : Vector3.Zero;
         double jxx = 0, jyy = 0, jzz = 0, jxy = 0, jxz = 0, jyz = 0;
         for (int k = 0; k < nf; k++)
         {
@@ -188,7 +190,10 @@ public static class StructureEval
         //  Six passes over every face per Apply - 383k faces on newred_v2, 5.3 ms, two or three Applies an evaluation - and
         //  the same sums in the same order: bit-identical, 2026-10-15)
         var ws = hh != null ? WindOf(hh) : null;
-        float sw = ws != null ? ws.Sum : 0f;
+        // (shared over the LOADED faces' weights - Sum2, the faces on a block: over every face's (Sum) the share of the
+        //  faces on no block - a coarsened heat grid's - was lost, part of the air's load never reached the structure,
+        //  2026-10-15)
+        float sw = ws != null && ws.Count > 0 ? ws.Sum2 : 0f;
         if (sw > 0f && (L.AirVel.LengthSquared() > 1f || entryF.LengthSquared() > 0f))
         {
             Vector3 mDist = Vector3.Zero;
@@ -316,7 +321,7 @@ public static class StructureEval
         outDamage.Clear(); outWhere?.Clear(); outCuts?.Clear();
         int n = st.Count;
         float from = StructureFatigue.Enabled ? MathF.Min(StructureFatigue.EnduranceUtil, 1f) : 1f;
-        float snap = StructureFatigue.SnapUtil, floor = StructureFatigue.BreakBelow;
+        float snap = StructureFatigue.SnapUtil;   // (a block's failing health: st.FloorOf - its definition's threshold)
         // (what each block lost to the structure this evaluation: its heat comes off what is left)
         Dictionary<int, float> lost = null;
         if (structure && BySection && st.SectionCount > 0) lost = DamageBySection(st, dt, breakUtil, wearPerSecond, maxBreaks, outDamage, outWhere, outCuts);
@@ -350,6 +355,7 @@ public static class StructureEval
                 int b = kv.Key; float u = kv.Value.u;
                 float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
                 float loss = StructureFatigue.Loss(st.Mat[b], u, have, kv.Value.cap, dt, breakUtil, wearPerSecond, out float uIntact);
+                float floor = st.FloorOf(b);
                 // (the snap on the load against the joint's INTACT strength - a genuine overload; a worn joint's own utilisation
                 //  runs high as its health goes, and wears through instead)
                 bool fails = uIntact >= snap || have - loss <= floor;
@@ -369,7 +375,7 @@ public static class StructureEval
                 float r = StructMaterial.BurnRate(st.Mat[b], hh.BlockSkinMaxK[b]);
                 if (!(r > 0f)) continue;
                 float gone = 0f; if (lost != null && lost.TryGetValue(b, out var g)) gone = g;
-                float have = (b < st.Integrity.Length ? st.Integrity[b] : 1f) - gone;
+                float have = (b < st.Integrity.Length ? st.Integrity[b] : 1f) - gone, floor = st.FloorOf(b);
                 if (have <= floor) continue;   // (already going this evaluation)
                 float loss = r * dt;
                 outDamage.Add(have - loss <= floor ? (b, have, true) : (b, loss, false));   // (burnt through: the whole block)
@@ -411,7 +417,7 @@ public static class StructureEval
         List<(int block, float fraction, bool destroy)> outDamage, List<(Vector3 at, Vector3 dir, float util)> outWhere, List<CutFail> outCuts)
     {
         float from = StructureFatigue.Enabled ? MathF.Min(StructureFatigue.EnduranceUtil, 1f) : 1f;
-        float snap = StructureFatigue.SnapUtil, floor = StructureFatigue.BreakBelow;
+        float snap = StructureFatigue.SnapUtil;   // (a member's failing health: st.FloorOf)
         int ng = st.SectionCount;
         // each loaded cut: its members' losses at their own utilisation, and whether it fails
         var cuts = new List<(int g, float u, bool fails)>();
@@ -434,7 +440,7 @@ public static class StructureEval
                 float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact, StructureFatigue.TensilePart(st.PieceTension(mi), st.PieceCompression(mi), u));
                 // (the snap on the load against the INTACT strength - a genuine overload; a worn member's own utilisation runs
                 //  high as its health goes, and wears through instead)
-                if (uIntact >= snap || (loss > 0f && have - loss <= floor)) fails = true;
+                if (uIntact >= snap || (loss > 0f && have - loss <= st.FloorOf(b))) fails = true;
                 mLoss[mi] = loss;
             }
             cuts.Add((g, ug, fails));
@@ -558,7 +564,7 @@ public static class StructureEval
         foreach (var kv in best)
         {
             int b = kv.Key; var (loss, mi, g) = kv.Value;
-            float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
+            float have = b < st.Integrity.Length ? st.Integrity[b] : 1f, floor = st.FloorOf(b);
             if (held.Contains(b) || have - loss <= floor) loss = MathF.Min(loss, MathF.Max(have - floor - 1e-3f, 0f));   // (deferred: next time, whole)
             if (!(loss > 0f)) continue;
             outDamage.Add((b, loss, false)); (lost ??= new())[b] = loss;

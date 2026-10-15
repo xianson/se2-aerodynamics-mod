@@ -17,6 +17,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Lift/` | Wing detection (`ConnectedComponentWingDetector`), the wing lift model (`CompressibleWingModel`), the whole-ship wrapper (`LiftingSurfaceModel`), the ship's stall (`LiftPeak`), wing root loads (`WingStrain`), ground effect | no |
 | `Atmosphere/` | The air model: layered atmosphere, isentropic / shock relations, the thin upper tail | no |
 | `Components/` | Block-level aero components (`IAeroBlockComponent`): control surfaces, airbrake and gear drag, intakes, scoops, rotors, other mods' drag patches; their registry and factory | mostly no (`BlockComponentFactory` reads blocks) |
+| `Debris/` | Drag on the game's loose fracture debris (not grids): the job (`AeroDebrisDrag`, client scene) and its engine-free step (`DebrisDragMath`, run by `Tests/DebrisTests`) | `AeroDebrisDrag.cs` only |
 | `Air/` | The game's air at a grid: density into a full state (`AtmosphereBridge`), wind (`AeroWind`) | yes |
 | `Grid/` | `AeroGridComponent` (one per grid) and its jobs, the rebuild scheduler, the background work queue, the frame budget | yes |
 | `Propulsion/` | Thrust torque and the aero-aware attitude law (`ThrustTorque`, `ThrustAllocator`, `GyroControl`), the older per-thruster path (`OffsetThrustJob`), thrust-vs-Mach profiles, flames, fuel mass | yes (`ThrustAllocator` is pure) |
@@ -34,7 +35,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Injection/` | Adds the mod's components to the game's prefabs at definition load (`EntityInjector`, `InjectAeroComponents`) | yes |
 
 The engine-free folders (`Core` minus `Se2GridAccessor`, `Surface`, `Shadow`, `Drag`, `Lift`, `Atmosphere`,
-`Structure/Model`, parts of `Components` and `Propulsion/ThrustAllocator.cs`) are compiled as-is by the offline test
+`Structure/Model`, parts of `Components`, `Propulsion/ThrustAllocator.cs` and `Debris/DebrisDragMath.cs`) are compiled as-is by the offline test
 projects in `Tests/`; keep game types out of them.
 
 ## 2. How the mod gets into the game
@@ -59,7 +60,7 @@ exists twice, a **server copy** and a **client copy**, each with its own `AeroGr
 
 | Thread | What runs there |
 |---|---|
-| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
+| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
 | **Aero workers** (`AeroWork`, `Workers` = 2 long-running tasks, highest priority first) | full rebuilds (`AeroGridComponent.StartBackgroundBuild`'s lambda), local chunk updates after damage (`Damage.cs`), structure evaluations (`EvaluateStructure`). They only touch the snapshot they were handed; results are installed on the simulation thread (`FinalizeStaggeredBuild`, `TickLocal`, `TickStructureCore`) |
 | **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch, smoke, creaks, Mach readout, settings poll), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
 | **Thread pool** | `AeroSettings.Poll` reads the settings files off the job threads |
@@ -178,12 +179,12 @@ answers false there.
 
 ## 8. Cross-mod links
 
-**Aero calls the Orbital mod** (by reflection, no lock of aero's held; `Api/OrbitalLink.cs`, `Fx/AeroEntryFx.cs`):
+**Aero calls the Orbital mod** (by reflection, no lock of aero's held; every lookup in `Api/OrbitalLink.cs`, on the rule in `Api/CrossModLink.cs`: the last loaded copy, bound again after an Orbital reload):
 
 | Call | Used for |
 |---|---|
 | `OrbitalApi.TryGetEntryState2` (fallback `TryGetEntryState`) via `OrbitalLink.TryGetEntryState2` | a railed re-entry's true air velocity, density, temperature and braking: hull heat and entry loads (`TickStructureCore`) |
-| `OrbitalApi.TryGetEntryState` via `AeroEntryFx.EntryStateAt` | the scorch's "is re-entering" test (`HeatScorch.Update`) |
+| `OrbitalApi.TryGetEntryState` via `AeroEntryFx.EntryStateAt` (→ `OrbitalLink.TryGetEntryState`) | the scorch's "is re-entering" test (`HeatScorch.Update`) |
 | `OrbitalApi.TryGetGridEdits` via `OrbitalLink.TryGetGridEdits` | velocity changes Orbital wrote into a grid, taken off the contact balance (`StructureContacts`) |
 
 The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelocityLimit`, read by `SpeedUncapJob` into
@@ -193,7 +194,8 @@ The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelo
 `tools/check_contract.sh` checks the members it uses). The Orbital mod's consumers: its build hints and flight HUD
 (`TryDesign`, `GetTopSpeed(At)`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac`,
 `SetFocusGrid`), its railed entry (`RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`, `PredictHullForces`,
-`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), and its harness (`GetFxConsistency`). The
+`RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), the seated ship's failure toast
+(`GetStructureEventSequence`, `ReadStructureEvents`: `StructureAlerts`), and its harness (`GetFxConsistency`). The
 stall and LOAC warnings are computed here and drawn by the Orbital mod's HUD; aero's own HUD pieces are the game's
 thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optional Mach readout (`MachHud`).
 
@@ -210,7 +212,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   `AeroCost.Log` is off), the engine stat overlay's "Grid" / "All" sections; `StructureLoads` counters for the structure.
 - **Offline tests** (`Tests/`, no game): `AeroBench` (shapes, table vs exact, cache, wings, structure `struct` / `fail` /
   `replay`, polars; `gate` mode in the gate), `SurfaceTests`, `StructureTests`, `TearTests`, `ThrustTests`,
-  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`. They compile the engine-free folders by path.
+  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `SettingsTests` (the settings registry: metadata,
+  text round trip, groups, host-file forcing, authority, denylist), `ApiTests`. They compile the engine-free folders by path.
 - **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `D:\aero\tools\ModCheck`)
   then every suite. AeroBench's gate also hashes the table-building sources (`Tests/table_sources.txt`): a change there
   must bump `AeroTableCache.Version` (or re-record the hash for a pure refactor: `dotnet run -- tablehash`).
