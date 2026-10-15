@@ -40,7 +40,6 @@ public static class ThrustTorque
     /// <summary>Allocation solver iterations (projected gradient).</summary>
     public const int Iterations = 60;
 
-    /// <summary>Last frame's numbers (for the harness / log).</summary>
     /// <summary>Last frame's numbers: the imbalance as the game shares the thrust (OffsetTorque), what the controller's
     /// sharing changes (RcsTorque, RcsForce), the attitude error, and how much thrust it moved (RcsUse).</summary>
     public struct Report { public Vector3 OffsetTorque, RcsTorque, RcsForce, Error; public float RcsUse, AttitudePriority; public string Mode;

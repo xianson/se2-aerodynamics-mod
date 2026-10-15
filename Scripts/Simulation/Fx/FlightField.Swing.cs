@@ -26,13 +26,6 @@ internal sealed partial class FlightField
     private Quaternion _swingDone = Quaternion.Identity;
     public static int RecSwingMoves;
 
-    /// <summary>The laid-out transform of a plasma or sheet emitter (its swing is from here); placed swung already.</summary>
-    private RelativeTransform SwungAt(object h, RelativeTransform at)
-    {
-        _baseOf[h] = at;
-        return Swung(at, _swingDone);
-    }
-
     private RelativeTransform Swung(RelativeTransform at, Quaternion q) =>
         q == Quaternion.Identity ? at : new RelativeTransform(_pivot + q * (at.Position - _pivot), q * at.Orientation);
 

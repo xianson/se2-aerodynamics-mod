@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The flight field's shock grid (Fx/FlightFieldShock.cs: the hull's shadow along the flow, the windward surface, the
+  <!-- The flight field's shock grid (Fx/FlightField.Shock.cs: the hull's shadow along the flow, the windward surface, the
        chord, the shock standing off it, the skirt's rim), checked bit for bit against the original code (Reference.cs)
        on synthetic hulls - the buffers reused and the relaxation looking only at changed cells must change nothing. -->
   <ItemGroup>
-    <Compile Include="$(Sim)\Fx\FlightFieldShock.cs" />
+    <Compile Include="$(Sim)\Fx\FlightField.Shock.cs" />
   </ItemGroup>
 </Project>

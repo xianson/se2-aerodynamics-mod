@@ -17,7 +17,9 @@ public static class EntryFxBridge
     static bool _resolved;
     public static string Problem = "";
 
-    static Type FindType(string asm, string name)
+    /// <summary>A type by its assembly's simple name and its full name (the game's client / render types are not mod
+    /// references); null if that assembly is not loaded. The flight field uses it too.</summary>
+    internal static Type FindType(string asm, string name)
     {
         foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) if (a.GetName().Name == asm) return a.GetType(name);
         return null;
