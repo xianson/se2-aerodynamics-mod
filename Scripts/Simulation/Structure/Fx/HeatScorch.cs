@@ -47,13 +47,13 @@ public static class HeatScorch
     /// 1300 K, showed dark scorch at 950).</summary>
     public static float LightK = 700f, DarkK = 950f;
     // (each class's thresholds for the current LightK / DarkK, and the lowest light one: worked out again when those move)
-    static readonly float[] _light = new float[StructMaterial.Count], _dark = new float[StructMaterial.Count];
+    static readonly float[] _lightK = new float[StructMaterial.Count], _darkK = new float[StructMaterial.Count];
     static float _forLight = -1f, _forDark = -1f, _minLight;
     static void Thresholds()
     {
         if (_forLight == LightK && _forDark == DarkK) return;
         float min = float.MaxValue;
-        for (int m = 0; m < StructMaterial.Count; m++) { StructMaterial.ScorchAt(m, LightK, DarkK, out _light[m], out _dark[m]); min = MathF.Min(min, _light[m]); }
+        for (int m = 0; m < StructMaterial.Count; m++) { StructMaterial.ScorchAt(m, LightK, DarkK, out _lightK[m], out _darkK[m]); min = MathF.Min(min, _lightK[m]); }
         _minLight = min; _forLight = LightK; _forDark = DarkK;
     }
 
@@ -73,8 +73,8 @@ public static class HeatScorch
             if (!(t >= _minLight)) continue;
             int fb = hh.FaceBlock[i];
             int mat = mats != null && fb >= 0 && fb < mats.Length ? mats[fb] : StructMaterial.Armor;
-            if (!(t >= _light[mat])) continue;
-            bool hotDark = t >= _dark[mat];
+            if (!(t >= _lightK[mat])) continue;
+            bool hotDark = t >= _darkK[mat];
             Vector3 p = hh.FacePosition(i), n = hh.FaceNormal(i);
             Spot best = null; float bd = float.MaxValue;
             foreach (var sp in spots)
