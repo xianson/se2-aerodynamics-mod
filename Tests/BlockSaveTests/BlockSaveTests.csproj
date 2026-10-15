@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The aero blocks' own saved data (Blocks/AeroBlockSaveForm.cs, 2026-10-15): each block kind's key round trip, the old
+       position-matched lines' reader and their migration into the new keys, and - through the engine's own serializer -
+       that a block's builder names only engine types (a world saved with it loads with the mod removed). -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>   <!-- (the game's DCS indexing touches WinForms signatures) -->
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />
+    <Reference Include="$(Game2)\VRage.DCS.dll" Private="false" />
+    <Reference Include="$(Game2)\Game2.Simulation.dll" Private="false" />
+  </ItemGroup>
+</Project>

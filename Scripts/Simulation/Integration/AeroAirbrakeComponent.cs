@@ -15,7 +15,8 @@ namespace AeroMod;
 /// terminal's slider, 0..MaxOpeningLimit - within the 3x3x3 box) while the grid's parking brake is on (P) and the block is
 /// on, powered and whole, and close again when it is not - at OpenRate. The grid's air reads the opening (IAirbrakeState:
 /// the Airbrake component, a flat plate of both leaves x sin of it); the clients turn the leaves by it (published with the
-/// gears' records: ThrustTorque.PublishGear, the opening in the progress field). Saved with the world (AeroSurfaceSaved).
+/// gears' records: ThrustTorque.PublishGear, the opening in the progress field). MaxOpening is saved with the block
+/// (AeroBlockSave, 2026-10-15; older saves' "airbrake" lines still read: AeroSurfaceSaved).
 /// </summary>
 public partial class AeroAirbrakeComponent : Component, IInSceneListener, IAirbrakeState
 {
@@ -78,13 +79,6 @@ public partial class AeroAirbrakeComponent : Component, IInSceneListener, IAirbr
         // (to the clients: the opening in the gear record's progress)
         var aero = grid?.TryGet<AeroGridComponent>();
         if (aero != null && a._hasKey) ThrustTorque.PublishGear(aero, grid.Data.GetWorldTransform(), a._key, a.OpeningDeg, 0f);
-    }
-
-    /// <summary>One line of the save: "x y z max" (world position of the block, its max opening).</summary>
-    internal string SaveLine()
-    {
-        var p = Entity.Data.GetWorldTransform().Position; var c = System.Globalization.CultureInfo.InvariantCulture;
-        return string.Join(" ", p.X.ToString("R", c), p.Y.ToString("R", c), p.Z.ToString("R", c), _max.ToString("R", c));
     }
 
     /// <summary>Harness (aeroget AeroAirbrakeComponent.Summary).</summary>

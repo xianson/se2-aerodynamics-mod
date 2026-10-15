@@ -226,7 +226,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     //    just before it touches (within ArmSeconds of contact at the sink rate now, or ArmHeight above the ground) so the
     //    hit is taken over its whole travel without bottoming or bouncing; the player's damping / stiffness come back once it
     //    has settled on the wheel (in contact and barely sinking for SettleSeconds) or HoldSeconds after the touch. ──
-    public bool AirshockEnabled = true;
+    public bool AirshockEnabled = true;   // (saved with the block since 2026-10-15: AeroBlockSave)
     public static float ArmSeconds = 0.5f, ArmHeight = 0.3f, MinSink = 0.5f, SettleSink = 0.3f, SettleSeconds = 0.5f, HoldSeconds = 3f;
     public static float ShockStrength = 1f, ShockDamping = 1f;
     bool _shockOn; float _shockS, _shockD; double _shockTouch = -1, _shockCalm = -1;

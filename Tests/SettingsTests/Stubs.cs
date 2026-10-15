@@ -157,5 +157,4 @@ public static class AeroSurfaceSaved
 {
     public static void Load(string text) { }
     public static void Clear() { }
-    public static string Text() => "";
 }
