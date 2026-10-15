@@ -24,6 +24,7 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
         ob.NamedEntities = new Dictionary<string, Keen.VRage.DCS.Components.Entity>();
         string text = AeroSettings.Text("world", all: false) + AeroSurfaceSaved.Text();
         if (text.Length > 0 && Entity != null) ob.NamedEntities[AeroSettings.SaveKey + text] = Entity;
+        AeroSettings.WorldSaved();
     }
 
     void IInSceneListener.OnAddedToScene() => AeroSettings.CarrierAdded();

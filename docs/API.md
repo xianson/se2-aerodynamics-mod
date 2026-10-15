@@ -158,7 +158,7 @@ Commands (setting a control surface's deflection, an airbrake's deployment) will
 | `bool TryGetWingStrain(Entity grid, int index, out float strain, out float rootMoment, out float capacity)` | A wing's structural strain (last tick, smoothed over ~0.15 s): its root bending moment over the root's capacity. 1 is the limit (past it the root wears, with `Structure.WingStrain` on); 1.5 breaks the wing off. Root moment and capacity in N·m (for a wing across the centre of mass, the worse side's). Computed whether or not the damage is on. `false`: no such wing, or not computed yet. |
 | `float GetMaxWingStrain(Entity grid)` | The grid's highest wing strain, as above; 0 with no wings. |
 
-The model (`Lift/WingStrain.cs`): a wing is a cantilever rooted at its span end nearest the centre of mass (a wing the centre of mass lies across, one wing through the fuselage, is two). Its load (lift and induced drag along its normal) spread evenly along it gives the bending moment at each span station; the blocks in that station's slab (within the wing's chord, and 2 blocks - at least 2.5 m - above and below it, so a fuselage counts) give its capacity, per chord column width × depth² (one block deep: a per-cell strength going as the block size cubed; heavy armour 4×). The worst station decides, and its blocks are the ones that wear and break: the root of a plain wing, where it leaves the fuselage for a wing through one. Calibrated so that a light-armour wing 4 blocks long and 1 block deep, large or small grid, snaps at 40 kPa wing loading (wear from 26.7 kPa); strain goes as the length squared (8 blocks: snaps at 10 kPa). Long slender wings are far weaker: on the bench ships (light armour assumed) the small-grid jetliner's main wing snaps at about 0.9 kPa, the pelican's at 10 kPa (`dotnet run -c Release -- strain` in `Tests/AeroBench`); raise `Structure.WingStrength` to suit.
+The model (`Lift/WingStrain.cs`): a wing is a cantilever rooted at its span end nearest the centre of mass (a wing the centre of mass lies across, one wing through the fuselage, is two). Its load (lift and induced drag along its normal) spread evenly along it gives the bending moment at each span station; the blocks in that station's slab (within the wing's chord, and 2 blocks - at least 2.5 m - above and below it, so a fuselage counts) give its capacity, per chord column width × depth² (one block deep: a per-cell strength going as the block size cubed; heavy armour 4×). The worst station decides, and its blocks are the ones that wear and break: the root of a plain wing, where it leaves the fuselage for a wing through one. At `Structure.WingStrength` 1 it is calibrated so that a light-armour wing 4 blocks long and 1 block deep, large or small grid, snaps at 40 kPa wing loading (wear from 26.7 kPa); strain goes as the length squared (8 blocks: snaps at 10 kPa). Long slender wings are far weaker: on the bench ships (light armour assumed) the small-grid jetliner's main wing snaps at about 0.9 kPa, the pelican's at 10 kPa (`dotnet run -c Release -- strain` in `Tests/AeroBench`); its default, 25, holds those real ships to ~6 g.
 
 ### On / off and settings
 
@@ -410,6 +410,24 @@ StepMyModel(blockIn);   // conduction, capacity, radiation - yours
 SetBlockTemperatures(grid, layout, myTempK, mySkinK);
 ```
 
+## Version 8
+
+Every earlier member is unchanged. New: what a **settings screen** needs to build itself from the settings, and who may
+change them. Build the screen from `GetSettings` (its order is the screen's order) plus `TryGetSettingInfo`,
+`TryGetSettingUi` and `TryGetSetting`; change values with `SetSetting`; watch `GetSettingsVersion` to refresh.
+
+| Member | What it does |
+|---|---|
+| `bool TryGetSettingUi(string name, out string label, out string group, out string tier, out string unit, out double step, out string[] choices)` | The player-facing label, the group (section) it belongs to, the tier (`basic`: always shown; `advanced`: a collapsed section; `hidden`: the files and the API only), a number's unit (`""` none), a slider's step (0: pick one; an int's is 1), and for an int shown as a choice one label per value min..max (a new array; `null`: a number). |
+| `bool IsSettingForced(string name)` | A world setting the host's file (`AerodynamicsMod.world.cfg`) forces: show it locked. `SetSetting` refuses it ("forced by the host file ..."). |
+| `bool CanEditWorldSettings()` | World settings can be changed from this process (the host, single player). False: show them read-only; `SetSetting` refuses them. SE2 2.4: wherever the server runs (it shares the client's process). |
+| `int ResetSettingsGroup(string scope, string group, out string why)` | Every setting of a group (scope `world`, `client`, or `null` for either) back to its default, through `SetSetting`'s rules. Returns how many changed; `why`: the first refusal, or no such group. |
+| `bool AreWorldSettingsUnsaved()` | A world setting changed since the world was last saved: it is written into the save on the world's next save (nothing is written at once). |
+
+The settings' groups, in screen order: world - Flight model, Structure and damage, Re-entry heat, Performance (host);
+client - HUD, Feel and audio, Visual effects, Effects quality. The table under [Settings](#settings) lists each setting's
+label, group and tier.
+
 ## Roadmap / gaps
 
 What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).
@@ -437,65 +455,90 @@ Two scopes. Every change takes effect at once: the values are fields the simulat
 
 Both files are read again within ~2 s of an edit, so they can be changed while playing. The format is `name = value`, `#` for comments, `true` / `false` for switches.
 
-| Setting | Scope | Type | Default | Range | What it does |
-|---|---|---|---|---|---|
-| `Aero.Enabled` | world | bool | true | | The whole aero simulation. On again: every grid rebuilds. |
-| `Aero.DragMultiplier` | world | float | 1 | 0..10 | The force along the motion, times this. |
-| `Aero.LiftMultiplier` | world | float | 1 | 0..10 | The force across the motion (wings, control surfaces, the hull's own lift), times this. Torque is scaled by both, weighted by the drag and lift magnitudes. |
-| `Aero.ThrustTorque` | world | bool | true | | Thrusters off the centre of mass turn the ship. Off: the older phantom attitude hold. |
-| `Control.HingeSurfaces` | world | int | 0 | 0..1 | Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input. 0 none, 1 every hinge on a piloted grid. |
-| `Control.HingeMaxDeflection` | world | float | 20 | 1..60 | Hinge control surfaces: degrees at full command. |
-| `Model.LargeGridCellScale` | world | int | 2 | 1..4 | Large-grid surface resolution (1 = 0.25 m cells). **Rebuilds every grid.** |
-| `Entry.OnsetMach` | world | float | 2 | 0.5..25 | Entry heating starts here. Must stay under `Entry.FullMach`; changing it keeps the full point where it is. |
-| `Entry.FullMach` | world | float | 2.5 | 0.6..30 | Entry heating is full here. |
-| `Entry.HeatLag` | world | float | 2 | 0.05..30 | Seconds the hull takes to heat up and cool down. |
-| `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
-| `Perf.Workers` | world | int | 2 | 1..16 | Background cores for hull and force-table builds. |
-| `Perf.TableCache` | world | bool | true | | Reuse built force tables. |
-| `Perf.TableCacheMB` | world | int | 256 | 16..4096 | The table cache's size. |
-| `Perf.LocalUpdates` | world | bool | true | | Update only the changed part of a hull. |
-| `Perf.ChunksPerUpdate` | world | int | 8 | 1..64 | Hull chunks updated per pass. |
-| `Perf.MinSpeedForUpdates` | world | float | 10 | 0..1000 | Below this speed (m/s) an edited hull waits before updating its forces. |
-| `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Seconds without block changes before a cleanup rebuild. |
-| `Hud.StallWarning` | client | bool | true | | The stall warning from the whole ship's air force: STALL when pulling further only loses lift, amber close to it. |
-| `Hud.Loac` | client | bool | true | | The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the commanded attitude needs nearly / more than the torque available at this speed. |
-| `Hud.GameStallWarning` | client | bool | false | | The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity; it ignores the wings' lift). Off: removed. |
-| `Structure.Loads` | world | bool | true | | The loads in every ship's structure and its hull's heating, computed in the background (`TryGetStructure`). |
-| `Structure.Damage` | world | bool | true | | Overloaded joints of the ship a player flies wear, and break off what hangs from them (AI ships and wrecks never). The flight controller limits its own steering so it never overloads the ship. |
-| `Structure.Strength` | world | float | 7 | 0.1-100 | Every block's strength, times this (7: a small-block airliner yields near 3 g, a light large-block plane near 8 g; thin wall panels buckle in compression). |
-| `Structure.BreakAt` | world | float | 1.5 | 1.05-10 | PROGRESSIVE FAILURE: past its yield a joint wears through over a moment, in proportion to how far over; at this many times its yield load it loses `Structure.WearRate` of its health a second. It lets go when its health is exhausted (the game's destruction threshold, 0.3 of full) (or at once past `Structure.SnapUtil`). Health lost is strength lost, so a worn joint runs away: it bends and dents, the creaks rise, then it goes. |
-| `Structure.WearRate` | world | float | 0.45 | 0-100 | Health (fraction of full) a joint loses per second at `Structure.BreakAt`. 0.45 puts the first break of a fast pull where the old instant break was (a small-block airliner ~3.8 g, a light large-block plane ~13 g); a sustained pull fails earlier, a brief spike (0.5 s at 1.5 x the yield) costs about a quarter of a block's health instead of snapping it. |
-| `Structure.SnapUtil` | world | float | 2.75 | 1.05-100 | A joint snaps at once at this many times its INTACT yield load (a genuine overload); below it, it wears through. |
-| `Structure.Fatigue` | world | bool | true | | FATIGUE below the yield: from `Structure.EnduranceUtil` of the yield up, every joint loses health slowly, as the cube of how far it is between the endurance limit and the yield. Health lost is strength lost (a tired joint fails at a lower load). Kept in the blocks' own health - saved with the world, replicated, repaired by welding; the mod writes it in steps (5% of a block's health, at most once a second a block, at once when it crosses a damage stage or fails) so the game's damage sound and network traffic stay proportionate. |
-| `Structure.FatigueRate` | world | float | 0.005 | 0-1 | Health a joint loses per second from fatigue while held at its yield (a tenth in 20 s; at 90% of the yield ~40 s, at 70% ~5 min, at 60% ~40 min). Hard flying at 80% of the limit (3 s pulls every 10 s) wears a small-block airliner's worst joint to 85% in ~7 min and to its yield in ~13 min. |
-| `Structure.EnduranceUtil` | world | float | 0.5 | 0-1 | The endurance limit: a joint loaded under this share of its yield never tires (cruising never fatigues a ship). |
-| `Structure.SplitBlocks` | world | bool | true | | A joint that fails breaks only its block's fracture pieces on the failing side (the game's own fracturing): the block stays, broken, on one side, and the ship parts along the failed face. A block of a single critical piece is destroyed as before. |
-| `Structure.ThrustLoads` | world | bool | true | | Engine thrust loads the structure (mounts, and the push through the ship). Off: engines never strain or break a ship. |
-| `Structure.EntryLoads` | world | bool | true | | A re-entry the Orbital Mod flies on rails loads the structure with its braking (`OrbitalApi.TryGetEntryState2`; up to ~5 g): the ship's mass × the deceleration, pressed onto the windward faces by the same Newtonian weights as the air's own load (cos² × area along the travel), with no net moment; the free-body solve carries it through the whole ship (the nose and heat shield take it). Not a contact. Off: a railed entry heats the hull but never strains it. |
-| `Structure.Tear` | world | bool | true | | A large piece the structure breaks off tears loose over a moment: the game splits it off, and for `Structure.TearSeconds` it stays tied at the torn joint by soft physics constraints whose hold eases to nothing (it holds, sags, flutters, then is free). Server only; clients see the motion. Small bits still pop off at once. |
-| `Structure.TearSeconds` | world | float | 1.2 | 0.1..10 | Seconds a large broken-off piece takes to tear loose. |
-| `Structure.TearMinMass` | world | float | 2000 | 0..1e7 | Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once. |
-| `Structure.TearHold` | world | float | 6 | 0..50 | The hold at the start of a tear, in g of the piece's own weight (the three anchors together). |
-| `Structure.Bends` | world | bool | true | | PERMANENT BENDS: a joint past its yield that holds (it wears, not breaks) leaves the structure outboard of it - the slice's lighter side, connected to it - turned a little about the joint, the way its load turned it (up after a hard pull on a light wing, down for a heavy pod, twisted under torsion): the armour sags or twists as one piece, nothing at the joint, more toward the tip. It bends again only past its last peak. The game's deformation bones move armour only (a part past the joint that is more than a tenth other blocks is not bent). With `Structure.Damage`; server, replicated by the game. |
-| `Structure.BendPerUtil` | world | float | 0.05 | 0..1 | The permanent turn (rad) at a joint per unit of utilisation over its last peak (1 at first): a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm at 1.5 (just short of breaking at the default `Structure.BreakAt`). |
-| `Structure.BendMax` | world | float | 0.3 | 0..1 | The most any point (deformation bone) is bent in total, m. The game also clamps a bone by its armour: within 0.25 m of a 0.25 m block. |
-| `Structure.BendMaxBlocks` | world | int | 300 | 1..5000 | The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip: not bent. |
-| `Heat.Damage` | world | bool | true | | Hull blocks past their burn temperature lose health (heat weakens the structure either way). |
-| `Heat.Multiplier` | world | float | 1 | 0-10 | The air's heating of the hull, times this. |
-| `Structure.WingStrain` | world | bool | false | | Overloaded wings strain at the root, wear and break off (the game splits them off). Off by default: it destroys blocks. The strain is reported (`TryGetWingStrain`) either way. |
-| `Structure.WingStrength` | world | float | 1 | 0.1..100 | Wing strength, times this. |
-| `Feel.Creaks` | client | bool | true | | The airframe creaks and groans as the structure is loaded (the ship you are seated in: from 0.6 of its worst joint's strength, more often and louder toward 1, heavier groans from 0.85), and cracks when a block wears or breaks. The game's own sound events, at the cockpit. |
-| `Feel.CreakVolume` | client | float | 1 | 0..2 | The creaks' and cracks' volume, times this. |
-| `Feel.Shake` | client | bool | true | | The cockpit buzzes with the structure's load (from 0.5, noticeable near 1), a jolt when a block breaks. Through the game's camera shake (its own switches apply). |
-| `Feel.ShakeScale` | client | float | 1 | 0..5 | The load shake's strength, times this. |
-| `Fx.Effects` | client | bool | true | | Every aero visual effect. |
-| `Fx.FlightField` | client | bool | true | | The flight effects (plasma, vapour, tip trails); off: none. |
-| `Fx.Plasma` / `Fx.Vapour` / `Fx.Tips` / `Fx.SpotLight` | client | bool | true | | Each group of the flight effects. |
-| `Fx.MaxGrids` | client | int | 4 | 1..32 | Grids with flight effects at once (the nearest). |
-| `Fx.Range` | client | float | 4000 | 100..50000 | Distance (m) past which a grid shows no flight effects. |
-| `Fx.TornSmoke` | client | bool | true | | A joint the structure breaks smokes (the game's damaged-block smoke) and sheds debris (its fracture debris) for `Fx.TornSmokeSeconds`, on the ship where the block was and on the piece that tears off, at its torn edge; parented to each, so the smoke trails behind them. Off with `Fx.Effects`. Single player and a host. |
-| `Fx.TornSmokeSeconds` | client | float | 4 | 0.5..20 | Seconds a torn joint smokes. |
-| `Fx.SpawnPerTick` | client | int | 12 | 1..200 | Effects started per frame while a grid's effects build. |
+A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the host file ...") until the file stops setting it (`IsSettingForced`). World settings change only where `CanEditWorldSettings` holds (the host or single player); a change is written into the save on the world's next save (`AreWorldSettingsUnsaved`). Tiers: `basic` settings are for every player, `advanced` ones for tinkerers, `hidden` ones (legacy or solver feel) only in the files and the API. Settings marked *ClientVisible* in the code (the entry Mach pair, the heat lag, the scorch switch, the structure's loads and wear-through load) are world values a client draws from too: they will need replicating once SE2 has real multiplayer.
+
+| Setting | Scope | Type | Default | Range | On the settings screen | What it does |
+|---|---|---|---|---|---|---|
+| `Aero.Enabled` | world | bool | true |  | Aerodynamics · Flight model · basic | The whole aero simulation. On again: every grid rebuilds. |
+| `Aero.DragMultiplier` | world | float | 1 | 0..10 | Drag strength · Flight model · basic | The force along the motion, times this. |
+| `Aero.LiftMultiplier` | world | float | 1 | 0..10 | Lift strength · Flight model · basic | The force across the motion (wings, control surfaces, the hull's own lift), times this. Torque is scaled by both, weighted by the drag and lift magnitudes. |
+| `Aero.ThrustTorque` | world | bool | true |  | Off-centre thrust turns ships · Flight model · basic | Thrusters off the centre of mass turn the ship. Off: the older phantom attitude hold. |
+| `Weather.Wind` | world | bool | true |  | Wind · Flight model · basic | The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push. |
+| `Control.HingeSurfaces` | world | int | 0 | 0..1 | Hinge control surfaces · Flight model · basic | Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input. 0 none, 1 every hinge on a piloted grid. |
+| `Control.HingeMaxDeflection` | world | float | 20 | 1..60 | Hinge flap travel · Flight model · advanced | Hinge control surfaces: degrees at full command. |
+| `Model.LargeGridCellScale` | world | int | 2 | 1..4 | Hull detail (large grid) · Flight model · advanced | Large-grid surface resolution (1 = 0.25 m cells). **Rebuilds every grid.** |
+| `Aero.GroundEffect` | world | bool | true |  | Ground effect · Flight model · advanced | Ground effect: wings close to the ground (within about a span) get more lift and less drag. |
+| `Aero.UpperAtmosphere` | world | bool | true |  | Thin upper air · Flight model · advanced | The air thins out exponentially past the planet's visible atmosphere edge, so a fast ship meets faint drag there instead of a wall. Off: the game's linear fade, the air ending at the edge. |
+| `Control.ThrustTurnRate` | world | float | 0.8 | 0.1..3 | Thruster steering max turn rate · Flight model · advanced | The fastest turn (rad/s) thruster steering asks for when turning the ship to the pilot's target. |
+| `Structure.Loads` | world | bool | true |  | Structural loads · Structure and damage · basic | The loads in every ship's structure and its hull's heating, computed in the background (`TryGetStructure`). |
+| `Structure.Damage` | world | bool | true |  | Structural damage · Structure and damage · basic | Overloaded joints of the ship a player flies wear, and break off what hangs from them (AI ships and wrecks never). The flight controller limits its own steering so it never overloads the ship. |
+| `Structure.Strength` | world | float | 7 | 0.1..100 | Structural strength · Structure and damage · basic | Every block's strength, times this (7: a small-block airliner yields near 3 g, a light large-block plane near 8 g; thin wall panels buckle in compression). |
+| `Structure.Fatigue` | world | bool | true |  | Metal fatigue · Structure and damage · basic | FATIGUE below the yield: from `Structure.EnduranceUtil` of the yield up, every joint loses health slowly, as the cube of how far it is between the endurance limit and the yield. Health lost is strength lost (a tired joint fails at a lower load). Kept in the blocks' own health - saved with the world, replicated, repaired by welding; the mod writes it in steps (5% of a block's health, at most once a second a block, at once when it crosses a damage stage or fails) so the game's damage sound and network traffic stay proportionate. |
+| `Structure.Tear` | world | bool | true |  | Slow tearing · Structure and damage · basic | A large piece the structure breaks off tears loose over a moment: the game splits it off, and for `Structure.TearSeconds` it stays tied at the torn joint by soft physics constraints whose hold eases to nothing (it holds, sags, flutters, then is free). Server only; clients see the motion. Small bits still pop off at once. |
+| `Structure.Bends` | world | bool | true |  | Permanent bends · Structure and damage · basic | PERMANENT BENDS: a joint past its yield that holds (it wears, not breaks) leaves the structure outboard of it - the slice's lighter side, connected to it - turned a little about the joint, the way its load turned it (up after a hard pull on a light wing, down for a heavy pod, twisted under torsion): the armour sags or twists as one piece, nothing at the joint, more toward the tip. It bends again only past its last peak. The game's deformation bones move armour only (a part past the joint that is more than a tenth other blocks is not bent). With `Structure.Damage`; server, replicated by the game. |
+| `Structure.Dents` | world | bool | true |  | Dents · Structure and damage · basic | Overloaded armour dents as its joints wear (the game's deformation, more the further over). With Structure.Damage. |
+| `Structure.SplitBlocks` | world | bool | true |  | Split broken blocks · Structure and damage · advanced | A joint that fails breaks only its block's fracture pieces on the failing side (the game's own fracturing): the block stays, broken, on one side, and the ship parts along the failed face. A block of a single critical piece is destroyed as before. |
+| `Structure.BySection` | world | bool | true |  | Fail whole sections · Structure and damage · advanced | A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck). |
+| `Structure.ThrustLoads` | world | bool | true |  | Engine mount loads · Structure and damage · advanced | Engine thrust loads the structure (mounts, and the push through the ship). Off: engines never strain or break a ship. |
+| `Structure.EntryLoads` | world | bool | true |  | Re-entry braking loads · Structure and damage · advanced | A re-entry the Orbital Mod flies on rails loads the structure with its braking (`OrbitalApi.TryGetEntryState2`; up to ~5 g): the ship's mass × the deceleration, pressed onto the windward faces by the same Newtonian weights as the air's own load (cos² × area along the travel), with no net moment; the free-body solve carries it through the whole ship (the nose and heat shield take it). Not a contact. Off: a railed entry heats the hull but never strains it. |
+| `Structure.GyroLoads` | world | bool | true |  | Gyro loads · Structure and damage · advanced | Gyroscopes' torque loads the structure (their mounts, and the turn through the ship). Off: gyros never strain a ship. |
+| `Structure.Contacts` | world | bool | true |  | Impact and landing loads · Structure and damage · advanced | Collisions and touchdowns load the structure (the contact's push, from the ship's change of momentum). Off: only flight loads it. |
+| `Structure.GearSturdiness` | world | float | 1 | 0..5 | Landing gear sturdiness · Structure and damage · advanced | How much of a touchdown's load landing gear takes, times this (1: as any block; higher: gear is sturdier than its block). |
+| `Control.RespectStructure` | world | bool | true |  | Protective autopilot · Structure and damage · advanced | The flight controller limits its own steering to what the structure carries: it holds back before it overstresses the ship. |
+| `Structure.BreakAt` | world | float | 1.5 | 1.05..10 | Wear-through load · Structure and damage · advanced | PROGRESSIVE FAILURE: past its yield a joint wears through over a moment, in proportion to how far over; at this many times its yield load it loses `Structure.WearRate` of its health a second. It lets go when its health is exhausted (the game's destruction threshold, 0.3 of full) (or at once past `Structure.SnapUtil`). Health lost is strength lost, so a worn joint runs away: it bends and dents, the creaks rise, then it goes. |
+| `Structure.WearRate` | world | float | 0.45 | 0..100 | Wear rate · Structure and damage · advanced | Health (fraction of full) a joint loses per second at `Structure.BreakAt`. 0.45 puts the first break of a fast pull where the old instant break was (a small-block airliner ~3.8 g, a light large-block plane ~13 g); a sustained pull fails earlier, a brief spike (0.5 s at 1.5 x the yield) costs about a quarter of a block's health instead of snapping it. |
+| `Structure.SnapUtil` | world | float | 2.75 | 1.05..100 | Instant snap load · Structure and damage · advanced | A joint snaps at once at this many times its INTACT yield load (a genuine overload); below it, it wears through. |
+| `Structure.FatigueRate` | world | float | 0.005 | 0..1 | Fatigue speed · Structure and damage · advanced | Health a joint loses per second from fatigue while held at its yield (a tenth in 20 s; at 90% of the yield ~40 s, at 70% ~5 min, at 60% ~40 min). Hard flying at 80% of the limit (3 s pulls every 10 s) wears a small-block airliner's worst joint to 85% in ~7 min and to its yield in ~13 min. |
+| `Structure.EnduranceUtil` | world | float | 0.5 | 0..1 | Fatigue-free load · Structure and damage · advanced | The endurance limit: a joint loaded under this share of its yield never tires (cruising never fatigues a ship). |
+| `Structure.TearSeconds` | world | float | 1.2 | 0.1..10 | Tear duration · Structure and damage · advanced | Seconds a large broken-off piece takes to tear loose. |
+| `Structure.TearMinMass` | world | float | 2000 | 0..1e7 | Slow-tear minimum mass · Structure and damage · advanced | Pieces at least this heavy (kg) tear loose slowly; lighter ones pop off at once. |
+| `Structure.TearHold` | world | float | 6 | 0..50 | Tear hold · Structure and damage · hidden | The hold at the start of a tear, in g of the piece's own weight (the three anchors together). |
+| `Structure.BendPerUtil` | world | float | 0.05 | 0..1 | Bend amount · Structure and damage · advanced | The permanent turn (rad) at a joint per unit of utilisation over its last peak (1 at first): a 10 m wing's tip sets ~10 cm at 1.2 x its yield, ~25 cm at 1.5 (just short of breaking at the default `Structure.BreakAt`). |
+| `Structure.BendMax` | world | float | 0.3 | 0..1 | Maximum bend · Structure and damage · advanced | The most any point (deformation bone) is bent in total, m. The game also clamps a bone by its armour: within 0.25 m of a 0.25 m block. |
+| `Structure.BendMaxBlocks` | world | int | 300 | 1..5000 | Largest bendable part · Structure and damage · advanced | The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip: not bent. |
+| `Structure.WingStrain` | world | bool | false |  | Legacy wing strain · Structure and damage · hidden | Overloaded wings strain at the root, wear and break off (the game splits them off). Off by default: it destroys blocks. The strain is reported (`TryGetWingStrain`) either way. |
+| `Structure.WingStrength` | world | float | 25 | 0.1..100 | Legacy wing strength · Structure and damage · hidden | Wing strength, times this (25 by default: real ships' long wings hold ~6 g; at 1 the jetliner snapped in level flight). |
+| `Heat.Multiplier` | world | float | 1 | 0..10 | Re-entry heating · Re-entry heat · basic | The air's heating of the hull, times this. |
+| `Heat.Damage` | world | bool | true |  | Heat damage · Re-entry heat · basic | Hull blocks past their burn temperature lose health (heat weakens the structure either way). |
+| `Heat.Scorch` | world | bool | true |  | Scorch marks · Re-entry heat · basic | Heat leaves a few large burn marks on the hull where it got hot in a re-entry. Worked out on the server; Fx.ScorchVisible hides them on this PC. |
+| `Entry.OnsetMach` | world | float | 2 | 0.5..25 | Heating starts at Mach · Re-entry heat · advanced | Entry heating starts here. Must stay under `Entry.FullMach`; changing it keeps the full point where it is. |
+| `Entry.FullMach` | world | float | 2.5 | 0.6..30 | Full heating at Mach · Re-entry heat · advanced | Entry heating is full here. |
+| `Entry.HeatLag` | world | float | 2 | 0.05..30 | Heat-up / cool-down time · Re-entry heat · advanced | Seconds the hull takes to heat up and cool down. |
+| `Heat.ScorchSpots` | world | int | 4 | 0..16 | Scorch marks per ship · Re-entry heat · advanced | The most scorch marks one ship gets (the hot faces are gathered into this many spots). |
+| `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
+| `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
+| `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |
+| `Perf.TableCacheMB` | world | int | 256 | 16..4096 | Force-table cache size · Performance (host) · advanced | The table cache's size. |
+| `Perf.LocalUpdates` | world | bool | true |  | Partial hull updates · Performance (host) · advanced | Update only the changed part of a hull. |
+| `Structure.Rate` | world | float | 4 | 1..20 | Structure updates per second · Performance (host) · advanced | Structure evaluations per second of a player's ship (higher: quicker to react, more background work). |
+| `Perf.ChunksPerUpdate` | world | int | 8 | 1..64 | Hull chunks per update · Performance (host) · hidden | Hull chunks updated per pass. |
+| `Perf.MinSpeedForUpdates` | world | float | 10 | 0..1000 | Hull update minimum speed · Performance (host) · hidden | Below this speed (m/s) an edited hull waits before updating its forces. |
+| `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Quiet time before a full rebuild · Performance (host) · hidden | Seconds without block changes before a cleanup rebuild. |
+| `Hud.StallWarning` | client | bool | true |  | Stall warning · HUD · basic | The stall warning from the whole ship's air force: STALL when pulling further only loses lift, amber close to it. |
+| `Hud.Loac` | client | bool | true |  | Loss-of-control warning · HUD · basic | The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the commanded attitude needs nearly / more than the torque available at this speed. |
+| `Hud.Mach` | client | bool | false |  | Mach in speed readout · HUD · basic | Mach in the game's speed readout ("312 m/s · M 0.92"), for what you are flying. Off by default: the flight boxes by ALT show it. |
+| `Hud.GameStallWarning` | client | bool | false |  | Game's own stall text · HUD · basic | The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity; it ignores the wings' lift). Off: removed. |
+| `Feel.Creaks` | client | bool | true |  | Airframe creaks · Feel and audio · basic | The airframe creaks and groans as the structure is loaded (the ship you are seated in: from 0.6 of its worst joint's strength, more often and louder toward 1, heavier groans from 0.85), and cracks when a block wears or breaks. The game's own sound events, at the cockpit. |
+| `Feel.CreakVolume` | client | float | 1 | 0..2 | Creak volume · Feel and audio · basic | The creaks' and cracks' volume, times this. |
+| `Feel.Shake` | client | bool | true |  | Load shake · Feel and audio · basic | The cockpit buzzes with the structure's load (from 0.5, noticeable near 1), a jolt when a block breaks. Through the game's camera shake (its own switches apply). |
+| `Feel.ShakeScale` | client | float | 1 | 0..5 | Load shake strength · Feel and audio · basic | The load shake's strength, times this. |
+| `Feel.CreakFrom` | client | float | 0.6 | 0.3..1 | Creaks start at load · Feel and audio · advanced | The creaks start at this share of the structure's strength (0.6: at 60%). |
+| `Fx.Effects` | client | bool | true |  | Aero visual effects · Visual effects · basic | Every aero visual effect. |
+| `Fx.FlightField` | client | bool | true |  | Full flight effects · Visual effects · advanced | The full flight effects (plasma, vapour, tip trails). Off: the older single plasma at the nose, no vapour or trails (`Fx.Effects` off: none at all). |
+| `Fx.Plasma` | client | bool | true |  | Re-entry plasma · Visual effects · basic | Entry plasma sparks over the hull. |
+| `Fx.Vapour` | client | bool | true |  | Transonic vapour · Visual effects · basic | Transonic vapour along the hull's edges. |
+| `Fx.Tips` | client | bool | true |  | Wingtip trails · Visual effects · basic | Wing-tip vapour trails. |
+| `Fx.SpotLight` | client | bool | true |  | Plasma glow light · Visual effects · basic | The plasma's light on the hull (one shadowed spot light per glowing grid). |
+| `Fx.TornSmoke` | client | bool | true |  | Smoke from breaks · Visual effects · basic | A joint the structure breaks smokes (the game's damaged-block smoke) and sheds debris (its fracture debris) for `Fx.TornSmokeSeconds`, on the ship where the block was and on the piece that tears off, at its torn edge; parented to each, so the smoke trails behind them. Off with `Fx.Effects`. Single player and a host. |
+| `Fx.TornSmokeSeconds` | client | float | 4 | 0.5..20 | Break smoke duration · Visual effects · advanced | Seconds a torn joint smokes. |
+| `Fx.VapourCone` | client | bool | false |  | Vapour cone (experimental) · Visual effects · advanced | The transonic shock's vapour cone round the body (experimental: off until tuned). |
+| `Fx.Brightness` | client | float | 1 | 0..3 | Plasma brightness · Visual effects · advanced | The plasma's and glow's brightness, times this. |
+| `Fx.ScorchVisible` | client | bool | true |  | Show scorch marks · Visual effects · advanced | Draw the hull's scorch marks on this PC (Heat.Scorch, the world's, decides whether there are any). |
+| `Fx.ThrusterFlamesFollow` | client | bool | true |  | Thruster flames show attitude thrust · Visual effects · advanced | Thruster flames show the share each thruster gives to steering (off: the game's own flames). |
+| `Fx.DebrisScale` | client | float | 1 | 0..3 | Break debris amount · Visual effects · advanced | The debris a break sheds, times this. |
+| `Fx.MaxGrids` | client | int | 4 | 1..32 | Ships with effects · Effects quality · basic | Grids with flight effects at once (the nearest). |
+| `Fx.Range` | client | float | 4000 | 100..50000 | Effect distance · Effects quality · basic | Distance (m) past which a grid shows no flight effects. |
+| `Fx.SpawnPerTick` | client | int | 48 | 1..200 | Effect build-up speed · Effects quality · advanced | Effects started per frame while a grid's effects build. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.
 

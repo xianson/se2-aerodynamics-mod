@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 7;   // (7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 8;   // (8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -578,6 +578,32 @@ public static partial class AeroApi
 
     /// <summary>Bumped on every change of any setting (the API, a settings file, a world load): watch it to re-read.</summary>
     public static int GetSettingsVersion() => AeroSettings.Version;
+
+    // ── settings for a settings screen (version 8): build one from GetSettings + these; GetSettings' order is the screen's ──
+
+    /// <summary>(version 8) What a settings screen shows for a setting: the player-facing label, the group (section) it
+    /// belongs to, its tier ("basic": always shown; "advanced": a collapsed section; "hidden": files and API only), the
+    /// unit of a number ("" none), a slider's step (0: pick one; an int's is 1), and for an int shown as a choice one label
+    /// per value min..max (a new array; null: a number). False: no such setting.</summary>
+    public static bool TryGetSettingUi(string name, out string label, out string group, out string tier, out string unit, out double step, out string[] choices)
+        => AeroSettings.UiInfo(name, out label, out group, out tier, out unit, out step, out choices);
+
+    /// <summary>(version 8) A world setting the host's file (AerodynamicsMod.world.cfg) forces: show it locked;
+    /// SetSetting refuses it ("forced by the host file ...").</summary>
+    public static bool IsSettingForced(string name) => AeroSettings.IsForced(name);
+
+    /// <summary>(version 8) World settings can be changed from this process (the host / single player). False: show them
+    /// read-only ("set by the server"); SetSetting refuses them.</summary>
+    public static bool CanEditWorldSettings() => AeroSettings.CanEditWorld();
+
+    /// <summary>(version 8) Every setting of a group (TryGetSettingUi's group; scope "world", "client" or null for either)
+    /// back to its default. Returns how many changed; why: the first one refused (forced, not allowed here), or no such
+    /// group.</summary>
+    public static int ResetSettingsGroup(string scope, string group, out string why) => AeroSettings.ResetGroup(scope, group, out why);
+
+    /// <summary>(version 8) A world setting changed since the world was last saved: it is saved with the world on its next
+    /// save (a screen's "saved with this world on the next save" hint).</summary>
+    public static bool AreWorldSettingsUnsaved() => AeroSettings.WorldUnsaved;
 
     // ── telling aero what it cannot see ──
 

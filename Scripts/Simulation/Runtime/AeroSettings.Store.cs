@@ -27,6 +27,18 @@ public static partial class AeroSettings
         return true;
     }
 
+    /// <summary>A setting's UI metadata (Setting.Ui): label, group, tier ("basic", "advanced", "hidden"), unit, step, and the
+    /// choices' labels (a copy; null: a number).</summary>
+    public static bool UiInfo(string name, out string label, out string group, out string tier, out string unit, out double step, out string[] choices)
+    {
+        label = group = tier = unit = null; step = 0; choices = null;
+        if (name == null || !_by.TryGetValue(name, out var s)) return false;
+        label = s.Label; group = s.Group; unit = s.Unit; step = s.Step;
+        tier = s.Tier == Tier.Basic ? "basic" : s.Tier == Tier.Advanced ? "advanced" : "hidden";
+        choices = s.Choices == null ? null : (string[])s.Choices.Clone();
+        return true;
+    }
+
     public static bool TryGet(string name, out double value)
     {
         value = 0;
@@ -46,7 +58,11 @@ public static partial class AeroSettings
         if (s.Type != "float") value = Math.Round(value);
         if (s.Type == "bool" && value != 0 && value != 1) { why = "a bool is 0 or 1"; return false; }
         if (value < s.Min || value > s.Max) { why = $"out of range {s.Min.ToString(Inv)}..{s.Max.ToString(Inv)}"; return false; }
-        if (s.Scope == "world" && !fromStorage && !WorldWritable) { why = "world settings are set by the host / server"; return false; }
+        if (s.Scope == "world" && !fromStorage)
+        {
+            if (!CanEditWorld()) { why = "world settings are set by the host / server"; return false; }
+            if (IsForced(s.Name)) { why = "forced by the host file " + WorldPath; return false; }
+        }
         lock (_lock)
         {
             if (s.Get() == value) return true;
@@ -55,9 +71,52 @@ public static partial class AeroSettings
             System.Threading.Interlocked.Increment(ref _version);
             if (s.Rebuild) System.Threading.Interlocked.Increment(ref AeroSwitch.Generation);   // (every grid rebuilds: AeroSimJob)
             if (s.Scope == "client" && !fromStorage) _clientDirtyAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (s.Scope == "world" && !fromStorage) _worldUnsaved = true;
         }
         Log.Default?.Info($"[AERO] setting {s.Name} = {Fmt(s, value)}{(fromStorage ? " (loaded)" : "")}");
         return true;
+    }
+
+    // ── who may change what, and groups (settings DESIGN.md W3) ──
+
+    /// <summary>World settings may be changed from here (a settings screen greys them out otherwise; Set refuses). THE one
+    /// place for "who may": admin checks go here once SE2 has real multiplayer.</summary>
+    public static bool CanEditWorld() => WorldWritable && IsLocalHostOrSinglePlayer();
+
+    /// <summary>This process hosts the world. SE2 2.4: always - its server runs in the client's process (the networking is
+    /// a mock) and has no admins a mod can see. A real dedicated server or remote client changes only this.</summary>
+    static bool IsLocalHostOrSinglePlayer() => true;
+
+    /// <summary>The names the host file (world.cfg) set at its last apply: they win over the save, so a screen shows them
+    /// locked and Set refuses them ("forced by the host file"). Swapped whole (read on any thread).</summary>
+    static volatile HashSet<string> _forced = new(StringComparer.OrdinalIgnoreCase);
+    public static bool IsForced(string name) => name != null && _forced.Contains(name);
+
+    /// <summary>A world setting changed (the API, a screen) since the world was last saved: it goes into the save carrier on
+    /// the world's next save (nothing is written now). A settings screen's "saved with this world" hint.</summary>
+    public static bool WorldUnsaved => _worldUnsaved;
+    static volatile bool _worldUnsaved;
+    /// <summary>The save carrier serialized the world scope.</summary>
+    internal static void WorldSaved() => _worldUnsaved = false;
+
+    /// <summary>Every setting of a group (and scope; null: either) back to its default, through Set (so a world group
+    /// needs CanEditWorld, and a forced name stays). Returns how many changed; why: the first refusal, or no such group.</summary>
+    public static int ResetGroup(string scope, string group, out string why)
+    {
+        why = null;
+        int n = 0; bool any = false;
+        // (twice: a default refused against a partner not yet reset - Entry.OnsetMach under a lowered FullMach - goes in on the second)
+        for (int pass = 0; pass < 2; pass++)
+            foreach (var s in _all)
+            {
+                if (!string.Equals(s.Group, group, StringComparison.OrdinalIgnoreCase) || (scope != null && s.Scope != scope)) continue;
+                any = true;
+                if (s.Get() == s.Default) continue;
+                if (Set(s.Name, s.Default, out string w)) n++;
+                else if (pass == 1) why ??= s.Name + ": " + w;
+            }
+        if (!any) why = "no group " + group + (scope != null ? " in " + scope : "");
+        return n;
     }
 
     // ── text: "name = value" lines (# comments), invariant culture ──
@@ -82,8 +141,9 @@ public static partial class AeroSettings
         return sb.ToString();
     }
 
-    /// <summary>Apply "name = value" lines of a scope (others ignored). Returns the count applied.</summary>
-    internal static int Apply(string text, string scope)
+    /// <summary>Apply "name = value" lines of a scope (others ignored). Returns the count applied; applied (if given)
+    /// collects their names.</summary>
+    internal static int Apply(string text, string scope, HashSet<string> applied = null)
     {
         if (string.IsNullOrEmpty(text)) return 0;
         int n = 0;
@@ -99,13 +159,13 @@ public static partial class AeroSettings
             string name = line.Substring(0, eq).Trim(), val = line.Substring(eq + 1).Trim();
             if (!_by.TryGetValue(name, out var s) || s.Scope != scope) continue;
             if (!Parse(val, out double v)) { Log.Default?.Info($"[AERO] setting {name}: '{val}' is not a value"); continue; }
-            if (Set(name, v, out string why, fromStorage: true)) n++;
+            if (Set(name, v, out string why, fromStorage: true)) { n++; applied?.Add(s.Name); }
             else (retry ??= new List<(string, double, string)>()).Add((name, v, val));
         }
         if (retry != null)
             foreach (var (name, v, val) in retry)
             {
-                if (Set(name, v, out string why, fromStorage: true)) n++;
+                if (Set(name, v, out string why, fromStorage: true)) { n++; applied?.Add(_by[name].Name); }
                 else Log.Default?.Info($"[AERO] setting {name} = {val} refused: {why}");
             }
         return n;
@@ -144,6 +204,7 @@ public static partial class AeroSettings
         int n = Apply(text, "world");
         AeroSurfaceSaved.Load(text);
         Log.Default?.Info($"[AERO] world settings loaded: {n}");
+        _worldUnsaved = false;
         _worldFileAt = DateTime.MinValue;   // (the host's overrides again, over the save)
     }
 
@@ -157,6 +218,8 @@ public static partial class AeroSettings
         ResetScope("world");
         AeroSurfaceSaved.Clear();
         _worldFileAt = DateTime.MinValue;
+        _forced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // (the next world's apply of the host file sets them again)
+        _worldUnsaved = false;
     }
 
     // ── the files (~2 s poll from the aero jobs; never a throw per tick: a failing file is left alone) ──
@@ -236,7 +299,13 @@ public static partial class AeroSettings
                     var world = new FileInfo(WorldPath);
                     if (!world.Exists) { Directory.CreateDirectory(Folder); File.WriteAllText(WorldPath, WorldHeader + Commented(Text("world", all: true))); world.Refresh(); }
                     var at = world.LastWriteTimeUtc;
-                    if (at != _worldFileAt && WorldWritable) { _worldFileAt = at; Apply(File.ReadAllText(WorldPath), "world"); }
+                    if (at != _worldFileAt && WorldWritable)
+                    {
+                        _worldFileAt = at;
+                        var forced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        Apply(File.ReadAllText(WorldPath), "world", forced);
+                        _forced = forced;
+                    }
                 }
                 FileWhy = "";
             }
