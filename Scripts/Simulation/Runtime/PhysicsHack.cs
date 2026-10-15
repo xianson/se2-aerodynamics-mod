@@ -1,6 +1,5 @@
 #pragma warning disable
 using System;
-using System.Reflection;
 using Keen.Game2.Simulation.GameSystems.Physicss;
 using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
 using Keen.Game2.Simulation.WorldObjects.Movement;
@@ -145,12 +144,6 @@ public static class PhysicsHack
         linear = rb.LinearVelocity;
         angular = rb.AngularVelocity;
         return true;
-    }
-
-    /// <summary>Raise the session speed cap. See EngineOverrides (reflection holdout).</summary>
-    public static void UncapSpeed(object velocityLimitProvider, float newLimit = 1000f)
-    {
-        EngineOverrides.UncapSpeed(velocityLimitProvider, newLimit);
     }
 
     /// <summary>

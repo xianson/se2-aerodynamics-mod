@@ -155,9 +155,6 @@ public partial class SmoothSurfaceProvider : ISurfaceProvider
     public float BlockSize => _blockSize;
     public int Version { get; private set; }
 
-    /// <summary>True while a staggered build is in progress (between BeginBuild and FinalizeBuild).</summary>
-    public bool IsBuilding => _stagingCells != null;
-
     /// <summary>The size (m) of this surface's cells: 0.25 (the grid's own), or coarser for large-block grids (a
     /// half block: their 2.5 m blocks need no 0.25 m detail, and it is 125x fewer cells).</summary>
     public float CellSize { get; set; } = 0.25f;

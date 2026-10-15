@@ -10,8 +10,9 @@ using Keen.VRage.Core.Game.GameSystems.OWT;
 namespace AeroMod;
 
 /// <summary>
-/// Per-grid aerodynamics component. Builds surface, detects wings.
-/// Force application deferred until VRage.Physics access is resolved.
+/// Per-grid aerodynamics component: builds the grid's surface, wings and force table (Build), follows damage (Damage),
+/// computes the air's forces each frame (Compute; applied by the sim job, AeroSimJob.cs) and drives the control
+/// surfaces (Surfaces) and the attitude hold (Attitude). Its fields live here; each concern in its own partial file.
 /// </summary>
 [WhenSimulated]
 public partial class AeroGridComponent : Component, IInSceneListener
@@ -190,7 +191,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>The model and the surface it runs on - for the public API (AeroApi: wings, surfaces, prediction).</summary>
     internal LiftingSurfaceModel FxModel => _model;
     internal SmoothSurfaceProvider FxSurface => _surface;
-    internal ManifoldClassifier FxManifold => _manifold;
     internal float FxBlockSize => _blockSize;
     /// <summary>Each block's occupied-cell boxes, now (simulation thread) - as a rebuild captures them.</summary>
     internal List<(Vector3I, Vector3I)> CaptureBoxes()
@@ -221,7 +221,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal bool _rcsWarm;
     internal bool IsServerScene = true;
     static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
-    private Quaternion _rcsHold; private bool _rcsHoldValid; private int _holdStall;
     internal int _rcsWarmGen = -1;
 
     internal ThrustTorque.Report LastThrust;

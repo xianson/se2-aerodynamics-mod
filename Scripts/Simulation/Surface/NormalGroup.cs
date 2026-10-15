@@ -39,13 +39,4 @@ public readonly struct NormalGroup
         Sxx = sxx; Syy = syy; Szz = szz;
         Sxy = sxy; Sxz = sxz; Syz = syz;
     }
-
-    /// <summary>S · v (matrix-vector multiply with the second moment tensor).</summary>
-    public Vector3 SecondMomentMul(Vector3 v) => new(
-        Sxx * v.X + Sxy * v.Y + Sxz * v.Z,
-        Sxy * v.X + Syy * v.Y + Syz * v.Z,
-        Sxz * v.X + Syz * v.Y + Szz * v.Z);
-
-    /// <summary>Whether this group has precomputed second moments.</summary>
-    public bool HasSecondMoment => Sxx != 0 || Syy != 0 || Szz != 0;
 }

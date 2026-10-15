@@ -64,8 +64,6 @@ public partial class AeroGridComponent
         point = normal = Vector3.Zero; cdA = 0f; return false;
     }
 
-    internal int DragPatchCount => _dragPatches.Count;
-
     /// <summary>The patches' force and torque this tick (grid-local; torque about the centre of mass).</summary>
     static (Vector3 force, Vector3 torque) EvaluateDragPatches(List<DragPatch> patches, in AeroContext ctx)
     {

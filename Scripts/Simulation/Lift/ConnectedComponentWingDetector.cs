@@ -125,7 +125,6 @@ public partial class ConnectedComponentWingDetector : IWingDetector
         // (slabs, one array per field: arrays of mod types are banned, VRS1001)
         public int[] SA = System.Array.Empty<int>(), SB = System.Array.Empty<int>(), SLo = System.Array.Empty<int>(), SHi = System.Array.Empty<int>(), SComp = System.Array.Empty<int>(), SClr = System.Array.Empty<int>();
         public int[] Stack = System.Array.Empty<int>();
-        public readonly Dictionary<long, long> ColIdx = new(LongKey.Comparer);   // (column -> first slab << 32 | count)
         public readonly List<int> Comp = new();
         public readonly List<int> Thick = new();
         public readonly List<Vector3I> Tops = new();

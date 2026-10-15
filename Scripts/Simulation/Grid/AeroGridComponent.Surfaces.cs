@@ -18,9 +18,6 @@ public partial class AeroGridComponent
     private void UpdateControlSurfaceInputs(Vector3 centerOfMass, WorldTransform wt,
         Vector3 localAngVel, float dynamicPressure, Vector3 bodyTorque)
     {
-        // ══════════════════════════════════════════════════════════════════════
-        // SAS: runs regardless of control surface count (Bug 1 fix)
-        // ══════════════════════════════════════════════════════════════════════
         if (_components.Count == 0 && !HingeSurfaces.Wanted(this)) return;   // (hinge surfaces: native subgrid flaps)
 
         // ══════════════════════════════════════════════════════════════════════
@@ -104,11 +101,10 @@ public partial class AeroGridComponent
             Vector3 eulerError = errorQuat.ConvertToEuler(); // radians, local frame (matches game convention)
             EulerError = eulerError; // expose for thruster attitude controller
 
-            // Simple PD controller: proportional on attitude error, derivative on angular rate.
+            // Proportional on the attitude error (the rate damping is ControlSurface.RateCommand's, per surface).
             // ConvertToEuler returns (Pitch, Yaw, Roll) = (X, Y, Z) — same frame as
             // effectiveness vectors and localAngVel. No axis remapping needed.
             const float Kp = 5.0f;    // proportional gain on attitude error (rad)
-            const float Kd = 0.5f;    // derivative gain on angular rate (in PD cmd, surface adds more)
 
             // (no keyboard roll override: with the reticle on, Q/E rolls the TARGET orientation - CockpitInputHandlerComponent
             //  multiplies TargetOrientation by the roll - and the cockpit stops updating AngularControlData (UpdateRotationData
@@ -127,34 +123,8 @@ public partial class AeroGridComponent
             // (damping on the rate ERROR - the old "- w Kd" here plus 3 w per surface damped the turn the gyros were making)
             targetAngVel = attitudeCmd;
 
-            // ── FEEDFORWARD: counter body aero torque ──
-            // bodyTorque is in local frame from the body aero model (drag, lift on hull).
-            // Negate it so surfaces preemptively oppose destabilizing moments.
-            // Applied AFTER geometric normalization in STEP 4b, so we add it there instead.
-            // (stored for use in STEP 4b)
-
-            // ── SAS: PD orientation tracker ──
-            {
-                const float SasDamping = 2000000f;   // N·m per rad/s — oppose rotation
-                const float SasAttitude = 1000000f;   // N·m per rad — track reticle
-                const float SasMaxTorque = 10000000f; // clamp per axis
-
-                Vector3 sasDamp = -localAngVel * SasDamping;
-
-                const float maxEulerCmd = 0.5f;
-                Vector3 clampedEuler = new Vector3(
-                    MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.X)),
-                    MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.Y)),
-                    MathF.Max(-maxEulerCmd, MathF.Min(maxEulerCmd, eulerError.Z)));
-                Vector3 sasAtt = clampedEuler * SasAttitude;
-
-                SasTorque = sasDamp + sasAtt;
-
-                SasTorque = new Vector3(
-                    MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.X)),
-                    MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Y)),
-                    MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Z)));
-            }
+            // ── SAS: PD orientation tracker (toward the reticle) ──
+            SasTorque = SasTorqueFor(localAngVel, eulerError);
 
             if (shouldLog)
             {
@@ -212,39 +182,6 @@ public partial class AeroGridComponent
             Log.Default?.Info($"[AERO-CS] STEP4 flowDir=({flowDir.X:F4},{flowDir.Y:F4},{flowDir.Z:F4})");
             Log.Default?.Info($"[AERO-CS] STEP4 dynPressure={dynamicPressure:F1} QRef={QRef:F0} gainScale={gainScale:F5}");
             Log.Default?.Info($"[AERO-CS] STEP4 CoM=({centerOfMass.X:F3},{centerOfMass.Y:F3},{centerOfMass.Z:F3}) blockSize={_blockSize} components={_components.Count}");
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // STEP 4b: Compute geometric authority per axis (for auto-scaling)
-        // ══════════════════════════════════════════════════════════════════════
-        // Sum |dot(effNorm, axis)| for each surface on each axis.
-        // This counts how many surfaces contribute to each axis, weighted by alignment.
-        // No area/q — those affect force magnitude but the controller just sets deflection [-1,1].
-        // Result: command=1 → all surfaces deflect to ~1 on that axis.
-        Vector3 totalAuthority = Vector3.Zero;     // geometric (for normalizing inner loop)
-        Vector3 torqueAuthority = Vector3.Zero;   // physical (N·m per unit deflection, for feedforward)
-        for (int i = 0; i < _components.Components.Count; i++)
-        {
-            if (_components.Components[i] is ControlSurface csAuth)
-            {
-                Vector3 r = csAuth.Position - centerOfMass;
-                Vector3 ld = Vector3.Cross(csAuth.HingeAxis, csAuth.ChordDirection);
-                Vector3 eff = Vector3.Cross(r, ld);
-                float el = eff.Length();
-                if (el < 0.01f) continue;
-                Vector3 en = eff / el;
-                totalAuthority += new Vector3(
-                    MathF.Abs(en.X),
-                    MathF.Abs(en.Y),
-                    MathF.Abs(en.Z));
-                // Torque authority: how much torque (N·m) full deflection produces per axis
-                // ≈ effLen * area * q * clAlpha_estimate * maxDeflection_rad
-                float torquePerDefl = el * csAuth.Area * dynamicPressure * 6.0f * (10f * MathF.PI / 180f);
-                torqueAuthority += new Vector3(
-                    MathF.Abs(en.X) * torquePerDefl,
-                    MathF.Abs(en.Y) * torquePerDefl,
-                    MathF.Abs(en.Z) * torquePerDefl);
-            }
         }
 
         // No authority normalization — let the dot product in STEP 5 naturally

@@ -26,7 +26,7 @@ public partial class AeroGridComponent
             _subPartCheck = 120;
             try { _isSubPart = PhysicsHack.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
         }
-        if (_isSubPart) { _rcsHoldValid = false; mode = "sub-part"; return false; }
+        if (_isSubPart) { mode = "sub-part"; return false; }
         if (TestTurnGen != 0 && IsServerScene && Data.TryGet<TargetControlData>(out var tt))
         {
             // DEV (harness): the pilot's target set as the reticle sets it - the orientation when TestTurnGen last changed,
@@ -36,16 +36,16 @@ public partial class AeroGridComponent
             target = Quaternion.Normalize(_testTurnBase * Quaternion.CreateFromAxisAngle(Vector3.UnitX, TestTurnPitch * D2R)
                 * Quaternion.CreateFromAxisAngle(Vector3.UnitY, TestTurnYaw * D2R) * Quaternion.CreateFromAxisAngle(Vector3.UnitZ, TestTurnRoll * D2R));
             tt.TargetOrientation = target; Data.Set(tt);
-            _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
+            mode = "pilot target"; return true;
         }
         if (Data.TryGet<TargetControlData>(out var tc) && tc.TargetOrientation.IsValidAndRotationIsNormalized())
         {
-            target = tc.TargetOrientation; _rcsHold = target; _rcsHoldValid = true; mode = "pilot target"; return true;
+            target = tc.TargetOrientation; mode = "pilot target"; return true;
         }
         if ((Data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f)
             || (Data.TryGet<ControlData>(out var cd) && cd.Rotation.LengthSquared() > 1e-4f))
         {
-            _rcsHoldValid = false; mode = "rate input"; return false;
+            mode = "rate input"; return false;
         }
         if (Data.Has<DampeningData>())
         {
@@ -53,10 +53,9 @@ public partial class AeroGridComponent
             // own offset torque cancelled, NO remembered attitude. It held the attitude the ship was left at: a pilot leaving
             // mid-turn left their last target and the ship crept back to it for ~15 s, thrusters lit, against the gyros
             // braking it; a rate pilot letting go got snapped back past where the gyros stopped (audit 2026-10-10)
-            _rcsHoldValid = false;
             target = wt.Orientation; mode = "damp"; return true;
         }
-        _rcsHoldValid = false; mode = "free"; return false;
+        mode = "free"; return false;
     }
 
     /// <summary>
@@ -140,23 +139,28 @@ public partial class AeroGridComponent
                 $" cmd=({_lastGridAngVel.X:F4},{_lastGridAngVel.Y:F4},{_lastGridAngVel.Z:F4})");
 
         // SAS torque for the hidden stability system
-        {
-            const float SasDamping = 2000000f;
-            const float SasAttitude = 1000000f;
-            const float SasMaxTorque = 10000000f;
+        SasTorque = SasTorqueFor(localAngVel, eulerError);
+    }
 
-            Vector3 sasDamp = -localAngVel * SasDamping;
-            Vector3 clampedEuler = new Vector3(
-                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.X)),
-                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Y)),
-                MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Z)));
-            Vector3 sasAtt = clampedEuler * SasAttitude;
+    /// <summary>The hidden stability augmentation's torque (local, N m): damps the rotation and pulls toward the attitude
+    /// error (each axis of it clamped to 0.5 rad), each axis clamped to 1e7 N m. The hold and the reticle mixer share it.</summary>
+    private static Vector3 SasTorqueFor(Vector3 localAngVel, Vector3 eulerError)
+    {
+        const float SasDamping = 2000000f;   // N·m per rad/s — oppose rotation
+        const float SasAttitude = 1000000f;   // N·m per rad — track the target
+        const float SasMaxTorque = 10000000f; // clamp per axis
 
-            SasTorque = sasDamp + sasAtt;
-            SasTorque = new Vector3(
-                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.X)),
-                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Y)),
-                MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, SasTorque.Z)));
-        }
+        Vector3 sasDamp = -localAngVel * SasDamping;
+        Vector3 clampedEuler = new Vector3(
+            MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.X)),
+            MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Y)),
+            MathF.Max(-0.5f, MathF.Min(0.5f, eulerError.Z)));
+        Vector3 sasAtt = clampedEuler * SasAttitude;
+
+        Vector3 t = sasDamp + sasAtt;
+        return new Vector3(
+            MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, t.X)),
+            MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, t.Y)),
+            MathF.Max(-SasMaxTorque, MathF.Min(SasMaxTorque, t.Z)));
     }
 }

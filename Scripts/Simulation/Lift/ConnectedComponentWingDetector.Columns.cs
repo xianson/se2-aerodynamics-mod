@@ -37,9 +37,6 @@ public partial class ConnectedComponentWingDetector
     private const int FarClear = 1 << 16;
     private int _dropThick, _dropClear, _dropCavity;
 
-    private const int POff = 1 << 20;
-    private static long Pack3(int a, int b, int h) => ((long)(a + POff) << 42) | ((long)(b + POff) << 21) | (long)(h + POff);
-
     private List<LiftingSurface> DetectColumns(IGridAccessor grid, float blockSize)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
