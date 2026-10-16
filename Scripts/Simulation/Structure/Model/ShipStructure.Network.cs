@@ -59,7 +59,7 @@ public sealed partial class ShipStructure
             var p = ContactPoint(k);
             var ra = p - Center[c.A]; var rb = p - Center[c.B];
             _rax[k] = ra.X; _ray[k] = ra.Y; _raz[k] = ra.Z; _rbx[k] = rb.X; _rby[k] = rb.Y; _rbz[k] = rb.Z;
-            float t = MathF.Min(Wall[c.A], Wall[c.B]), a = c.U1 - c.U0, b = c.V1 - c.V0;
+            float t = MathF.Min(Wall[c.A], Wall[c.B]) * ContactShare(k), a = c.U1 - c.U0, b = c.V1 - c.V0;   // (TouchingShare: the steel kept)
             float A = 2f * (a + b) * t;
             float iuu = t * b * b * b / 6f + a * t * b * b / 2f, ivv = t * a * a * a / 6f + b * t * a * a / 2f;
             float J = 4f * (a * b) * (a * b) * t / (2f * (a + b));

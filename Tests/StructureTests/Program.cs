@@ -437,8 +437,55 @@ static class Program
 
     static void Mounts()
     {
-        bool was = ShipStructure.MountJoints; ShipStructure.MountJoints = true;
-        try { MountsCore(); MountedVsTouching(); } finally { ShipStructure.MountJoints = was; }
+        bool was = ShipStructure.MountJoints; float wasShare = ShipStructure.TouchingShare; ShipStructure.MountJoints = true;
+        // (the strict mounts' cases: touching-only faces carry nothing)
+        ShipStructure.TouchingShare = 0f;
+        try { MountsCore(); MountedVsTouching(); TouchingShareJoints(); } finally { ShipStructure.MountJoints = was; ShipStructure.TouchingShare = wasShare; }
+    }
+
+    /// <summary>TouchingShare (2026-10-15): with mount data, mated cells carry whole and touching-only cells at the share - a
+    /// fully mated face is the touching face at any share; a face with nothing mated joins at the share (none at 0, a
+    /// utilisation about 1 / share, the touching face exactly at 1); half mated lies between strict and whole, weaker as the
+    /// share falls, its joint area the mated cells plus the share of the rest; MountJoints off ignores the share.</summary>
+    static void TouchingShareJoints()
+    {
+        ShipStructure Pair(int kind, float share)
+        {
+            ShipStructure.TouchingShare = share;
+            var sh = new TShip();
+            int a = sh.Cells(1e6f, StructMaterial.Armor, (V(-2, 0, 0), V(-1, 1, 1)));
+            int b = sh.Cells(SmallMass, StructMaterial.Armor, (V(0, 0, 0), V(1, 1, 1)));
+            if (kind >= 0) sh.Mount(a, V(1, 0, 0), V(-1, 0, 0), V(-1, 1, 1));    // a: its whole +x face
+            if (kind == 1) sh.Mount(b, V(-1, 0, 0), V(0, 0, 0), V(0, 1, 1));   // b: its whole -x face (mated whole)
+            if (kind == 2) sh.Mount(b, V(-1, 0, 0), V(0, 0, 0), V(0, 0, 1));   // b: half of it
+            if (kind == 4) sh.Mount(b, V(1, 0, 0), V(0, 0, 0), V(0, 1, 1));    // b: looking +x - nothing mated
+            return sh.Build().S;
+        }
+        float Util(ShipStructure st) { Array.Clear(st.ExtForce); st.ExtForce[1] = new Vector3(0, 5000f, 0); st.SolveFree(Vector3.Zero); return st.MaxUtil; }
+        float A(ShipStructure st) => st.ContactCount > 0 ? st.JArea[st.Root == 0 ? 1 : 0] : 0f;
+        float uT = Util(Pair(-1, 0.5f));   // (no mount data: the touching face)
+        foreach (float w in new[] { 0f, 0.25f, 0.5f, 1f })
+        {
+            var f = Pair(1, w); float uF = Util(f);
+            Check(f.Components == 1 && MathF.Abs(uF / uT - 1f) < 1e-4f, $"touching share {w}: a fully mated face is the touching face (utilisation {uF:F4} vs {uT:F4})");
+        }
+        var n0 = Pair(4, 0f); var nH = Pair(4, 0.5f); var n1 = Pair(4, 1f);
+        float uN = Util(nH), uN1 = Util(n1);
+        Check(n0.ContactCount == 0 && n0.Components == 2, $"touching share 0: nothing mated - no joint ({n0.ContactCount} contacts)");
+        Check(nH.Components == 1 && nH.UnmatedContacts == 1 && MathF.Abs(A(nH) - 0.5f * 4 * 0.0625f) < 1e-6f && uN > 1.6f * uT && uN < 2.4f * uT,
+            $"touching share 0.5: nothing mated - joined at half (area {A(nH):F4} m2, utilisation {uN:F4} vs {uT:F4} whole)");
+        Check(!n1.HasMounts && MathF.Abs(uN1 / uT - 1f) < 1e-6f, $"touching share 1: the touching face exactly, mount data or not ({uN1:F4} vs {uT:F4})");
+        float uH0 = Util(Pair(2, 0f)), uH25 = Util(Pair(2, 0.25f)), uH5 = Util(Pair(2, 0.5f)), uH75 = Util(Pair(2, 0.75f));
+        var h5 = Pair(2, 0.5f);
+        Check(uH0 > uH25 && uH25 > uH5 && uH5 > uH75 && uH75 > uT * 1.0001f, $"touching share: half mated - weaker as the share falls ({uH0:F4} at 0, {uH25:F4}, {uH5:F4}, {uH75:F4} at 0.75; {uT:F4} whole)");
+        Check(MathF.Abs(A(h5) - (2 + 0.5f * 2) * 0.0625f) < 1e-6f && h5.MatedContacts == 1, $"touching share 0.5: half mated - the joint area the mated cells and half the rest ({A(h5):F4} m2)");
+        ShipStructure.MountJoints = false;
+        try
+        {
+            float uOff = Util(Pair(4, 0.25f));
+            Check(MathF.Abs(uOff / uT - 1f) < 1e-6f, $"touching share: MountJoints off ignores it - the touching face ({uOff:F4} vs {uT:F4})");
+        }
+        finally { ShipStructure.MountJoints = true; ShipStructure.TouchingShare = 0f; }
     }
 
     static void MountsCore()
