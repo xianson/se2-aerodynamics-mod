@@ -149,6 +149,9 @@ static class Program
         foreach (var (rel, which) in new[] { ("Blocks/AeroSurfaceSettingsComponent.cs", "Surfaces"), ("Integration/AeroGearComponent.cs", "Gears"), ("Integration/AeroAirbrakeComponent.cs", "Airbrakes") })
             Check(Text(rel).Contains($"public static string Summary => ServerDevReads.Summary(ServerDevReads.{which});"), $"{rel}: Summary is the server step's (ServerDevReads)");
         Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene && ServerDevReads.Pending != 0) ServerDevReads.Step();"), "ServerDevReads.Step: called from the server grid's own step");
+        // (the per-block save's dev sets / dumps: the server step's, its own scene - AeroBlockSaveDev.cs)
+        Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene && AeroBlockSave.DevPending != 0) AeroBlockSave.DevStep(aero.Data.Scene);"), "AeroBlockSave.DevStep: called from the server grid's own step");
+        Check(!Regex.IsMatch(Text("Dev/AeroBlockSaveDev.cs"), @"\bset\s*\{[^}]*\.All\b"), "AeroBlockSave.DevSet / DevDump: the setters only queue (no block list walked from the harness's thread)");
         DesignSnapshotTests.Run(Check);
 
         Console.WriteLine(_fails == 0 ? $"SceneTests: {_checks}/{_checks} passed" : $"SceneTests: {_fails} of {_checks} FAILED");

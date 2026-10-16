@@ -152,7 +152,7 @@ internal static class AeroSurfaceSaved
                     continue;
                 }
                 best.Pitch = e.p; best.Yaw = e.y; best.Roll = e.r; best.MaxDeflection = e.max; best.Trim = e.trim;
-                _pending.RemoveAt(i);
+                _pending.RemoveAt(i); AeroBlockSave.CountLegacy(AeroBlockSave.KSurface);
                 Log.Default?.Info($"[AERO] control surface setting restored: {best.Describe()}");
             }
             for (int i = _gears.Count - 1; i >= 0; i--)
@@ -173,7 +173,7 @@ internal static class AeroSurfaceSaved
                     continue;
                 }
                 best.Seq.Restore(e.down);   // (down: as built; up: its vanilla wheel goes on its next step)
-                _gears.RemoveAt(i);
+                _gears.RemoveAt(i); AeroBlockSave.CountLegacy(AeroBlockSave.KGear);
                 Log.Default?.Info($"[AERO] gear restored: {(e.down ? "down" : "up")}");
             }
             for (int i = _brakes.Count - 1; i >= 0; i--)
@@ -189,7 +189,7 @@ internal static class AeroSurfaceSaved
                         if (d < bd) { bd = d; best = b; }
                     }
                 if (best == null) { if (now - e.since > 60) _brakes.RemoveAt(i); continue; }
-                best.MaxOpening = e.max; _brakes.RemoveAt(i);
+                best.MaxOpening = e.max; _brakes.RemoveAt(i); AeroBlockSave.CountLegacy(AeroBlockSave.KAirbrake);
                 Log.Default?.Info($"[AERO] airbrake restored: max opening {e.max:F0} deg");
             }
             for (int i = _thrusts.Count - 1; i >= 0; i--)
@@ -201,7 +201,7 @@ internal static class AeroSurfaceSaved
                     foreach (var th in AeroThrustSettingsComponent.All)
                         if (th.Entity != null && !th.RestoredFromBlockData && ReferenceEquals(th.Entity.Data.Scene, scene) && (th.Entity.Data.GetWorldTransform().Position - e.at).Length() < ThrustReach) { th.AttitudeFraction = e.frac; hit++; }
                 if (hit == 0) { if (now - e.since > 60) _thrusts.RemoveAt(i); continue; }
-                _thrusts.RemoveAt(i);
+                _thrusts.RemoveAt(i); AeroBlockSave.CountLegacy(AeroBlockSave.KThrust);
                 _client.Add(new ClientWant { At = e.at, Frac = e.frac, Since = now });   // (its client-scene copy: ClientStep)
                 Log.Default?.Info($"[AERO] thruster restored: attitude fraction {e.frac:F2}");
             }
