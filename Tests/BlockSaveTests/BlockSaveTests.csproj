@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />
+    <Compile Include="$(Sim)\Dev\AeroBlockSaveDevForm.cs" />   <!-- (the harness's set / dump text: DevForm()) -->
     <Reference Include="$(Game2)\VRage.DCS.dll" Private="false" />
     <Reference Include="$(Game2)\Game2.Simulation.dll" Private="false" />
   </ItemGroup>

@@ -31,6 +31,7 @@ static class Program
         Keys();
         Legacy();
         Engine();
+        DevForm();
         Console.WriteLine($"BlockSaveTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
@@ -197,5 +198,50 @@ static class Program
                 Check(eob != null && AeroBlockSaveForm.Find(eob.NamedEntities, key.Substring(0, key.IndexOf(':') + 1)) == key, $"{fmt}: the mod finds its key again");
             }
         }
+    }
+
+    // ── 4. the harness's set requests and dump tokens (Dev/AeroBlockSaveDevForm.cs: test_blocksave.sh) ──
+    static void DevForm()
+    {
+        bool P(string t, out AeroBlockSaveDevForm.SetRequest r) => AeroBlockSaveDevForm.TryParseSet(t, out r, out _);
+        Check(P("SSTO|thrust|3|0.73", out var r) && r.Grid == "SSTO" && r.Kind == AeroBlockSaveDevForm.Kind.Thrust && !r.ByCell && r.Index == 3 && Same(r.Value, 0.73f), "set: thrust by index");
+        Check(P("My_Ship|surface-trim|-4,2,10|-7.5", out r) && r.Grid == "My_Ship" && r.Kind == AeroBlockSaveDevForm.Kind.SurfaceTrim && r.ByCell && r.X == -4 && r.Y == 2 && r.Z == 10 && Same(r.Value, -7.5f), "set: surface trim by cell");
+        Check(P("SSTO|surface-max|0|27", out r) && r.Kind == AeroBlockSaveDevForm.Kind.SurfaceMax && Same(r.Value, 27f), "set: surface max");
+        Check(P("SSTO|airbrake-max|1|12.5", out r) && r.Kind == AeroBlockSaveDevForm.Kind.AirbrakeMax && r.Index == 1, "set: airbrake max");
+        foreach (var (v, down) in new[] { ("up", false), ("down", true), ("0", false), ("1", true), ("UP", false) })
+            Check(P("SSTO|gear|0|" + v, out r) && r.Kind == AeroBlockSaveDevForm.Kind.Gear && r.Flag == down, $"set: gear {v}");
+        foreach (var (v, on) in new[] { ("off", false), ("on", true), ("0", false), ("true", true) })
+            Check(P("SSTO|airshock|0|" + v, out r) && r.Kind == AeroBlockSaveDevForm.Kind.Airshock && r.Flag == on, $"set: airshock {v}");
+        Check(P(" SSTO | THRUST | 0 | 1 ", out r) && r.Grid == "SSTO" && r.Kind == AeroBlockSaveDevForm.Kind.Thrust, "set: trims and case");
+        // (refused, with a reason)
+        foreach (var bad in new[] { null, "", "SSTO", "SSTO|thrust|0", "SSTO|thrust|0|0.5|x", "|thrust|0|0.5", "SSTO|wing|0|1", "SSTO|thrust|-1|0.5",
+                                    "SSTO|thrust|a|0.5", "SSTO|thrust|1,2|0.5", "SSTO|thrust|1,2,x|0.5", "SSTO|thrust|0|1.5", "SSTO|thrust|0|-0.1",
+                                    "SSTO|thrust|0|NaN", "SSTO|surface-trim|0|Infinity", "SSTO|gear|0|sideways", "SSTO|airshock|0|maybe", "SSTO|surface-max|0|1,5" })
+            Check(!AeroBlockSaveDevForm.TryParseSet(bad, out _, out string why) && !string.IsNullOrEmpty(why), $"set refused: '{bad}'");
+        Check(AeroBlockSaveDevForm.BlockKind(AeroBlockSaveDevForm.Kind.Airshock) == "gear" && AeroBlockSaveDevForm.BlockKind(AeroBlockSaveDevForm.Kind.SurfaceMax) == "surface"
+              && AeroBlockSaveDevForm.BlockKind(AeroBlockSaveDevForm.Kind.AirbrakeMax) == "airbrake" && AeroBlockSaveDevForm.BlockKind(AeroBlockSaveDevForm.Kind.Thrust) == "thrust", "set: block kinds");
+        Check(AeroBlockSaveDevForm.NameMatches("My Ship", "My_Ship") && AeroBlockSaveDevForm.NameMatches("SSTO", "SSTO") && !AeroBlockSaveDevForm.NameMatches("SSTO 2", "SSTO")
+              && !AeroBlockSaveDevForm.NameMatches(null, "SSTO"), "grid names as findgrids prints them");
+        Check(AeroBlockSaveDevForm.CompareCells(0, 5, 5, 1, 0, 0) < 0 && AeroBlockSaveDevForm.CompareCells(1, 0, 9, 1, 1, 0) < 0 && AeroBlockSaveDevForm.CompareCells(1, 1, 2, 1, 1, 1) > 0
+              && AeroBlockSaveDevForm.CompareCells(-3, 0, 0, -3, 0, 0) == 0, "cell order x, y, z");
+        // (dump tokens: no spaces - the script splits the answer on them - and every value read back)
+        string s = AeroBlockSaveDevForm.SurfaceToken(-4, 2, 10, 27f, -7.5f, true, false, true, true);
+        Check(s == "surface@-4,2,10=max:27;trim:-7.5;p:1;y:0;r:1;rb:1", $"surface token '{s}'");
+        string g = AeroBlockSaveDevForm.GearToken(1, -2, 3, false, false, true);
+        Check(g == "gear@1,-2,3=down:0;shock:0;rb:1", $"gear token '{g}'");
+        string a = AeroBlockSaveDevForm.AirbrakeToken(0, 0, 0, 12.5f, false), t = AeroBlockSaveDevForm.ThrustToken(5, 6, 7, 0.73f, true);
+        Check(a == "airbrake@0,0,0=max:12.5;rb:0" && t == "thrust@5,6,7=f:0.73;rb:1", $"airbrake / thrust tokens '{a}' '{t}'");
+        Check(AeroBlockSaveDevForm.TokenValue(s, "trim") == "-7.5" && AeroBlockSaveDevForm.TokenValue(g, "down") == "0" && AeroBlockSaveDevForm.TokenValue(t, "f") == "0.73"
+              && AeroBlockSaveDevForm.TokenValue(t, "max") == null && AeroBlockSaveDevForm.TokenValue("nonsense", "f") == null, "token values");
+        foreach (float f in Floats)
+        {
+            string k = AeroBlockSaveDevForm.ThrustToken(0, 0, 0, f, false);
+            Check(!k.Contains(' ') && float.TryParse(AeroBlockSaveDevForm.TokenValue(k, "f"), NumberStyles.Float, C, out float back) && Same(back, f), $"thrust token round trip '{k}'");
+        }
+        var old = System.Threading.Thread.CurrentThread.CurrentCulture;
+        System.Threading.Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
+        Check(AeroBlockSaveDevForm.TryParseSet("SSTO|thrust|0|0.73", out r, out _) && Same(r.Value, 0.73f) && AeroBlockSaveDevForm.ThrustToken(0, 0, 0, 0.73f, false).EndsWith("f:0.73;rb:0"),
+              "invariant culture under a comma locale");
+        System.Threading.Thread.CurrentThread.CurrentCulture = old;
     }
 }

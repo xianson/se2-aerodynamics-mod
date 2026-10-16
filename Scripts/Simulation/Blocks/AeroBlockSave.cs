@@ -27,7 +27,7 @@ namespace AeroMod;
 /// no value takes its server copy's (AeroSurfaceSaved.Follow: by position, as the old lines did); at save, a server copy
 /// still at the default writes a changed client copy's value (the old lines' order: server wins where both changed).
 /// </summary>
-internal static class AeroBlockSave
+internal static partial class AeroBlockSave   // (the dev counters and requests: Dev/AeroBlockSaveDev.cs)
 {
     // (fixed: saved with the block, so the same every load - never from the composition size, which other mods change;
     //  ...a5 is AeroWorldSettingsComponent, ...a6 the unmerged builder prototype)
@@ -57,15 +57,19 @@ public partial class AeroSurfaceSettingsComponent
     [Keen.VRage.DCS.Annotations.Init]
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
-        if (!AeroBlockSaveForm.TryReadSurface(AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.SurfaceKey), out bool p, out bool y, out bool r, out float max, out float trim)) return;
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.SurfaceKey);
+        if (!AeroBlockSaveForm.TryReadSurface(key, out bool p, out bool y, out bool r, out float max, out float trim)) return;
         Pitch = p; Yaw = y; Roll = r; MaxDeflection = max; Trim = trim;
-        RestoredFromBlockData = true;
+        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KSurface, key);
     }
 
     // (every surface, changed or not: the key also says "saved in this form")
     [Keen.VRage.DCS.Annotations.Serializer]
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
-        => ob.NamedEntities = AeroBlockSave.One(AeroBlockSaveForm.Surface(Pitch, Yaw, Roll, MaxDeflection, Trim), Entity);
+    {
+        string key = AeroBlockSaveForm.Surface(Pitch, Yaw, Roll, MaxDeflection, Trim);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KSurface, key);
+    }
 }
 
 public partial class AeroGearComponent
@@ -76,16 +80,20 @@ public partial class AeroGearComponent
     [Keen.VRage.DCS.Annotations.Init]
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
-        if (!AeroBlockSaveForm.TryReadGear(AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.GearKey), out bool down, out bool airshock)) return;
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.GearKey);
+        if (!AeroBlockSaveForm.TryReadGear(key, out bool down, out bool airshock)) return;
         Seq.Restore(down);   // (down: as built; up: its vanilla wheel slides up on its first steps, as the old line's restore)
         AirshockEnabled = airshock;   // (new 2026-10-15: never saved before - a gear from an old save starts on, the default)
-        RestoredFromBlockData = true;
+        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KGear, key);
     }
 
     // (Seq.Down: where it is going - the motion is never saved mid-way, GearSequence.Restore)
     [Keen.VRage.DCS.Annotations.Serializer]
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
-        => ob.NamedEntities = AeroBlockSave.One(AeroBlockSaveForm.Gear(Seq.Down, AirshockEnabled), Entity);
+    {
+        string key = AeroBlockSaveForm.Gear(Seq.Down, AirshockEnabled);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KGear, key);
+    }
 }
 
 public partial class AeroAirbrakeComponent
@@ -96,14 +104,18 @@ public partial class AeroAirbrakeComponent
     [Keen.VRage.DCS.Annotations.Init]
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
-        if (!AeroBlockSaveForm.TryReadAirbrake(AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.AirbrakeKey), out float max)) return;
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.AirbrakeKey);
+        if (!AeroBlockSaveForm.TryReadAirbrake(key, out float max)) return;
         MaxOpening = max;
-        RestoredFromBlockData = true;
+        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KAirbrake, key);
     }
 
     [Keen.VRage.DCS.Annotations.Serializer]
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
-        => ob.NamedEntities = AeroBlockSave.One(AeroBlockSaveForm.Airbrake(MaxOpening), Entity);
+    {
+        string key = AeroBlockSaveForm.Airbrake(MaxOpening);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KAirbrake, key);
+    }
 }
 
 public partial class AeroThrustSettingsComponent
@@ -114,9 +126,10 @@ public partial class AeroThrustSettingsComponent
     [Keen.VRage.DCS.Annotations.Init]
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
-        if (!AeroBlockSaveForm.TryReadThrust(AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.ThrustKey), out float f)) return;
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.ThrustKey);
+        if (!AeroBlockSaveForm.TryReadThrust(key, out float f)) return;
         AttitudeFraction = f;
-        RestoredFromBlockData = true;
+        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KThrust, key);
         // (the client scene's copy of this block: given the value by position once both are in their scenes, unless its
         //  own builder brought it - AeroSurfaceSaved.ApplyPending drops the entry for a client-scene source)
         if (Changed) AeroSurfaceSaved.Follow(this);
@@ -129,7 +142,8 @@ public partial class AeroThrustSettingsComponent
     {
         float f = AttitudeFraction;
         if (!Changed && Server) f = ChangedClientCopy(f);
-        ob.NamedEntities = AeroBlockSave.One(f != DefaultAttitudeFraction ? AeroBlockSaveForm.Thrust(f) : null, Entity);
+        string key = f != DefaultAttitudeFraction ? AeroBlockSaveForm.Thrust(f) : null;
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KThrust, key);
     }
 
     /// <summary>A changed client-scene copy of this block's fraction, else <paramref name="f"/> (save only).</summary>
