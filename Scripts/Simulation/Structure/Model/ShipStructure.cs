@@ -276,7 +276,9 @@ public sealed partial class ShipStructure
             for (int k = 0; k < rects.Count; k++) { int c = rectOf[k]; _rects[_rStart[c] + fillR[c]++] = rects[k]; }
         }
         // the real joints: only the mated mount faces (ShipStructure.Shape.cs)
-        HasMounts = MountJoints && mounts != null && mounts.Count > 0;
+        // (TouchingShare 1: every touching face whole - as with MountJoints off, exactly)
+        HasMounts = MountJoints && TouchingShare < 1f && mounts != null && mounts.Count > 0;
+        _cW = null; _mStart = null; _mRects = null;
         if (HasMounts) contacts = MateContacts(contacts, mounts);
         ContactSections(contacts);
         // adjacency: each pair's largest patch
@@ -505,7 +507,7 @@ public sealed partial class ShipStructure
             foreach (int k in l)
             {
                 var ct = _contacts[k];
-                float t = ContactWall(k), a = ct.U1 - ct.U0, b = ct.V1 - ct.V0;
+                float t = ContactWall(k) * ContactShare(k), a = ct.U1 - ct.U0, b = ct.V1 - ct.V0;
                 float Ak = 2f * (a + b) * t;
                 A += Ak; su += Ak * (ct.U0 + ct.U1) * 0.5f; sv += Ak * (ct.V0 + ct.V1) * 0.5f;
                 u0 = MathF.Min(u0, ct.U0); u1 = MathF.Max(u1, ct.U1); v0 = MathF.Min(v0, ct.V0); v1 = MathF.Max(v1, ct.V1);
@@ -517,7 +519,7 @@ public sealed partial class ShipStructure
             foreach (int k in l)
             {
                 var ct = _contacts[k];
-                float t = ContactWall(k), a = ct.U1 - ct.U0, b = ct.V1 - ct.V0;
+                float t = ContactWall(k) * ContactShare(k), a = ct.U1 - ct.U0, b = ct.V1 - ct.V0;
                 float Ak = 2f * (a + b) * t;
                 float du = (ct.U0 + ct.U1) * 0.5f - cu, dv = (ct.V0 + ct.V1) * 0.5f - cv;
                 // a thin-walled a x b tube: about u (stress across v) t b^3/6 + a t b^2/2; about v, the same with a, b swapped

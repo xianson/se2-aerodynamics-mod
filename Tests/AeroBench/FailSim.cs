@@ -220,6 +220,7 @@ static partial class Program
         //  buckling-limited members' (1 by default); JAGGED 0 - the flat cut)
         // (MOUNTS=1 / MOUNTS=0: the mount-point joints on / off, for A/B - as in 'struct')
         if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";
+        Knob("TOUCH", v => ShipStructure.TouchingShare = v);   // (TOUCH=0..1: the touching-only faces' share with MOUNTS=1)
         Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("BUCK_SHARE", v => StructureFatigue.BucklingFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();

@@ -68,7 +68,7 @@ static partial class Program
         double tH = sw.Elapsed.TotalMilliseconds;
         (sh.Nose, sh.Up) = StructAxes.TryGetValue(sh.Name, out var ax) ? ax : (Vector3.UnitZ, Vector3.UnitY);
         Console.WriteLine($"{sh.Name}: {sh.S.Count} blocks, {sh.S.TotalMass / 1000f:F1} t, {sh.S.CutCount} cuts, {sh.S.Components} piece(s); {sh.H.FaceCount} faces ({miss} on no block) | structure {tS:F0} ms, heat {tH:F0} ms"
-            + (sh.S.HasMounts ? $" | mounts {sh.Mounts.Count}: contacts mated {sh.S.MatedContacts}, touching unmated (dropped) {sh.S.UnmatedContacts}, without mount data {sh.S.UnmountedContacts}" : ""));
+            + (sh.S.HasMounts ? $" | mounts {sh.Mounts.Count}: contacts mated {sh.S.MatedContacts}, touching unmated ({(ShipStructure.TouchingShare > 0f ? $"at {ShipStructure.TouchingShare:F2}" : "dropped")}) {sh.S.UnmatedContacts}, without mount data {sh.S.UnmountedContacts}" : ""));
         return sh;
     }
 
@@ -172,6 +172,7 @@ static partial class Program
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => File.Exists(n) ? n : Path.Combine(dir, n + ".struct")).ToArray() : Directory.GetFiles(dir, "*.struct");
         if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";   // (MOUNTS=1 / 0: the mount joints on / off, for A/B)
+        if (float.TryParse(Environment.GetEnvironmentVariable("TOUCH"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tsv)) ShipStructure.TouchingShare = tsv;   // (TOUCH=0..1: the touching-only faces' share)
         var sea = new AtmosphereState { Density = 1.225, Pressure = 101325, Temperature = 288, SpeedOfSound = 340 };
         foreach (var f in files)
         {

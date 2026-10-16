@@ -17,7 +17,8 @@ namespace AeroMod;
 ///
 /// JOINTS. Without mount data: every face two blocks' cells share (as before), the patch its real rectangles - not their
 /// bounding rectangle. With it: a face carries only where block A has a mount face at (cell c, direction d) and block B one
-/// at (c + d, -d) - the game's own test for placement and connectivity; touching faces with no mated mounts carry nothing.
+/// at (c + d, -d) - the game's own test for placement and connectivity; touching cells with no mated mount carry
+/// TouchingShare of a mated cell's steel (0: nothing - strict mounts; 1: every touching face whole, as without mount data).
 /// A contact's section: the weaker of its two blocks' material over the patch (a shell's walls round the patch outline, a
 /// lattice's cells over its area).
 ///
@@ -40,6 +41,14 @@ public sealed partial class ShipStructure
     //  wing root is 15 armour blocks against the hydrogen tanks' and thrusters' sides, which have no mounts there - 52 cells
     //  -> 13: the wings (10.6 t) leave at 1.9 g on the pull ramp (5.4 g off), in 3.2 s held at 1.0 g. Level flight.)
     public static bool MountJoints = false;
+    /// <summary>With MountJoints and mount data: what a touching face's cells with no mated mount carry - their share of a
+    /// mated cell's steel (strength and stiffness; per cell: a contact's mated cells whole, the rest at this). 0: strict
+    /// mounts (touching-only faces carry nothing); 1: every touching face whole (as without mount data).</summary>
+    // (2026-10-15, the user: full strength where the mounts mate, partial where blocks only touch - mounts matter, but a
+    //  ship should not fall apart over mount detail nobody sees. The A/B, AeroBench fail ssto_m MOUNTS=1 TOUCH=..: the wings
+    //  leave on the pull ramp at 1.9 g at 0, 2.8 at 0.25, 3.7 at 0.5, 4.5 at 0.75, 4.7 at 0.8, 5.4 at 1 (= MountJoints off);
+    //  0.75: the SSTO within 17% of today, a mated face a third stronger than one that only touches)
+    public static float TouchingShare = 0.75f;
 
     /// <summary>Each block's steel fraction (its mass over its cells' volume as steel) - a lattice's smeared density.</summary>
     public float[] Phi;
@@ -289,9 +298,18 @@ public sealed partial class ShipStructure
     /// <summary>Per contact: its section's steel (m2), centroid (m, along u and v), second moments about it (m4), shear wall
     /// (m); each block's plate for buckling (thickness, width: A's, B's).</summary>
     float[] _cA, _cCu, _cCv, _cIuu, _cIvv, _cT, _cTa, _cWa, _cTb, _cWb;
-    /// <summary>(tests, benches) the contacts kept by mated mounts, the ones dropped (touching, nothing mated), and the
-    /// ones kept whole because a block had no mount data.</summary>
+    /// <summary>(tests, benches) the contacts kept by mated mounts (wholly or in part), the ones touching with nothing mated
+    /// (dropped - TouchingShare 0 - or kept at TouchingShare), and the ones kept whole because a block had no mount data.</summary>
     public int MatedContacts, UnmatedContacts, UnmountedContacts;
+    /// <summary>(TouchingShare between 0 and 1) per contact: its touching-only cells' share (1: wholly mated or no mount data);
+    /// the mated cells of a part-mated contact (_mStart; its whole touching patch stays in _rects); the share of steel its
+    /// section kept against the whole touching patch (ContactSections: the joint's stiffness and shear wall scale by it).
+    /// Null: no contact carries a share.</summary>
+    float[] _cW, _cK;
+    int[] _mStart;
+    List<Rect> _mRects;
+    /// <summary>A contact's steel against its whole touching patch (1 but for TouchingShare's part-mated and touching ones).</summary>
+    float ContactShare(int k) => _cK != null ? _cK[k] : 1f;
 
     /// <summary>The contacts through mated mount faces only: per touching patch, the lower block's mount faces looking up
     /// (+axis) at layer P against the upper block's looking down (-axis) at P + 1 - their overlap is the joint; none, the
@@ -307,6 +325,10 @@ public sealed partial class ShipStructure
         for (int k = 0; k < mounts.Count; k++) { int b = mounts[k].block; if ((uint)b < (uint)n) mIdx[mStart[b] + fill[b]++] = k; }
         var outC = new List<Contact>(contacts.Count); var outR = new List<Rect>(_rects.Count); var start = new List<int>(contacts.Count + 1) { 0 };
         MatedContacts = UnmatedContacts = UnmountedContacts = 0;
+        // (TouchingShare: the touching-only cells kept at tw - a part-mated contact keeps its whole patch, its mated cells aside)
+        float tw = Math.Clamp(TouchingShare, 0f, 1f);
+        List<float> cw = null; List<int> mStart1 = null; List<Rect> mR = null;
+        if (tw > 0f) { cw = new List<float>(contacts.Count); mStart1 = new List<int>(contacts.Count + 1) { 0 }; mR = new List<Rect>(); }
         for (int ci = 0; ci < contacts.Count; ci++)
         {
             var c = contacts[ci];
@@ -315,6 +337,7 @@ public sealed partial class ShipStructure
             {
                 for (int q = _rStart[ci]; q < _rStart[ci + 1]; q++) outR.Add(_rects[q]);
                 outC.Add(c); start.Add(outR.Count); UnmountedContacts++;
+                if (cw != null) { cw.Add(1f); mStart1.Add(mR.Count); }
                 continue;
             }
             int ax = c.Axis, u = (ax + 1) % 3, v = (ax + 2) % 3, r0 = outR.Count;
@@ -334,11 +357,37 @@ public sealed partial class ShipStructure
                     bu0 = Math.Min(bu0, a0); bu1 = Math.Max(bu1, a1); bv0 = Math.Min(bv0, b0); bv1 = Math.Max(bv1, b1); cells += (a1 - a0 + 1) * (b1 - b0 + 1);
                 }
             }
-            if (cells == 0) { UnmatedContacts++; continue; }   // (touching, nothing mated: no joint)
+            if (cells == 0) UnmatedContacts++; else MatedContacts++;
+            if (tw > 0f)
+            {
+                int total = 0;
+                for (int q = _rStart[ci]; q < _rStart[ci + 1]; q++) { var t = _rects[q]; total += (t.U1 - t.U0 + 1) * (t.V1 - t.V0 + 1); }
+                if (cells < total)
+                {
+                    // (part mated or only touching, at TouchingShare: the whole patch, its mated cells aside - the section weighs
+                    //  them whole and the rest at tw; the outline (the members' stress points, the torsion box) from the mated
+                    //  cells' to the touching one's by tw - the whole patch's outline at a small share put a stress point far out
+                    //  on cells that carry next to nothing: weaker at 0.25 than at 0)
+                    for (int q = r0; q < outR.Count; q++) mR.Add(outR[q]);
+                    outR.RemoveRange(r0, outR.Count - r0);
+                    for (int q = _rStart[ci]; q < _rStart[ci + 1]; q++) outR.Add(_rects[q]);
+                    if (cells > 0)
+                    {
+                        float mu0 = (bu0 - 0.5f) * Cell, mu1 = (bu1 + 0.5f) * Cell, mv0 = (bv0 - 0.5f) * Cell, mv1 = (bv1 + 0.5f) * Cell;
+                        c.U0 = mu0 + tw * (c.U0 - mu0); c.U1 = mu1 + tw * (c.U1 - mu1); c.V0 = mv0 + tw * (c.V0 - mv0); c.V1 = mv1 + tw * (c.V1 - mv1);
+                    }
+                    c.Area = (cells + tw * (total - cells)) * Cell * Cell;
+                    outC.Add(c); start.Add(outR.Count); cw.Add(tw); mStart1.Add(mR.Count);
+                    continue;
+                }
+            }
+            if (cells == 0) continue;   // (touching, nothing mated: no joint)
             c.U0 = (bu0 - 0.5f) * Cell; c.U1 = (bu1 + 0.5f) * Cell; c.V0 = (bv0 - 0.5f) * Cell; c.V1 = (bv1 + 0.5f) * Cell; c.Area = cells * Cell * Cell;
-            outC.Add(c); start.Add(outR.Count); MatedContacts++;
+            outC.Add(c); start.Add(outR.Count);
+            if (cw != null) { cw.Add(1f); mStart1.Add(mR.Count); }
         }
         _rects = outR; _rStart = start.ToArray();
+        if (cw != null) { _cW = cw.ToArray(); _mStart = mStart1.ToArray(); _mRects = mR; }
         return outC;
     }
 
@@ -349,6 +398,8 @@ public sealed partial class ShipStructure
         int nc = contacts.Count;
         _cA = new float[nc]; _cCu = new float[nc]; _cCv = new float[nc]; _cIuu = new float[nc]; _cIvv = new float[nc]; _cT = new float[nc];
         _cTa = new float[nc]; _cWa = new float[nc]; _cTb = new float[nc]; _cWb = new float[nc];
+        _cK = null;
+        if (_cW != null) { _cK = new float[nc]; for (int k = 0; k < nc; k++) _cK[k] = 1f; }
         for (int k = 0; k < nc; k++)
         {
             var c = contacts[k];
@@ -358,6 +409,24 @@ public sealed partial class ShipStructure
             if (Thick[c.A] == 0f || Thick[c.B] == 0f) Outline(_rects, s, e, out oL, out oU, out oV, out oIu, out oIv);
             if (Thick[c.A] > 0f || Thick[c.B] > 0f) Solid(_rects, s, e, out sA, out sU, out sV, out sIu, out sIv);
             bool la = Thick[c.A] > 0f, lb = Thick[c.B] > 0f;
+            // (TouchingShare: the mated cells whole, the rest of the patch at w - (1 - w) of the mated cells' section plus w
+            //  of the whole patch's)
+            float wk = _cW != null ? _cW[k] : 1f, oL0 = oL, sA0 = sA;
+            if (wk < 1f)
+            {
+                int ms = _mStart[k], me = _mStart[k + 1];
+                float mL = 0f, mU = 0f, mV = 0f, mIu = 0f, mIv = 0f;
+                if (Thick[c.A] == 0f || Thick[c.B] == 0f)
+                {
+                    if (me > ms) Outline(_mRects, ms, me, out mL, out mU, out mV, out mIu, out mIv);
+                    Blend(wk, mL, mU, mV, mIu, mIv, ref oL, ref oU, ref oV, ref oIu, ref oIv);
+                }
+                if (Thick[c.A] > 0f || Thick[c.B] > 0f)
+                {
+                    if (me > ms) Solid(_mRects, ms, me, out mL, out mU, out mV, out mIu, out mIv); else mL = mU = mV = mIu = mIv = 0f;
+                    Blend(wk, mL, mU, mV, mIu, mIv, ref sA, ref sU, ref sV, ref sIu, ref sIv);
+                }
+            }
             float aA = la ? sA : oL, uA = la ? sU : oU, vA = la ? sV : oV, iuA = la ? sIu : oIu, ivA = la ? sIv : oIv;
             float aB = lb ? sA : oL, uB = lb ? sU : oU, vB = lb ? sV : oV, iuB = lb ? sIu : oIu, ivB = lb ? sIv : oIv;
             Scale(c.A, ref aA, ref iuA, ref ivA, out float tA);
@@ -365,9 +434,31 @@ public sealed partial class ShipStructure
             if (aA <= aB) { _cA[k] = aA; _cCu[k] = uA; _cCv[k] = vA; _cIuu[k] = iuA; _cIvv[k] = ivA; }
             else { _cA[k] = aB; _cCu[k] = uB; _cCv[k] = vB; _cIuu[k] = iuB; _cIvv[k] = ivB; }
             _cT[k] = MathF.Min(tA, tB);
+            if (wk < 1f)
+            {
+                // (the steel kept against the whole touching patch: the joint's stiffness and shear wall scale by it)
+                bool lw = aA <= aB ? la : lb; float whole = lw ? sA0 : oL0;
+                float kk = whole > 0f ? (lw ? sA : oL) / whole : 0f;
+                _cK[k] = kk; _cT[k] *= kk;
+            }
             Plate(c.A, c.Axis, c.P, c.SideB > 0 ? -1 : 1, out _cTa[k], out _cWa[k]);
             Plate(c.B, c.Axis, c.P, c.SideB > 0 ? 1 : -1, out _cTb[k], out _cWb[k]);
         }
+    }
+
+    /// <summary>A section of a patch (its steel, centroid, second moments about it) as (1 - w) of its mated cells' (m*) plus w
+    /// of the whole patch's (in: the whole patch's; out: the blend) - per cell, the mated whole and the rest at w.</summary>
+    static void Blend(float w, float mA, float mU, float mV, float mIu, float mIv, ref float A, ref float cu, ref float cv, ref float iuu, ref float ivv)
+    {
+        double wm = 1.0 - w, tA = wm * mA + (double)w * A;
+        if (tA <= 1e-12) { A = cu = cv = iuu = ivv = 0f; return; }
+        // (moments about the whole patch's centroid)
+        double du = mU - cu, dv = mV - cv;
+        double su = wm * mA * du, sv = wm * mA * dv;
+        double svv = wm * (mIu + mA * dv * dv) + (double)w * iuu, suu = wm * (mIv + mA * du * du) + (double)w * ivv;
+        double ou = su / tA, ov = sv / tA;
+        A = (float)tA; cu = (float)(cu + ou); cv = (float)(cv + ov);
+        iuu = (float)Math.Max(svv - tA * ov * ov, 0); ivv = (float)Math.Max(suu - tA * ou * ou, 0);
     }
 
     /// <summary>The cells block b has on both sides of the plane between layers p and p + 1 (its own material across it) into
