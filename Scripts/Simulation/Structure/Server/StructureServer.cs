@@ -106,6 +106,9 @@ public partial class AeroGridComponent
     /// <summary>Bumped by every block change (AeroGridComponent.OnBlocksChangedCore): the structure is rebuilt when it moved.</summary>
     internal int StructBlockVersion;
     int _stVersion = -1;
+    /// <summary>AeroSwitch.Generation at the last rebuild: a setting marked Rebuild (Structure.MountJoints, TouchingShare)
+    /// rebuilds the structure too - it only rebuilt on block changes, so a joint setting waited for the next one (2026-10-15).</summary>
+    int _stGen;
 
     void TickStructureCore(Vector3 forceLocal, Vector3 torqueLocal, Vector3 airVelLocal, float liftScale)
     {
@@ -136,9 +139,9 @@ public partial class AeroGridComponent
 
         // the blocks: a rebuild when they changed (after the cooldown)
         StructBuildInput build = null;
-        if ((StructBlockVersion != _stVersion || _st == null) && _stCooldown <= 0f)
+        if ((StructBlockVersion != _stVersion || _st == null || _stGen != AeroSwitch.Generation) && _stCooldown <= 0f)
         {
-            _stVersion = StructBlockVersion; _stCooldown = StructureLoads.RebuildCooldown;
+            _stVersion = StructBlockVersion; _stGen = AeroSwitch.Generation; _stCooldown = StructureLoads.RebuildCooldown;
             build = SnapshotBlocks();
             if (build.Blocks.Count == 0) build = null;
         }

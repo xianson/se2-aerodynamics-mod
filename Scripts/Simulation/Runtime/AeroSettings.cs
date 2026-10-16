@@ -160,6 +160,13 @@ public static partial class AeroSettings
         B("Structure.BySection", "world", false, () => StructureEval.BySection, v => StructureEval.BySection = v,
             "A ship's weak neck wears and fails across its whole section at once - every block across the overloaded cut together, and what hangs from it leaves in one go. Off: block by block, the most loaded first (a fracture creeps along the neck).")
             .Ui("Fail whole sections", GStructure, Advanced);
+        // (2026-10-15: a change rebuilds every grid - the structure's joints are made at its build)
+        B("Structure.MountJoints", "world", true, () => ShipStructure.MountJoints, v => ShipStructure.MountJoints = v,
+            "Blocks join at full strength only where their mount points mate (the game's own connection test); faces that only touch - armour pressed against a tank's or a thruster's side - carry Structure.TouchingShare of that. Off: every touching face at full strength. Rebuilds every grid.")
+            .Ui("Joints by mount points", GStructure, Advanced);
+        F("Structure.TouchingShare", "world", 0, 1, true, () => ShipStructure.TouchingShare, v => ShipStructure.TouchingShare = (float)v,
+            "With Structure.MountJoints: the strength (and stiffness) of a face that only touches, with no mated mount point, as a share of a mated one's (0: carries nothing; 1: as strong as mated). Rebuilds every grid.")
+            .Ui("Touching face strength", GStructure, Advanced, "", 0.05);
         F("Structure.CrackSeconds", "world", 0.05, 3, false, () => FractureMath.CrackSeconds, v => FractureMath.CrackSeconds = (float)v,
             "Seconds a crack takes to run across a failing section, from its first block letting go to the last (the hinge). With Structure.Crack.")
             .Ui("Crack run time", GStructure, Advanced, "s", 0.05);
