@@ -172,7 +172,11 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
    (`CrumpleDepth` 0.15 m toward the cut, at most `CrumpleMax` 0.25 m with the dents), puffs smoke along it
    (`CrackSmokes` 3), and bumps `StructureLoads.Breaks` per release (creaks / jolts). `FinishCrack` stamps the separation
    watch; `CheckCutSeparated` spares the stubs at first and destroys what still holds one from beyond the line, then falls
-   back to the plane's rule.
+   back to the plane's rule. Since 2026-10-17 it also asks the game: seed blocks just beyond and just behind the broken line
+   both still in this grid's octree = still joined (`CutWatch.Joined`) - then it is forced again, round after round
+   (`CutWatch.MaxRounds` 4), with the octree walked from the far side for whatever holds it anywhere (`CutHolders`), and a
+   cut it cannot part is logged ("given up"), never dropped quietly. `Gone` treats a block out of this grid's octree (split
+   away - the game clones the piece) as gone, so no damage call goes to a stale block ("Data not found").
 3. **The peel** (`StructureTear`): up to `MaxAnchors` (6) springs picked over the failed members' places
    (`TearMath.PickAnchors`: the hinge, the crack's origin, the farthest), each its own position motor and its own end
    (`TearMath.AnchorEnd`: the origin's at `PeelFirst` 0.35 of `TearSeconds`, the hinge's at `TearSeconds`); the start hold
