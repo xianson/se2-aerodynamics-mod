@@ -345,7 +345,7 @@ public partial class AeroGridComponent
     {
         List<CubeBlockComponent> far = null, near = null;
         foreach (var b in hw.Reached) { if (holders.Contains(b) || Gone(b)) continue; (far ??= new()).Add(b); if (far.Count >= SeedMax) break; }
-        foreach (var b in hw.NearHit) { if (Gone(b)) continue; (near ??= new()).Add(b); if (near.Count >= SeedMax) break; }
+        foreach (var b in hw.NearHit) { if (Gone(b) || holders.Contains(b)) continue; (near ??= new()).Add(b); if (near.Count >= SeedMax) break; }   // (an engine's mount being broken: no seed)
         if (far != null) v.Far = far;
         if (near != null) v.Near = near;
     }
@@ -362,6 +362,7 @@ public partial class AeroGridComponent
         public OctreeHolders(AeroGridComponent g) { _g = g; }
         protected override void Started() => NearHit.Clear();
         protected override bool Leaves(CubeBlockComponent b) => CutLeaves(V, b);
+        protected override bool Kept(CubeBlockComponent b) => KeptWhole(b);
         protected override void Joined(CubeBlockComponent b, List<CubeBlockComponent> into)
         {
             var oct = _g._octree;
@@ -413,11 +414,15 @@ public partial class AeroGridComponent
                 if (v.Side > 0 ? kn <= k0 : kn > k0) continue;   // (on the ship's side of the plane)
                 var o = _octree.TryGetCubeBlock(nc);
                 if (o == null || ReferenceEquals(o, s) || Gone(o) || v.Stubs.Contains(o) || !Mated(s, o, fa, sg)) continue;
-                held++; into?.Add(o);
+                held++; into?.Add(into != null && KeptWhole(o) && !KeptWhole(s) ? s : o);   // (an engine holding it: the stub - its mount - instead)
             }
         }
         return held;
     }
+
+    /// <summary>RIGID THRUSTERS (2026-10-17, ShipStructure.Rigid): an engine is kept whole by the cut's watch - its mount breaks
+    /// instead (Bridges, BeyondStub, OctreeHolders).</summary>
+    static bool KeptWhole(CubeBlockComponent b) => ShipStructure.RigidThrusters && IsThrusterBlock(b);
 
     /// <summary>The blocks of this grid still joined across a watched cut's plane in its cross-section (into: added; null:
     /// only counted). Returns the pairs of two blocks face to face AND MOUNTED found (Mated - an armour block against a tank's
@@ -438,10 +443,18 @@ public partial class AeroGridComponent
             var b0 = _octree.TryGetCubeBlock(c0); var b1 = _octree.TryGetCubeBlock(c1);
             if (b0 == null || b1 == null || Gone(b0) || Gone(b1)) continue;
             if (spare && (v.Stubs.Contains(b0) || v.Stubs.Contains(b1))) continue;
-            if (ReferenceEquals(b0, b1)) { into?.Add(b0); continue; }   // (one block across the plane)
+            // (RIGID THRUSTERS, 2026-10-17: an engine is never what a forced cut breaks - its mount across the plane is; one
+            //  across the plane alone is left to the holders' walk, which breaks its mounts - ShipStructure.Rigid, KeptWhole)
+            if (ReferenceEquals(b0, b1)) { if (into != null && !KeptWhole(b0)) into.Add(b0); continue; }   // (one block across the plane)
             if (!Mated(b0, b1, ax, 1)) continue;   // (touching, not mounted: never joined)
             pairs++;
-            if (into != null) { into.Add(b0); into.Add(b1); }   // (two blocks face to face across it)
+            if (into != null)
+            {
+                // (two blocks face to face across it - both, unless one is an engine on the other)
+                bool e0 = KeptWhole(b0), e1 = KeptWhole(b1);
+                if (!e0 || e1) into.Add(b0);
+                if (!e1 || e0) into.Add(b1);
+            }
         }
         if (spare) foreach (var sb in v.Stubs) pairs += BeyondStub(sb, v, k0, into);
         return pairs;

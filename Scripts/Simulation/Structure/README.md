@@ -9,7 +9,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 
 | File | What |
 |---|---|
-| `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. |
+| `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. Thrusters are rigid (2026-10-17, `Thruster`, `RigidThrusters`): never worn or failed inside, a joint to one is its mount's - the mount breaks (`Breaks`) and the engine leaves whole. |
 | `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). |
 | `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate; compression at `BucklingFatigueShare` 1 for a buckling-limited member, `CompressionFatigueShare` 0.2 for a stocky one: `TensilePart`, `CompressionShare`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
 | `StructureBend.cs` | Permanent bends: which joints set, the far side, the displacement. |

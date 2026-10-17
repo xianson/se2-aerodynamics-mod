@@ -96,6 +96,34 @@ public sealed partial class ShipStructure
     /// <summary>The health (fraction of full) block b fails at: its own threshold, never under BreakBelow.</summary>
     public float FloorOf(int b) => BreakAt != null && b >= 0 && b < BreakAt.Length ? MathF.Max(BreakAt[b], StructureFatigue.BreakBelow) : StructureFatigue.BreakBelow;
 
+    /// <summary>RIGID THRUSTERS (2026-10-17, the user: "Engines shouldn't get damaged by their own structural thrust force,
+    /// they're designed to withstand their own loads. It's just if the pylons can't handle it or the wing that things should
+    /// break." - Turboprop_150s "broke (utilisation 2.4-2.8)" and "split at its failing face ..., gone" on their own thrust).
+    /// Each block is a thruster (the game's ThrusterComponent - the blocks thrust is put on; null: none). A thruster's
+    /// interior is rigid: straddling a slice it is still its section's material, but never a failure candidate and never
+    /// worn (utilisation 0); a joint between it and a non-thruster is its MOUNT's - that block's strength alone, and that
+    /// block breaks when the joint fails (Breaks), so the engine leaves whole with what it hangs on; a cut it bridges breaks
+    /// its mounts across the plane instead (StructureEval.DamageBySection). Every load inside it, not only its own thrust:
+    /// what crosses its interior (an engine between a wing and a tip pod carries the pod) comes in and goes out through its
+    /// joints, which carry the same load and are checked - and telling thrust apart would take a second solve. The loads on
+    /// its neighbours are unchanged; heat, impacts and weapons (the game's own damage) still destroy it. A joint between two
+    /// thrusters is an ordinary joint (no mount to break instead).</summary>
+    public bool[] Thruster;
+    public static bool RigidThrusters = true;
+    public bool IsThruster(int b) => Thruster != null && (uint)b < (uint)Thruster.Length && Thruster[b];
+    /// <summary>Block b is a rigid thruster (RigidThrusters).</summary>
+    public bool Rigid(int b) => RigidThrusters && IsThruster(b);
+    /// <summary>Of a joint's two blocks, a's side is left out: a is a rigid thruster, b is not (b - its mount - carries it).</summary>
+    bool RigidSide(int a, int b) => Rigid(a) && !Rigid(b);
+    /// <summary>A joint's strength (Pa): the weaker block's - against a rigid thruster, its mount's own.</summary>
+    public float JointStrength(int a, int b) => RigidSide(a, b) ? BlockStrength(b) : RigidSide(b, a) ? BlockStrength(a) : MathF.Min(BlockStrength(a), BlockStrength(b));
+    /// <summary>The block a contact's failure breaks: Outboard - or, that being a rigid thruster on a non-thruster, the mount.</summary>
+    public int Breaks(int k)
+    {
+        int o = Outboard(k), a = _contacts[k].A, b = _contacts[k].B, m = o == a ? b : a;
+        return RigidSide(o, m) ? m : o;
+    }
+
     // ── the tree ──
     /// <summary>Parent block (-1: a root).</summary>
     public int[] Parent;
@@ -712,9 +740,7 @@ public sealed partial class ShipStructure
                     if (sgm > sMax) sMax = sgm;
                 }
                 float vm = MathF.Sqrt(sMax * sMax + 3f * tau * tau);
-                float sa = BlockStrength(ct.A);
-                float sb = BlockStrength(ct.B);
-                float util = vm / (MathF.Min(sa, sb) * Strength);
+                float util = vm / (JointStrength(ct.A, ct.B) * Strength);
                 ContactUtil[k] = util;
                 if (util > MaxUtil) { MaxUtil = util; MaxContact = k; }
             }

@@ -434,6 +434,9 @@ public sealed partial class ShipStructure
                         if (s > sTen) sTen = s; else if (-s > sCom) sCom = -s;
                     }
                     int what = _mWhat[mi];
+                    // (RIGID THRUSTERS, 2026-10-17: a thruster across the plane is rigid - its section's material, its stress
+                    //  at its corners as before, but no utilisation: never worn, never failing; its mounts carry it)
+                    if (what < 0 && Rigid(-what - 1)) continue;
                     float strength, comp;
                     // tension against the yield; compression against what the plates carry buckled (Buckled) - each block's
                     // own: a shell's wall over its face there, a lattice's own depth over its width
@@ -442,6 +445,10 @@ public sealed partial class ShipStructure
                         var c = _contacts[what];
                         float sa = BlockStrength(c.A), sb = BlockStrength(c.B);
                         strength = MathF.Min(sa, sb);
+                        // (a rigid thruster's mount: its own strength and its own plates - RIGID THRUSTERS, 2026-10-17)
+                        if (RigidSide(c.A, c.B)) { strength = sb; comp = Buckled(sb, _mTb[mi], _mWb[mi]); }
+                        else if (RigidSide(c.B, c.A)) { strength = sa; comp = Buckled(sa, _mTa[mi], _mWa[mi]); }
+                        else
                         comp = OwnWall ? MathF.Min(Buckled(sa, _mTa[mi], _mWa[mi]), Buckled(sb, _mTb[mi], _mWb[mi]))
                             : Buckled(strength, MathF.Min(_mTa[mi], _mTb[mi]), PanelSmaller ? MathF.Min(_mWa[mi], _mWb[mi]) : MathF.Max(_mWa[mi], _mWb[mi]));
                     }
@@ -499,9 +506,10 @@ public sealed partial class ShipStructure
     public int PieceSide(int mi) { float s = PieceMidStress(mi); return s > 0f ? 1 : s < 0f ? -1 : 0; }
     /// <summary>A piece's contact (-1: a straddling block - PieceBlock).</summary>
     public int PieceContact(int mi) => _mWhat[mi] >= 0 ? _mWhat[mi] : -1;
-    /// <summary>The block a piece's failure takes off the ship: a patch's block on the slice's lighter side (Outboard), a
-    /// straddling block itself (cut across its own middle).</summary>
-    public int PieceBlock(int mi) => _mWhat[mi] >= 0 ? Outboard(_mWhat[mi]) : -_mWhat[mi] - 1;
+    /// <summary>The block a piece's failure takes off the ship: a patch's block on the slice's lighter side (Outboard) - a
+    /// rigid thruster's mount instead (Breaks, 2026-10-17) - a straddling block itself (cut across its own middle; a rigid
+    /// thruster never fails there: StructureEval.DamageBySection breaks its mounts across the plane).</summary>
+    public int PieceBlock(int mi) => _mWhat[mi] >= 0 ? Breaks(_mWhat[mi]) : -_mWhat[mi] - 1;
     /// <summary>A piece's middle on its plane (m, grid-local).</summary>
     public Vector3 PiecePoint(int mi)
     {

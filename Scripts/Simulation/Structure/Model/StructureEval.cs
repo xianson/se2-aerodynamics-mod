@@ -333,12 +333,10 @@ public static class StructureEval
             for (int k = 0; k < st.ContactCount; k++)
             {
                 float u = st.ContactUtil[k]; if (!(u > from)) continue;
-                int b = st.Outboard(k);
+                int b = st.Breaks(k);
                 if (over.TryGetValue(b, out var o) && u <= o.u) continue;
-                var at = st.ContactPoint(k); var into = st.Center[b] - at;
-                st.ContactBlocks(k, out int ca, out int cb);
-                float sb = st.BlockStrength(b);
-                over[b] = (u, at, into.LengthSquared() > 1e-8f ? Vector3.Normalize(into) : Vector3.UnitY, sb > 0f ? st.BlockStrength(ca == b ? cb : ca) / sb : float.MaxValue);
+                var at = st.ContactPoint(k); var into = st.Center[st.Outboard(k)] - at;
+                over[b] = (u, at, into.LengthSquared() > 1e-8f ? Vector3.Normalize(into) : Vector3.UnitY, Cap(st, k, b));
             }
             if (st.BlockUtil != null)
                 for (int b = 0; b < n; b++)
@@ -435,8 +433,8 @@ public static class StructureEval
                 float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
                 // (cap: a patch's other block's strength over this one's now - the patch is the weaker of the two, so this
                 //  block's health lost raises its utilisation only once it is the weaker; a straddling block's own: none)
-                float cap = float.MaxValue; int k = st.PieceContact(mi);
-                if (k >= 0) { st.ContactBlocks(k, out int ca, out int cb); float sb = st.BlockStrength(b); cap = sb > 0f ? st.BlockStrength(ca == b ? cb : ca) / sb : float.MaxValue; }
+                int k = st.PieceContact(mi);
+                float cap = k >= 0 ? Cap(st, k, b) : float.MaxValue;
                 // (TENSION DRIVES FATIGUE, 2026-10-15: a stocky member pushed more than pulled tires slower - StructureFatigue
                 //  .TensilePart; a buckling-limited one's push tires it as a pull would - its plates buckle and un-buckle)
                 float loss = StructureFatigue.Loss(st.Mat[b], u, have, cap, dt, breakUtil, wearPerSecond, out float uIntact, StructureFatigue.TensilePart(st.PieceTension(mi), st.PieceCompression(mi), u),
@@ -506,6 +504,26 @@ public static class StructureEval
             for (int mi = m0; mi < m1; mi++)
             {
                 int b = jb != null ? jb[mi - m0] : st.PieceBlock(mi);
+                // (RIGID THRUSTERS, 2026-10-17: an engine across the cut stays whole - its mounts on the other side of the plane
+                //  break, and it leaves with the side its centre is on)
+                if (st.PieceContact(mi) < 0 && st.Rigid(b))
+                {
+                    if (adjStart == null) StructureBend.Adjacency(st, out adjStart, out adjOther);
+                    int sd = ShipStructure.C(cf.Dir, cf.Axis) > 0f ? 1 : -1;
+                    bool tLeaves = (ShipStructure.C(st.Center[b], cf.Axis) - cf.Plane) * sd > 0f;
+                    for (int e = adjStart[b]; e < adjStart[b + 1]; e++)
+                    {
+                        int j = adjOther[e];
+                        if ((ShipStructure.C(st.Center[j], cf.Axis) - cf.Plane) * sd > 0f == tLeaves || !failed.Add(j)) continue;
+                        float hj = j < st.Integrity.Length ? st.Integrity[j] : 1f;
+                        outDamage.Add((j, MathF.Max(hj, 0f), true)); (lost ??= new())[j] = hj;
+                        var atj = Vector3.Clamp(st.Center[j], st.Lo[b], st.Hi[b]);   // (on the engine's face toward its mount)
+                        outWhere?.Add((atj, cf.Dir, 0f));
+                        eMode.Add(FractureMath.Torn); eU.Add(0f); eUc.Add(0f); eAt.Add(atj); eOwn.Add(j);
+                        RigidMountsBroken++;
+                    }
+                    continue;
+                }
                 if (!failed.Add(b)) continue;   // (in an earlier failed cut too, or two members' steps into one block: once)
                 float have = b < st.Integrity.Length ? st.Integrity[b] : 1f;
                 outDamage.Add((b, MathF.Max(have, 0f), true)); (lost ??= new())[b] = have;
@@ -575,6 +593,20 @@ public static class StructureEval
         }
         return lost;
     }
+
+    /// <summary>A patch's fatigue cap for its breaking block b (StructureFatigue.Loss): the other block's strength over b's -
+    /// the patch is the weaker of the two, so b's health lost raises its utilisation only once b is the weaker; none against a
+    /// rigid thruster (its mount's strength alone: ShipStructure.JointStrength).</summary>
+    static float Cap(ShipStructure st, int k, int b)
+    {
+        st.ContactBlocks(k, out int ca, out int cb);
+        int o = ca == b ? cb : ca;
+        if (st.Rigid(o) && !st.Rigid(b)) return float.MaxValue;
+        float sb = st.BlockStrength(b);
+        return sb > 0f ? st.BlockStrength(o) / sb : float.MaxValue;
+    }
+    /// <summary>Diagnostics: a rigid thruster's mounts broken across a failed cut it bridged (DamageBySection).</summary>
+    public static int RigidMountsBroken;
 
     /// <summary>Most blocks a failed cut's far side is walked over (DamageBySection: what leaves with it).</summary>
     public static int LeavingMax = 20000;

@@ -69,6 +69,7 @@ public partial class AeroGridComponent
             AddMounts(block, idx, b.Mounts);
             b.Mat.Add(StructMaterial.Classify(name));
             b.BreakAt.Add(DestructionThreshold(block));
+            b.Thruster.Add(IsThrusterBlock(block));   // (rigid in the structure: ShipStructure.Thruster)
         }
         if (StructureLoads.DumpNext) { StructureLoads.DumpNext = false; DumpStructure(b); }
         return b;
@@ -144,6 +145,10 @@ public partial class AeroGridComponent
         return "block";
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, string> _defName = new();
+
+    /// <summary>A thruster block: its entity has the game's ThrusterComponent - the test the thruster cache (and so the thrust
+    /// loads, OffsetThrustJob.RebuildThrusterCache) finds thrusters by: atmospheric, hydrogen, ion and the mods' engines.</summary>
+    static bool IsThrusterBlock(CubeBlockComponent b) => b?.Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null;
 
     /// <summary>A block's DestructionThreshold (its definition's; per definition, cached; 0 if unreadable).</summary>
     static float DestructionThreshold(CubeBlockComponent b)

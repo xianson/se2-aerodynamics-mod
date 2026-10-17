@@ -1662,7 +1662,10 @@ static class Program
         public HNode[] Nodes; public List<int>[] Adj; public Func<int, bool> Live, LeavesOf;
         /// <summary>A joint the game holds that the mounts' test misses (a with b); found by touch only (the last round).</summary>
         public int TouchA = -1, TouchB = -1; public bool Touch;
+        /// <summary>(RIGID THRUSTERS) blocks never broken - an engine: its mounts instead.</summary>
+        public Func<int, bool> KeptOf;
         protected override bool Leaves(HNode b) => LeavesOf(b.I);
+        protected override bool Kept(HNode b) => KeptOf != null && KeptOf(b.I);
         protected override void Joined(HNode b, List<HNode> into)
         {
             foreach (int j in Adj[b.I])
@@ -1864,6 +1867,128 @@ static class Program
         Check(runs[2, 1] >= 40 && parted[2, 1] == runs[2, 1] && gaveUp[2, 1] == 0 && retried[2, 1] >= runs[2, 1] && maxRounds <= CutWatch.MaxRounds, $"cut always separates: a cut whose force broke nothing stays watched and is forced again until it parts ({parted[2, 1]} of {runs[2, 1]} parted, {retried[2, 1]} rounds after an empty or unparted force, at most {maxRounds} of {CutWatch.MaxRounds} rounds, {gaveUp[2, 1]} given up; old: {parted[2, 0]} parted)");
         Check(runs[0, 1] >= 40 && parted[0, 1] == runs[0, 1] && forced[0, 1] == 0 && stubsTaken[0, 1] == 0, $"cut always separates: with nothing hidden the new watch forces nothing - the seeds credit the cut's own split ({parted[0, 1]} of {runs[0, 1]} parted, {forced[0, 1]} forced, {stubsTaken[0, 1]} stubs taken)");
     }
+    /// <summary>20. RIGID THRUSTERS (2026-10-17, the user: "Engines shouldn't get damaged by their own structural thrust force,
+    /// they're designed to withstand their own loads. It's just if the pylons can't handle it or the wing that things should
+    /// break."). (a) An engine on a pylon under a wing, its thrust ramped past what the engine-pylon joint holds, evaluated at 4
+    /// Hz (health, solve, damage, what fails removed): the engine never loses health; the pylon breaks at that joint and the
+    /// engine leaves whole - off (the old rule) the engine itself broke there. (b) An engine across a slice of a lifted boom:
+    /// no utilisation inside it (rigid), and when that cut fails the engine stays whole - its mount across the plane breaks
+    /// and it leaves with the tip. (c) The cut's watch: a far-side engine holding on breaks its mount, not itself.</summary>
+    static void RigidThrusters()
+    {
+        bool rig0 = ShipStructure.RigidThrusters;
+        try
+        {
+            // (a) the wing: a fixed root and 6 blocks along x; the pylon under its 4th block, the engine (a 0.5 x 0.5 x 1 m
+            //     thruster, thrust along z) under the pylon. The wing and pylon heavy-walled, the engine's shell the capped
+            //     functional wall: its joint to the pylon is the weak one
+            var sh = new TShip();
+            int root = sh.Block(0, 0, 0, 1e9f);
+            for (int x = 1; x <= 6; x++) sh.Block(x, 0, 0, 400f);
+            int pylon = sh.Block(3, -1, 0, 400f);
+            int engine = sh.Block(3, -2, 0, 300f, 1, 1, 2, StructMaterial.AtmosphericThruster);
+            int nb = sh.Mass.Count;
+            float k1 = 0f;
+            (bool engineHurt, bool engineBroke, bool pylonBroke, bool engineFree, float firstBreak) Ramp(bool rigid)
+            {
+                ShipStructure.RigidThrusters = rigid;
+                var alive = new bool[nb]; Array.Fill(alive, true); var health = new float[nb]; Array.Fill(health, 1f);
+                var st = BuildAlive(sh, alive, out var orig);
+                ShipStructure Mark(ShipStructure s, int[] o) { s.Thruster = new bool[s.Count]; for (int i = 0; i < s.Count; i++) s.Thruster[i] = o[i] == engine; return s; }
+                Mark(st, orig);
+                // the thrust at which the intact ship's worst joint reaches 1 by the old rule (the scale, both runs), ramped
+                // from 0.6 of it by 0.1 a second
+                int ei = Array.IndexOf(orig, engine);
+                if (k1 == 0f) { st.ExtForce[ei] = new Vector3(0, 0, 1000f); st.SolveFree(Vector3.Zero); k1 = 1000f / st.MaxUtil; }
+                var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+                bool hurt = false, eBroke = false, pBroke = false; float first = -1f;
+                for (float t = 0f; t < 30f; t += 0.25f)
+                {
+                    ei = Array.IndexOf(orig, engine);
+                    int ri = Array.IndexOf(orig, root);
+                    for (int i = 0; i < st.Count; i++) { st.Integrity[i] = health[orig[i]]; st.ExtForce[i] = Vector3.Zero; st.ExtMoment[i] = Vector3.Zero; }
+                    if (ei >= 0 && st.Piece[ei] == st.Piece[ri]) st.ExtForce[ei] = new Vector3(0, 0, (0.6f + 0.1f * t) * k1);
+                    st.SolveFree(Vector3.Zero);
+                    StructureEval.Damage(st, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, dmg, null, cuts);
+                    bool any = false;
+                    foreach (var (b, frac, destroy) in dmg)
+                    {
+                        int o = orig[b];
+                        if (o == engine) { hurt = true; if (destroy) eBroke = true; }
+                        if (o == pylon && destroy) pBroke = true;
+                        if (destroy) { alive[o] = false; any = true; if (first < 0f) first = t; } else health[o] -= frac;
+                    }
+                    if (any) { st = BuildAlive(sh, alive, out orig); Mark(st, orig); }
+                }
+                ei = Array.IndexOf(orig, engine);
+                bool free = ei >= 0 && st.Piece[ei] != st.Piece[Array.IndexOf(orig, root)];
+                return (hurt, eBroke, pBroke, free, first);
+            }
+            var old = Ramp(false);
+            Check(old.engineBroke, $"rigid thrusters (old rule): the engine broke on its own thrust at the engine-pylon joint ({(old.engineBroke ? $"at {old.firstBreak:F2} s" : "it did not")})");
+            var neu = Ramp(true);
+            Check(!neu.engineHurt, "rigid thrusters: the engine never loses health on its own thrust, ramped to 3.6 x its joint's yield");
+            Check(neu.pylonBroke && neu.engineFree && neu.firstBreak >= 0f, $"rigid thrusters: the overloaded joint breaks the pylon and the engine leaves whole (pylon broke {neu.pylonBroke}, engine free {neu.engineFree}, at {(0.6f + 0.1f * neu.firstBreak) * k1 / 1000f:F1} kN of thrust; the old rule broke the engine at {(0.6f + 0.1f * old.firstBreak) * k1 / 1000f:F1} kN)");
+
+            // (b) a boom along x off a fixed root, lifted at its tip; an engine under blocks 3-5 (cells x 6..10), across the
+            //     slices 3|4 and 4|5; block 4 light (thin walls) so those slices are the weak ones
+            var bm = new TShip();
+            int broot = bm.Block(0, 0, 0, 1e9f);
+            var boom = new int[8];
+            for (int x = 1; x <= 7; x++) boom[x] = bm.Block(x, 0, 0, x == 4 ? SmallMass : 400f);
+            int eng = bm.Cells(600f, StructMaterial.IonThruster, (new Vector3I(6, -2, 0), new Vector3I(10, -1, 1)));
+            int nb2 = bm.Mass.Count;
+            var all = new bool[nb2]; Array.Fill(all, true);
+            ShipStructure Boom(bool rigid, out int[] o)
+            {
+                ShipStructure.RigidThrusters = rigid;
+                var s = BuildAlive(bm, all, out o);
+                s.Thruster = new bool[s.Count]; for (int i = 0; i < s.Count; i++) s.Thruster[i] = o[i] == eng;
+                for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = o[i] == boom[7] ? new Vector3(0, 1000f, 0) : Vector3.Zero; }
+                s.SolveFree(Vector3.Zero);
+                return s;
+            }
+            var b0 = Boom(false, out var o0);
+            int e0 = Array.IndexOf(o0, eng);
+            float engOld = b0.BlockUtil[e0], worstOld = b0.MaxUtil;
+            var b1 = Boom(true, out var o1);
+            int e1 = Array.IndexOf(o1, eng);
+            Check(engOld > 0f && b1.BlockUtil[e1] == 0f, $"rigid thrusters: no utilisation inside the engine across the boom's slices (old {engOld / worstOld:F2} of the worst, now {b1.BlockUtil[e1]:F2})");
+            // the engine's slice 3|4 (x = 1.875 m) overloaded past the snap: it fails whole - the engine stays whole, its mount
+            // across the plane (boom block 3) breaks, and it leaves with the tip
+            {
+                float k = StructureFatigue.SnapUtil * 1.3f / b1.MaxUtil;
+                for (int i = 0; i < b1.Count; i++) b1.ExtForce[i] *= k;
+                b1.SolveFree(Vector3.Zero);
+                var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+                StructureEval.Damage(b1, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                var gone = new HashSet<int>(); bool engHit = false;
+                foreach (var (b, _, destroy) in dmg) { if (destroy) gone.Add(o1[b]); if (o1[b] == eng) engHit = true; }
+                bool acrossEngine = cuts.Count == 1 && cuts[0].Axis == 0 && MathF.Abs(cuts[0].Plane - 1.875f) < 1e-3f;
+                var left = new bool[nb2]; for (int i = 0; i < nb2; i++) left[i] = !gone.Contains(i);
+                var after = BuildAlive(bm, left, out var oa);
+                int ea = Array.IndexOf(oa, eng), ra = Array.IndexOf(oa, broot), ta = Array.IndexOf(oa, boom[7]);
+                bool parted = ea >= 0 && ta >= 0 && after.Piece[ea] != after.Piece[ra] && after.Piece[ea] == after.Piece[ta];
+                Check(acrossEngine && !engHit && gone.Contains(boom[3]) && parted, $"rigid thrusters: the slice across the engine fails whole ({(cuts.Count > 0 ? $"axis {cuts[0].Axis} at {cuts[0].Plane:F3} m" : "none")}) - the engine untouched ({!engHit}), its mount boom[3] broken ({gone.Contains(boom[3])}), the engine gone with the tip ({parted}; {gone.Count} blocks: {string.Join(" ", gone)})");
+            }
+
+            // (c) the watch: on the far side T1 - E (an engine, holding on to the ship's M) - and T2 holding on to M2: the
+            //     engine's mount M breaks, not E; T2 itself as before
+            {
+                var adj = new List<int>[5]; for (int i = 0; i < 5; i++) adj[i] = new List<int>();
+                void J(int a, int b) { adj[a].Add(b); adj[b].Add(a); }
+                const int E = 0, M = 1, T1 = 2, T2 = 3, M2 = 4;
+                J(T1, E); J(E, M); J(T1, T2); J(T2, M2);
+                var nodes = new HNode[5]; for (int i = 0; i < 5; i++) nodes[i] = new HNode { I = i };
+                var hw = new GraphHolders { Nodes = nodes, Adj = adj, Live = _ => true, LeavesOf = i => i == E || i == T1 || i == T2, KeptOf = i => i == E };
+                var into = new HashSet<HNode>(ReferenceEqualityComparer.Instance);
+                int h = hw.Find(new[] { nodes[T1] }, into, 100);
+                Check(h == 2 && into.Contains(nodes[M]) && into.Contains(nodes[T2]) && !into.Contains(nodes[E]), $"rigid thrusters: the watch breaks a far-side engine's mount, never the engine ({h} holders: {string.Join(" ", into.Select(x => x.I))})");
+            }
+        }
+        finally { ShipStructure.RigidThrusters = rig0; }
+    }
+
     static int Main()
     {
         Classes();
@@ -1871,7 +1996,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
-        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates();
+        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates(); RigidThrusters();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
