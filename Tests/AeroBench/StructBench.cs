@@ -48,6 +48,7 @@ static partial class Program
         var sw = System.Diagnostics.Stopwatch.StartNew();
         sh.S = ShipStructure.Build(bb, lo, hi, mass, mat, sh.Mounts);
         double tS = sw.Elapsed.TotalMilliseconds;
+        sh.S.Thruster = ThrusterFlags(sh.BlockName);   // (RIGID THRUSTERS, 2026-10-17: the game marks them by ThrusterComponent)
         if (Environment.GetEnvironmentVariable("PERF") != null) StructPerf(sh.Name, bb, lo, hi, mass, mat, sh.Mounts);
         if (Environment.GetEnvironmentVariable("SHAPES") != null) ShapeStats(sh);
         sh.Aero = Build(sh.Name, boxes);
@@ -70,6 +71,16 @@ static partial class Program
         Console.WriteLine($"{sh.Name}: {sh.S.Count} blocks, {sh.S.TotalMass / 1000f:F1} t, {sh.S.CutCount} cuts, {sh.S.Components} piece(s); {sh.H.FaceCount} faces ({miss} on no block) | structure {tS:F0} ms, heat {tH:F0} ms"
             + (sh.S.HasMounts ? $" | mounts {sh.Mounts.Count}: contacts mated {sh.S.MatedContacts}, touching unmated ({(ShipStructure.TouchingShare > 0f ? $"at {ShipStructure.TouchingShare:F2}" : "dropped")}) {sh.S.UnmatedContacts}, without mount data {sh.S.UnmountedContacts}" : ""));
         return sh;
+    }
+
+    /// <summary>The dumps' thrusters by name (the game marks them by their ThrusterComponent - ShipStructure.Thruster):
+    /// vanilla atmospheric / hydrogen / ion thrusters and the mods' turboprops.</summary>
+    static bool[] ThrusterFlags(List<string> names)
+    {
+        var f = new bool[names.Count];
+        for (int i = 0; i < names.Count; i++)
+            f[i] = names[i].IndexOf("Thruster", StringComparison.OrdinalIgnoreCase) >= 0 || names[i].IndexOf("Turboprop", StringComparison.OrdinalIgnoreCase) >= 0;
+        return f;
     }
 
     static (int, Vector3I, Vector3I, Vector3I) ParseMount(string[] p) =>

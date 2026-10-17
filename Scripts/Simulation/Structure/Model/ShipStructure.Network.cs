@@ -217,9 +217,7 @@ public sealed partial class ShipStructure
             float tau = MathF.Sqrt(C(F, u) * C(F, u) + C(F, v) * C(F, v)) / (0.5f * _secA[k]) + MathF.Abs(C(M, ax)) / MathF.Max(_secT[k], 1e-9f);
             float vm = MathF.Sqrt(sg * sg + 3f * tau * tau);
             int A = _ka[k], B = _kb[k];
-            float sa = BlockStrength(A);
-            float sb = BlockStrength(B);
-            float util = vm / (MathF.Min(sa, sb) * Strength);
+            float util = vm / (JointStrength(A, B) * Strength);
             ContactUtil[k] = util;
             if (util > MaxUtil) { MaxUtil = util; MaxContact = k; }
         }

@@ -8,7 +8,9 @@ using AeroMod;
 //     per-face pressures, on the same pull - the worst joint and the top joints;
 //  2. a pull ramped up (250 m/s at sea level, 2 -> 20 deg over 20 s): first wear, first break, what departs and at what g;
 //  3. a roll flick ramped up (0 -> 40 rad/s2 over 20 s, the gyros' torque at the root): the same;
-//  4. a reentry (2 km/s, rho 0.002, 25 deg nose up, 120 s) with heat damage: what burns, what breaks.
+//  4. a reentry (2 km/s, rho 0.002, 25 deg nose up, 120 s) with heat damage: what burns, what breaks;
+//  5. (ONLY=thrust, or the whole run) a thrust ramp - every thruster pushing along the nose, no air, 0 -> 20 g of the
+//     ship's mass over 20 s: what the engines' own thrust breaks (RIGID=0: the old rule, engines breakable - A/B).
 // Blocks broken are removed and the structure rebuilt (its heat carried over); what no longer joins the main piece
 // has departed.
 static partial class Program
@@ -20,6 +22,8 @@ static partial class Program
         public List<float> Mass = new(); public List<int> Mat = new();
         public List<(int block, Vector3I dir, Vector3I lo, Vector3I hi)> Mounts = new();
         public bool[] Alive; public float[] Health;
+        /// <summary>Original blocks that are thrusters (ShipStructure.Thruster, by name).</summary>
+        public bool[] Thr;
         public ShipStructure S; public HullHeat H; public int[] Orig;   // current block -> original
         public float Cs, Co;
         /// <summary>Original blocks already in a piece apart from the ship (the blueprint's extra grids at the start).</summary>
@@ -39,6 +43,7 @@ static partial class Program
             while (sim.Mass.Count <= blk) { sim.Mass.Add(0f); sim.Mat.Add(StructMaterial.Functional); }
             sim.Mass[blk] = float.Parse(p[7], System.Globalization.CultureInfo.InvariantCulture); sim.Mat[blk] = StructMaterial.Classify(p[8]);
         }
+        sim.Thr = ThrusterFlags(sh.BlockName);
         sim.Alive = Enumerable.Repeat(true, sim.Mass.Count).ToArray();
         sim.Health = Enumerable.Repeat(1f, sim.Mass.Count).ToArray();
         Rebuild(sim);
@@ -81,6 +86,7 @@ static partial class Program
             for (int b = 0; b < st.Count; b++) if (cores.TryGetValue(orig[b], out float t)) hh.CoreT[b] = t;
         }
         for (int b = 0; b < st.Count; b++) st.Integrity[b] = sim.Health[orig[b]];
+        if (sim.Thr != null) { st.Thruster = new bool[st.Count]; for (int b = 0; b < st.Count; b++) st.Thruster[b] = orig[b] < sim.Thr.Length && sim.Thr[orig[b]]; }
         sim.S = st; sim.H = hh; sim.Orig = orig.ToArray();
     }
 
@@ -221,6 +227,7 @@ static partial class Program
         // (MOUNTS=1 / MOUNTS=0: the mount-point joints on / off, for A/B - as in 'struct')
         if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";
         Knob("TOUCH", v => ShipStructure.TouchingShare = v);   // (TOUCH=0..1: the touching-only faces' share with MOUNTS=1)
+        Knob("RIGID", v => ShipStructure.RigidThrusters = v != 0f);   // (RIGID=0: engines breakable by their own loads - the old rule, A/B)
         Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("BUCK_SHARE", v => StructureFatigue.BucklingFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();
@@ -269,9 +276,37 @@ static partial class Program
                 }
                 continue;
             }
-            // ── 2. pull ramp ──
             if (float.TryParse(Environment.GetEnvironmentVariable("STRENGTH"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var stv)) ShipStructure.Strength = stv;
-            var sim = MakeSim(sh, f);
+            SimShip sim;
+            // ── 5. thrust ramp (RIGID THRUSTERS, 2026-10-17): the engines' own thrust, no air ──
+            if (Environment.GetEnvironmentVariable("ONLY") is null or "thrust")
+            {
+                sim = MakeSim(sh, f);
+                var apart0 = new HashSet<int>(sim.Apart);
+                int nThr = 0; foreach (bool t in sim.Thr) if (t) nThr++;
+                float W0 = sim.S.TotalMass * 9.81f;
+                if (nThr == 0) Console.WriteLine("   == thrust ramp: no thrusters");
+                else
+                {
+                    var engHurt = new HashSet<int>(); var engBroke = new HashSet<int>();
+                    RunScenario(sim, $"thrust ramp: {nThr} thrusters along the nose, 0 -> 20 g over 20 s ({(ShipStructure.RigidThrusters ? "rigid engines" : "old rule: engines breakable")})", 20f, (t, sm) =>
+                    {
+                        var s = sm.S;
+                        float total = 20f * W0 * t / 20f;
+                        var L = new StructureEval.Loads { CellSize = sm.Cs, CellOffset = sm.Co };
+                        for (int b = 0; b < s.Count; b++) if (sm.Thr[sm.Orig[b]]) { L.ThrBlock.Add(b); L.ThrF.Add(sh.Nose * (total / nThr)); }
+                        for (int b = 0; b < s.Count; b++) if (sm.Thr[sm.Orig[b]] && sm.Health[sm.Orig[b]] < 1f) engHurt.Add(sm.Orig[b]);
+                        for (int o = 0; o < sm.Alive.Length; o++) if (sm.Thr[o] && !sm.Alive[o]) engBroke.Add(o);
+                        return (L, 0f, 288f, $"{total / W0:F1} g ({total / nThr / 1000f:F0} kN an engine)");
+                    }, false);
+                    for (int o = 0; o < sim.Alive.Length; o++) { if (sim.Thr[o] && !sim.Alive[o]) engBroke.Add(o); if (sim.Thr[o] && sim.Health[o] < 1f) engHurt.Add(o); }
+                    int left = 0; foreach (int o in Enumerable.Range(0, sim.Alive.Length)) if (sim.Thr[o] && sim.Alive[o] && sim.Apart.Contains(o) && !apart0.Contains(o)) left++;
+                    Console.WriteLine($"      engines: {engBroke.Count} of {nThr} broken, {engHurt.Count} worn, {left} departed whole");
+                }
+                if (Environment.GetEnvironmentVariable("ONLY") == "thrust") continue;
+            }
+            // ── 2. pull ramp ──
+            sim = MakeSim(sh, f);
             RunScenario(sim, "pull ramp: 250 m/s at sea level, 2 -> 20 deg over 20 s", 20f, (t, sm) =>
             {
                 float deg = 2f + 18f * t / 20f; var tr = Travel(deg);

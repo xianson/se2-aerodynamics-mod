@@ -106,7 +106,10 @@ public static class StructureBend
                 //  peak does not wander as the members wear)
                 var centre = st.SectionCentre(g);
                 var pivot = cm >= 0 ? centre + (st.PiecePushedEdge(cm) - centre) * Math.Clamp(HingeToCompression, 0f, 1f) : centre;
-                order.Add((centre, ax, plane, ug, st.PieceBlock(wm), pivot));
+                // (the side that bends: the worst member's departing block - a patch's Outboard, not the block that breaks: a
+                //  rigid thruster's mount, on the ship's side, 2026-10-17)
+                int wk = st.PieceContact(wm);
+                order.Add((centre, ax, plane, ug, wk >= 0 ? st.Outboard(wk) : st.PieceBlock(wm), pivot));
             }
         }
         else
@@ -116,7 +119,7 @@ public static class StructureBend
             for (int k = 0; k < st.ContactCount; k++)
             {
                 float u = st.ContactUtil[k]; if (!(u > 1f)) continue;
-                int b = st.Outboard(k); if (!worn.Contains(b)) continue;
+                int b = st.Outboard(k); if (!worn.Contains(st.Breaks(k))) continue;   // (worn: the block that breaks - Breaks)
                 if (!best.TryGetValue(b, out int o) || u > st.ContactUtil[o]) best[b] = k;
             }
             foreach (int k in best.Values) { st.ContactPlane(k, out int ax, out float plane); order.Add((st.ContactPoint(k), ax, plane, st.ContactUtil[k], st.Outboard(k), st.ContactPoint(k))); }

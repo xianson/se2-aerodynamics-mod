@@ -179,9 +179,10 @@ public static class FractureMath
     }
 
     /// <summary>A step from member block o into block t is allowed: another block, of o's own class (not trim), at most
-    /// JaggedMassRatio x its mass.</summary>
+    /// JaggedMassRatio x its mass - never a rigid thruster (ShipStructure.Rigid, 2026-10-17: an engine never breaks for a
+    /// joint's sake).</summary>
     static bool Eligible(ShipStructure st, int o, int t) =>
-        t >= 0 && t != o && st.Mat[t] == st.Mat[o] && st.Mat[t] != StructMaterial.Trim && st.Mass[t] <= JaggedMassRatio * st.Mass[o];
+        t >= 0 && t != o && st.Mat[t] == st.Mat[o] && st.Mat[t] != StructMaterial.Trim && st.Mass[t] <= JaggedMassRatio * st.Mass[o] && !st.Rigid(t);
 
     /// <summary>
     /// THE JAGGED LINE of section g (its pieces from SectionPieceStart, i = piece - start): for each, the block that breaks

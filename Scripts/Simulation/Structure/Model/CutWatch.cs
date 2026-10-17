@@ -95,6 +95,9 @@ public abstract class CutHolders<T> where T : class
 {
     /// <summary>The block leaves with the cut's far side (its centre beyond the plane, not a stub).</summary>
     protected abstract bool Leaves(T b);
+    /// <summary>The block is never the one broken (RIGID THRUSTERS, 2026-10-17: an engine) - holding, its joined blocks that
+    /// stay (its mounts on the ship's side) are, those not kept too; none such: itself after all.</summary>
+    protected virtual bool Kept(T b) => false;
     /// <summary>The live blocks b is joined to (into: added; b itself never).</summary>
     protected abstract void Joined(T b, List<T> into);
     /// <summary>A walk starts (the subclass's per-walk state cleared).</summary>
@@ -123,7 +126,10 @@ public abstract class CutHolders<T> where T : class
                 if (!Leaves(o)) { holds = true; continue; }
                 if (_seen.Add(o)) _q.Enqueue(o);
             }
-            if (holds && into.Add(b)) found++;
+            if (!holds) continue;
+            bool viaMounts = false;
+            if (Kept(b)) foreach (var o in _nb) if (!ReferenceEquals(o, b) && !Leaves(o) && !Kept(o)) { viaMounts = true; if (into.Add(o)) found++; }
+            if (!viaMounts && into.Add(b)) found++;
         }
         return found;
     }
