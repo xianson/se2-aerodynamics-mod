@@ -41,6 +41,8 @@ using AeroMod;
 //     the flat cut's blocks; a failed cut through DamageBySection parts the plate for every seed tried.
 // 17. a failed cut parts by itself (CutWatch, 2026-10-15): the crack and its watch played tick by tick on irregular plates -
 //     pieces that part mid-crack are credited (no bridge on the jagged rule), the watch never forces a cut, the stubs stay.
+// 19. a failed cut always separates (2026-10-17): a stale member's force skipped and a joint off the cut's section - the
+//     watch asks the game (seeds both sides still in one grid), forces again and walks the far side for what holds it.
 static class Program
 {
     static int _fails, _checks;
@@ -1652,6 +1654,216 @@ static class Program
         Check(held[1] > 0 && forced[1] > 0 && parted[1] == runs[1], $"cut lets go: without that they hang on and the watch forces them at stage 0 ({held[1]} held on, {forced[1]} of {runs[1]} cuts forced, {parted[1]} parted)");
         Check(stage1[0] == 0 && stage1[1] == 0 && stubbed[1] > 0, $"cut lets go: a forced cut's split credited on the jagged surface - stage 1 never forces a parted cut ({stage1[1]} stage-1 forcings, {stubbed[1]} cuts with stubs)");
     }
+    /// <summary>The model's blocks for CutHolders (a class per block: the server's are CubeBlockComponent references).</summary>
+    sealed class HNode { public int I; }
+    /// <summary>CutHolders on a test graph: joined - the game's joints (the model's contacts and the hidden ones), live only.</summary>
+    sealed class GraphHolders : CutHolders<HNode>
+    {
+        public HNode[] Nodes; public List<int>[] Adj; public Func<int, bool> Live, LeavesOf;
+        /// <summary>A joint the game holds that the mounts' test misses (a with b); found by touch only (the last round).</summary>
+        public int TouchA = -1, TouchB = -1; public bool Touch;
+        protected override bool Leaves(HNode b) => LeavesOf(b.I);
+        protected override void Joined(HNode b, List<HNode> into)
+        {
+            foreach (int j in Adj[b.I])
+                if (Live(j) && (Touch || !(b.I == TouchA && j == TouchB || b.I == TouchB && j == TouchA))) into.Add(Nodes[j]);
+        }
+    }
+
+    /// <summary>19. A FAILED CUT ALWAYS SEPARATES (2026-10-17, the user in play: "completely cut but did not separate"). A
+    /// 33-member cut cracked across; its stage-0 force hit only a member that had left with an earlier piece ("bridge skipped:
+    /// Data not found" - nothing destroyed, no log) and every rule after it counted bridges in the members' box only: none
+    /// there, so the watch let it go while the far side hung on by a joint off the cut's section. Played tick by tick as
+    /// CutLetsGo on irregular plates, with that member stale (left with a crumb, its force skipped) and a HIDDEN JOINT - one
+    /// far block joined to the ship's side away from the plane, which no box rule sees: the old watch (box bridges only)
+    /// lets every such cut hang on; the new one asks the game (seeds both sides still in this grid: CutWatch.Joined), keeps
+    /// a cut whose force did nothing watched (CutWatch.Again) and walks the far side for what holds it (CutHolders) - every
+    /// cut parts, within CutWatch.MaxRounds, never given up - a hidden joint the mounts' test misses too is found by touch
+    /// on the last round, after rounds that broke nothing. Without the hidden joint the new watch forces nothing (the seeds
+    /// credit the cut's own split - no stub taken).</summary>
+    static void CutAlwaysSeparates()
+    {
+        bool sev0 = CutWatch.Sever;
+        // [hidden: 0 none, 1 a joint off the section, 2 one the mounts' test misses too][old 0 / new 1]
+        int[,] runs = new int[3, 2], parted = new int[3, 2], forced = new int[3, 2], gaveUp = new int[3, 2], stubsTaken = new int[3, 2], retried = new int[3, 2], holders = new int[3, 2];
+        int maxRounds = 0;
+        try
+        {
+            CutWatch.Sever = true;
+            for (int hidden = 0; hidden < 3; hidden++)
+            for (int alg = 0; alg < 2; alg++)
+            for (int shape = 0; shape < 24; shape++)
+            {
+                int H = 2 + shape % 3, W = 4 + (shape / 3) % 4;
+                var rng = new Random(shape * 7919 + 1);
+                var sh = new TShip();
+                var blk = new int[10, H, W];
+                for (int x = 0; x <= 9; x++) for (int y = 0; y < H; y++) for (int z = 0; z < W; z++)
+                {
+                    if (x >= 2 && x <= 8 && rng.NextDouble() < 0.12) { blk[x, y, z] = -1; continue; }
+                    blk[x, y, z] = sh.Block(x, y, z, x == 0 ? 1e9f : SmallMass);
+                }
+                sh.Build();
+                var s = sh.S;
+                for (int i = 0; i < s.Count; i++) { s.Integrity[i] = 1f; s.ExtForce[i] = s.Center[i].X > 0.3f ? new Vector3(0, 100f, 0) : Vector3.Zero; s.ExtMoment[i] = Vector3.Zero; }
+                s.SolveFree(Vector3.Zero);
+                float k = StructureFatigue.SnapUtil * 1.2f / s.MaxUtil;
+                for (int i = 0; i < s.Count; i++) s.ExtForce[i] *= k;
+                s.SolveFree(Vector3.Zero);
+                StructureBend.Adjacency(s, out var a0, out var a1);
+                var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+                for (int seed = 1; seed <= 6; seed++)
+                {
+                    s.Seed = seed;
+                    StructureEval.Damage(s, null, 0.25f, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 1, dmg, null, cuts);
+                    if (cuts.Count != 1 || cuts[0].Release == null || cuts[0].Count < 3) continue;
+                    var cut = cuts[0]; int side = (cut.Axis == 0 ? cut.Dir.X : cut.Axis == 1 ? cut.Dir.Y : cut.Dir.Z) > 0f ? 1 : -1;
+                    float Ax(Vector3 v) => cut.Axis == 0 ? v.X : cut.Axis == 1 ? v.Y : v.Z;
+                    var stubs = new HashSet<int>(cut.Stubs ?? Array.Empty<int>());
+                    var entry = new HashSet<int>(); for (int e = 0; e < cut.Count; e++) entry.Add(dmg[cut.First + e].block);
+                    bool Leaves(int b) => (Ax(s.Center[b]) - cut.Plane) * side > 0f && !stubs.Contains(b);
+                    int far = -1; for (int b = 0; b < s.Count; b++) if (Leaves(b) && (far < 0 || (Ax(s.Center[b]) - Ax(s.Center[far])) * side > 0f)) far = b;
+                    if (far < 0) continue;
+                    // (the ship: a block of the heavy root column the cut does not break - a jagged step may break the corner one)
+                    int anchor = -1; for (int b = 0; b < s.Count; b++) if (s.Center[b].X < 0.3f && !entry.Contains(b) && !stubs.Contains(b) && !Leaves(b)) { anchor = b; break; }
+                    if (anchor < 0) continue;
+                    // the game's joints: the model's contacts, and (hidden) one off the cut's section - the farthest-out block
+                    // tied straight back to the ship's root, no box rule near the plane sees it
+                    var adj = new List<int>[s.Count];
+                    for (int i = 0; i < s.Count; i++) { adj[i] = new List<int>(); for (int e = a0[i]; e < a0[i + 1]; e++) adj[i].Add(a1[e]); }
+                    if (hidden > 0) { adj[far].Add(anchor); adj[anchor].Add(far); }
+                    var removed = new bool[s.Count]; var grid = new bool[s.Count];
+                    void Grid()
+                    {
+                        // (the ship: the heavy root column, what of it is left)
+                        Array.Clear(grid); var q = new Queue<int>();
+                        for (int i = 0; i < s.Count; i++) if (s.Center[i].X < 0.3f && !removed[i]) { grid[i] = true; q.Enqueue(i); }
+                        while (q.Count > 0) { int i = q.Dequeue(); foreach (int j in adj[i]) { if (grid[j] || removed[j]) continue; grid[j] = true; q.Enqueue(j); } }
+                    }
+                    bool Here(int b) => !removed[b] && grid[b];
+                    // (the server's box Bridges on the model: pairs across the plane, stubs spared on the jagged rule, and what
+                    //  holds a stub from beyond it)
+                    int Bridges(bool spare, HashSet<int> into)
+                    {
+                        int pairs = 0;
+                        for (int c = 0; c < s.ContactCount; c++)
+                        {
+                            s.ContactPlane(c, out int ax, out float pl); if (ax != cut.Axis || MathF.Abs(pl - cut.Plane) > 1e-3f) continue;
+                            s.ContactBlocks(c, out int ca, out int cb);
+                            if (!Here(ca) || !Here(cb) || spare && (stubs.Contains(ca) || stubs.Contains(cb))) continue;
+                            pairs++; into?.Add(ca); into?.Add(cb);
+                        }
+                        if (spare) foreach (int sb in stubs)
+                            {
+                                if (!Here(sb)) continue;
+                                for (int e = a0[sb]; e < a0[sb + 1]; e++) { int j = a1[e]; if (Here(j) && !stubs.Contains(j) && (Ax(s.Center[j]) - cut.Plane) * side > 0f) { pairs++; into?.Add(j); } }
+                            }
+                        return pairs;
+                    }
+                    // the seeds (the server's Seed): the broken blocks' neighbours on each side, not broken, not stubs
+                    var farSeeds = new List<int>(); var nearSeeds = new List<int>();
+                    foreach (int e in entry) foreach (int j in adj[e])
+                        {
+                            if (entry.Contains(j) || stubs.Contains(j)) continue;
+                            if (Leaves(j)) { if (!farSeeds.Contains(j)) farSeeds.Add(j); } else if (!nearSeeds.Contains(j)) nearSeeds.Add(j);
+                        }
+                    int Joined()
+                    {
+                        if (farSeeds.Count == 0 || nearSeeds.Count == 0) return -1;
+                        bool f = false, n = false;
+                        foreach (int b in farSeeds) if (Here(b)) { f = true; break; }
+                        foreach (int b in nearSeeds) if (Here(b)) { n = true; break; }
+                        return CutWatch.Joined(true, f, n);
+                    }
+                    var nodes = new HNode[s.Count]; for (int i = 0; i < s.Count; i++) nodes[i] = new HNode { I = i };
+                    var hw = new GraphHolders { Nodes = nodes, Adj = adj, Live = Here, LeavesOf = Leaves, TouchA = hidden == 2 ? far : -1, TouchB = hidden == 2 ? anchor : -1 };
+                    // the crack: one torn member is the in-game Battery - split at its face, it stays and LEAVES WITH A CRUMB
+                    // (stale: its force skipped, "Data not found")
+                    var order = new int[cut.Count]; for (int i = 0; i < cut.Count; i++) order[i] = i;
+                    Array.Sort(order, (p, q) => { int r = cut.Release[p].CompareTo(cut.Release[q]); return r != 0 ? r : p.CompareTo(q); });
+                    int staleBlock = dmg[cut.First + order[0]].block;
+                    var survivors = new List<int>(); var stale = new HashSet<int>();
+                    var w = new CutWatch(); w.HasStubs = stubs.Count > 0;
+                    int stamp = 0, next = 0; bool armed = false, done = false, splitPending = false, split = false, force = false; float clock = 0f;
+                    void Parted() { Grid(); if (!split && !grid[far]) { split = true; splitPending = true; } }
+                    w.Begin(stamp);
+                    for (int tick = 0; tick < 1200 && !done; tick++)
+                    {
+                        if (splitPending) { stamp++; splitPending = false; Grid(); }
+                        if (armed)
+                        {
+                            if (alg == 0)
+                            {
+                                // the old watch (box bridges only)
+                                if (w.SplitSince(stamp) && Bridges(w.SpareOnSplit, null) == 0) { done = true; break; }
+                                if (w.Expired())
+                                {
+                                    Grid();
+                                    if (w.Stage > 0 && !w.Force(Bridges(w.SpareOnSplit, null))) { done = true; break; }
+                                    var set = new HashSet<int>(); foreach (int b in survivors) set.Add(b);
+                                    Bridges(w.Spare, set);
+                                    int n = 0; foreach (int b in set) { if (stale.Contains(b) || removed[b]) continue; removed[b] = true; n++; if (stubs.Contains(b)) stubsTaken[hidden, alg]++; }
+                                    if (n > 0) { force = true; Parted(); }
+                                    if (!w.NextStage(stamp, 30)) done = true;
+                                }
+                            }
+                            else
+                            {
+                                // the new watch (CheckCutSeparated): the seeds first, forced while joined, the holders, again
+                                if (w.SplitSince(stamp)) { int j = Joined(); if (CutWatch.Credit(j < 0 ? Bridges(true, null) : 0, j)) { done = true; break; } }
+                                if (w.Expired())
+                                {
+                                    Grid();
+                                    int joined = Joined();
+                                    if (w.GiveUp(joined)) { gaveUp[hidden, alg]++; done = true; break; }
+                                    if (!w.Force(joined < 0 && w.Stage > 0 ? Bridges(true, null) : 0, joined)) { done = true; break; }
+                                    var set = new HashSet<int>(); foreach (int b in survivors) if (Here(b)) set.Add(b);
+                                    Bridges(joined >= 0 ? !w.Escalate : w.Spare, set);
+                                    int n = 0; foreach (int b in set) { if (removed[b] || !grid[b]) continue; removed[b] = true; n++; if (stubs.Contains(b)) stubsTaken[hidden, alg]++; }
+                                    if (joined > 0)
+                                    {
+                                        var hs = new HashSet<HNode>(ReferenceEqualityComparer.Instance);
+                                        var seeds = new List<HNode>(); foreach (int b in farSeeds) seeds.Add(nodes[b]);
+                                        hw.Touch = w.Escalate;
+                                        int h = hw.Find(seeds, hs, 4096); holders[hidden, alg] += h;
+                                        var nf = new List<int>(); foreach (var b in hw.Reached) if (!hs.Contains(b) && Here(b.I)) nf.Add(b.I);
+                                        if (nf.Count > 0) farSeeds = nf;
+                                        foreach (var b in hs) { if (removed[b.I]) continue; removed[b.I] = true; n++; if (stubs.Contains(b.I)) stubsTaken[hidden, alg]++; }
+                                        if (n == 0 || w.Rounds > 0) retried[hidden, alg]++;
+                                    }
+                                    if (n > 0) { force = true; Parted(); }
+                                    if (!w.Again(stamp, 30, joined)) done = true;
+                                    maxRounds = Math.Max(maxRounds, w.Rounds);
+                                }
+                            }
+                        }
+                        if (next < cut.Count)
+                        {
+                            if (tick > 0) clock += 1f / 60f;
+                            while (next < cut.Count && cut.Release[order[next]] <= clock + 1e-4f)
+                            {
+                                int b = dmg[cut.First + order[next++]].block;
+                                // (the stale member: still in the survivors list, gone from this grid - a crumb took it)
+                                if (b == staleBlock) { survivors.Add(b); stale.Add(b); }
+                                removed[b] = true;
+                            }
+                            Parted();
+                            if (next == cut.Count) { w.Finish(stamp, 30); armed = true; }
+                        }
+                    }
+                    runs[hidden, alg]++;
+                    Grid(); if (!grid[far]) parted[hidden, alg]++;
+                    if (force) forced[hidden, alg]++;
+                }
+                s.Seed = 0;
+            }
+        }
+        finally { CutWatch.Sever = sev0; }
+        Check(runs[1, 0] >= 40 && parted[1, 0] < runs[1, 0] / 4, $"cut always separates: the old watch (box bridges only) lets a cut held off its section hang on ({parted[1, 0]} of {runs[1, 0]} parted)");
+        Check(runs[1, 1] >= 40 && parted[1, 1] == runs[1, 1] && gaveUp[1, 1] == 0 && holders[1, 1] > 0, $"cut always separates: the new watch parts every such cut - the holders found off the section ({parted[1, 1]} of {runs[1, 1]} parted, {holders[1, 1]} holders, {gaveUp[1, 1]} given up)");
+        Check(runs[2, 1] >= 40 && parted[2, 1] == runs[2, 1] && gaveUp[2, 1] == 0 && retried[2, 1] >= runs[2, 1] && maxRounds <= CutWatch.MaxRounds, $"cut always separates: a cut whose force broke nothing stays watched and is forced again until it parts ({parted[2, 1]} of {runs[2, 1]} parted, {retried[2, 1]} rounds after an empty or unparted force, at most {maxRounds} of {CutWatch.MaxRounds} rounds, {gaveUp[2, 1]} given up; old: {parted[2, 0]} parted)");
+        Check(runs[0, 1] >= 40 && parted[0, 1] == runs[0, 1] && forced[0, 1] == 0 && stubsTaken[0, 1] == 0, $"cut always separates: with nothing hidden the new watch forces nothing - the seeds credit the cut's own split ({parted[0, 1]} of {runs[0, 1]} parted, {forced[0, 1]} forced, {stubsTaken[0, 1]} stubs taken)");
+    }
     static int Main()
     {
         Classes();
@@ -1659,7 +1871,7 @@ static class Program
         TreeExact();
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
-        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo();
+        TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates();
         BalanceUnderEdits(); EntryBraking();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");

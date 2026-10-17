@@ -80,7 +80,7 @@ public partial class AeroGridComponent
                 var b = _stBlocks[bi];
                 // (a block gone since the evaluation - broken off by an earlier one in this list, split away: its data is
                 //  gone and the receiver threw "Data not found" for it, losing the rest of the list, 2026-10-14)
-                if (Gone(b)) { _stHealth.TakeAll(bi); continue; }
+                if (Gone(b)) { _stHealth.TakeAll(bi); if (inCut) _cutGoneEarly++; continue; }
                 if (where.dir.LengthSquared() > 0.5f) _stLoaded[bi] = (where.at, where.dir);
                 _stHealth.Accrue(bi, fraction);
                 if (destroy)
@@ -123,7 +123,7 @@ public partial class AeroGridComponent
         catch (Exception e) { Log.Default?.Info($"[AERO-STRUCT] damage failed: {e.Message}"); }
         // (a crack queued but its cut not finished - the pass faulted: started anyway, its members must still go)
         if (_crackOpen != null) { var c = _crackOpen; _crackOpen = null; try { StartCrack(c, StructBlockVersion); } catch (Exception e) { Log.Default?.Info($"[AERO-STRUCT] crack failed: {e.Message}"); } }
-        _stDamage.Clear(); _stCuts.Clear();
+        _stDamage.Clear(); _stCuts.Clear(); _cutGoneEarly = 0;
     }
 
     /// <summary>A fracture through a block from a point on it (grid-local) along a direction (grid-local), in the block's own
@@ -152,6 +152,11 @@ public partial class AeroGridComponent
         // (split away to another grid since the evaluation - alive, but this grid's damage receiver no longer has its data:
         //  "Data not found", 2026-10-15)
         if (!ReferenceEquals(b.Grid?.Entity, Entity)) return true;
+        // (OUT OF THIS GRID'S OCTREE, 2026-10-17: the test above never sees a split - the game clones the piece's blocks into
+        //  the new grid and only unhooks the old ones (CubeGridSplitterComponent, BlockOctreeComponent.SplitDisconnectedBlocks:
+        //  out of the octree at once, CubeBlockComponent.Grid never reset), alive a while - a failed cut's watch forced such a
+        //  member, "bridge skipped: Data not found", and nothing else: the cut hung on. Not in the octree: not this grid's)
+        if (_octree != null && !InOctree(b)) return true;
         return b.HealthIntegrity <= DestructionThreshold(b) + 1e-4f;
     }
     /// <summary>A block's full health (its definition's MaxHealth is not reachable from mod scripts: its health over its
