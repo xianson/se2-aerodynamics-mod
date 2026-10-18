@@ -1,0 +1,19 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Game.GameSystems.RigidAnimations.InfiniteRotationAnimationDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-fd15-001b-000000000001",
+    "RotationAxis": {
+      "X": 0,
+      "Y": 0,
+      "Z": -1
+    },
+    "AngularSpeed": 270,
+    "AngularSpeedup": 50,
+    "AngularSlowdown": 50,
+    "VariableAngularInterpolatedSpeed": 360
+  }
+}

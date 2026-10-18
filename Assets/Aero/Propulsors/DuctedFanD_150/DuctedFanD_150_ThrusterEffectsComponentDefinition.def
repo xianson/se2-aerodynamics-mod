@@ -1,0 +1,14 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ThrusterEffectsComponentDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-fd15-001d-000000000001",
+    "FlameLength": 0.01,
+    "FlameRandomScale": 0,
+    "ThrustDummyType": "051438a6-39b9-42bb-b34c-7c836e9fb7a8"
+  }
+}

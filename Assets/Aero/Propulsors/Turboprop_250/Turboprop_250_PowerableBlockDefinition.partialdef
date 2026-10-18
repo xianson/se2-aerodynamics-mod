@@ -1,0 +1,26 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "e75c5a0b-ab9d-49f9-9f92-cf054f35798f",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-7b25-0001-000000000001",
+      "UIData": {
+        "Name": "Turboprop",
+        "Icon": "{G}b7151ca2-049b-5417-8161-432038a21ccf"
+      },
+      "PlacerDefinition": "ae200001-ae00-7b00-0050-000000000001",
+      "DisplaySizeOverride": 2.5,
+      "Recipe": "7a1167cc-7218-4e9d-9063-8ef0eba37245",
+      "BlockKind": "ae200001-ae00-7b00-0020-000000000001",
+      "PCU": 400
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

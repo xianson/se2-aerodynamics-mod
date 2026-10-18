@@ -1,0 +1,205 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AeroSolidCoupling",
+        "MaterialReference": "ae200001-ae00-7f00-0051-000000000001"
+      },
+      {
+        "MaterialName": "AeroSolidTrim01",
+        "MaterialReference": "ae200001-ae00-7f00-0053-000000000001"
+      },
+      {
+        "MaterialName": "AeroSolidTrim03",
+        "MaterialReference": "ae200001-ae00-7f00-0052-000000000001"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "HydrogenThrusterCone",
+        "MaterialReference": "c1f98c18-29a2-4779-aadc-e3c11a594103"
+      },
+      {
+        "MaterialName": "HydrogenThrusterConePlates",
+        "MaterialReference": "c9024534-375c-4ae3-a47d-86562ed3b78b"
+      },
+      {
+        "MaterialName": "HydrogenThrusterInjector",
+        "MaterialReference": "3c0e90a6-c4d3-4bb9-b619-4fe3b987e961"
+      },
+      {
+        "MaterialName": "MetalDull",
+        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}2afff6b2-b607-507f-b67e-fc4f27225395",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.125,
+            "Y": 0.125,
+            "Z": 0.125
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}ee4a06a8-aa39-55f9-b9f7-ce7fd4935f55",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}dc4dcd08-31f6-5f92-967c-ddc18e05fb69",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}e2d258e7-df36-5502-ab13-57fd682b2180",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}d36b47a8-6883-5969-9565-22b569bca80f",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

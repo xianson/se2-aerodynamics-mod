@@ -1,0 +1,17 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "1b1ffe74-25ea-488d-bc81-88ad9d64a313",
+    "PartialDefinitionKind": "Override",
+    "Manipulator": {
+      "ResourcesRequiredToThrust": 146.57
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterDefinition",
+    "PriorityOverride": false
+  }
+}

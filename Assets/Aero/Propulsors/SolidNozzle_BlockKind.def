@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-5f00-0020-000000000001",
+    "Name": "Solid Rocket Nozzle",
+    "Description": "The nozzle of a solid rocket motor: the segments of its size stacked on its top face are its propellant. Ignite it from its terminal or a toolbar: it burns at full thrust until the stack is empty and cannot be throttled or shut down. Your thrusters, dampeners and flight controller never use it. Works in air and in space (about 10 % stronger in vacuum).",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-5f00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-002a-000000000001"
+      }
+    ]
+  }
+}

@@ -16,3 +16,7 @@ Tests/data/
 
 # build_mod_content.py keeps the previous Content here on each build
 Content.before-*/
+
+# the block models' compiled Content (~290 MB; D:/aero/tools/build_mod_content.py rebuilds it from Assets - the Blocks mod
+# was folded in 2026-10-17)
+Content/Aero/

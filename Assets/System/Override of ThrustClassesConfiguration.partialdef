@@ -1,0 +1,54 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "586e1207-50df-4982-9afd-63a15f5d0d1f",
+    "PartialDefinitionKind": "Override",
+    "Manipulator": {
+      "ThrustClasses": [
+        {
+          "$Key": "Ion",
+          "$Value": {
+            "MaxThrustAirDensity": 0.2,
+            "MinThrustAirDensity": 0.8,
+            "WaterSubmersionTolerance": 1,
+            "WaterOnly": false
+          }
+        },
+        {
+          "$Key": "Atmospheric",
+          "$Value": {
+            "MaxThrustAirDensity": 0.8,
+            "MinThrustAirDensity": 0.2,
+            "WaterSubmersionTolerance": 1,
+            "WaterOnly": false
+          }
+        },
+        {
+          "$Key": "Hydrogen",
+          "$Value": {
+            "MaxThrustAirDensity": 0,
+            "MinThrustAirDensity": 10.2,
+            "WaterSubmersionTolerance": 1,
+            "WaterOnly": false
+          }
+        },
+        {
+          "$Key": "Water",
+          "$Value": {
+            "MaxThrustAirDensity": 0,
+            "MinThrustAirDensity": -1,
+            "WaterSubmersionTolerance": 1,
+            "WaterOnly": true
+          }
+        }
+      ]
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.GameSystems.Movement.ThrustClassesConfiguration",
+    "PriorityOverride": false
+  }
+}

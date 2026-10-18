@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-c501-0030-000000000001",
+    "Name": "Control Surface (old)",
+    "Order": 0,
+    "Subcategories": [
+      {
+        "Key": "ae200001-ae00-c501-0030-00000000000a",
+        "Value": "ae200001-ae00-0000-0002-000000000001"
+      }
+    ],
+    "BlockKinds": []
+  }
+}

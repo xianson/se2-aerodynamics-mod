@@ -1,0 +1,29 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "5b8af618-cb27-4501-9ee1-d52912f8dc79",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-5f25-0001-000000000001",
+      "UIData": {
+        "Name": "Solid Rocket Nozzle",
+        "Icon": "{G}7b8cd302-ad66-50dc-aa98-207f497c42ba"
+      },
+      "PlacerDefinition": "ae200001-ae00-5f00-0050-000000000001",
+      "DisplaySizeOverride": 2.5,
+      "Recipe": "caa51bb7-b658-41e6-877e-f12450405ce7",
+      "BlockKind": "ae200001-ae00-5f00-0020-000000000001",
+      "PCU": 400,
+      "ConsumedResource": {
+        "Type": "ae200001-ae00-7f00-0054-000000000001"
+      }
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

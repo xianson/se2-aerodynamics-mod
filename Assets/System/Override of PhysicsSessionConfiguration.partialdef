@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "a41c4422-566f-4d10-b51d-a1cce7ed3fbe",
+    "PartialDefinitionKind": "Override",
+    "Manipulator": {
+      "MaximumSpeedLinear": 1000,
+      "MaximumCharacterSpeedLinear": 1000,
+      "LinearDamping": 0,
+      "GravityMultiplier": 2
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfiguration",
+    "PriorityOverride": false
+  }
+}

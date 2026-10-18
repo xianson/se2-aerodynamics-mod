@@ -1,0 +1,83 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "d6b1a072-ef93-47fe-836d-165b00dac2dc",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-5e15-0013-000000000001",
+      "TagSlots": {
+        "$DeltaEncoded": true,
+        "RemovedKeys": [],
+        "ModifiedKeys": [
+          {
+            "$Key": "ConveyorComponent",
+            "$Value": "60e7c36a-2b7a-4a26-bf52-3bf6a5278d7e"
+          },
+          {
+            "$Key": "ResourceContainerComponent",
+            "$Value": "556698b8-b950-4e94-ab64-937642f573e1"
+          }
+        ]
+      },
+      "Components": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "b7bf405c-71aa-46a1-a5ec-4c690f2ab7e3",
+          "e58b8f69-45da-40d4-82b0-f1a82564a53a",
+          "d358358e-30b3-484a-b8b8-2e5568c7298b",
+          "bc5652a0-1296-4040-adc3-a2b9c35d5afc",
+          "4f2bc5f9-6a6d-4347-a1eb-5937cbce6727",
+          "60e7c36a-2b7a-4a26-bf52-3bf6a5278d7e",
+          "556698b8-b950-4e94-ab64-937642f573e1"
+        ],
+        "Changed": [
+          {
+            "Kind": "Update",
+            "Index": 2,
+            "Value": {
+              "Definition": "ae200001-ae00-5e15-0015-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 3,
+            "Value": {
+              "Definition": "ae200001-ae00-5e15-0016-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 4,
+            "Value": {
+              "Definition": "ae200001-ae00-5e15-0001-000000000001"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 5,
+            "Value": {
+              "Definition": "ae200001-ae00-7f00-0055-000000000001",
+              "Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Conveyors.ConveyorComponent"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 6,
+            "Value": {
+              "Definition": "ae200001-ae00-5e15-001e-000000000001",
+              "Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources.ResourceContainerComponent"
+            }
+          }
+        ],
+        "Removed": []
+      }
+    },
+    "DefinitionType": "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition",
+    "PriorityOverride": false
+  }
+}

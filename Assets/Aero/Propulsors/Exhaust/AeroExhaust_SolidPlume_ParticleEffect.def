@@ -1,0 +1,62 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.1848"
+  },
+  "$Type": "VRage:Keen.VRage.Render.Data.ParticleEffectDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-0068-000000000001",
+    "EffectDuration": 2.0,
+    "EffectDurationVariation": 0,
+    "EffectMaxDistance": 4000,
+    "IsLooping": true,
+    "ParticleEmitters": [
+      {
+        "Key": "6c7ab79e-5dc9-5cef-9e89-49a63eff4755",
+        "Value": {
+          "Definition": "ae200001-ae00-7f00-0069-000000000001",
+          "Parameters": {
+            "GlobalScaleFactor": 1,
+            "EmitterLifeTime": 2.0,
+            "EmitterStartTime": 0,
+            "GravityMultiplier": 0,
+            "WindMultiplier": 0
+          }
+        }
+      },
+      {
+        "Key": "7b310bc1-ce2f-547b-8cfc-7ea6585a1c17",
+        "Value": {
+          "Definition": "ae200001-ae00-7f00-006a-000000000001",
+          "Parameters": {
+            "GlobalScaleFactor": 1,
+            "EmitterLifeTime": 2.0,
+            "EmitterStartTime": 0,
+            "GravityMultiplier": 0,
+            "WindMultiplier": 0
+          }
+        }
+      },
+      {
+        "Key": "e055c21d-a1a1-5e92-9459-25b1fd188d6c",
+        "Value": {
+          "Definition": "ae200001-ae00-7f00-006b-000000000001",
+          "Parameters": {
+            "GlobalScaleFactor": 1,
+            "EmitterLifeTime": 2.0,
+            "EmitterStartTime": 0,
+            "GravityMultiplier": 0,
+            "WindMultiplier": 0
+          }
+        }
+      }
+    ],
+    "ParticleAudio": null,
+    "ParticleLight": [
+      {
+        "Key": "72796460-6935-5cf4-9242-a53c83aed92e",
+        "Value": "ae200001-ae00-7f00-006c-000000000001"
+      }
+    ]
+  }
+}

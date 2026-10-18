@@ -1,0 +1,23 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "d4662208-9d5c-49ea-9b71-af80e66e5808",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-ab01-0001-000000000001",
+      "UIData": {
+        "Name": "Airbrake (old)",
+        "Icon": "{G}92a4c7d6-95d0-4d0e-b653-7e6981ce8be5"
+      },
+      "Recipe": "6f209028-b561-4d9e-a1c8-ab9994b0a7e4",
+      "BlockKind": "ae200001-ae00-ab01-0020-000000000001"
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.CubeBlockDefinition",
+    "PriorityOverride": false
+  }
+}

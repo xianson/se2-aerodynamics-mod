@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-4f00-0020-000000000001",
+    "Name": "Reversible Rotor",
+    "Description": "A small rotor that thrusts forward or backward along its axis. It answers your movement and your rotation controls, like any thruster, but either way. Air only.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-4f00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-0024-000000000001"
+      }
+    ]
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "f104e970-bdcc-4a09-892d-8cc96e039998",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-4f05-0015-000000000001",
+      "Model": "{G}ae200001-ae00-4f05-0100-000000000001",
+      "Dummies": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "ae200001-ae00-4f05-0041-000000000001",
+          "ae200001-ae00-4f05-0042-000000000001",
+          "ae200001-ae00-4f05-0043-000000000001",
+          "ae200001-ae00-4f05-0073-000000000001",
+          "ae200001-ae00-4f05-0074-000000000001",
+          "ae200001-ae00-4f05-0075-000000000001",
+          "ae200001-ae00-4f05-0076-000000000001"
+        ],
+        "Changed": [
+          {
+            "Kind": "Insert",
+            "Index": 0,
+            "Value": {
+              "Name": "PropRotor",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": 0.37167,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 1
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0030-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 1,
+            "Value": {
+              "Name": "thruster",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": -0.175,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 1
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 0.1,
+                "Y": 0.1,
+                "Z": 0.1
+              },
+              "Type": "051438a6-39b9-42bb-b34c-7c836e9fb7a8",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 2,
+            "Value": {
+              "Name": "particles",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": 0.125,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 1
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "e9f28118-a0cf-4c6c-b6ad-2e0719e6cf5a",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 3,
+            "Value": {
+              "Name": "RotorBlade1",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.375,
+                    "Y": 0.37167,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": 0.707107,
+                    "Z": -0.0,
+                    "W": 0.707107
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0031-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 4,
+            "Value": {
+              "Name": "RotorBlade2",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.0,
+                    "Y": 0.37167,
+                    "Z": -0.09151
+                  },
+                  "Orientation": {
+                    "X": -0.0,
+                    "Y": -0.965926,
+                    "Z": 0.0,
+                    "W": 0.258819
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0031-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 5,
+            "Value": {
+              "Name": "RotorBlade3",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.0,
+                    "Y": 0.37167,
+                    "Z": 0.34151
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": -0.258819,
+                    "Z": -0.0,
+                    "W": 0.965926
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0031-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 6,
+            "Value": {
+              "Name": "RotorBlur",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": 0.37,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 1
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0032-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          }
+        ],
+        "Removed": []
+      },
+      "FractureModel": "{G}ae200001-ae00-4f05-0101-000000000001",
+      "DamagedModel": "{G}ae200001-ae00-4f05-0102-000000000001",
+      "BuildProgressModels": [
+        {
+          "Key": "ae200001-ae00-4f05-0048-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 0,
+            "Model": "{G}ae200001-ae00-4f05-0101-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        },
+        {
+          "Key": "ae200001-ae00-4f05-0049-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 1,
+            "Model": "{G}ae200001-ae00-4f05-0100-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        }
+      ]
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition",
+    "PriorityOverride": false
+  }
+}

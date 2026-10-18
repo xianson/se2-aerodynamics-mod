@@ -1,0 +1,80 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "d4c08ec3-d3e6-4498-8391-9f2a234147b9",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-5c01-0014-000000000001",
+      "TagSlots": {
+        "$DeltaEncoded": true,
+        "RemovedKeys": [],
+        "ModifiedKeys": [
+          {
+            "$Key": "SpatialAudioComponent",
+            "$Value": "86810566-045b-4bc3-8c26-a4bb503eba02"
+          },
+          {
+            "$Key": "ParticleEffectComponent",
+            "$Value": "370d561f-55c6-4cff-bb45-ef14503eb36f"
+          }
+        ]
+      },
+      "Components": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "b7bf405c-71aa-46a1-a5ec-4c690f2ab7e3",
+          "e58b8f69-45da-40d4-82b0-f1a82564a53a",
+          "99b0fd59-b175-4ed0-8251-224787aba984",
+          "627bf238-e13e-49f4-9f61-27038e422899",
+          "86810566-045b-4bc3-8c26-a4bb503eba02",
+          "370d561f-55c6-4cff-bb45-ef14503eb36f"
+        ],
+        "Changed": [
+          {
+            "Kind": "Update",
+            "Index": 2,
+            "Value": {
+              "Definition": "ae200001-ae00-5c01-0001-000000000001"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 3,
+            "Value": {
+              "Definition": "0954e267-f039-4b90-9d76-b7fbc3db1f0a",
+              "Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Armors.ArmorBlockComponent"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 4,
+            "Value": {
+              "Definition": null,
+              "Type": "VRage:Keen.VRage.Audio.Components.SpatialAudioComponent"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 5,
+            "Value": {
+              "Definition": "5ff1c187-e2d7-4979-bda8-1c59f6c30171",
+              "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.BlockEffectsComponent"
+            }
+          }
+        ],
+        "Removed": [
+          "627bf238-e13e-49f4-9f61-27038e422899",
+          "75b3b3fb-efad-46d2-a183-696bdaf402c9",
+          "cbbf7af7-e409-42b7-a85a-e17ad9a54e4b"
+        ]
+      }
+    },
+    "DefinitionType": "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition",
+    "PriorityOverride": false
+  }
+}

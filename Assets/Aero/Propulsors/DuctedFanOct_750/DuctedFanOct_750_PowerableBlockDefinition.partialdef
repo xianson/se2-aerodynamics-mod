@@ -1,0 +1,26 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "e75c5a0b-ab9d-49f9-9f92-cf054f35798f",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-fa75-0001-000000000001",
+      "UIData": {
+        "Name": "Ducted Fan (Octagonal)",
+        "Icon": "{G}a89a69b1-1018-5e57-adea-c37cb04e8211"
+      },
+      "PlacerDefinition": "ae200001-ae00-fa00-0050-000000000001",
+      "DisplaySizeOverride": 7.5,
+      "Recipe": "7a1167cc-7218-4e9d-9063-8ef0eba37245",
+      "BlockKind": "ae200001-ae00-fa00-0020-000000000001",
+      "PCU": 800
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}
