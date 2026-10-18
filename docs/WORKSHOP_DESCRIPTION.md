@@ -74,12 +74,5 @@ Small and medium ships cost little. [b]Very large ships[/b] (thousands of blocks
 [/list]
 
 [h2]Licence[/h2]
-Copyright (c) 2026 xianson. Free of charge, you may:
-[list]
-[*]use the mod in any world, server, video or stream;
-[*]make mods that depend on it or call its public API;
-[*]re-upload it, modified or not, as long as the upload is unlisted, private or friends-only (never publicly listed);
-[*]reuse any part of its code, except in a mod that presents itself as an alternative aerodynamics or orbital mod for Space Engineers 2.
-[/list]
-Commercial use (anything sold or paid for, including by game developers or publishers) needs a paid licence from the author. Credit is appreciated but not required. All other rights reserved. Provided as is, without warranty.
+Free to use in any world, server or video, and free to depend on. Re-uploads only unlisted, private or friends-only. Code may be reused except in a competing aerodynamics or orbital mod; credit appreciated, not required. Commercial use (including by game developers) needs a paid licence. Full text: [url=https://github.com/xianson/se2-aerodynamics-mod/blob/master/LICENSE]LICENSE on GitHub[/url].
 ```
