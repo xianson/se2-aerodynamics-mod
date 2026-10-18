@@ -141,12 +141,15 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
   cut's separation watched, the scorch dose every 0.25 s (`HeatScorch.Update`);
 - `StructureLoads.Rate` (4) times a second, and only for a grid someone flies (`StructFocusUntil` from
   `AeroApi.SetFocusGrid`, or `TargetControlData`): `TickStructureCore` installs the last evaluation's results
-  (`ApplyStructureDamage`, `ApplyBends`), takes a snapshot (`StructSnap`: applied air force / torque, wing forces,
-  thruster shares, gyro torque, contacts, block health, the Orbital mod's railed-entry state) and, after a block change
+  (`ApplyStructureDamage`, `ApplyBends`), takes a snapshot (`StructSnap`: applied air force / torque, wing forces, each
+  block component's and drag patch's air for its own block (`SnapComponentLoads`, `Structure.ComponentLoads`), thruster
+  shares, extra block loads (`PublishBlockLoad`), gyro torque, contacts, block health, the Orbital mod's railed-entry
+  state) and, after a block change
   and `RebuildCooldown`, the blocks themselves (`SnapshotBlocks`);
 - in the background (`AeroWork`, at most `StructureLoads.MaxInFlight` evaluations in all): `EvaluateStructure` -
   rebuild (`ShipStructure.Build`, `BuildHeat`, heat carried over), hull heat (`HullHeat.Pass` / `Step`, from the real or
-  railed air), loads spread onto blocks (`StructureEval.Apply`), the free-body solve (`ShipStructure.SolveFree`), the
+  railed air), loads spread onto blocks (`StructureEval.Apply`: wings over their cells, block components on their blocks,
+  the rest of the air over the windward faces), the free-body solve (`ShipStructure.SolveFree`), the
   steer cap, the damage plan by section (`StructureEval.Damage`: wear, fatigue via `StructureFatigue`, heat damage,
   failed cuts), bends (`StructureBend.Plan`), and the stall and LOAC evaluations (`EvaluateStall`, `EvaluateLoac`, via
   `DesignProbe.ForcesAt`);

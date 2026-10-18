@@ -10,7 +10,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 | File | What |
 |---|---|
 | `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. Thrusters are rigid (2026-10-17, `Thruster`, `RigidThrusters`): never worn or failed inside, a joint to one is its mount's - the mount breaks (`Breaks`) and the engine leaves whole. |
-| `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). |
+| `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). Each block component's air (control surfaces, airbrakes, gear legs, intakes, scoops, drag patches) goes on its own block at its point (2026-10-17, `ComponentLoadsAtBlocks` - `Structure.ComponentLoads`, aeroset-able; `CompPlaced` / `CompMissed`), taken off the rest of the air like the wings' - the ship's total load unchanged; extra block loads (`Loads.LoadBlock`, `PublishBlockLoad`) add at their block. |
 | `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate; compression at `BucklingFatigueShare` 1 for a buckling-limited member, `CompressionFatigueShare` 0.2 for a stocky one: `TensilePart`, `CompressionShare`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
 | `StructureBend.cs` | Permanent bends: which joints set, the far side, the displacement. |
 | `StructMaterial.cs` | Material classes from block names: wall thickness, strength by temperature, burn rate, each class's scorch thresholds (`ScorchAt`). |
@@ -26,6 +26,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `StructureLoads.cs` | Settings (`Structure.*`, `Heat.*`) and diagnostics: `aeroget/aeroset StructureLoads.X`. |
 | `StructureServer.cs` | `AeroGridComponent` partial: the snapshot (`TickStructure`), the background evaluation (`EvaluateStructure`), the steer cap. |
+| `StructureServer.BlockLoads.cs` | The snapshot's block-component and drag-patch air (`SnapComponentLoads`: the world's multipliers as on the total, `AeroTuning.ScalePart`), and `PublishBlockLoad` - a force at a block this tick the structure sees nowhere else (a rotor's cyclic, a mod engine's thrust; latest per block, any thread; `isEngine`: rigid like a thruster). |
 | `StructureServer.Rebuild.cs` | The blocks read for a rebuild (cells, mass, kind, mount points; definitions by reflection) and the heat faces. |
 | `StructureServer.Damage.cs` | The fatigue ledger's writes to the game's blocks, `Gone` (every damage call's guard). |
 | `StructureServer.Failure.cs` | A failing block split or destroyed; a failed cut's crack run member by member (`StepCracks`, the hinge crumpled); a failed cut watched until the grid splits (the jagged line's stubs spared first). |
@@ -50,6 +51,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 - The flow, step by step: `docs/ARCHITECTURE.md` §6.
 
 ## Threading
+- `PublishBlockLoad`: any thread (a lock); read by the snapshot on the simulation thread.
 - Simulation thread (`AeroSimJob`, per grid): `TickStructure` (snapshot, contacts, results applied: damage, failure,
   bends; a running crack's releases every tick - `StepCracks`, never the ledger), `TickWingStrain`, `HeatScorch.Update`. `TearJob` once a tick (the first server grid's), before physics.
 - Background (`AeroWork`, one evaluation per grid, `StructureLoads.MaxInFlight` in all): `EvaluateStructure` -
