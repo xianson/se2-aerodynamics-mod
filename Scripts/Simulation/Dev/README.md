@@ -9,7 +9,6 @@
 | `AeroBlockSaveDevForm.cs` | Its request / answer text, pure (`Tests/BlockSaveTests`) |
 | `FlightFixture.cs` | A grid as the thruster steering sees it, as text for `Tests/ThrustTests` (Orbital's DevHarness `flightdump`) |
 
-(`Integration/AeroSpeedSpike.cs` is a local dev file and stays where it is.)
 
 ## Entry points
 - `AeroFlightTest.Tick` (end of `AeroGridComponent.AeroSimJobCore`), `AeroExport.Write` (`StartBackgroundBuild`).

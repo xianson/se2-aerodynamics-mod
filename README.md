@@ -18,6 +18,10 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Flight controls through real parts:** control surfaces move with your steering. Gyros, thrusters, surfaces and
   rotors fly the ship together, aware of the air. Thrust acts where each thruster sits, and nothing turns the ship by
   magic.
+- **Honest dampeners:** the game's dampeners delete gravity for free (a ship that falls with them off floats and
+  climbs with them on). Here they hold the ship up with real thrust against the gravity it really feels (2x the planet's
+  pull in vanilla), so **a ship needs thrust for twice its planet weight to hover**, and super dampeners brake with real
+  thrust. Turn `Physics.HonestDampeners` off (Settings > Mods > Flight model > Advanced) for the game's own dampeners.
 - **Engines by speed:** turboprops rule subsonic flight, vanilla atmospheric thrusters (jets) pinch through Mach 1 and
   gain from ram air above it, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
@@ -62,6 +66,12 @@ a problem, attach the newest log from `%APPDATA%\SpaceEngineers2\Temp\Logs\` (th
 ## Credits
 
 By xianson.
+
+## Licence
+
+Free to use in any world, server or video, and free to depend on. Re-uploads only unlisted, private or
+friends-only. Code may be reused except in a competing aerodynamics or orbital mod; credit appreciated, not required.
+Commercial use (including by game developers) needs a paid licence. Full text: [LICENSE](LICENSE).
 
 ---
 Developing or building the mod yourself? See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

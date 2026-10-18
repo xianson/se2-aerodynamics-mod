@@ -154,6 +154,29 @@ public static class PhysicsHack
         catch { return 1f; }
     }
 
+    /// <summary>GravityMultiplier, read once the configuration is there (then cached: the per-tick weights read it - no lookup
+    /// and no try per call). The REAL weight of a grid nothing holds is m x GravitySum x this: the engine scales the gravity
+    /// it applies (CustomGravity), while the dampeners' gravity hold (ThrustComponent.ComputeThrust) takes GravitySum x m
+    /// off that gravity in place - so a dampened hover hides the multiplier and a ship flying without that hold (dampeners off,
+    /// a plane on its wings) carries all of it (Tests/ThrustTests HeliDampChecks; the mod's PhysicsSessionConfiguration
+    /// override sets 1).</summary>
+    public static float GravityScale
+    {
+        get
+        {
+            float g = _gravityScale;
+            if (g > 0f) return g;
+            if (++_gravityScaleTries > 600) return 1f;   // (never readable: 1, as before - and no lookup per call for good)
+            PhysicsSessionConfiguration c;
+            try { c = DefinitionManager.Instance?.GetConfiguration<PhysicsSessionConfiguration>(); } catch { return 1f; }   // (cold: until read once, at most 600 calls)
+            if (c == null) return 1f;
+            g = c.GravityMultiplier > 0f && float.IsFinite(c.GravityMultiplier) ? c.GravityMultiplier : 1f;
+            _gravityScale = g;
+            return g;
+        }
+    }
+    static float _gravityScale = -1f; static int _gravityScaleTries;
+
     /// <summary>
     /// Once: log the physics session configuration the world runs with (CONFIGPROBE). It used to set
     /// GravityMultiplier and MaximumSpeedLinear by reflection (private setters); the mod's own
@@ -236,7 +259,7 @@ public static class PhysicsHack
         !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 
     // ═══════════════════════════════════════════════════════════════
-    // Control data and pose writes (dev: AeroFlightTest, AeroSpeedSpike)
+    // Control data and pose writes (dev: AeroFlightTest)
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -325,6 +348,22 @@ public static class PhysicsHack
     public static Vector3 GetGravityDirection(DEntityContext data)
     {
         return SafeTryGet<GravityEffectData>(data, out var g) ? g.GravitySum : Vector3.Zero;
+    }
+
+    /// <summary>
+    /// THE GRAVITY THE BODY ACTUALLY GETS this step (world m/s2; 2026-10-18): the body's CustomGravity - GravitySum less the
+    /// dampeners' gravity hold, which ThrustComponent.ComputeThrust takes off it IN PLACE (the hold is never thrust:
+    /// ActiveThrustData leaves it out) - x the engine's GravityMultiplier (Havok scales the motion gravity by it; vanilla 2).
+    /// Read after the game's thrust (the same tick's hold): a dampened hover or a dampened parked ship gets ~0, a ship without
+    /// the hold 2 x GravitySum. No CustomGravity yet (its first tick): GravitySum x the multiplier. What a momentum balance
+    /// must subtract (ContactBalance) - GetGravityDirection is the planet's, for directions and the game's own hold.
+    /// Honest dampeners (HonestDampeners.Step, earlier in the same sim job) write CustomGravity first: then it holds the full
+    /// gravity less the honest hold's share (gravity x multiplier + the thrust the game did not apply), which this returns as is.
+    /// </summary>
+    public static Vector3 GetAppliedGravity(DEntityContext data)
+    {
+        Vector3 g = SafeTryGet<CustomGravity>(data, out var cg) ? cg.Value : GetGravityDirection(data);
+        return ContactBalance.AppliedGravity(g, GravityScale);
     }
 
     /// <summary>

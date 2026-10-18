@@ -83,7 +83,8 @@ public partial class ReversibleThrustComponent : Component, IInSceneListener
             bool damp = gd.Has<DampeningData>();
             var gwt = gd.GetWorldTransform();
             Vector3 v = gd.TryGet<Keen.VRage.Physics.Data.RigidBodyData>(out var rb) ? WorldTransform.TransformDirectionInv(rb.LinearVelocity, gwt) : Vector3.Zero;
-            Vector3 g = WorldTransform.TransformDirectionInv(PhysicsHack.GetGravityDirection(gd), gwt);
+            // (honest dampeners: the hold is against the gravity the body gets, x the engine's multiplier - HonestDampeners)
+            Vector3 g = WorldTransform.TransformDirectionInv(PhysicsHack.GetGravityDirection(gd), gwt) * (HonestHold.Enabled && AeroSwitch.Enabled ? PhysicsHack.GravityScale : 1f);
             float mass = gd.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) ? mp.Mass : 0f;
             float max = MathF.Max(td.MaxThrustPower, 0f);
             Demand = ReversibleThrust.Demand(input, damp, Vector3.Dot(v, axis), Vector3.Dot(g, axis), mass, max);

@@ -73,14 +73,15 @@ public static class RotorKinematics
     /// shape (the induced power ~ T^1.5: the torque grows faster than the thrust), scaled by this so that a tail thruster at a
     /// typical arm - the rotor's tip radius behind the mast - needs 10 % of the main rotor's thrust at its RATED thrust, as on a
     /// real helicopter (Q / (T R) = (P / T) / tip speed ~ 0.08-0.10 at a real disc loading of 300-500 N/m^2).
-    /// Why it is needed: the game's rotors carry far more weight per disc area than real ones (uniform 3.4 kN/m^2:
-    /// HelicopterRotor_150's 600 kN on a 7.5 m disc - gen_propulsor_defs.py), so momentum theory's induced velocity
-    /// sqrt(T / 2 rho A) is ~41 m/s instead of ~13 and the raw formula asks 24 % of the thrust at that arm (1.07 MN m for the
-    /// 1.5 m rotor at rated): no sensible tail could hold it. 0.42 = 0.10 / 0.238 (the raw Q / (T R) at that disc loading).
+    /// Why it is needed: the game's rotors carry far more weight per disc area than real ones (uniform 5.1 kN/m^2:
+    /// HelicopterRotor_150's 900 kN on a 7.5 m disc - gen_propulsor_defs.py), so momentum theory's induced velocity
+    /// sqrt(T / 2 rho A) is ~50 m/s instead of ~13 and the raw formula asks ~29 % of the thrust at that arm: no sensible
+    /// tail could hold it. 0.344 = 0.10 / 0.29 (the raw Q / (T R) at that disc loading). (2026-10-18: 0.42 at the old 600 kN
+    /// rating - the rotors went 1.5x for honest dampeners, and the scale with them so the tail share stays 10 %.)
     /// One constant fits every size: at a uniform disc loading Q / (T R) does not depend on R (and with the thrust ~ rho, nor
     /// on the air's density). Tests/RotorTests pins the 10 % for every rotor in the table.
     /// </summary>
-    public static float ReactionScale = 0.42f;
+    public static float ReactionScale = 0.344f;
 
     /// <summary>The reaction torque (N m, about the rotor axis, against its turn: +axis for this clockwise-from-above rotor)
     /// the shaft puts on the ship: Q = ReactionScale x P / omega. None below 2 % rpm (stopped: nothing to react).</summary>

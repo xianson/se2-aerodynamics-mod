@@ -19,6 +19,10 @@ public static class ThrustTorque
     public static float MaxRate = 0.8f;   // Propulsion/ThrustTorque.cs
     public static bool FlamesEnabled = true;   // Propulsion/ThrustTorque.cs
 }
+public static class HonestHold
+{
+    public static bool Enabled = true;   // Propulsion/HonestHold.cs
+}
 public static class AeroWind
 {
     public static bool Enabled = true;   // Air/AeroWind.cs

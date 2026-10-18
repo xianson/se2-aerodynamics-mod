@@ -63,8 +63,8 @@ The prop tips reach 1.2 cells from the axis, inside the disc's ±1.5 cells. This
   - Each blade pitches about its own span at its flap hinge.
   - The blur disc runs from the hinge radius to the tips.
 - **Static thrust:**
-  - 67 kN for HelicopterRotor_050, 600 kN for _150 and 1.667 MN for _250: one disc loading (3.4 kN/m²), by disc area from the 1.5 m rotor's 600 kN on its 7.5 m tips;
-  - 85 kN for the tail rotor (the Reversible Rotor; 2026-10-17, from 60 kN): one of them at the 1.5 m rotor's tip radius behind its mast holds that rotor's reaction torque at its rated thrust with the limiter's 80 % margin to spare (85 kN × 7.5 m × 0.8 = 510 kN m against 450), so that rotor is never capped below 100 %. Two at the 2.5 m rotor's tip radius hold about 87 % of its rating; two at about 1.8 × its radius, or three at its tip radius, hold all of it.
+  - 100 kN for HelicopterRotor_050, 900 kN for _150 and 2.5 MN for _250: one disc loading (5.1 kN/m²), by disc area from the 1.5 m rotor's 900 kN on its 7.5 m tips (2026-10-18: 1.5x for honest dampeners, where a hover costs 2x the planet weight in real thrust; was 67 kN / 600 kN / 1.667 MN). RotorKinematics.ReactionScale went 0.42 → 0.344 with it, so a tail at the tip radius still needs 10 % of rated thrust;
+  - 128 kN for the tail rotor (the Reversible Rotor; 2026-10-18, 1.5x from 85 kN, from 60): one of them at the 1.5 m rotor's tip radius behind its mast holds that rotor's reaction torque at its rated thrust with the limiter's 80 % margin to spare (128 kN × 7.5 m × 0.8 = 768 kN m against 675), so that rotor is never capped below 100 %. Two at the 2.5 m rotor's tip radius hold about 87 % of its rating; two at about 1.8 × its radius, or three at its tip radius, hold all of it.
 - **Power:** the helicopter rotors draw half the vanilla atmospheric thruster's power per newton (0.79 kW per kN); the Reversible Rotor and the ducted fans draw the vanilla 1.58 kW per kN; the turboprops 0.32 kW per kN (2026-10-17: the kings of subsonic thrust per kW, see "Speed roles").
 - **Structure loads (2026-10-17):** the cyclic's tilt force, the torque it gives and the rotor's reaction torque are applied to the body at the centre of mass, and published at the rotor's hub for the structure (`RotorCyclic.PublishLoads` → `PublishBlockLoad`), with the torque adjusted so the ship's total moment is unchanged. isEngine is true: they are the rotor's thrust tilted and its drive's torque, so they switch off with Structure.ThrustLoads as its axial thrust does. The rotor already has the game's ThrusterComponent, so it is rigid anyway and no rebuild happens. The tilt force is noted for the contact balance (not a contact).
 - **Reaction torque:** calibrated like a real helicopter's. At rated thrust, a tail thruster at the rotor's tip radius needs 10 % of the rotor's thrust; beyond the rating the torque grows faster than the thrust.
@@ -345,6 +345,6 @@ A thrust factor from the angle between an engine's intake and the incoming air, 
 
 ## Open decisions
 
-- **Thrust:** the current values are 1.9 MN for Turboprop_250, 600 kN for HelicopterRotor_150 (the rotors by disc area from it: see above) and 10.8 MN for Fan_750; the other sizes scale from these.
+- **Thrust:** the current values are 1.9 MN for Turboprop_250, 900 kN for HelicopterRotor_150 (the rotors by disc area from it: see above) and 10.8 MN for Fan_750; the other sizes scale from these.
 - **Yaw control** for rotorcraft: a fenestron or counter-rotating rotors.
 - **Drag:** whether the propulsors produce aerodynamic drag.

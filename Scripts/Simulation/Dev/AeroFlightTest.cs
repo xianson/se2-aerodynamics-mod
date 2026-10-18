@@ -8,9 +8,9 @@ namespace AeroMod;
 /// Scripted atmospheric flight test -- an autopilot that flies a grid on synthetic pilot input
 /// so aerodynamics can be measured without a human on the stick.
 ///
-/// WHY THIS EXISTS, AND HOW IT DIFFERS FROM AeroSpeedSpike
+/// WHY THIS EXISTS, AND HOW IT DIFFERED FROM AeroSpeedSpike (a dev spike, removed 2026-10-18)
 ///
-/// AeroSpeedSpike answers a different question: can we exceed the physics speed cap by keeping
+/// AeroSpeedSpike answered a different question: can we exceed the physics speed cap by keeping
 /// real velocity at 50 m/s and teleporting the grid forward 200/60 m every tick, so ground speed
 /// reads ~250 m/s while Havok only ever sees 50? It is a speed-cap workaround, not flight -- it
 /// overwrites position and velocity every frame, so the aero model's forces never actually move

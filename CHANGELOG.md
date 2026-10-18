@@ -20,6 +20,13 @@ The first Workshop release. In plain words, what you get:
 - **Re-entry.** Plasma, vapour and wingtip trails, hull heating with heat damage and scorch marks.
 - **Warnings** for stall and coming loss of control (on the Orbital Mod's HUD), and an optional Mach readout.
 - **Settings menu** under pause menu > Settings > Mods, plus text files for hosts.
+- **Honest dampeners** (2026-10-18, `Physics.HonestDampeners`, on by default). The game's dampeners cancel the world's
+  doubled gravity (GravityMultiplier 2) with one weight of thrust, so a ship that cannot fly with dampeners off floats with
+  them on and climbs with nearly all its thrust. Now the hold is real thrust against the real gravity, within the
+  thrusters' maxima: a ship needs thrust for twice its planet weight to hover (thrust 2.5x: it hovers at 80 % and climbs
+  at 0.5 g; the game's 1.5 g), one at 1.5x sinks at 0.5 g with dampeners on (the game's: hovers, climbs at 0.5 g), and the
+  world's super dampeners no longer brake at 2-5x the thrusters' real thrust (from 100 m/s at 5 m/s2: 1000 m, the boost's
+  379 m). Off: the game's own. (Tests/ThrustTests `HonestDampChecks`.)
 
 Good to know:
 

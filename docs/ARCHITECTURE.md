@@ -95,7 +95,7 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
 10. **Attitude** is not here: the separate `AttitudeJob` (section 5) is the only thrust path (the old per-thruster
     `OffsetThrustJob.Execute` with its phantom PD torque was removed 2026-10-17). `Aero.ThrustTorque` off leaves the game's
     own thrust untouched.
-11. **Stats and dev hooks:** `AeroStats.CommitGrid`, `AeroSpeedSpike.Tick`, `AeroFlightTest.Tick`.
+11. **Stats and dev hooks:** `AeroStats.CommitGrid`, `AeroFlightTest.Tick`.
 
 ### Inside TryCompute: shape to forces
 

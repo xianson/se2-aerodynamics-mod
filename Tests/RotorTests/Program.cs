@@ -21,9 +21,9 @@ static class Program
         var rows = PropulsorBlocks.Rows;
         PropulsorBlocks.Row Row(string n) => rows.First(r => r.Name == n);
         var r05 = Row("HelicopterRotor_050"); var r15 = Row("HelicopterRotor_150"); var r25 = Row("HelicopterRotor_250"); var tail = Row("HelicopterTailRotor_050");
-        // 1. thrust ~ disc area (one disc loading), anchored on the 1.5 m = 600 kN; the tip radii are the spec's 2.5 / 7.5 / 12.5 m
+        // 1. thrust ~ disc area (one disc loading), anchored on the 1.5 m = 900 kN (2026-10-18: 1.5x for honest dampeners, from 600); the tip radii are the spec's 2.5 / 7.5 / 12.5 m
         Check(r05.Radius == 2.5f && r15.Radius == 7.5f && r25.Radius == 12.5f, $"rotor tip radii {r05.Radius} / {r15.Radius} / {r25.Radius} m");
-        Check(r15.StaticThrust == 600000f, $"HelicopterRotor_150: {r15.StaticThrust / 1e3f:F0} kN");
+        Check(r15.StaticThrust == 900000f, $"HelicopterRotor_150: {r15.StaticThrust / 1e3f:F0} kN");
         float dl = r15.StaticThrust / (MathF.PI * r15.Radius * r15.Radius);
         foreach (var r in new[] { r05, r25 })
         {
@@ -32,7 +32,7 @@ static class Program
             float rdl = r.StaticThrust / (MathF.PI * r.Radius * r.Radius);
             Check(MathF.Abs(rdl - dl) < 0.01f * dl, $"{r.Name}: disc loading {rdl:F0} N/m^2 (the 1.5 m's {dl:F0})");
         }
-        Check(tail.StaticThrust == 85000f, $"Reversible Rotor: {tail.StaticThrust / 1e3f:F0} kN");
+        Check(tail.StaticThrust == 128000f, $"Reversible Rotor: {tail.StaticThrust / 1e3f:F0} kN");
         // 2. power per kN: every helicopter rotor half the vanilla 1.58 (the most efficient lifters); the turboprops 0.32 (2026-10-17,
         //    the kings of subsonic thrust per kW to ~Mach 0.6 - Tests/ThrustTests power ladder); fans and the Reversible Rotor 1.58
         float Ratio(PropulsorBlocks.Row r) => r.PowerKw / (r.StaticThrust / 1000f);
@@ -51,7 +51,7 @@ static class Program
                 Check(share > 0.095f && share < 0.105f, $"{r.Name} at rho {rho}: a tail at {r.Radius} m needs {share * 100f:F1} % of its thrust");
             }
         Check(K.ReactionTorque(1.25f * r15.StaticThrust, 7.5f, 1f, 1f) > 1.25f * 1.1f * K.ReactionTorque(r15.StaticThrust, 7.5f, 1f, 1f), "reaction: still grows faster than thrust (1.25 x thrust > 1.37 x torque)");
-        // 4. the Reversible Rotor (85 kN, 2026-10-17): one at a 1.5 m rotor's tip radius holds it at its rating WITH the limiter's
+        // 4. the Reversible Rotor (128 kN, 2026-10-18; 85 kN until the rotors went 1.5x): one at a 1.5 m rotor's tip radius holds it at its rating WITH the limiter's
         //    margin (no cap below 100 %); two at the 2.5 m rotor's tip radius hold ~87 % of its rating (the limiter's own targets)
         {
             float q15 = K.ReactionTorque(r15.StaticThrust, 7.5f, 1f, 1f), q25 = K.ReactionTorque(r25.StaticThrust, 12.5f, 1f, 1f);

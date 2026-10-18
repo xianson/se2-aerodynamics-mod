@@ -11,12 +11,10 @@ What is left here after the folder reorg: the retractable gear's and the airbrak
 | `AeroAirbrakeComponent.cs` | Server: the 3x3x3 airbrake opens with the parking brake to its slider's angle; max opening saved with the block (`Blocks/AeroBlockSave.cs`) |
 | `AeroAirbrakeAnimComponent.cs` | Client: its two leaves turned by the published opening |
 | `AeroAirbrakeBlockDetailModel.cs` | The airbrake's terminal (max opening) |
-| `AeroSpeedSpike.cs` | A local dev file (a teleport-stepping spike; the Orbital harness's `aerospike`) - not part of the shipped feature set; leave it here. (`AeroTestHarness.cs`, the phantom-torque path's scripted scenarios, was removed with that path, 2026-10-17.) |
 
 ## Entry points
 - Injected by `InjectAeroComponents` (`AeroBlockGuids.Gear*Prefabs`, `Airbrake*Prefabs`).
 - Server jobs `OnGear` / `OnAirbrake` (before `Simulation`); client jobs after `RenderSubmissionBegin`.
-- `AeroSpeedSpike.Tick` from `AeroGridComponent`'s sim job.
 
 ## Threading
 Server components on the simulation thread, per block; animators on the client render-submission jobs; gear state
