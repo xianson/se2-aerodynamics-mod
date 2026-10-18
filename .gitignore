@@ -24,3 +24,8 @@ Content/Aero/
 # tools/modlist build output
 tools/modlist/bin/
 tools/modlist/obj/
+
+# Model/texture sources of the blocks (218 MB): kept out of git (2026-10-17). Sources: the Blender exports;
+# the copy in the folded-in "Aerodynamics Mod Blocks"; tools/blocks_merge/merge_blocks_assets.py copies them into a clone
+Assets/Aero/**/*.fbx
+Assets/Aero/**/*.png
