@@ -15,6 +15,10 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Drag and lift from the shape:** every exposed face meets the air (pressure, shadowing, skin friction, rotation
   damping, supersonic wave drag). Wings are found from the blocks, with stall and Mach effects. Wind, ground effect, and
   damage that changes the forces at once.
+- **Offset thrust (core):** every thruster pushes from where it sits. In vanilla, thrust always acts through the
+  centre of mass, so any layout flies straight; here a thruster off the centre of mass turns the ship, exactly as a real
+  one would. Ships need their thrust balanced around the centre of mass (or the gyros and surfaces to hold it), and
+  losing an engine on one side yaws you. This is the foundation the rest of the mod is built on.
 - **Flight controls through real parts:** control surfaces move with your steering. Gyros, thrusters, surfaces and
   rotors fly the ship together, aware of the air. Thrust acts where each thruster sits, and nothing turns the ship by
   magic.
