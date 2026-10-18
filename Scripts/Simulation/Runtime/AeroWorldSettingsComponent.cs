@@ -28,12 +28,18 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
         AeroSettings.WorldSaved();
     }
 
-    void IInSceneListener.OnAddedToScene() { System.Threading.Interlocked.Increment(ref _carriers); AeroSettings.CarrierAdded(); }
+    void IInSceneListener.OnAddedToScene()
+    {
+        System.Threading.Interlocked.Increment(ref _carriers); AeroSettings.CarrierAdded();
+        lock (Planets) Planets.Add(this);   // (quick launch's planet centres: Launch/QuickLaunch.Server.cs)
+    }
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         AeroSettings.CarrierRemoved();
-        // (the last carrier gone - the world unloaded: the API's structure events let go of its entities, 2026-10-15 review)
-        if (System.Threading.Interlocked.Decrement(ref _carriers) <= 0) AeroApi.ResetStructureEvents();
+        lock (Planets) Planets.Remove(this);
+        // (the last carrier gone - the world unloaded: the API's structure events let go of its entities, 2026-10-15 review;
+        //  quick launch's unanswered ask, answer and cockpit turn of that world, 2026-10-18)
+        if (System.Threading.Interlocked.Decrement(ref _carriers) <= 0) { AeroApi.ResetStructureEvents(); QuickLaunch.ResetWorld(); }
     }
     static int _carriers;
 }

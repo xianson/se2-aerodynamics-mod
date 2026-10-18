@@ -152,6 +152,14 @@ public static class TearSmoke
     public static float Seconds = 4f;   // Structure/Fx/TearSmoke.cs
     public static float DebrisScale = 1f;   // Structure/Fx/TearSmoke.cs
 }
+public static class QuickLaunch
+{
+    public static bool Creative = true;   // Launch/QuickLaunch.cs
+    public static double AltitudeM = 1000;   // Launch/QuickLaunch.cs
+    public static double SpeedMps = 0;   // Launch/QuickLaunch.cs
+    public static int Key = 20;   // Launch/QuickLaunch.cs
+    public static int Modifier = 1;   // Launch/QuickLaunch.cs
+}
 public static class AeroSurfaceSaved
 {
     public static void Load(string text) { }

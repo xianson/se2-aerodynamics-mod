@@ -84,7 +84,8 @@ public static partial class AeroSettings
 
     // the screen's sections, in order
     const string GFlight = "Flight model", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
-                 GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality";
+                 GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality",
+                 GLaunch = "Quick launch", GControls = "Controls";   // (a group is one scope: the menu keys sections by name)
     const Tier Basic = Tier.Basic, Advanced = Tier.Advanced, Hidden = Tier.Hidden;
 
     static AeroSettings()
@@ -279,6 +280,17 @@ public static partial class AeroSettings
             "The most scorch marks one ship gets (the hot faces are gathered into this many spots).")
             .Ui("Scorch marks per ship", GHeat, Advanced);
 
+        // ── quick launch (2026-10-18: the Orbital Mod's creative Ctrl+T, moved here - Launch/QuickLaunch.cs; the server reads these) ──
+        B("QuickLaunch.Creative", "world", false, () => QuickLaunch.Creative, v => QuickLaunch.Creative = v,
+            "In creative, a seated pilot's quick launch key (Controls) lifts the ship over the ground, turns it level and sends it flying along its nose. Survival never has it. Off: not in this world either.")
+            .Ui("Quick launch in creative", GLaunch, Basic);
+        F("QuickLaunch.AltitudeM", "world", 100, 5000, false, () => QuickLaunch.AltitudeM, v => QuickLaunch.AltitudeM = v,
+            "Quick launch: how high over the ground (m; with no ground found under the ship, over where it is). Never lower than the ship is, never into the ground; with the Orbital Mod, always under the planet's space border.")
+            .Ui("Launch altitude", GLaunch, Basic, "m", 100);
+        F("QuickLaunch.SpeedMps", "world", 0, 1000, false, () => QuickLaunch.SpeedMps, v => QuickLaunch.SpeedMps = v,
+            "Quick launch: the speed along the nose (m/s). 0: the ship's cruise speed (its top speed at 3/4 throttle; 150 m/s when it has none). At most just under the world's speed cap.")
+            .Ui("Launch speed (0: cruise)", GLaunch, Advanced, "m/s", 10);
+
         // ── performance (the host's) ──
         F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,
             "The most aero may take of a simulation frame (ms); past it, grids not piloted wait a few frames.")
@@ -394,6 +406,14 @@ public static partial class AeroSettings
         I("Fx.SpawnPerTick", "client", 1, 200, false, () => FlightField.SpawnPerTick, v => FlightField.SpawnPerTick = (int)v,
             "Effects started per frame while a grid's effects build up (higher: faster, more hitching).")
             .Ui("Effect build-up speed", GQuality, Advanced);
+
+        // ── controls ──
+        I("QuickLaunch.Key", "client", 0, 26, false, () => QuickLaunch.Key, v => QuickLaunch.Key = (int)v,
+            "The quick launch key (seated, in creative worlds that allow it): a letter, with the modifier below. Off: no key.")
+            .Ui("Quick launch key", GControls, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("QuickLaunch.Modifier", "client", 0, 3, false, () => QuickLaunch.Modifier, v => QuickLaunch.Modifier = (int)v,
+            "Held with the quick launch key. None: the key alone, with no Ctrl, Shift or Alt held.")
+            .Ui("Quick launch modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
     }
 
     // ── the entry heating's Mach pair (stored as heat: OnsetHeat (M / OnsetMach)^3; FullMach is where it is full) ──

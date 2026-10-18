@@ -8,7 +8,7 @@ air also loads the ship's structure, so pulling too hard can bend, crack and tea
 on your blocks: the whole ship's shape counts, wings or no wings. The mod also adds aircraft parts, from control
 surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 
-**Version 1.0.0** · **[Wiki](https://github.com/xianson/se2-aerodynamics-mod/wiki)** ·
+**Version 1.0.1** · **[Wiki](https://github.com/xianson/se2-aerodynamics-mod/wiki)** ·
 **Steam Workshop:** [subscribe](https://steamcommunity.com/sharedfiles/filedetails/?id=3822388536) ·
 **[Report a bug](https://github.com/xianson/se2-aerodynamics-mod/issues)**
 
@@ -36,6 +36,9 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Re-entry:** plasma, vapour cones, wingtip trails, hull heating with heat damage, and scorch marks.
 - **Warnings:** a stall warning and a predicted loss-of-control warning (on the Orbital Mod's HUD), and an optional Mach
   readout.
+- **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
+  over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
+  the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).
 - **Settings:** an in-game menu (pause menu > Settings > Mods), plus host override files.
 
 ## Requirements

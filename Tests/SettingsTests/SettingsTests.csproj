@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="$(Sim)\Runtime\AeroSettings.cs" />
     <Compile Include="$(Sim)\Runtime\AeroSettings.Store.cs" />
+    <Compile Include="$(Sim)\Launch\QuickLaunchRules.cs" />
     <Compile Include="$(Sim)\Core\IGridAccessor.cs" />
     <Compile Include="$(Sim)\Core\SnapshotGridAccessor.cs" />
     <Compile Include="$(Sim)\Core\LongKey.cs" />
