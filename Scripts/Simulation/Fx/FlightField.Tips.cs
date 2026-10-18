@@ -49,6 +49,10 @@ internal sealed partial class FlightField
     //    tip moved more than 0.3 m - never re-spawned. Placement still decides WHETHER there are tips (thin and sharp). ──
     private Vector3 _tipSpan, _tipC; private List<Vector3> _hullTips; private long _windTipsAt;
     private readonly List<Vector3> _tipPtsA = new List<Vector3>(), _tipPtsB = new List<Vector3>();
+    /// <summary>Guards the hull-point buffers (_tipPtsA / _tipPtsB, _hullTips): ComputeTips refills one while WindTips reads the
+    /// other, and two ComputeTips on one field picked the same buffer - "Collection was modified" in the tip search after a grid
+    /// split (2026-10-18, a client crash). Taken a few times a second at most: placement, the twice-a-second truth check, 10 Hz.</summary>
+    private readonly object _tipLock = new object();
     private readonly List<object> _tipOrder = new List<object>();
     private readonly Vector3[] _wtFound = new Vector3[2]; private readonly float[] _wtBest = new float[2];
     private void WindTips(Vector3 flow)
@@ -56,6 +60,10 @@ internal sealed partial class FlightField
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (_hullTips == null || _tipOrder.Count == 0 || now - _windTipsAt < System.Diagnostics.Stopwatch.Frequency / 10) return;
         _windTipsAt = now;
+        lock (_tipLock) WindTipsLocked(flow);
+    }
+    private void WindTipsLocked(Vector3 flow)
+    {
         Vector3 u = _tipSpan - flow * Vector3.Dot(_tipSpan, flow);
         if (u.LengthSquared() < 1e-4f) return;
         u = Vector3.Normalize(u);
@@ -167,6 +175,10 @@ internal sealed partial class FlightField
     /// <summary>The ship's two span-end tips (this grid's frame), from the hull of every grid of the ship: measured from the
     /// hull's centre along the span axis only, each at the rearmost hull point of its tip. Null: no hull.</summary>
     private List<Vector3> ComputeTips(Vector3 f, out Vector3 a, out float wid, out int count)
+    {
+        lock (_tipLock) return ComputeTipsLocked(f, out a, out wid, out count);
+    }
+    private List<Vector3> ComputeTipsLocked(Vector3 f, out Vector3 a, out float wid, out int count)
     {
         a = default; wid = 0f; count = 0;
         // (two lists in turn: the one WindTips is not reading (_hullTips) filled - it was a fresh list of every hull point

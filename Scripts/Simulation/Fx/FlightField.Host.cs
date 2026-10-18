@@ -107,6 +107,8 @@ internal sealed partial class FlightField
     }
     public static void RecLostFrame() => RecLost++;
 
+    /// <summary>The client grid this field draws for (AeroEntryFx: a component holding another grid's field drops it).</summary>
+    internal Keen.VRage.DCS.Components.Entity Client => _client;
     public FlightField(Keen.VRage.DCS.Components.Entity client, object renderParent)
     {
         _client = client; _renderParent = renderParent;
