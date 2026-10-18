@@ -145,7 +145,7 @@ public static partial class OffsetThrustJob
         for (int i = 0; i < outThrusters.Count; i++)
             if (outThrusters[i].AirBreathing) airBreathing++;
 
-        Log.Default?.Info($"[AERO] OffsetThrust: scanned {totalChildren} hierarchy children, {thrustBlocks} with ThrusterComponent, cached {outThrusters.Count} thrusters ({airBreathing} air-breathing)");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO] OffsetThrust: scanned {totalChildren} hierarchy children, {thrustBlocks} with ThrusterComponent, cached {outThrusters.Count} thrusters ({airBreathing} air-breathing)");
     }
 
     // ─── ThrusterComponent reflection resolution ─────────
@@ -169,7 +169,7 @@ public static partial class OffsetThrustJob
             _thrusterCompType = typeof(ThrusterComponent);
             _thrusterDefField = _thrusterCompType.GetField("_definition",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            Log.Default?.Info($"[AERO] ThrusterComponent def field={_thrusterDefField != null}");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] ThrusterComponent def field={_thrusterDefField != null}");
         }
         catch (Exception ex)
         {
@@ -212,7 +212,7 @@ public static partial class OffsetThrustJob
             _gyroDefField = _gyroCompType.GetField("_definition",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-            Log.Default?.Info($"[AERO] GyroscopeComponent def field={_gyroDefField != null}");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] GyroscopeComponent def field={_gyroDefField != null}");
         }
         catch (Exception ex)
         {
@@ -262,7 +262,7 @@ public static partial class OffsetThrustJob
             });
         }
 
-        if (outGyros.Count > 0)
+        if (AeroLog.Detail && outGyros.Count > 0)   // (a line per grid per rescan: detail only)
             Log.Default?.Info($"[AERO] GyroCache: found {outGyros.Count} gyros, totalTorque={outGyros.Sum(g => g.MaxTorque):F0} N·m");
     }
 }

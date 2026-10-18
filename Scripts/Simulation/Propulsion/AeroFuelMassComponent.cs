@@ -42,7 +42,7 @@ public partial class AeroFuelMassComponent : Component, IDynamicMassProvider, II
         if (_tankComponent != null)
         {
             float initial = DynamicMass;
-            Log.Default?.Info($"[AERO] FuelMass: tank found, initial mass={initial:F0} kg");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] FuelMass: tank found, initial mass={initial:F0} kg");
         }
     }
 

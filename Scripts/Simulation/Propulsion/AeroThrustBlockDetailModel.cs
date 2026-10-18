@@ -32,7 +32,7 @@ public class AeroThrustBlockDetailModel : BlockDetailModel
     {
         // (runs inside the game's Allocate, before RegisterObservable: the pairing must exist by then)
         DetailModelPairing.Pair(this, _settings);
-        Log.Default?.Info($"[AERO] AeroThrustBlockDetailModel CTOR settings={_settings != null} {DetailModelPairing.Status}");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO] AeroThrustBlockDetailModel CTOR settings={_settings != null} {DetailModelPairing.Status}");
     }
 
     [Slider(null)]

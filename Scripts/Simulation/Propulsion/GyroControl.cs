@@ -42,7 +42,7 @@ public static class GyroControl
                     if (m.Name == "TryGet" && m.IsGenericMethodDefinition && m.GetParameters().Length == 1) { _tryGet = m.MakeGenericMethod(t); break; }
         }
         catch { _tryGet = null; _computed = null; }
-        Log.Default?.Info($"[AERO] GyroControl: game gyro impulse readable={_tryGet != null && _computed != null}");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO] GyroControl: game gyro impulse readable={_tryGet != null && _computed != null}");
     }
 
     [ThreadStatic] static object[] _args;

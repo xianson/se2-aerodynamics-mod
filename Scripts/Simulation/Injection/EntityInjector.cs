@@ -58,7 +58,7 @@ public class InjectAeroComponents : Injections
                 ComponentId = new System.Guid("ae205e77-1a65-4c0d-9b1e-0000000000a5"),
                 ObjectBuilder = new Keen.Game2.Simulation.GameSystems.EntityNameSessionComponentObjectBuilder(),
             });
-            Log.Default?.Info($"[AERO] Injected AeroWorldSettingsComponent into server planet prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroWorldSettingsComponent into server planet prefab '{entity.DebugName}'");
         }
 
         if (hasCubeGrid)
@@ -93,86 +93,86 @@ public class InjectAeroComponents : Injections
         if (AeroBlockGuids.FlapClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroFlapComponent));
-            Log.Default?.Info($"[AERO] Injected AeroFlapComponent into control surface client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroFlapComponent into control surface client prefab '{entity.DebugName}'");
         }
 
         // their server prefabs: the terminal's settings (axes, max deflection, trim), read by the grid's control
         if (AeroBlockGuids.SurfaceServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroSurfaceSettingsComponent), AeroBlockSave.SurfaceId));   // (saved with the block)
-            Log.Default?.Info($"[AERO] Injected AeroSurfaceSettingsComponent into control surface server prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroSurfaceSettingsComponent into control surface server prefab '{entity.DebugName}'");
         }
 
         // the retractable gears: the server drives the gear (its vanilla wheel made and unmade), the client animates it
         if (AeroBlockGuids.GearServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroGearComponent), AeroBlockSave.GearId));   // (saved with the block)
-            Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
         }
         // the 3x3x3 airbrakes: the server opens them on the parking signal, the client turns their leaves
         if (AeroBlockGuids.AirbrakeServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroAirbrakeComponent), AeroBlockSave.AirbrakeId));   // (saved with the block)
-            Log.Default?.Info($"[AERO] Injected AeroAirbrakeComponent into airbrake server prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroAirbrakeComponent into airbrake server prefab '{entity.DebugName}'");
         }
         if (AeroBlockGuids.AirbrakeClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroAirbrakeAnimComponent));
-            Log.Default?.Info($"[AERO] Injected AeroAirbrakeAnimComponent into airbrake client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroAirbrakeAnimComponent into airbrake client prefab '{entity.DebugName}'");
         }
         // the propulsors (turboprops, rotors, ducted fans - vanilla atmospheric thrusters underneath): both scenes shape their
         // maximum with the air (AeroPropulsorComponent); the rotors' cyclic reads it (RotorCyclic)
         if (PropulsorBlocks.ServerPrefabs.Contains(entity.Guid) || PropulsorBlocks.ClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroPropulsorComponent));
-            Log.Default?.Info($"[AERO] Injected AeroPropulsorComponent into propulsor prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroPropulsorComponent into propulsor prefab '{entity.DebugName}'");
         }
         // ROTOR STRIKES (2026-10-17): the striking propulsors' server copies probe their disc and keep the blades' saved health
         if (PropulsorBlocks.StrikeServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroRotorStrikeComponent), AeroBlockSave.BladesId));   // (saved with the block)
-            Log.Default?.Info($"[AERO] Injected AeroRotorStrikeComponent into propulsor server prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroRotorStrikeComponent into propulsor server prefab '{entity.DebugName}'");
         }
         // a reversible thruster (thrust either way, in the game's movement and the attitude law): any thruster block whose
         // prefab is listed (ReversibleThrustComponent.Prefabs - the propulsor table's reversible rows and Extra)
         if (ReversibleThrustComponent.Prefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(ReversibleThrustComponent));
-            Log.Default?.Info($"[AERO] Injected ReversibleThrustComponent into thruster prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected ReversibleThrustComponent into thruster prefab '{entity.DebugName}'");
         }
         if (PropulsorBlocks.RotorClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroRotorAnimComponent));   // (the hub, blades and blur disc, client only)
-            Log.Default?.Info($"[AERO] Injected AeroRotorAnimComponent into rotor client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroRotorAnimComponent into rotor client prefab '{entity.DebugName}'");
         }
         if (PropulsorBlocks.RamjetClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroRamjetSpikeComponent));   // (the inlet spike slid aft with the Mach, client only)
-            Log.Default?.Info($"[AERO] Injected AeroRamjetSpikeComponent into ramjet client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroRamjetSpikeComponent into ramjet client prefab '{entity.DebugName}'");
         }
         // the solid rocket motors (2026-10-17): a segment's tank read, weighed and kept on Auto on its server copy; the nozzle in both
         // scenes (the server ignites and burns it; both report its thrust to ThrustTorque) - the same saving id and builder in both
         if (SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroSolidSegmentComponent), AeroBlockSave.SolidSegmentId));
-            Log.Default?.Info($"[AERO] Injected AeroSolidSegmentComponent into solid rocket segment prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroSolidSegmentComponent into solid rocket segment prefab '{entity.DebugName}'");
         }
         if (SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroSolidNozzleComponent), AeroBlockSave.SolidNozzleId));
-            Log.Default?.Info($"[AERO] Injected AeroSolidNozzleComponent into solid rocket nozzle prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroSolidNozzleComponent into solid rocket nozzle prefab '{entity.DebugName}'");
         }
         // the exhaust (2026-10-17): the ramjets' blue-violet flame and shock diamonds, the solid nozzles' plume, balloon and smoke trail -
         // the mod's own particle effects, client only (Fx/AeroExhaustComponent; the blocks' own flame definitions carry no effect)
         if (PropulsorBlocks.RamjetClientPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroExhaustComponent));
-            Log.Default?.Info($"[AERO] Injected AeroExhaustComponent into client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroExhaustComponent into client prefab '{entity.DebugName}'");
         }
         if (AeroBlockGuids.GearClientPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroGearAnimComponent));
-            Log.Default?.Info($"[AERO] Injected AeroGearAnimComponent into gear client prefab '{entity.DebugName}'");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroGearAnimComponent into gear client prefab '{entity.DebugName}'");
         }
 
         // (a solid rocket segment's tank - Solid Propellant, the conveyor version 2026-10-17 - weighs through AeroSolidSegmentComponent:

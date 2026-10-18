@@ -71,6 +71,6 @@ public partial class AeroAirbrakeAnimComponent : Component, IInSceneListener
             if (k != null && k.Data.TryGet<RelativeTransform>(out var rt)) _leaves.Add(new Leaf { Entity = k, Rest = rt });
         if (_leaves.Count == 2) { bool firstUp = _leaves[0].Rest.Position.Y > _leaves[1].Rest.Position.Y; _leaves[0].Up = firstUp; _leaves[1].Up = !firstUp; }
         else _leaves.Clear();
-        Log.Default?.Info($"[AERO-AIRBRAKE] {_key} client: {n} children, {_leaves.Count} leaves");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO-AIRBRAKE] {_key} client: {n} children, {_leaves.Count} leaves");
     }
 }

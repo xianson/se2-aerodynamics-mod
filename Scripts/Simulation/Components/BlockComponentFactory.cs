@@ -67,7 +67,7 @@ public class BlockComponentFactory
             var info = BuildBlockInfo(block, blockSize);
             var comp = guidFactory(info);
             var orient = block.BlockOrientation;
-            Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} at {info.BlockPosition} " +
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} at {info.BlockPosition} " +
                 $"fwd={orient.Forward} up={orient.Up} " +
                 $"fwdVec=({info.Forward.X:F2},{info.Forward.Y:F2},{info.Forward.Z:F2}) " +
                 $"upVec=({info.Up.X:F2},{info.Up.Y:F2},{info.Up.Z:F2}) " +
@@ -87,7 +87,7 @@ public class BlockComponentFactory
                 var comp = reg.Factory(info, siblingComp);
                 if (comp != null)
                 {
-                    Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} (by component {reg.ComponentName}) at {info.BlockPosition}");
+                    if (AeroLog.Detail) Log.Default?.Info($"[AERO] Factory created {comp.GetType().Name} (by component {reg.ComponentName}) at {info.BlockPosition}");
                     return comp;
                 }
             }
@@ -121,7 +121,7 @@ public class BlockComponentFactory
 
         if (created > 0)
         {
-            Log.Default?.Info($"[AERO] Factory.CreateAll: {created} aero components from {blocks.Length} blocks");
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Factory.CreateAll: {created} aero components from {blocks.Length} blocks");
         }
     }
 

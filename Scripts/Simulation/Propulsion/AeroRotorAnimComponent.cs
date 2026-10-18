@@ -236,7 +236,7 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         if (spinner == null || blades == null || blur == null) FindPropPartsByPlace(all, ref spinner, ref blades, ref blur);
         // (2026-10-17, in game: the names did not come through - "turboprop without a split spinner" on every one, the blur
         //  disc left showing over still blades. The children's names and places, so the next run shows what the game gives)
-        Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: turboprop children {names}");
+        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: turboprop children {names}");
         if (blur != null) _parts.Add(blur);
         if (spinner == null || blades == null)
         {
@@ -261,7 +261,7 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         _propNoFade = false;
         _hub = spinner; _blades = blades; _blur = blur; _prop = true;
         _tip = row != null ? row.Radius : 1f;
-        Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: turboprop spinner at {spinner.Rest.Position}, blades at {blades.Rest.Position}, {(blur != null ? $"blur disc at {blur.Rest.Position}" : "no blur disc (the blades never fade)")}");
+        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: turboprop spinner at {spinner.Rest.Position}, blades at {blades.Rest.Position}, {(blur != null ? $"blur disc at {blur.Rest.Position}" : "no blur disc (the blades never fade)")}");
     }
 
     /// <summary>A turboprop's frame: the spinner and blades turned about its axis through the spinner by the governed rpm; the
@@ -362,6 +362,6 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         // (the tip: the block's table radius - PropulsorBlocks, the rig's tip radius; else the main rotors' ratio)
         _tip = row != null && row.Radius > _hinge ? row.Radius : _hinge * TipOverHinge;
         _span = _tip - _hinge;
-        Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
+        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
     }
 }

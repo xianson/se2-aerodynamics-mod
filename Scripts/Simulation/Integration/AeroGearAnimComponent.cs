@@ -117,6 +117,6 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
         foreach (var k in kids)
             if (k != null && k.Data.TryGet<RelativeTransform>(out var rt))
                 sb.Append($" ({rt.Position.X:F3}, {rt.Position.Y:F3}, {rt.Position.Z:F3})");
-        Log.Default?.Info($"[AERO-GEAR] {_key} client: {n} children at{sb}; {_parts.Count} gear parts");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO-GEAR] {_key} client: {n} children at{sb}; {_parts.Count} gear parts");
     }
 }
