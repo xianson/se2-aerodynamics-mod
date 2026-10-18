@@ -63,18 +63,26 @@ public partial class AeroGridComponent
         point = normal = Vector3.Zero; cdA = 0f; return false;
     }
 
+    /// <summary>Each patch's force and point, the last EvaluateDragPatches' [0, PatchLoadCount) - the structure puts it at its
+    /// point, on the block there (2026-10-17, StructureEval.ComponentLoadsAtBlocks). Simulation thread; grown, never per tick.</summary>
+    internal int PatchLoadCount;
+    internal Vector3[] PatchLoadF = Array.Empty<Vector3>(), PatchLoadP = Array.Empty<Vector3>();
+
     /// <summary>The patches' force and torque this tick (grid-local; torque about the centre of mass).</summary>
-    static (Vector3 force, Vector3 torque) EvaluateDragPatches(List<DragPatch> patches, in AeroContext ctx)
+    (Vector3 force, Vector3 torque) EvaluateDragPatches(List<DragPatch> patches, in AeroContext ctx)
     {
         Vector3 f = Vector3.Zero, t = Vector3.Zero;
+        PatchLoadCount = 0;
         float rho = (float)ctx.Atmosphere.Density;
         if (!(rho > 0f)) return (f, t);
+        if (PatchLoadF.Length < patches.Count) { PatchLoadF = new Vector3[patches.Count]; PatchLoadP = new Vector3[patches.Count]; }
         foreach (var p in patches)
         {
             // (the point's own travel: the grid's rotation included)
             Vector3 force = PatchDrag.Force(ctx.VelocityAtPoint(p.Point), rho, p.CdA, p.Normal);
             f += force;
             t += Vector3.Cross(p.Point - ctx.CenterOfMass, force);
+            PatchLoadF[PatchLoadCount] = force; PatchLoadP[PatchLoadCount++] = p.Point;
         }
         return (f, t);
     }
