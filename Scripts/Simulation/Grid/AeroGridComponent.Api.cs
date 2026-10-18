@@ -83,6 +83,7 @@ public partial class AeroGridComponent
         f[AeroApi.FsSurfacesCommanded] = _allocN; f[AeroApi.FsSurfacesSaturated] = _allocSat;
         f[AeroApi.FsApplied] = AeroForcesApplied ? 1f : 0f;
         f[AeroApi.FsEntryStrength] = AeroEntryFx.EntryStrength(mach, LastDensity);
+        f[AeroApi.FsGyroSaturation] = GyroFill; f[AeroApi.FsGyroTorqueShare] = GyroFactor;   // (the gyro rebalance: GyroBalance, server)
 
         // the control surfaces (the registry is this thread's)
         int ns = 0;

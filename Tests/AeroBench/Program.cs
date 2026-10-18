@@ -832,6 +832,7 @@ static partial class Program
         if (args.Length > 0 && args[0] == "roll") return RollResponse();
         if (args.Length > 0 && args[0] == "blend") return Blend(dataDir, atmo);
         if (args.Length > 0 && args[0] == "struct") return StructBench(dataDir, atmo, args.Skip(1).ToArray());
+        if (args.Length > 0 && args[0] == "gyros") return GyroBench(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "fail") return FailSim(dataDir, args.Skip(1).ToArray());
         if (args.Length > 2 && args[0] == "replay") return Replay(args[1], args[2], args.Length > 3 ? args[3] : null);
         if (args.Length > 0 && args[0] == "stall") return StallCheck(dataDir, atmo, args.Length > 1 ? args.Skip(1).ToArray() : new[] { "bluefighter", "pelican" });

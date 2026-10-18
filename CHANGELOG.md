@@ -5,6 +5,25 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 ## 1.0.1 - creative quick launch
 
+- **Gyro rebalance** (the user, 2026-10-18: "just do 1, maybe a lil 2. have them both as settings"). Vanilla gyros are
+  huge reactionless torque (one large gyro on a 39 t plane: 44 MN m), so they held lopsided designs straight and out-torqued
+  the surfaces and stalls.
+  - `Gyros.TorqueScale` (world, Flight model, 0.05..1, default 0.25): every gyro block's own maximum
+    (`GyroscopeData.MaxTorque`, the game's) is its definition's x the scale - the game's gyros weaker, no counter-torque; the
+    grid's `MaxTorqueData` follows (the game sums it), so the game's gyro laws, the aero-aware law, the allocator, the
+    loss-of-control prediction, the rotor limiter and the design probe all use the scaled torque. Measured
+    (`Tests/AeroBench gyros`, 150 m/s sea level, the vanilla target-law budget min(0.01 m^2, 0.25 x MaxTorque)): vanilla
+    gyros held one main engine out on Plane2 (2.78x) and Red Ship (1.40x) and their own stall moment on 5 of 7 ships (up to
+    3.67x); at 0.25 none holds either (worst 0.69x and 0.92x), and they still hold a 5 deg upset on 5 of 7 (trim,
+    stabilising) with 0.7..106 deg/s2 of pitch acceleration. One scale everywhere, space too (thrusters still steer).
+  - `Gyros.Saturation` (on) / `Gyros.SaturationSeconds` (15 s): the gyros store the momentum they give (signed, grid-local);
+    from half full their torque fades smoothly to a quarter, and bleeds back while lightly loaded. A full-torque hold fades
+    from ~7.5 s; turn-and-stop manoeuvring and small trims never fill it. Server, per grid (a split grid starts empty).
+  - Flight state 75-76: `GyroSaturation`, `GyroTorqueShare` - `AeroApi` version 10.
+  - Offline: `Tests/ThrustTests` GyroBalanceChecks (the fade, the factor, the write rule never compounding, the store's fill,
+    recovery, signed cancel, trim, gyros lost); the measurement `Tests/AeroBench gyros`.
+  - Not tested in game yet.
+
 - **Quick launch (creative only)** - moved here from the Orbital Mod (its 1.0.1 had it; the user, 2026-10-18: "ctrl+T
   should be in aero creative"). Seated in a cockpit, `Ctrl` + `T` lifts the ship and everything joined to it to 1 km over
   the ground (aero's ground ray; no ground found within 2 km: 1 km up from where it is), never lower than it is, never

@@ -62,7 +62,7 @@ A grid can be passed as either its server copy or a client copy in the same proc
 
 | Member | What it gives |
 |---|---|
-| `const int Version` | The API contract (8 now; check `>=` the version that added what you use - members are only added). |
+| `const int Version` | The API contract (10 now; check `>=` the version that added what you use - members are only added). |
 | `bool TryGetFlight(Entity grid, out Vector3 travelLocal, out float airspeed, out float mach, out float density, out float dynamicPressure)` | The grid's air: travel (local, unit), airspeed (m/s), Mach, density (kg/m³), dynamic pressure (Pa). `false` when the grid is under 1 m/s or not in air. |
 | `bool TryGetForces(Entity grid, out Vector3 forceLocal, out Vector3 torqueLocal, out float drag, out float lift, out float frontalArea)` | The aerodynamic load (local), with wings and control surfaces included: force (N), torque (N·m), drag and lift (N), and frontal area (m²). |
 | `bool TryGetLift(Entity grid, out Vector3 liftLocal, out float liftCoefficient)` | Lift direction (local, unit) and its coefficient on the frontal area. |
@@ -327,6 +327,8 @@ Frames: *local* = the grid's frame; the travel is the direction the grid moves *
 | 72 | `SurfacesSaturated` | | Of them, at their limit. |
 | 73 | `AeroApplied` | 0/1 | Aero applied its forces this tick. |
 | 74 | `EntryStrength` | 0..1 | Aero's own heating law at this Mach and density (an entry source's own strength: `TryGetEntry`). |
+| 75 | `GyroSaturation` (10) | 0..1 | The gyros' momentum store, full share (`Gyros.Saturation`; they fade from 0.5). Server's; 0 with saturation off. |
+| 76 | `GyroTorqueShare` (10) | 0..1 | The share of their vanilla torque the gyros give now: `Gyros.TorqueScale` x the saturation fade (1 with aero off). |
 
 The thrust and attitude values (51-72) are the attitude job's, which runs after the aero tick: they are one tick older
 than the air's.
@@ -452,6 +454,13 @@ the ship under its clearance; refused on rails); without it aero moves the ship 
 simulation, as the game's fast travel does), the cockpit's target attitude turned with it. A station, or a ship joined
 to one, is never moved.
 
+## Version 10
+
+Every earlier member is unchanged. New (2026-10-18): the **gyro rebalance's** state, appended to the per-tick flight
+state (`GetFlightState`; its length 75 -> 77): index 75 `GyroSaturation` (the gyros' momentum store, full share) and 76
+`GyroTorqueShare` (the share of their vanilla torque they give now) - see the flight-state table and the settings
+`Gyros.TorqueScale`, `Gyros.Saturation`, `Gyros.SaturationSeconds`. No new member.
+
 ## Roadmap / gaps
 
 What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).
@@ -488,6 +497,7 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Aero.DragMultiplier` | world | float | 1 | 0..10 | Drag strength · Flight model · basic | The force along the motion, times this. |
 | `Aero.LiftMultiplier` | world | float | 1 | 0..10 | Lift strength · Flight model · basic | The force across the motion (wings, control surfaces, the hull's own lift), times this. Torque is scaled by both, weighted by the drag and lift magnitudes. |
 | `Aero.ThrustTorque` | world | bool | true |  | Off-centre thrust turns ships · Flight model · basic | Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the game's own thrust, untouched. |
+| `Gyros.TorqueScale` | world | float | 0.25 | 0.05..1 | Gyro strength · Flight model · basic | Every gyroscope's torque, times this (1: vanilla): each gyro block's own maximum (`GyroscopeData.MaxTorque`) is its definition's x this (x the saturation fade), so the game sums it into the grid's `MaxTorqueData` and every gyro law (the game's, the aero-aware one, the loss-of-control prediction, the design probe) spends the scaled torque. Default measured on the dumped ships (`Tests/AeroBench gyros`): at 0.25 no ship's gyros hold one main engine out or its own stall moment, and they still hold a 5° upset at 150 m/s on most. One scale everywhere, space too (thrusters still steer). Server; aero off: vanilla. `Propulsion/GyroBalance.cs`, `Grid/AeroGridComponent.Gyros.cs`. |
 | `Weather.Wind` | world | bool | true |  | Wind · Flight model · basic | The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push. |
 | `Control.HingeSurfaces` | world | int | 0 | 0..1 | Hinge control surfaces · Flight model · basic | Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input. 0 none, 1 every hinge on a piloted grid. |
 | `Control.HingeMaxDeflection` | world | float | 20 | 1..60 | Hinge flap travel · Flight model · advanced | Hinge control surfaces: degrees at full command. |
@@ -496,6 +506,8 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Aero.UpperAtmosphere` | world | bool | true |  | Thin upper air · Flight model · advanced | The air thins out exponentially past the planet's visible atmosphere edge, so a fast ship meets faint drag there instead of a wall. Off: the game's linear fade, the air ending at the edge. |
 | `Control.ThrustTurnRate` | world | float | 0.8 | 0.1..3 | Thruster steering max turn rate · Flight model · advanced | The fastest turn (rad/s) thruster steering asks for when turning the ship to the pilot's target. |
 | `Physics.HonestDampeners` | world | bool | true |  | Honest dampeners · Flight model · advanced | The dampeners' gravity hold as real thrust against the gravity the ship really feels (GravitySum x the world's GravityMultiplier, vanilla 2), within the thrusters' maxima, and no super-dampener braking boost (the grids' `MovementData.SuperDampeners` cleared). A ship needs thrust for its full weight x the multiplier to hover; what holds it is not there to climb with. Off: the game's own (one weight of thrust cancels all the multiplied gravity; braking x2..5 with the world's super dampeners). `Propulsion/HonestHold.cs`, `HonestDampeners.cs`. |
+| `Gyros.Saturation` | world | bool | true |  | Gyro saturation · Flight model · advanced | The gyros store the angular momentum they give (per grid, grid-local, signed: a turn and its stop cancel). Past half the store (`Gyros.SaturationSeconds` x their full torque) their torque fades smoothly to a quarter; it bleeds back (at half the full torque) while the torque given is under a quarter of full - a small trim never fills it. A new grid starts empty; a grid that loses gyros keeps their share only. Off: gyros never tire. The fill and the share given: flight state `GyroSaturation`, `GyroTorqueShare`. |
+| `Gyros.SaturationSeconds` | world | float | 15 | 2..120 | Gyro momentum capacity · Flight model · advanced | Gyro saturation: the store, in seconds of the gyros' full torque (fading from half: ~7.5 s of a steady full-torque hold; empty again ~30 s after). |
 | `Structure.Loads` | world | bool | true |  | Structural loads · Structure and damage · basic | The loads in every ship's structure and its hull's heating, computed in the background (`TryGetStructure`). |
 | `Structure.Damage` | world | bool | true |  | Structural damage · Structure and damage · basic | Overloaded joints of the ship a player flies wear, and break off what hangs from them (AI ships and wrecks never). The flight controller limits its own steering so it never overloads the ship. |
 | `Structure.Strength` | world | float | 7 | 0.1..100 | Structural strength · Structure and damage · basic | Every block's strength, times this (7: a small-block airliner yields near 3 g, a light large-block plane near 8 g; thin wall panels buckle in compression). |
