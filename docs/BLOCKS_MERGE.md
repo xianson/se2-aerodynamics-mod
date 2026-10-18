@@ -106,6 +106,22 @@ The build is the first of this project with the blocks in it (~925 source defini
 type, tanks, conveyors): plan for builder errors; `%LOCALAPPDATA%\OrbitalModBuild\build-Aerodynamics_Mod.log` has them
 (and see the bundle-stamp note in the SE2 content pipeline memory).
 
+## Phase B done (2026-10-18)
+
+- `check`, `assets` PASS (0 copied, 3954 identical; the two G-menu .defs differ on purpose - 3d3ee45 renamed them here).
+- `baseline` (Tu-134 copy, OLD content): 297 grids / 43 names, 120996 blocks, 1751 aero blocks, 0 "Could not find".
+- `build`: builder exit 301 (warnings), 0 failure lines, 1269 files; `verify`: 1090 definitions - every one Aero had
+  (346), every compiled Blocks file (923); of the Blocks mod's 746 definitions all but its own `Override of
+  CharacterPhysics` (the documented overlap: this mod's copy is kept).
+- `after` (NEW content, migrated copy): no "Could not find", the same 297 grids, every grid name's blocks identical; the
+  aero dump the same but for one name the baseline's dump had missed a grid of (scene membership at that moment).
+- `place`: all 42 blocks spawned alone, each with mass and cells.
+- `worlds` APPLY=1: the 7 worlds migrated (backups `D:ero\save_backupslocks-merge-20261018-124221\`); the Blocks
+  mod's folder moved to `Documents\SpaceEngineers2\ModsRetired\Aerodynamics Mod Blocks` (merge_blocks_assets.py's
+  source, if ever needed again). A migrated world (Orbital Test Tu-134 Control Surfaces) loads with every block.
+- `%APPDATA%\SpaceEngineers2\Temp\LocalMods\ModIndex` (ModHub's local-mod index) still names the old folder: the game
+  logs "Discovered local mod 483980e4..." and only adds its parent (the Mods folder) as a search path - harmless.
+
 ## Publishing
 
 ModHub publish (2.4.0.95) does not copy `Scripts/` (a research note; the publish path for script mods is open). For
