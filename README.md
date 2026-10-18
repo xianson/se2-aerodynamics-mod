@@ -1,15 +1,87 @@
 # Aerodynamics Mod
 
-Real aerodynamics for Space Engineers 2 grids: every ship flies by its own shape - drag, lift, stall, compressibility
-and re-entry heating - and its structure carries the loads. No wings are required: the whole grid's air force counts,
-whatever it is built like. Block definitions and models (control surfaces, retractable gear, airbrakes) ship in the
-companion mod **Aerodynamics Mod Blocks**; this mod holds the scripts and the effects.
+Real aerodynamics for Space Engineers 2. Every ship flies by its own shape: a sleek hull slips through the air, a brick
+fights it, wings give lift and stall, the sound barrier pushes back, and re-entry heats the hull until it glows. The air
+loads the ship's structure too, so pulling too hard can bend, crack and tear it apart. There is nothing to configure on
+the blocks to make it work: the whole ship's shape counts, wings or no wings.
+
+The mod also adds aircraft parts: control surfaces, retractable landing gear, airbrakes, turboprops, ducted fans,
+helicopter rotors, ramjets and solid rocket motors (G menu, category **Aerodynamics**).
+
+## For players
+
+### Requirements
+
+- **Space Engineers 2, version 2.4.x** (made and tested on 2.4.0.95).
+- **Add `-loadScripts` to the game's launch options.** Steam > Library > Space Engineers 2 > right-click > Properties >
+  General > Launch Options: type `-loadScripts`. Without it the game loads the mod's blocks and effects but never runs
+  its scripts, and ships fly exactly as in the unmodded game.
+- Add the mod to the world's mod list. It needs no other mod.
+- **Optional: the Orbital Mod.** The two work together: the Orbital Mod's flight HUD shows this mod's stall and
+  loss-of-control warnings, and its railed re-entries heat the hull like a real one. Without it everything else works.
+
+### What it does
+
+- **Drag and lift from the shape.** The exposed hull is measured and every face of it meets the air: pressure, shadowing,
+  skin friction, rotation damping and supersonic wave drag. Wings are found from the blocks and give lift, with stall and
+  Mach effects. Wind moves the air; ground effect near the ground. Damage changes the forces within a fraction of a
+  second.
+- **Flight controls through real parts.** Control surfaces deflect with your steering; the mod's attitude control flies
+  your gyros, thrusters and surfaces together, knowing what the air is doing. Thrust acts where each thruster is, so an
+  unbalanced ship turns.
+- **Engines that care about speed.** Atmospheric thrusters lose thrust through the sound barrier and gain from ram air
+  above it; jets flame out with the air coming from the side or behind. Turboprops are strong and slow, ramjets need
+  supersonic speed, solid rockets burn to the end once lit, helicopter rotors lift and steer with the cyclic.
+- **Structure and damage.** On the ship you fly, air, thrust, gyro and contact loads spread through the blocks. Overloaded
+  sections wear, fatigue, bend, crack across and tear off, with creaks, groans, shake and smoke. Rotor and propeller
+  blades are damaged by what they hit.
+- **Re-entry.** Plasma, vapour cones and wingtip trails, hull heating with heat damage, and scorch marks where it got hot.
+- **Warnings.** A stall warning from the whole ship's lift, and a predicted loss-of-control warning (shown by the Orbital
+  Mod's HUD). The game's own "thrust overload" warning stays quiet while the wings carry the ship. Optional Mach readout.
+
+### Settings
+
+In a world: **pause menu > Settings > Mods** tab, section **Aerodynamics** (the tab only exists inside a world). Basic
+settings are shown; each group has an **Advanced** section and a **Reset to defaults**. World settings (forces, heat,
+structure, performance) are saved with the world and only the host / single player can change them; client settings
+(effects, HUD, feel) are your own. The same settings live in text files, re-read while you play:
+`%APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.world.cfg` (host overrides, shown locked in the menu) and
+`AerodynamicsMod.client.cfg`. Everything can be switched off: `Aero.Enabled` off gives the game's own flight.
+
+### Performance
+
+- Small and medium ships: their drag table builds in milliseconds when the world loads or the ship changes.
+- **Very large ships** (thousands of blocks, hundreds of tonnes) build theirs in the background for up to about a minute
+  after the world loads or after a big change. Meanwhile they fly on a coarse quick table, so drag and lift feel rough
+  for that first minute. The table is then cached on disk (`%TEMP%\AeroMod\tables`, at most 256 MB), so the next load
+  of the same ship takes milliseconds.
+- Parked ships with no air moving past them cost almost nothing. The heavier work (structure, rebuilds) runs on 2
+  background workers and a 1 ms per frame budget (`Perf.Workers`, `Perf.FrameBudgetMs`).
+
+### Known limits
+
+- **Single player and hosting only.** SE2 2.4 runs the server inside the game; a remote client sees the game's own
+  flight.
+- The structure is simulated on the ships players fly, not on every grid.
+- Texts are in English only.
+- A world setting you change in the menu is stored with the world's next save.
+- SE2 is in early access: a game update can break the mod until it is updated.
+
+### Troubleshooting
+
+- **The blocks are there but nothing flies differently, and there is no Aerodynamics section under Settings > Mods:**
+  `-loadScripts` is missing from the launch options (see Requirements).
+- **A huge ship handles oddly right after loading:** its table is still building (see Performance); give it a minute.
+- **Reporting a problem:** include the game log, `%APPDATA%\SpaceEngineers2\Temp\Logs\` (the newest file). The mod's
+  lines start with `[AERO`; warnings and failures are always logged.
+
+## Details
 
 Scripts: `Scripts/Simulation/` (each folder has a README). How it fits together: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLECTION_AND_WHITELIST.md`](docs/REFLECTION_AND_WHITELIST.md).
 What changed: [`CHANGELOG.md`](CHANGELOG.md).
 
-## Features
+## Features in detail
 
 - **Aerodynamic forces from the shape.** The grid's exposed surface (0.25 m cells, smoothed normals, sealed cavities
   ignored) gives per-face pressure with shadowing, lee-side pressure recovery, skin friction, rotation damping and wave
@@ -107,6 +179,10 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   Type.Member [value]` read and set any public static here by name (so public statics are never renamed);
   `aerocost on` writes `[AERO-COST]` lines to the log; `flightdump` (`tools/flightdump.sh`) dumps a grid for
   `Tests/ThrustTests`.
+- **Logs:** a player's log gets the startup summary, settings, warnings, failures and structure breaks only. The
+  per-grid / per-build lines (`[AERO-SIM]`, `[AERO-PROF]`, `[AERO-MERGE]`, table builds, scene adds) are behind
+  `AeroLog.Detail`, on by default only where `%TEMP%\OrbitalMod\dev.flag` exists (the harness's flag); the periodic
+  traces behind `AeroLog.Verbose` (off). `aeroset AeroLog.Detail 1` any time.
 
 ### Force tables and their cache
 
