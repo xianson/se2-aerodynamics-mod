@@ -11,6 +11,9 @@
     <Compile Include="$(Sim)\Components\IFaceOverride.cs" />
     <Compile Include="$(Sim)\Components\ComponentForceResult.cs" />
     <Compile Include="$(Sim)\Components\LocalAeroConditions.cs" />
+    <Compile Include="$(Sim)\Components\ControlSurface.cs" />
+    <Compile Include="$(Sim)\Components\IControlSurfaceSettings.cs" />
+    <Compile Include="$(Sim)\Components\ControlSurfaceGeometry.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
   </ItemGroup>

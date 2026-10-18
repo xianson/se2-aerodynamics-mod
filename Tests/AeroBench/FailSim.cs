@@ -11,6 +11,11 @@ using AeroMod;
 //  4. a reentry (2 km/s, rho 0.002, 25 deg nose up, 120 s) with heat damage: what burns, what breaks;
 //  5. (ONLY=thrust, or the whole run) a thrust ramp - every thruster pushing along the nose, no air, 0 -> 20 g of the
 //     ship's mass over 20 s: what the engines' own thrust breaks (RIGID=0: the old rule, engines breakable - A/B).
+//  6. (ONLY=comp only) BLOCK COMPONENTS (2026-10-17, StructureEval.ComponentLoadsAtBlocks; COMPLOADS=0 the old spread -
+//     A/B): no dumped ship has control surfaces or airbrakes, so the outboard trailing-edge blocks of each level wing are
+//     made ailerons / flaps (Components/ControlSurface, all-moving plates of a block's area, 20 deg, deflected to add
+//     lift) and the lowest block under the centre of mass an open 3x3x3 small airbrake (both leaves, 3.3 m2, a flat plate
+//     Cd 1.17): a pull ramp with the flaps down, and a speed ramp (100 -> 450 m/s at 2 deg) with the airbrake open.
 // Blocks broken are removed and the structure rebuilt (its heat carried over); what no longer joins the main piece
 // has departed.
 static partial class Program
@@ -28,6 +33,10 @@ static partial class Program
         public float Cs, Co;
         /// <summary>Original blocks already in a piece apart from the ship (the blueprint's extra grids at the start).</summary>
         public HashSet<int> Apart = new();
+        /// <summary>(ONLY=comp) synthetic block components: control surfaces on original blocks (their centres), deflected
+        /// by Input; an airbrake (flat plate CdA) on one.</summary>
+        public List<(int orig, Vector3 at, ControlSurface cs)> Surf;
+        public int BrakeOrig = -1; public Vector3 BrakeAt; public float BrakeCdA;
     }
 
     static SimShip MakeSim(StructShip sh, string path)
@@ -99,7 +108,114 @@ static partial class Program
         var L = new StructureEval.Loads { AeroF = r.Force, AeroT = r.Torque, AeroCom = ship.Com, AirVel = travel * v, CellSize = sim.Cs, CellOffset = sim.Co };
         var wings = ship.Model.Wings; var wf = ship.Model.LastWingForces;
         if (wings != null && wf != null) for (int i = 0; i < wings.Count && i < wf.Count; i++) { L.WingCells.Add(wings[i].Cells); L.WingF.Add(wf[i].LiftForce + wf[i].InducedDrag); }
+        // (ONLY=comp: the synthetic components' air, on the ship as the registry adds it - in AeroF / AeroT and, for the
+        //  structure, each at its block; a component whose block has gone is gone with it)
+        if (sim.Surf != null || sim.BrakeOrig >= 0)
+        {
+            var ctx = new AeroContext(ship.Grid, ship.Surface, travel * v, atmo, ship.Com, BlockSize, Vector3.Zero, -1f, ship.Manifold);
+            void Add(Vector3 f, Vector3 p, Vector3 m, Vector3 at)
+            {
+                L.AeroF += f; L.AeroT += Vector3.Cross(p - ship.Com, f) + m;
+                L.CompF.Add(f); L.CompP.Add(p); L.CompT.Add(m); L.CompAt.Add(at);
+            }
+            if (sim.Surf != null)
+                foreach (var (o, at, cs) in sim.Surf)
+                {
+                    if (!sim.Alive[o] || sim.Apart.Contains(o)) continue;
+                    var res = cs.Compute(LocalAeroConditions.FromContext(ctx, at));
+                    Add(res.Force, res.ApplicationPoint, res.DirectTorque, at);
+                }
+            if (sim.BrakeOrig >= 0 && sim.Alive[sim.BrakeOrig] && !sim.Apart.Contains(sim.BrakeOrig))
+                Add(-travel * ((float)atmo.GetDynamicPressure(v) * sim.BrakeCdA), sim.BrakeAt, Vector3.Zero, sim.BrakeAt);
+        }
         return L;
+    }
+
+    /// <summary>(ONLY=comp) the synthetic components: each level wing's outboard trailing-edge blocks (the outer 40% of its
+    /// span, the aft-most cell of each block-wide strip, at most 8) control surfaces deflected to add lift; the lowest block
+    /// under the centre of mass an open airbrake.</summary>
+    static void AddSyntheticComponents(SimShip sim, Vector3 nose, Vector3 up, bool flaps, bool brake)
+    {
+        var sh = sim.Src; var s = sim.S; var com = s.Com;
+        if (flaps)
+        {
+            sim.Surf = new();
+            var taken = new HashSet<int>();
+            var wings = sh.Aero.Model.Wings;
+            if (wings != null)
+                foreach (var w in wings)
+                {
+                    if (w.Cells == null || MathF.Abs(Vector3.Dot(w.Normal, up)) < 0.7f) continue;
+                    var span = Vector3.Normalize(w.SpanAxis - Vector3.Dot(w.SpanAxis, up) * up);
+                    float smax = 0f; foreach (var c in w.Cells) smax = MathF.Max(smax, MathF.Abs(Vector3.Dot(CellPos(sim, c) - com, span)));
+                    var aft = new Dictionary<int, (float t, Vector3 p)>();
+                    foreach (var c in w.Cells)
+                    {
+                        var p = CellPos(sim, c); float sp = Vector3.Dot(p - com, span);
+                        if (MathF.Abs(sp) < 0.6f * smax) continue;
+                        int strip = (int)MathF.Floor(sp / BlockSize); float t = Vector3.Dot(p - com, nose);
+                        if (!aft.TryGetValue(strip, out var a) || t < a.t) aft[strip] = (t, p);
+                    }
+                    foreach (var (strip, (t, p)) in aft.OrderByDescending(kv => MathF.Abs(kv.Key)).Take(8))
+                    {
+                        int b = s.BlockAt(p); if (b < 0 || !taken.Add(b)) continue;
+                        var at = s.Center[b];
+                        var cs = new ControlSurface(at, Vector3I.Zero, span, -nose, BlockSize * BlockSize) { MaxDeflection = 20f };
+                        // (deflected the way that adds lift at a cruise attitude)
+                        var ctx = new AeroContext(sh.Aero.Grid, sh.Aero.Surface, nose * 200f, new AtmosphereState { Density = 1.225, Pressure = 101325, Temperature = 288, SpeedOfSound = 340 }, com, BlockSize);
+                        cs.DeflectionInput = 1f; float upP = Vector3.Dot(cs.Compute(LocalAeroConditions.FromContext(ctx, at)).Force, up);
+                        cs.DeflectionInput = -1f; float upM = Vector3.Dot(cs.Compute(LocalAeroConditions.FromContext(ctx, at)).Force, up);
+                        cs.DeflectionInput = upP >= upM ? 1f : -1f;
+                        sim.Surf.Add((sim.Orig[b], at, cs));
+                    }
+                }
+        }
+        if (brake)
+        {
+            // the lowest block within 2 blocks of the centre of mass across the travel (else the lowest of all)
+            int best = -1; float bestH = float.MaxValue;
+            for (int pass = 0; pass < 2 && best < 0; pass++)
+                for (int b = 0; b < s.Count; b++)
+                {
+                    var r = s.Center[b] - com; float h = Vector3.Dot(r, up);
+                    var lat = r - h * up - Vector3.Dot(r, nose) * nose;
+                    if (pass == 0 && (lat.Length() > 2f * BlockSize || MathF.Abs(Vector3.Dot(r, nose)) > 2f * BlockSize)) continue;
+                    if (h < bestH) { bestH = h; best = b; }
+                }
+            if (best >= 0) { sim.BrakeOrig = sim.Orig[best]; sim.BrakeAt = s.Center[best]; sim.BrakeCdA = 1.17f * 2f * (6.19f * 0.2f) * (6.67f * 0.2f); }
+        }
+    }
+
+    /// <summary>(ONLY=comp) the components' own joints - every joint of a component block - at one condition: their worst
+    /// utilisation (and the ship's worst) with the components' air spread over the windward faces and at their blocks.</summary>
+    static string CompJoints(SimShip sim, StructureEval.Loads L)
+    {
+        var s = sim.S; var mine = new HashSet<int>();
+        if (sim.Surf != null) foreach (var (o, _, _) in sim.Surf) mine.Add(o);
+        if (sim.BrakeOrig >= 0) mine.Add(sim.BrakeOrig);
+        bool on0 = StructureEval.ComponentLoadsAtBlocks; var res = new string[2];
+        if (sim.H.NeedsPass(L.AirVel)) sim.H.Pass(L.AirVel);
+        for (int k = 0; k < 2; k++)
+        {
+            StructureEval.ComponentLoadsAtBlocks = k == 1;
+            StructureEval.Apply(s, sim.H, L); s.SolveFree(Vector3.Zero);
+            float u = 0f;
+            for (int c = 0; c < s.ContactCount; c++) { s.ContactBlocks(c, out int a, out int b); if (mine.Contains(sim.Orig[a]) || mine.Contains(sim.Orig[b])) u = MathF.Max(u, s.ContactUtil[c]); }
+            res[k] = $"{u:F2} (ship's worst {s.MaxUtil:F2})";
+        }
+        StructureEval.ComponentLoadsAtBlocks = on0;
+        return $"their own joints' worst utilisation {res[0]} spread -> {res[1]} at their blocks";
+    }
+
+    static Vector3 CellPos(SimShip sim, Vector3I c) => new Vector3((c.X + sim.Co) * sim.Cs, (c.Y + sim.Co) * sim.Cs, (c.Z + sim.Co) * sim.Cs);
+
+    /// <summary>(ONLY=comp) which synthetic components have gone (their block broken or departed).</summary>
+    static string CompFate(SimShip sim)
+    {
+        int lost = 0, n = sim.Surf?.Count ?? 0;
+        if (sim.Surf != null) foreach (var (o, _, _) in sim.Surf) if (!sim.Alive[o] || sim.Apart.Contains(o)) lost++;
+        string brake = sim.BrakeOrig < 0 ? "" : !sim.Alive[sim.BrakeOrig] ? ", the airbrake broken off" : sim.Apart.Contains(sim.BrakeOrig) ? ", the airbrake departed" : ", the airbrake held";
+        return $"{lost} of {n} control surfaces lost{brake}";
     }
 
     static string Piece(SimShip sim, int piece, out float massT)
@@ -228,6 +344,7 @@ static partial class Program
         if (Environment.GetEnvironmentVariable("MOUNTS") is string mj) ShipStructure.MountJoints = mj != "0";
         Knob("TOUCH", v => ShipStructure.TouchingShare = v);   // (TOUCH=0..1: the touching-only faces' share with MOUNTS=1)
         Knob("RIGID", v => ShipStructure.RigidThrusters = v != 0f);   // (RIGID=0: engines breakable by their own loads - the old rule, A/B)
+        Knob("COMPLOADS", v => StructureEval.ComponentLoadsAtBlocks = v != 0f);   // (COMPLOADS=0: block components' air spread over the windward faces - the old rule, A/B)
         Knob("COMP_SHARE", v => StructureFatigue.CompressionFatigueShare = v); Knob("BUCK_SHARE", v => StructureFatigue.BucklingFatigueShare = v); Knob("JAGGED", v => FractureMath.Jagged = v != 0f);
         var dir = Path.Combine(dataDir, "struct");
         var files = names.Length > 0 ? names.Select(n => Path.Combine(dir, n + ".struct")).ToArray() : new[] { "plane2", "tupolev_tu134", "grasshopper" }.Select(n => Path.Combine(dir, n + ".struct")).ToArray();
@@ -278,6 +395,37 @@ static partial class Program
             }
             if (float.TryParse(Environment.GetEnvironmentVariable("STRENGTH"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var stv)) ShipStructure.Strength = stv;
             SimShip sim;
+            // ── 6. block components (ONLY=comp): flaps down in a pull ramp, an airbrake open in a speed ramp ──
+            if (Environment.GetEnvironmentVariable("ONLY") == "comp")
+            {
+                string rule = StructureEval.ComponentLoadsAtBlocks ? "at their blocks" : "old rule: spread over the windward faces";
+                sim = MakeSim(sh, f); AddSyntheticComponents(sim, sh.Nose, sh.Up, true, false);
+                if (sim.Surf.Count == 0) Console.WriteLine("   == flaps: no level wing");
+                else
+                {
+                    Console.WriteLine($"   == {sim.Surf.Count} trailing-edge control surfaces fully down, 250 m/s at 6 deg: {CompJoints(sim, GameLoads(sim, Travel(6f), 250f, sea))}");
+                    RunScenario(sim, $"pull ramp, {sim.Surf.Count} trailing-edge control surfaces fully down ({rule}): 250 m/s at sea level, 2 -> 20 deg over 20 s", 20f, (t, sm) =>
+                    {
+                        float deg = 2f + 18f * t / 20f; var L = GameLoads(sm, Travel(deg), 250f, sea);
+                        Vector3 cf = Vector3.Zero; foreach (var x in L.CompF) cf += x;
+                        return (L, 1.225f, 288f, $"{deg:F1} deg {Vector3.Dot(L.AeroF, sh.Up) / W:F1} g (surfaces {Vector3.Dot(cf, sh.Up) / 1000f:F0} kN)");
+                    }, false);
+                    Console.WriteLine($"      {CompFate(sim)}");
+                }
+                sim = MakeSim(sh, f); AddSyntheticComponents(sim, sh.Nose, sh.Up, false, true);
+                if (sim.BrakeOrig >= 0)
+                {
+                    Console.WriteLine($"   == the airbrake open at 300 m/s, 2 deg: {CompJoints(sim, GameLoads(sim, Travel(2f), 300f, sea))}");
+                    RunScenario(sim, $"speed ramp, an airbrake open on {sh.BlockName[sim.BrakeOrig]} under the centre of mass ({rule}): 100 -> 450 m/s at 2 deg, sea level, 20 s", 20f, (t, sm) =>
+                    {
+                        float v = 100f + 350f * t / 20f; var L = GameLoads(sm, Travel(2f), v, sea);
+                        float brakeKn = sm.BrakeCdA * (float)sea.GetDynamicPressure(v) / 1000f;
+                        return (L, 1.225f, 288f, $"{v:F0} m/s {Vector3.Dot(L.AeroF, sh.Up) / W:F1} g (airbrake {brakeKn:F0} kN)");
+                    }, false);
+                    Console.WriteLine($"      {CompFate(sim)}");
+                }
+                continue;
+            }
             // ── 5. thrust ramp (RIGID THRUSTERS, 2026-10-17): the engines' own thrust, no air ──
             if (Environment.GetEnvironmentVariable("ONLY") is null or "thrust")
             {
