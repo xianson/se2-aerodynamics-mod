@@ -62,7 +62,7 @@ A grid can be passed as either its server copy or a client copy in the same proc
 
 | Member | What it gives |
 |---|---|
-| `const int Version` | The API contract (8 now; check `>=` the version that added what you use - members are only added). |
+| `const int Version` | The API contract (10 now; check `>=` the version that added what you use - members are only added). |
 | `bool TryGetFlight(Entity grid, out Vector3 travelLocal, out float airspeed, out float mach, out float density, out float dynamicPressure)` | The grid's air: travel (local, unit), airspeed (m/s), Mach, density (kg/m³), dynamic pressure (Pa). `false` when the grid is under 1 m/s or not in air. |
 | `bool TryGetForces(Entity grid, out Vector3 forceLocal, out Vector3 torqueLocal, out float drag, out float lift, out float frontalArea)` | The aerodynamic load (local), with wings and control surfaces included: force (N), torque (N·m), drag and lift (N), and frontal area (m²). |
 | `bool TryGetLift(Entity grid, out Vector3 liftLocal, out float liftCoefficient)` | Lift direction (local, unit) and its coefficient on the frontal area. |
@@ -327,8 +327,8 @@ Frames: *local* = the grid's frame; the travel is the direction the grid moves *
 | 72 | `SurfacesSaturated` | | Of them, at their limit. |
 | 73 | `AeroApplied` | 0/1 | Aero applied its forces this tick. |
 | 74 | `EntryStrength` | 0..1 | Aero's own heating law at this Mach and density (an entry source's own strength: `TryGetEntry`). |
-| 75 | `GyroSaturation` | 0..1 | The gyros' momentum store, full share (`Gyros.Saturation`; they fade from 0.5). Server's; 0 with saturation off. |
-| 76 | `GyroTorqueShare` | 0..1 | The share of their vanilla torque the gyros give now: `Gyros.TorqueScale` x the saturation fade (1 with aero off). |
+| 75 | `GyroSaturation` (10) | 0..1 | The gyros' momentum store, full share (`Gyros.Saturation`; they fade from 0.5). Server's; 0 with saturation off. |
+| 76 | `GyroTorqueShare` (10) | 0..1 | The share of their vanilla torque the gyros give now: `Gyros.TorqueScale` x the saturation fade (1 with aero off). |
 
 The thrust and attitude values (51-72) are the attitude job's, which runs after the aero tick: they are one tick older
 than the air's.
@@ -453,6 +453,13 @@ move is the Orbital Mod's (its safe move path; clamped under its planet's space 
 the ship under its clearance; refused on rails); without it aero moves the ship itself in the teleport phase (before the
 simulation, as the game's fast travel does), the cockpit's target attitude turned with it. A station, or a ship joined
 to one, is never moved.
+
+## Version 10
+
+Every earlier member is unchanged. New (2026-10-18): the **gyro rebalance's** state, appended to the per-tick flight
+state (`GetFlightState`; its length 75 -> 77): index 75 `GyroSaturation` (the gyros' momentum store, full share) and 76
+`GyroTorqueShare` (the share of their vanilla torque they give now) - see the flight-state table and the settings
+`Gyros.TorqueScale`, `Gyros.Saturation`, `Gyros.SaturationSeconds`. No new member.
 
 ## Roadmap / gaps
 

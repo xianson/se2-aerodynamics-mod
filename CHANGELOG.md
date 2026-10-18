@@ -19,7 +19,7 @@ was flown in game for this release. The commit hashes are on the integration bra
   - `Gyros.Saturation` (on) / `Gyros.SaturationSeconds` (15 s): the gyros store the momentum they give (signed, grid-local);
     from half full their torque fades smoothly to a quarter, and bleeds back while lightly loaded. A full-torque hold fades
     from ~7.5 s; turn-and-stop manoeuvring and small trims never fill it. Server, per grid (a split grid starts empty).
-  - Flight state 75-76: `GyroSaturation`, `GyroTorqueShare`.
+  - Flight state 75-76: `GyroSaturation`, `GyroTorqueShare` - `AeroApi` version 10.
   - Offline: `Tests/ThrustTests` GyroBalanceChecks (the fade, the factor, the write rule never compounding, the store's fill,
     recovery, signed cancel, trim, gyros lost); the measurement `Tests/AeroBench gyros`.
   - Not tested in game yet.
