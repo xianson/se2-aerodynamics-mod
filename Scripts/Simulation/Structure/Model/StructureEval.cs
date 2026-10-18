@@ -6,8 +6,9 @@ namespace AeroMod;
 /// ONE EVALUATION'S LOADS AND DAMAGE - pure, no game: the game's background evaluation (Structure/Server/StructureServer)
 /// and the offline failure simulation (AeroBench 'struct', 'fail') run exactly this.
 ///
-/// Loads: the wings' forces spread over their cells; the rest of the air (the applied total less the wings) over the
-/// hull's windward faces by Newtonian weights (cos^2 x area, the heat model's last pass), its moment about the centre of
+/// Loads: the wings' forces spread over their cells; each block component's air (control surfaces, airbrakes, gear legs,
+/// intakes, scoops, drag patches) on its own block (ComponentLoadsAtBlocks, 2026-10-17); the rest of the air (the applied
+/// total less the wings and components) over the hull's windward faces by Newtonian weights (cos^2 x area, the heat model's last pass), its moment about the centre of
 /// mass matched by a couple spread the same way; each thruster's force at its block; the gyros' torque shared by the
 /// gyro blocks; a railed re-entry's braking (EntryLoads) as a pressure over the same windward faces. Damage
 /// (PROGRESSIVE, 2026-10-14 - Structure/Model/StructureFatigue; BY SECTION, 2026-10-15 - DamageBySection): every member of a
@@ -61,6 +62,16 @@ public static class StructureEval
     /// faces (df = w Omega x (p - c), J Omega = the couple: no net force, the moment exact) - not as pure moments on single
     /// blocks by their area, whatever their lever arm (a 1.3 t nose platform got 1.3 MN m; 2026-10-14 review).</summary>
     public static bool CoupleAsForces = true;
+    /// <summary>COMPONENT LOADS AT THEIR BLOCKS (2026-10-17, the user: "yes do it" - each block component's air on its own
+    /// block, like the wings'): a control surface's lift, an open airbrake's drag, a gear leg's, an intake's, a scoop's and
+    /// another mod's drag patch (Loads.CompF) go on the block they act on, at their point, with their own moment - taken off
+    /// the rest of the air before it is spread over the windward faces, as the wings' are. The total force and moment on the
+    /// ship are unchanged; only where they act moves: a deflected flap loads its hinge, an airbrake its mount. Off (A/B): the
+    /// components' air spread over the windward faces with the hull's (before 2026-10-17). Structure.ComponentLoads.</summary>
+    public static bool ComponentLoadsAtBlocks = true;
+    /// <summary>Diagnostics: component loads put on their block, and those whose block was not in the structure (placed
+    /// since its last rebuild, or a drag patch off the hull) - spread over the windward faces instead.</summary>
+    public static int CompPlaced, CompMissed;
     public static Vector3 LastDm, LastMDist;
     public sealed class Loads
     {
@@ -77,7 +88,18 @@ public static class StructureEval
         public readonly List<Vector3> ContactP = new(), ContactF = new();
         /// <summary>A railed re-entry's braking acceleration (grid-local, m/s2; zero: none) - EntryLoads.</summary>
         public Vector3 EntryAccel;
-        public void Clear() { WingCells.Clear(); WingF.Clear(); ThrBlock.Clear(); ThrF.Clear(); ThrF0.Clear(); GyroBlock.Clear(); ContactP.Clear(); ContactF.Clear(); AeroF = AeroT = GyroT = AngVel = EntryAccel = Vector3.Zero; }
+        /// <summary>The block components' air (ComponentLoadsAtBlocks; part of AeroF / AeroT, the world's multipliers taken as
+        /// they scale the total): each one's force (N), the point it acts at (m), its moment about that point (N m: its direct
+        /// torque, and the hull pressure on its own faces it took off - AeroComponentRegistry), and a point inside its block
+        /// (its centre: st.BlockAt finds the block). Grid-local.</summary>
+        public readonly List<Vector3> CompF = new(), CompP = new(), CompT = new(), CompAt = new();
+        /// <summary>EXTRA BLOCK LOADS (2026-10-17, AeroGridComponent.PublishBlockLoad): forces on the ship the structure sees
+        /// nowhere else (not in AeroF, not the thrusters'): on block LoadBlock, force (N) at point (m) with a moment about it
+        /// (N m); LoadEngine: an engine's (its thrust - off with ThrustLoads). Grid-local.</summary>
+        public readonly List<int> LoadBlock = new();
+        public readonly List<Vector3> LoadF = new(), LoadP = new(), LoadT = new();
+        public readonly List<bool> LoadEngine = new();
+        public void Clear() { WingCells.Clear(); WingF.Clear(); ThrBlock.Clear(); ThrF.Clear(); ThrF0.Clear(); GyroBlock.Clear(); ContactP.Clear(); ContactF.Clear(); CompF.Clear(); CompP.Clear(); CompT.Clear(); CompAt.Clear(); LoadBlock.Clear(); LoadF.Clear(); LoadP.Clear(); LoadT.Clear(); LoadEngine.Clear(); AeroF = AeroT = GyroT = AngVel = EntryAccel = Vector3.Zero; }
     }
 
     /// <summary>A hull's windward set for one Pass (2026-10-15): the sum of every face's weight (Sum), the loaded faces (weight
@@ -179,8 +201,21 @@ public static class StructureEval
                 wingF += f; wingM += Vector3.Cross(p - com, f);
             }
         }
-        var bodyF = L.AeroF - wingF;
-        var bodyM = L.AeroT + Vector3.Cross(L.AeroCom - com, L.AeroF) - wingM;
+        // (the block components' air at their blocks, taken off the rest like the wings' - ComponentLoadsAtBlocks; a block not
+        //  in this structure leaves its component's air in the rest, spread as before)
+        Vector3 compF = Vector3.Zero, compM = Vector3.Zero;
+        if (ComponentLoadsAtBlocks)
+            for (int k = 0; k < L.CompF.Count; k++)
+            {
+                int b = st.BlockAt(L.CompAt[k]);
+                if (b < 0 || b >= n) { System.Threading.Interlocked.Increment(ref CompMissed); continue; }
+                System.Threading.Interlocked.Increment(ref CompPlaced);
+                var f = L.CompF[k]; var p = L.CompP[k]; var t = L.CompT[k];
+                st.ExtForce[b] += f; st.ExtMoment[b] += Vector3.Cross(p - st.Center[b], f) + t;
+                compF += f; compM += Vector3.Cross(p - com, f) + t;
+            }
+        var bodyF = L.AeroF - wingF - compF;
+        var bodyM = L.AeroT + Vector3.Cross(L.AeroCom - com, L.AeroF) - wingM - compM;
         // (a railed re-entry's braking: the structure's own mass x the deceleration - its free-body solve then decelerates at
         //  exactly that - added to the body force with NO moment: the faces' spread puts one on, the couple below takes it off)
         var entryF = EntryLoads && float.IsFinite(L.EntryAccel.X + L.EntryAccel.Y + L.EntryAccel.Z) ? L.EntryAccel * st.TotalMass : Vector3.Zero;
@@ -227,6 +262,13 @@ public static class StructureEval
         }
         else if (st.Root >= 0) { st.ExtForce[st.Root] += bodyF; st.ExtMoment[st.Root] += bodyM + Vector3.Cross(com - st.Center[st.Root], bodyF); }
         if (ThrustLoads) for (int k = 0; k < L.ThrBlock.Count; k++) { int b = L.ThrBlock[k]; if (b >= 0 && b < n) st.ExtForce[b] += L.ThrF[k]; }
+        // extra block loads (PublishBlockLoad: forces nothing else here carries - a rotor's cyclic, a mod engine's thrust)
+        for (int k = 0; k < L.LoadBlock.Count; k++)
+        {
+            int b = L.LoadBlock[k]; if (b < 0 || b >= n || (L.LoadEngine[k] && !ThrustLoads)) continue;
+            var f = L.LoadF[k];
+            st.ExtForce[b] += f; st.ExtMoment[b] += Vector3.Cross(L.LoadP[k] - st.Center[b], f) + L.LoadT[k];
+        }
         // contacts (collisions, the ground): at the block in the contact's cell (else none - a point in no block's cells)
         for (int k = 0; k < L.ContactP.Count; k++)
         {
