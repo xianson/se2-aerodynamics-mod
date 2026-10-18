@@ -21,6 +21,7 @@ public partial class AeroWorldSettingsComponent
     private static void QuickLaunchJob(AeroWorldSettingsComponent c)
     {
         if (!QuickLaunch.Asked) return;
+        if (c.Data.Scene?.DebugName == "Client") return;   // (the carrier is the server planets'; never answer from a client copy)
         QuickLaunch.ServerStep(c);
     }
 
@@ -69,7 +70,7 @@ public static partial class QuickLaunch
         if (alive)
         {
             pos = grid.Data.GetWorldTransform().Position;
-            atPlanet = PhysicsHack.GetGravityDirection(grid.Data).LengthSquared() > 0.01f && NearestPlanet(pos, out centre);
+            atPlanet = PhysicsHack.GetGravityDirection(grid.Data).LengthSquared() > 0.01f && NearestPlanet(grid.Data.Scene, pos, out centre);
         }
         var v = QuickLaunchRules.Check(Creative, ch != null, creative, seat != null, alive, isStatic, joined, atPlanet);
         if (v != QuickLaunchRules.Verdict.Go) { Refuse(v, null, grid); return; }
@@ -145,14 +146,14 @@ public static partial class QuickLaunch
     }
 
     /// <summary>The nearest server planet's centre (false: none in this world).</summary>
-    static bool NearestPlanet(Vector3D at, out Vector3D centre)
+    static bool NearestPlanet(object scene, Vector3D at, out Vector3D centre)
     {
         centre = default; double best = double.MaxValue; bool any = false;
         lock (AeroWorldSettingsComponent.Planets)
             foreach (var p in AeroWorldSettingsComponent.Planets)
             {
                 var e = p.Entity;
-                if (e == null || !PhysicsHack.Alive(e.Data)) continue;
+                if (e == null || !ReferenceEquals(e.Data.Scene, scene) || !PhysicsHack.Alive(e.Data)) continue;   // (this scene's only)
                 var c = e.Data.GetWorldTransform().Position;
                 double d = (c - at).LengthSquared();
                 if (d < best) { best = d; centre = c; any = true; }
