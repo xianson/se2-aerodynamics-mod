@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-4e00-0020-000000000001",
+    "Name": "Helicopter Rotor",
+    "Description": "A main rotor: lift with the up / down thrust (collective), the cyclic steers with your controls. Its torque turns the ship the other way: counter it with a reversible rotor mounted sideways away from the centre, or gyros. Its thrust is limited to what your ship can hold against that torque. Air only.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-4e00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-0024-000000000001"
+      }
+    ]
+  }
+}

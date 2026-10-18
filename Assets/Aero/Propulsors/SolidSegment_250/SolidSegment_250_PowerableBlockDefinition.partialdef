@@ -1,0 +1,29 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "794c5233-6a1c-4932-b37c-03a0e539d069",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-5e25-0001-000000000001",
+      "UIData": {
+        "Name": "Solid Rocket Segment",
+        "Icon": "{G}ced49fd3-26a1-53b1-b58b-0db421218bd9"
+      },
+      "PlacerDefinition": "ae200001-ae00-5e00-0050-000000000001",
+      "DisplaySizeOverride": 2.5,
+      "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+      "Recipe": "fc08f13a-0bab-467c-bb6d-413c5a8c065a",
+      "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4",
+      "BlockKind": "ae200001-ae00-5e00-0020-000000000001",
+      "PCU": 400,
+      "ConsumedResource": null
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

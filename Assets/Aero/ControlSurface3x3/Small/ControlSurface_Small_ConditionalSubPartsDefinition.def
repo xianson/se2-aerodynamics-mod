@@ -1,0 +1,184 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-c503-0017-000000000001",
+    "SubParts": {
+      "ae200001-ae00-c500-0030-000000000001": "ae200001-ae00-c503-0018-000000000001"
+    },
+    "MeshPartsToHideWhenActive": [
+      {
+        "Key": "76604ec5-a942-589a-9df1-868e8081bda1",
+        "Value": "AtlasDecal_Parts02_Subpart"
+      },
+      {
+        "Key": "17167cb0-c636-56b4-9be0-9d3b0ade2960",
+        "Value": "AtlasDecal_Stickers01_Subpart"
+      },
+      {
+        "Key": "d6059f13-8b43-5c8d-ab04-50ee7e86bd77",
+        "Value": "AtlasDecal_Stickers02_Subpart"
+      },
+      {
+        "Key": "0721af05-b7c4-5ff3-b02a-139c65076e9c",
+        "Value": "AtlasDecal_Trims01_Subpart"
+      },
+      {
+        "Key": "42972c2a-b02c-5245-a845-abdce82c7dfc",
+        "Value": "AtlasDecal_Trims03_Subpart"
+      },
+      {
+        "Key": "f8c9e656-043b-58a2-a7d1-88059432cdf2",
+        "Value": "BrushedMetal_Subpart"
+      },
+      {
+        "Key": "29a9f3bb-6594-5dc4-86db-2effaf5c0d09",
+        "Value": "Fracture_01-AtlasDecal_Parts02_Subpart"
+      },
+      {
+        "Key": "8d8f2fcb-cb9a-59ec-95eb-2c7b3fe8eeeb",
+        "Value": "Fracture_01-AtlasDecal_Stickers01_Subpart"
+      },
+      {
+        "Key": "e645099f-b8b8-59aa-9b57-430e8fa60b79",
+        "Value": "Fracture_01-AtlasDecal_Stickers02_Subpart"
+      },
+      {
+        "Key": "74780e44-1887-5989-bf97-158831995150",
+        "Value": "Fracture_01-AtlasDecal_Trims01_Subpart"
+      },
+      {
+        "Key": "86240796-b170-5251-a91b-33398ca67687",
+        "Value": "Fracture_01-AtlasDecal_Trims03_Subpart"
+      },
+      {
+        "Key": "61a6fd6e-49cd-5fb1-92bd-406595791952",
+        "Value": "Fracture_01-BrushedMetal_Subpart"
+      },
+      {
+        "Key": "30b486a3-aaff-5805-86cd-899f2725fadf",
+        "Value": "Fracture_01-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "0ba809fe-62a2-5bd4-bfb8-ac3f202fffbe",
+        "Value": "Fracture_01-PaintedMetalDarker_Subpart"
+      },
+      {
+        "Key": "a02bf9c9-a557-5e1c-b294-7e21d4d3b05a",
+        "Value": "Fracture_02-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "8e69169d-d7d4-5b27-bc64-cc4ed15859e4",
+        "Value": "Fracture_03-AtlasDecal_Parts02_Subpart"
+      },
+      {
+        "Key": "179cf617-94de-51a2-9b33-b28238705d35",
+        "Value": "Fracture_03-AtlasDecal_Stickers01_Subpart"
+      },
+      {
+        "Key": "b629a2f8-110b-58ba-ae1d-4ab25d196ced",
+        "Value": "Fracture_03-AtlasDecal_Stickers02_Subpart"
+      },
+      {
+        "Key": "ae9f9738-b9f9-5359-bd13-aa30d16fb5cd",
+        "Value": "Fracture_03-AtlasDecal_Trims01_Subpart"
+      },
+      {
+        "Key": "4109459f-77dd-5ff1-b437-0b70266b33d1",
+        "Value": "Fracture_03-AtlasDecal_Trims03_Subpart"
+      },
+      {
+        "Key": "a0bde380-0ecf-5eb2-bb80-b57b246c91d5",
+        "Value": "Fracture_03-BrushedMetal_Subpart"
+      },
+      {
+        "Key": "aad04b59-3227-57b3-b8e6-38dfcdeefa2a",
+        "Value": "Fracture_03-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "ad2e5574-5e2f-5fcb-afc1-1c7e6b308865",
+        "Value": "Fracture_03-PaintedMetalDarker_Subpart"
+      },
+      {
+        "Key": "3f9e32c7-df07-5b23-b875-ba874fa7c8bf",
+        "Value": "Fracture_04-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "a137f252-7b0c-5d9a-9e07-99f725470e2b",
+        "Value": "Fracture_05-AtlasDecal_Parts02_Subpart"
+      },
+      {
+        "Key": "d0c9780a-a544-5d8b-808a-8efdae397640",
+        "Value": "Fracture_05-AtlasDecal_Stickers01_Subpart"
+      },
+      {
+        "Key": "2abdf1b0-e9bd-5a59-9e37-880db56da3bc",
+        "Value": "Fracture_05-AtlasDecal_Stickers02_Subpart"
+      },
+      {
+        "Key": "ab5d5715-0cd2-52a6-b9b1-0d3ff6ffa0be",
+        "Value": "Fracture_05-AtlasDecal_Trims01_Subpart"
+      },
+      {
+        "Key": "93e36b23-c554-5567-b5dd-4c5113a6c660",
+        "Value": "Fracture_05-AtlasDecal_Trims03_Subpart"
+      },
+      {
+        "Key": "5f6af4ad-518d-5227-943d-94e99a335ef8",
+        "Value": "Fracture_05-BrushedMetal_Subpart"
+      },
+      {
+        "Key": "bc678e12-80f4-5426-b195-1186e3f57687",
+        "Value": "Fracture_05-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "45d6014f-1476-5c0e-abfd-0bd284af1f09",
+        "Value": "Fracture_05-PaintedMetalDarker_Subpart"
+      },
+      {
+        "Key": "e38accc5-5643-5531-b4d4-0f3799af30de",
+        "Value": "Fracture_06-AtlasDecal_Parts02_Subpart"
+      },
+      {
+        "Key": "82887d0a-f205-5c4c-ac4b-17dfdbc9957a",
+        "Value": "Fracture_06-AtlasDecal_Stickers01_Subpart"
+      },
+      {
+        "Key": "e0599f8b-8d71-5741-86f2-56c1b2bb3f4e",
+        "Value": "Fracture_06-AtlasDecal_Stickers02_Subpart"
+      },
+      {
+        "Key": "d79827f2-f8ac-56f8-8eeb-0c70ae8187ca",
+        "Value": "Fracture_06-AtlasDecal_Trims01_Subpart"
+      },
+      {
+        "Key": "9987d37d-807f-53b7-a50f-c5daf49077db",
+        "Value": "Fracture_06-AtlasDecal_Trims03_Subpart"
+      },
+      {
+        "Key": "f85795c9-40cf-58e7-b4e0-84a23059245d",
+        "Value": "Fracture_06-BrushedMetal_Subpart"
+      },
+      {
+        "Key": "6d29a781-79eb-5c85-9121-63b402834705",
+        "Value": "Fracture_06-PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "55eb0605-dbaf-5ec9-a4a4-13508be01bb4",
+        "Value": "Fracture_06-PaintedMetalDarker_Subpart"
+      },
+      {
+        "Key": "0879a2e0-057c-5288-8164-ad8463f6010c",
+        "Value": "PaintedMetalColorable_Subpart"
+      },
+      {
+        "Key": "2b9ee4e6-60c0-5262-9f9c-f427f27748d1",
+        "Value": "PaintedMetalDarker_Subpart"
+      }
+    ]
+  }
+}

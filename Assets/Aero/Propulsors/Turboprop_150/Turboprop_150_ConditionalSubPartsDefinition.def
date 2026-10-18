@@ -1,0 +1,18 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7b15-0017-000000000001",
+    "SubParts": {
+      "ae200001-ae00-7f00-0030-000000000001": "ae200001-ae00-7b15-0018-000000000001",
+      "ae200001-ae00-7f00-0031-000000000001": "ae200001-ae00-7b15-0060-000000000001",
+      "ae200001-ae00-7f00-0032-000000000001": "ae200001-ae00-7b15-0063-000000000001",
+      "ae200001-ae00-7f00-0033-000000000001": "ae200001-ae00-7b15-0080-000000000001"
+    },
+    "MeshPartsToHideWhenActive": []
+  }
+}

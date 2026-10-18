@@ -12,13 +12,13 @@ and the VANILLA block model, breakable and effects definitions referenced by GUI
 dummy, its fractures): a dummy look, the real mechanics. Ours: the block definition (name, kind, power), the prefabs
 (the aero mod injects AeroGearComponent / AeroGearAnimComponent by their GUIDs - AeroBlockGuids.Gear*Prefabs).
 
-  python gen_gear_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod Blocks>"
+  python gen_gear_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
 
 Writes only its own folder's definition files (re-runnable, fixed GUIDs, nothing removed).
 """
 import json, os, uuid
 
-BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod Blocks"
+BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"   # (the block content lives in this mod since 2026-10-17: the "Aerodynamics Mod Blocks" companion was folded in)
 ROOT_REL = os.path.join("Aero", "RetractableGear")
 NS = uuid.UUID("ae200001-ae00-9e00-0000-00000000c533")
 VER_META = "2.4.0.16"

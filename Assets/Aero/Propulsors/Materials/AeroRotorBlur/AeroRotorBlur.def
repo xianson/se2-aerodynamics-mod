@@ -1,0 +1,21 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.2070"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Render.Materials.Templates.PBRTransparentMaterialDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-0050-000000000001",
+    "DefaultState": "84886702-d56d-4404-a343-7fc98c238db8",
+    "PinTextures": false,
+    "CustomTexelDensity": null,
+    "ColorMetalTexture": "{G}780c68d6-c97c-541e-ac3f-9f1fa2a18758",
+    "NormalRoughnessTexture": "{G}fad8be63-fbb9-56e0-a55e-da81a84cd5a3",
+    "ExtensionsTexture": "{G}9a57cd9e-e4aa-5604-a5eb-e1face0e86d5",
+    "EmissivityMultiplier": 0,
+    "SpecularBaseColor": {
+      "PackedValue": 0
+    },
+    "FresnelTightness": 1
+  }
+}

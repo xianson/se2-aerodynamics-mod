@@ -1,0 +1,122 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "f104e970-bdcc-4a09-892d-8cc96e039998",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-5e25-0015-000000000001",
+      "Model": "{G}ae200001-ae00-5e25-0100-000000000001",
+      "FractureModel": "{G}ae200001-ae00-5e25-0101-000000000001",
+      "DamagedModel": "{G}ae200001-ae00-5e25-0102-000000000001",
+      "BuildProgressModels": [
+        {
+          "Key": "ae200001-ae00-5e25-0048-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 0,
+            "Model": "{G}ae200001-ae00-5e25-0101-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        },
+        {
+          "Key": "ae200001-ae00-5e25-0049-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 1,
+            "Model": "{G}ae200001-ae00-5e25-0100-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        }
+      ],
+      "Dummies": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "ae200001-ae00-5e25-0041-000000000001",
+          "ae200001-ae00-5e25-0042-000000000001"
+        ],
+        "Changed": [
+          {
+            "Kind": "Insert",
+            "Index": 0,
+            "Value": {
+              "Name": "SolidPortTop",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": 2.62,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.7071068,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 0.7071068
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1.27,
+                "Y": 1.27,
+                "Z": 0.05
+              },
+              "Type": "e4203734-4c68-4490-a77e-7e299ad6839d",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 1,
+            "Value": {
+              "Name": "SolidPortBottom",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.125,
+                    "Y": -2.37,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": -0.7071068,
+                    "Y": 0,
+                    "Z": 0,
+                    "W": 0.7071068
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1.27,
+                "Y": 1.27,
+                "Z": 0.05
+              },
+              "Type": "e4203734-4c68-4490-a77e-7e299ad6839d",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          }
+        ],
+        "Removed": []
+      }
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition",
+    "PriorityOverride": false
+  }
+}

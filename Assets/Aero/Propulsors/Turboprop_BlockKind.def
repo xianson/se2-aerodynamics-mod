@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7b00-0020-000000000001",
+    "Name": "Turboprop",
+    "Description": "A propeller on a turbine: strong static thrust that falls off with airspeed (constant power). Air only.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-7b00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-0021-000000000001"
+      }
+    ]
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "1649e835-bc93-4907-a6bb-e0bbaae1fabb",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-fa15-0014-000000000001",
+      "Components": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "b7bf405c-71aa-46a1-a5ec-4c690f2ab7e3",
+          "e58b8f69-45da-40d4-82b0-f1a82564a53a",
+          "a1687822-b4c2-4bcb-961e-3e44fae3221d",
+          "d358358e-30b3-484a-b8b8-2e5568c7298b",
+          "bc5652a0-1296-4040-adc3-a2b9c35d5afc",
+          "4f2bc5f9-6a6d-4347-a1eb-5937cbce6727",
+          "4e49ffa8-efc3-4043-9adc-04f5f1408d61",
+          "72e2ef60-d699-48a2-9959-4e246eecdacc",
+          "24f8dfe2-6b3f-4764-a9db-6e4383dcae5d",
+          "b6076adf-7eaf-428d-af4f-d7cc87969340",
+          "6dca8baa-1b24-4032-91eb-fe5719b08fd5",
+          "518accc5-c6c7-453e-9e3e-af80e8e4617b",
+          "82deb2e1-9dff-481e-a781-b75c5b54f827"
+        ],
+        "Changed": [
+          {
+            "Kind": "Update",
+            "Index": 3,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-0015-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 4,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-0016-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 5,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-0001-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 6,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-001c-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 9,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-001d-000000000001"
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 11,
+            "Value": {
+              "Definition": "ae200001-ae00-fa15-0017-000000000001"
+            }
+          }
+        ],
+        "Removed": []
+      }
+    },
+    "DefinitionType": "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition",
+    "PriorityOverride": false
+  }
+}

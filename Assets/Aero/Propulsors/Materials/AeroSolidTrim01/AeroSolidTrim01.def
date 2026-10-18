@@ -1,0 +1,19 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.2878"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Render.Materials.Templates.PBRParallaxMaterialDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-0053-000000000001",
+    "DefaultState": "a6685c78-d6e4-42f9-a5ce-f683973a5401",
+    "PinTextures": false,
+    "ColorMetalTexture": "{G}97e6a72b-cb0f-57cd-bea3-5efefce38897",
+    "NormalRoughnessTexture": "{G}f6eee20d-9593-4858-abf9-3b8f1b594ef9",
+    "ExtensionsTexture": "{G}095e0037-2239-4937-af0b-d59060114351",
+    "EmissivityMultiplier": 1,
+    "DisplacementTexture": "{G}0c943f35-536e-4d73-8237-708fcd29e9eb",
+    "HeightRatio": 0.05,
+    "DepthBias": 1
+  }
+}

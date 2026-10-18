@@ -1,0 +1,10 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-9e00-0031-000000000001"
+  }
+}

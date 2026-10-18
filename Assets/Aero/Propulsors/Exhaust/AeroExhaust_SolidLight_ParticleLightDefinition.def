@@ -1,0 +1,183 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.2.0.538"
+  },
+  "$Type": "VRage:Keen.VRage.Render.Data.ParticleLightDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-006c-000000000001",
+    "TimeLines": {
+      "Position": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "3cf2f6e9-75d4-542e-8644-634b55438b71",
+              "Value": {
+                "Value": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 1.5
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "PositionVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "72fe45c1-14a3-4e1d-ab78-8f0abfc5117f",
+              "Value": {
+                "Value": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Color": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "f4db9199-a5f7-5db6-8f43-94a90cb0275c",
+              "Value": {
+                "Value": {
+                  "X": 1.0,
+                  "Y": 0.58,
+                  "Z": 0.22,
+                  "W": 1
+                },
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "HueVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "0f56c803-95e0-4a09-a9a7-261635ba8a66",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "SaturationVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "3399a8af-c1c2-4e12-bd52-46f6ffe6348b",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "ValueVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "64a789f9-bd69-43e2-b8b7-b6b4245f0d0b",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "Intensity": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "fb1cf55e-1e50-5c0f-b6da-1e11e83f4177",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            },
+            {
+              "Key": "4bd7d96f-9a17-53b1-aa23-70c165d86cf9",
+              "Value": {
+                "Value": 60,
+                "Key": 0.05
+              }
+            },
+            {
+              "Key": "4964790d-996e-5fd5-b5e1-b7d3eeddbc82",
+              "Value": {
+                "Value": 600,
+                "Key": 1
+              }
+            }
+          ]
+        }
+      },
+      "IntensityVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "8d797ca0-3adf-537e-8d88-a6aecc261e35",
+              "Value": {
+                "Value": 0,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "FalloffMultiplier": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "031d54b0-81ec-4365-9eb7-b16b6273ed3d",
+              "Value": {
+                "Value": 1,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      },
+      "FalloffMultiplierVariance": {
+        "KeyFrames": {
+          "_data": [
+            {
+              "Key": "257863f0-3757-4572-b378-476c0a852de6",
+              "Value": {
+                "Value": 0.005,
+                "Key": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    "FlareDefinition": null,
+    "GravityDisplacement": 0,
+    "LifeTime": 2.0,
+    "LifeTimeVariance": 0,
+    "StartTime": 0,
+    "StartTimeVariance": 0,
+    "FlickeringParams": {
+      "EnableFlickering": true,
+      "Frequency1": 9,
+      "Frequency2": 17,
+      "Amplitude1": 0.12,
+      "Amplitude2": 0.06,
+      "PhaseShift": 0.3
+    }
+  }
+}

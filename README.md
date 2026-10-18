@@ -74,8 +74,15 @@ structure, performance) are saved with the world and only the host / single play
 - **A huge ship handles oddly right after loading:** its table is still building (see Performance); give it a minute.
 - **Reporting a problem:** include the game log, `%APPDATA%\SpaceEngineers2\Temp\Logs\` (the newest file). The mod's
   lines start with `[AERO`; warnings and failures are always logged.
+- **A world made with the old companion mod "Aerodynamics Mod Blocks"** (before 2026-10-17): the blocks are now part
+  of this mod. Remove the companion from the world's mod list (Load > the world > Mods); ships keep their blocks. Details:
+  [`docs/BLOCKS_MERGE.md`](docs/BLOCKS_MERGE.md).
 
 ## Details
+
+Layout: `Scripts/Simulation/` (the code), `Assets/` (the sources the content build compiles: `Aero/` the blocks,
+`Particles/` the effects, `System/` the game-wide overrides), `Content/` (compiled), `Tests/` (offline suites), `tools/`
+(generators: `meshgen/` blocks, `particles/` effects; `blocks_merge/`, `modlist/`).
 
 Scripts: `Scripts/Simulation/` (each folder has a README). How it fits together: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 For other mods: [`docs/API.md`](docs/API.md). Reflection inventory: [`docs/REFLECTION_AND_WHITELIST.md`](docs/REFLECTION_AND_WHITELIST.md).
@@ -238,4 +245,12 @@ after the main pass), and since 2026-10-12 `FlowThroughEngines` (atmospheric eng
 ### Content build
 
 `D:\aero\tools\build_mod_content.py` compiles `Assets` into `Content`. Each build keeps the previous Content as
-`Content.before-<stamp>`; those folders are gitignored.
+`Content.before-<stamp>`; those folders are gitignored. It builds a staging copy holding only `Assets` (the game's
+builder would compile `Scripts/` too, and fail), then copies the compiled Content back - with the game closed (it holds
+Content open), about 15 minutes:
+
+    python D:\aero\tools\build_mod_content.py "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"
+
+The block generators (`tools/meshgen/gen_*_defs.py`) write into this mod's `Assets/Aero/...`; build after them. The
+compiled blocks (`Content/Aero/`, ~290 MB) are not in git; nor, for now, the block models and textures (`Assets/**/*.fbx`,
+`*.png`, ~220 MB: [`docs/BLOCKS_MERGE.md`](docs/BLOCKS_MERGE.md) "Git").

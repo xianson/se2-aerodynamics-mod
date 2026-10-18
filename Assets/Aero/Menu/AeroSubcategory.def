@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.SubcategoryDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-0000-0002-000000000001",
+    "Name": "AeroPartsSubcategoryName",
+    "Tooltip": "AeroPartsSubcategoryTooltip",
+    "Order": 0,
+    "Categories": [
+      {
+        "Key": "ae200001-ae00-0000-0002-00000000000a",
+        "Value": "ae200001-ae00-0000-0001-000000000001"
+      }
+    ]
+  }
+}

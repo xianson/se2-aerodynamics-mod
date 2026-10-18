@@ -1,0 +1,12 @@
+{
+  "$Bundles": {
+    "Game2": "2.3.0.1410",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.1410"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Conveyors.ConveyorComponentDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-0055-000000000001",
+    "ConveyorSubgraph": null
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-ab01-0020-000000000001",
+    "Name": "Airbrake (old)",
+    "Description": "Deployable drag plate for aerodynamic braking.",
+    "OrderingPriority": 1,
+    "BlockGroups": []
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.Game.Components.Models.ModelComponentDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-9e02-001a-000000000001",
+    "Model": "{G}ae200001-ae00-9e02-0103-000000000001",
+    "Dummies": []
+  }
+}

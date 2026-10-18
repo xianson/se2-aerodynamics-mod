@@ -1,0 +1,35 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "794c5233-6a1c-4932-b37c-03a0e539d069",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-9e04-0001-000000000001",
+      "UIData": {
+        "Name": "Wheeled Landing Gear",
+        "Icon": "{G}45500040-7761-599b-9213-4f25527b221d"
+      },
+      "PlacerDefinition": "ae200001-ae00-9e00-0050-000000000001",
+      "DisplaySizeOverride": 0.5,
+      "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+      "Recipe": "5b4cadcc-ac0c-494e-9e32-269edb1cc5bb",
+      "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4",
+      "BlockKind": "ae200001-ae00-9e00-0020-000000000001",
+      "PCU": 400,
+      "ConsumedResource": {
+        "Type": "bcded093-f5c0-4997-af3a-a6fbd853ad66",
+        "Amount": 1
+      },
+      "ConsumptionPriority": {
+        "Priority": 6
+      }
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

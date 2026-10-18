@@ -1,0 +1,124 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims02",
+        "MaterialReference": "aa49b17e-58dc-4da8-8ba2-3bd643325681"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}6e526f18-d8e2-5e70-807a-cfc4acf060ee",
+        "UsedMaterials": [
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}5165d880-6a8c-5a16-85d6-b059ec60e1e6",
+        "UsedMaterials": [
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}c19b5ac9-6b85-55f5-b2da-b3ae4fe86920",
+        "UsedMaterials": [
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "Chrome",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": null,
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": false
+    }
+  }
+}

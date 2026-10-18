@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-5e00-0020-000000000001",
+    "Name": "Solid Rocket Segment",
+    "Description": "Solid propellant for a solid rocket motor. Stack segments of the same size straight on top of a solid rocket nozzle; a segment that is not in such a stack does nothing. Each one adds about 8 s of burn and gets lighter as it burns. It cannot be refilled.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-5e00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-002a-000000000001"
+      }
+    ]
+  }
+}

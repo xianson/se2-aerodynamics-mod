@@ -1,0 +1,173 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AeroSolidCoupling",
+        "MaterialReference": "ae200001-ae00-7f00-0051-000000000001"
+      },
+      {
+        "MaterialName": "AeroSolidTrim01",
+        "MaterialReference": "ae200001-ae00-7f00-0053-000000000001"
+      },
+      {
+        "MaterialName": "AeroSolidTrim03",
+        "MaterialReference": "ae200001-ae00-7f00-0052-000000000001"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "MetalDull",
+        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}f0a4d660-7797-57ed-b0ab-3f8b5330a07b",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.125,
+            "Y": 0.125,
+            "Z": 0.125
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}3c235942-3b4a-505f-a34c-cba389107af7",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}8129b004-1776-5889-88fd-f819f42499e2",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}4d7c0360-f457-5f12-ba0a-add106da47e2",
+        "UsedMaterials": [
+          "AeroSolidCoupling",
+          "AeroSolidTrim01",
+          "AeroSolidTrim03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}3d1f059b-440b-5096-836d-eda45dababed",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

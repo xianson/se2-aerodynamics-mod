@@ -1,0 +1,14 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.CategoryDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-0000-0001-000000000001",
+    "Name": "AerodynamicsCategoryName",
+    "Tooltip": "AerodynamicsCategoryTooltip",
+    "Order": 50
+  }
+}

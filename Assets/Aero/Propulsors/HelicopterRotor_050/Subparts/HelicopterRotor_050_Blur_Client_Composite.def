@@ -1,0 +1,70 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-4e05-0064-000000000001",
+    "TagSlots": [
+      {
+        "$Key": "HierarchyComponent",
+        "$Value": "38b268a8-6f59-49d1-9bf2-6f73d5ad8a75"
+      },
+      {
+        "$Key": "ChildTransformComponent",
+        "$Value": "6668ab9d-dd60-462f-b6e8-7dfe1730f9c0"
+      },
+      {
+        "$Key": "ModelRenderBaseComponent",
+        "$Value": "33905a1a-c47d-4ca5-a87c-b9c993baf1e5"
+      },
+      {
+        "$Key": "ModelComponent",
+        "$Value": "17fac7aa-348d-4ae4-b687-531ad1601bd4"
+      },
+      {
+        "$Key": "IRenderParent",
+        "$Value": "a72db338-5407-4268-87f1-2faeb2cac274"
+      }
+    ],
+    "Components": [
+      {
+        "Key": "38b268a8-6f59-49d1-9bf2-6f73d5ad8a75",
+        "Value": {
+          "Definition": null,
+          "Type": "VRage:Keen.VRage.Core.Game.Components.HierarchyComponent"
+        }
+      },
+      {
+        "Key": "6668ab9d-dd60-462f-b6e8-7dfe1730f9c0",
+        "Value": {
+          "Definition": null,
+          "Type": "VRage:Keen.VRage.Core.Game.Components.ChildTransformComponent"
+        }
+      },
+      {
+        "Key": "33905a1a-c47d-4ca5-a87c-b9c993baf1e5",
+        "Value": {
+          "Definition": null,
+          "Type": "Game2:Keen.Game2.Client.GameSystems.Render.ModelRenderComponent"
+        }
+      },
+      {
+        "Key": "17fac7aa-348d-4ae4-b687-531ad1601bd4",
+        "Value": {
+          "Definition": "ae200001-ae00-4e05-0065-000000000001",
+          "Type": "VRage:Keen.VRage.Game.Components.Models.ModelComponent"
+        }
+      },
+      {
+        "Key": "a72db338-5407-4268-87f1-2faeb2cac274",
+        "Value": {
+          "Definition": null,
+          "Type": "Game2:Keen.Game2.Client.GameSystems.Render.ParentRenderAdapterComponent"
+        }
+      }
+    ]
+  }
+}

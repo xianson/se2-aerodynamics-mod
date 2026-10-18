@@ -1,0 +1,253 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AtlasButton01",
+        "MaterialReference": "acd39110-3c0d-49af-b40b-f6754054511e"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims02",
+        "MaterialReference": "aa49b17e-58dc-4da8-8ba2-3bd643325681"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "AtlasFont_BarlowCondensed",
+        "MaterialReference": "481b2a1f-b394-4d99-b58a-1c370e013315"
+      },
+      {
+        "MaterialName": "BrushedMetal",
+        "MaterialReference": "0c3be477-8bff-4e2c-8a0e-d7d842905ae9"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "ConveyorsAtlas",
+        "MaterialReference": "3020a2ff-e3b5-4990-8f96-6da1338c3de2"
+      },
+      {
+        "MaterialName": "DynamicIndicator",
+        "MaterialReference": "25987285-aa3e-4130-b513-e454db8de599"
+      },
+      {
+        "MaterialName": "FracturedMaterial01",
+        "MaterialReference": "0f2772fd-72d6-4ee9-9211-38d1781ba8b9"
+      },
+      {
+        "MaterialName": "HydrogenThrusterCone",
+        "MaterialReference": "c1f98c18-29a2-4779-aadc-e3c11a594103"
+      },
+      {
+        "MaterialName": "HydrogenThrusterConePlates",
+        "MaterialReference": "c9024534-375c-4ae3-a47d-86562ed3b78b"
+      },
+      {
+        "MaterialName": "HydrogenThrusterInjector",
+        "MaterialReference": "3c0e90a6-c4d3-4bb9-b619-4fe3b987e961"
+      },
+      {
+        "MaterialName": "MetalDull",
+        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      },
+      {
+        "MaterialName": "Rubber",
+        "MaterialReference": "ea603341-6e46-42f7-afae-ce60b8848ec5"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}c4b21af5-bf05-587d-93b0-4280e852c9b9",
+        "UsedMaterials": [
+          "AtlasButton01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "AtlasFont_BarlowCondensed",
+          "BrushedMetal",
+          "Chrome",
+          "ConveyorsAtlas",
+          "DynamicIndicator",
+          "FracturedMaterial01",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "Rubber"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.125,
+            "Y": 0.125,
+            "Z": 0.125
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}13480e83-03a2-5802-b809-5f3a5251674e",
+        "UsedMaterials": [
+          "AtlasButton01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "AtlasFont_BarlowCondensed",
+          "BrushedMetal",
+          "Chrome",
+          "ConveyorsAtlas",
+          "DynamicIndicator",
+          "FracturedMaterial01",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "Rubber"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}1a4bef13-5bfe-584d-9bbd-f5cbc4a16cc2",
+        "UsedMaterials": [
+          "AtlasButton01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "AtlasFont_BarlowCondensed",
+          "BrushedMetal",
+          "Chrome",
+          "ConveyorsAtlas",
+          "DynamicIndicator",
+          "FracturedMaterial01",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "Rubber"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}34d91d84-662e-5376-b89e-363178b11868",
+        "UsedMaterials": [
+          "AtlasButton01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Trims03",
+          "AtlasFont_BarlowCondensed",
+          "BrushedMetal",
+          "Chrome",
+          "ConveyorsAtlas",
+          "DynamicIndicator",
+          "FracturedMaterial01",
+          "HydrogenThrusterCone",
+          "HydrogenThrusterConePlates",
+          "HydrogenThrusterInjector",
+          "MetalDull",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "Rubber"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}6b5f016f-952c-51e8-875f-536cb54f21cc",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

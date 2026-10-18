@@ -150,7 +150,7 @@ static partial class Program
 
         // 8. the content gen_propulsor_defs.py wrote (the Blocks project): the hydrogen chain, our numbers, the spike, the ports, the menu
         {
-            string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "..", "Aerodynamics Mod Blocks", "Assets", "Aero", "Propulsors"));
+            string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "Assets", "Aero", "Propulsors"));
             if (!Directory.Exists(root)) { Console.WriteLine($"   (no Blocks project at {root}: content checks skipped)"); return; }
             JsonElement V(string rel) => JsonDocument.Parse(File.ReadAllText(Path.Combine(root, rel))).RootElement.GetProperty("$Value");
             bool chain = true, numbers = true, spikeOk = true, ports = true; var why = new List<string>();

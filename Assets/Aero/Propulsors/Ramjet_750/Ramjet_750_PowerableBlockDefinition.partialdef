@@ -1,0 +1,26 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "5b8af618-cb27-4501-9ee1-d52912f8dc79",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-7c75-0001-000000000001",
+      "UIData": {
+        "Name": "Ramjet",
+        "Icon": "{G}d1c1c6d8-ebe6-5dea-b83a-5f80c65884f6"
+      },
+      "PlacerDefinition": "ae200001-ae00-7c00-0050-000000000001",
+      "DisplaySizeOverride": 2.5,
+      "Recipe": "960ab0c8-5bf2-4a15-a9c0-0dcb6e84ced1",
+      "BlockKind": "ae200001-ae00-7c00-0020-000000000001",
+      "PCU": 800
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

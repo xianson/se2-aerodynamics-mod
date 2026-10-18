@@ -624,7 +624,7 @@ static class Program
     // ── 8. the content gen_propulsor_defs.py wrote (the conveyor version) ──
     static string BlocksRoot()
     {
-        string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "..", "Aerodynamics Mod Blocks", "Assets", "Aero", "Propulsors"));
+        string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "Assets", "Aero", "Propulsors"));
         return Directory.Exists(root) ? root : null;
     }
 
