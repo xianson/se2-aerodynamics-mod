@@ -70,7 +70,7 @@ Small and medium ships cost little. [b]Very large ships[/b] (thousands of blocks
 [h2]Troubleshooting[/h2]
 [list]
 [*][b]Blocks are there but nothing flies differently, no Aerodynamics section under Settings > Mods[/b]: -loadScripts is missing.
-[*]Reporting a bug: please attach the newest log from %APPDATA%\SpaceEngineers2\Temp\Logs (the mod's lines start with [AERO).
+[*]Reporting a bug: please attach the newest log from %APPDATA%\SpaceEngineers2\Temp\Logs (the mod's log lines are tagged AERO).
 [/list]
 
 [h2]Licence[/h2]
