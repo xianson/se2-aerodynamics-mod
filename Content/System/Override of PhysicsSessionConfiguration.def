@@ -1,0 +1,14 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfigurationObjectBuilder",
+  "$Value": {
+    "MaximumSpeedLinear": 1000,
+    "MaximumCharacterSpeedLinear": 1000,
+    "LinearDamping": 0,
+    "GravityMultiplier": 2
+  }
+}

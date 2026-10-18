@@ -1,0 +1,48 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.2.33",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.2.33"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.GameSystems.Movement.ThrustClassesConfigurationObjectBuilder",
+  "$Value": {
+    "ThrustClasses": [
+      {
+        "$Key": "Ion",
+        "$Value": {
+          "MaxThrustAirDensity": 0.2,
+          "MinThrustAirDensity": 0.8,
+          "WaterSubmersionTolerance": 1,
+          "WaterOnly": false
+        }
+      },
+      {
+        "$Key": "Atmospheric",
+        "$Value": {
+          "MaxThrustAirDensity": 0.8,
+          "MinThrustAirDensity": 0.2,
+          "WaterSubmersionTolerance": 1,
+          "WaterOnly": false
+        }
+      },
+      {
+        "$Key": "Hydrogen",
+        "$Value": {
+          "MaxThrustAirDensity": 0,
+          "MinThrustAirDensity": 10.2,
+          "WaterSubmersionTolerance": 1,
+          "WaterOnly": false
+        }
+      },
+      {
+        "$Key": "Water",
+        "$Value": {
+          "MaxThrustAirDensity": 0,
+          "MinThrustAirDensity": -1,
+          "WaterSubmersionTolerance": 1,
+          "WaterOnly": true
+        }
+      }
+    ]
+  }
+}

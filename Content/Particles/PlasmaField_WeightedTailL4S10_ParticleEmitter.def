@@ -45,21 +45,21 @@
             {
               "Key": "45f39e8c-1867-56a1-8875-bd6c5753b54d",
               "Value": {
-                "Value": 0.0,
+                "Value": 0,
                 "Key": 0
               }
             },
             {
               "Key": "198c964c-effe-53dc-8139-5e7ef292f214",
               "Value": {
-                "Value": 2400.0,
+                "Value": 2400,
                 "Key": 0.5
               }
             },
             {
               "Key": "df9e87d9-5992-51d4-b244-4fa506b75884",
               "Value": {
-                "Value": 2400.0,
+                "Value": 2400,
                 "Key": 1
               }
             }
