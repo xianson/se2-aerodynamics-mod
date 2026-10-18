@@ -93,26 +93,55 @@ start_world() {
     MARK=0
     grep -aq 'Loading Failed' "$L" && { record "'$w' loaded" "Loading Failed - $(grep -a -m1 "Couldn't find the project\|Loading Failed" "$L" | cut -c1-200)"; return 1; }
     [ "$(logworld "$L")" = "$w" ] || { record "the game loaded '$w'" "its -start: is '$(logworld "$L")'"; return 1; }
-    for i in $(seq 1 60); do "$ORB" findgrids | grep -aq '=' && break; sleep 1; done
-    sleep 10   # (grids stream in after the first answer)
+    # (the findgrids REPLY must name a grid: orb.sh prints the whole status tail, whose other lines hold '=' too - the
+    #  first baseline, 2026-10-18, dumped 0 grids while the server sat in a 14 s GC hitch before publishing its views)
+    for i in $(seq 1 90); do ask findgrids | grep -aq ' [0-9]*=' && break; sleep 1; done
+    sleep 3   # (grids stream in after the first answer)
     record "'$w' loaded, the harness answers ($(el) s)" ""
 }
 
-# every grid: findgrids, then each one's blocks (gen dump: cells, orientation, entity) and aero blocks (DevDump)
+# every grid: findgrids, then the blocks of every grid of one NAME together (gen dump: cells, orientation - the ids may
+# differ between two loads, the names do not) and each name's aero blocks (DevDump). Sized for a 5-minute launch with
+# ~300 grids (the Tu-134 world, 2026-10-18; one ask a grid took ~5 s): gen dump writes its file at once - 100 a batch,
+# the replies unread (status.txt keeps 20); DevDump is answered on a server step - pipelined, each batch reads the last
+# name's answer and asks the next, until $DEADLINE s into the step (the launch's 5 minutes; ~2.5 s a name). With a
+# second argument (the baseline's dir) the aero dump takes exactly the names that one has, in its order.
+DEADLINE=${DEADLINE:-270}
 dump_grids() {
-    local dir="$1" pair id name i a; mkdir -p "$dir"
+    local dir="$1" from="${2:-}" ids=() i j a nm b names=() prev=""
+    mkdir -p "$dir"; touch "$dir/.mark"   # (only dump files written after it count: older runs left dump_<id>.txt)
     ask findgrids | tr ' ' '\n' | grep -a '^[0-9]*=' | sort -t= -k2 > "$dir/grids.txt"
-    while IFS= read -r pair; do
-        id=${pair%%=*}; name=${pair#*=}
-        touch "$dir/.mark"; ask "gen dump $id" > /dev/null
-        for i in $(seq 1 20); do [ -n "$(find "$GEN/dump_$id.txt" -newer "$dir/.mark" 2>/dev/null)" ] && break; sleep 0.5; done
-        # (cells and orientation of each block: the entity's own text after them carries its id)
-        [ -n "$(find "$GEN/dump_$id.txt" -newer "$dir/.mark" 2>/dev/null)" ] && grep -v '^#' "$GEN/dump_$id.txt" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8}' | sort > "$dir/blocks_$name.txt"
-        ask "aeroset AeroBlockSave.DevDump $name" > /dev/null
-        for i in $(seq 1 20); do a=$(val "AeroBlockSave.DevDump"); case "$a" in asked*|"?") sleep 0.5 ;; *) break ;; esac; done
-        echo "$a" | tr ' ' '\n' | grep -a '^[a-z]*@' | sed 's/;rb:[01]//' | sort > "$dir/aero_$name.txt"
-    done < "$dir/grids.txt"
-    echo "   $(wc -l < "$dir/grids.txt") grid(s), $(cat "$dir"/blocks_*.txt 2>/dev/null | wc -l) block(s), $(cat "$dir"/aero_*.txt 2>/dev/null | wc -l) aero block(s) -> $dir"
+    mapfile -t ids < <(cut -d= -f1 "$dir/grids.txt")
+    for ((i = 0; i < ${#ids[@]}; i += 100)); do
+        b=(); for j in "${ids[@]:i:100}"; do b+=("gen dump $j"); done
+        "$ORB" "${b[@]}" > /dev/null
+    done
+    while IFS= read -r nm; do
+        for j in $(grep -a "=$nm\$" "$dir/grids.txt" | cut -d= -f1); do
+            [ -n "$(find "$GEN/dump_$j.txt" -newer "$dir/.mark" 2>/dev/null)" ] && grep -v '^#' "$GEN/dump_$j.txt" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8}'
+        done | sort > "$dir/blocks_$nm.txt"
+    done < <(cut -d= -f2 "$dir/grids.txt" | sort -u)
+    if [ -n "$from" ]; then mapfile -t names < <(cat "$from/aero_names.txt")
+    else mapfile -t names < <(cut -d= -f2 "$dir/grids.txt" | grep -v '(static)$' | sort -u); fi
+    : > "$dir/aero_names.txt"
+    aero_out() { echo "$1" | tr ' ' '\n' | grep -a '^[a-z]*@' | sed 's/;rb:[01]//' | sort > "$dir/aero_$2.txt"; }
+    local G="aeroget AeroBlockSave.DevDump" S="aeroset AeroBlockSave.DevDump" late=()
+    for nm in "${names[@]}" ""; do
+        [ -n "$nm" ] && [ -z "$from" ] && [ "$(el)" -ge "$DEADLINE" ] && { echo "   (aero dump cut at $(el) s: the names after '$prev' not dumped)"; nm=""; }
+        if [ -n "$prev" ]; then
+            if [ -n "$nm" ]; then a=$(ask "$G" "$S $nm" | head -1); else a=$(ask "$G" | head -1); fi
+            case "${a#*=}" in asked*|"") late+=("$prev") ;; *) aero_out "${a#*=}" "$prev" ;; esac
+            echo "$prev" >> "$dir/aero_names.txt"
+        elif [ -n "$nm" ]; then ask "$S $nm" > /dev/null; fi
+        prev="$nm"
+        [ -z "$nm" ] && break
+    done
+    for nm in "${late[@]}"; do   # (not answered by the next batch: asked again alone)
+        ask "$S $nm" > /dev/null
+        for i in $(seq 1 12); do a=$(ask "$G" | head -1); case "${a#*=}" in asked*|"") sleep 0.3 ;; *) break ;; esac; done
+        aero_out "${a#*=}" "$nm"
+    done
+    echo "   $(wc -l < "$dir/grids.txt") grid(s) ($(ls "$dir"/blocks_*.txt 2>/dev/null | wc -l) names), $(cat "$dir"/blocks_*.txt 2>/dev/null | wc -l) block(s), $(cat "$dir"/aero_*.txt 2>/dev/null | wc -l) aero block(s) -> $dir"
 }
 notfound() { grep -ac 'DefinitionSerializationContext\] Could not find' "$L"; }
 
@@ -183,7 +212,7 @@ after)
     use_world "$MERGED"
     start_world "$MERGED" || { summary; exit 1; }
     n=$(notfound); record "no definition missing on load" "$([ "$n" -gt 0 ] && echo "$n 'Could not find': $(grep -a -m3 'DefinitionSerializationContext\] Could not find' "$L" | sed 's/.*Could not find //' | tr '\n' ' ')")"
-    dump_grids "$OUT/after"
+    dump_grids "$OUT/after" "$OUT/baseline"
     diff -q "$OUT/baseline/grids.txt" "$OUT/after/grids.txt" >/dev/null && record "the same grids as before" "" || record "the same grids as before" "$(diff "$OUT/baseline/grids.txt" "$OUT/after/grids.txt" | grep '^[<>]' | head -4 | tr '\n' ' ')"
     for f in "$OUT"/baseline/blocks_*.txt "$OUT"/baseline/aero_*.txt; do
         g=$(basename "$f"); d=$(diff "$f" "$OUT/after/$g" 2>&1 | grep -c '^[<>]')

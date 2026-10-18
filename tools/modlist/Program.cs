@@ -1,5 +1,8 @@
-// modlist <world save dir> [--drop <project guid>]... [--add <project guid> <name>]... - print a world's mod list; with
-// --drop / --add, write it again without / with those local mods (2026-10-17, the Blocks mod folded into the Aerodynamics Mod: a world that still lists a local mod the
+// modlist <world save dir> [--drop <project guid>]... [--add <project guid> <name>]... [--add-steam <project guid>
+// <workshop item id> <name>]... - print a world's mod list; with --drop / --add / --add-steam, write it again without /
+// with those local mods / with those mods from the Steam Workshop (ServiceId "Steam", ModId {UGCHelper.GuidFromULong(id),
+// "Steam"}: what SteamProjectLocatorComponent / SteamUGCServiceComponent.TrySearchProjectIdAsync look up; --drop the
+// local entry of the same GUID first to swap one for the other) (2026-10-17, the Blocks mod folded into the Aerodynamics Mod: a world that still lists a local mod the
 // game cannot find does not load at all - LocalProjectLocator throws "Couldn't find the project", decompiled
 // VRage.Core LocalProjectLocator.cs:204).
 // The game reads the list from "modlist", then "modlist.vrb", then "modlist.bak.json" (EntityContainerAccessors
@@ -41,13 +44,15 @@ if (args[0] == "--defs" && args.Length == 2)
 string world = args[0];
 var drop = new HashSet<Guid>();
 var add = new List<(Guid guid, string name)>();
+var addSteam = new List<(Guid guid, ulong item, string name)>();
 for (int i = 1; i < args.Length; i++)
     if (args[i] == "--drop" && i + 1 < args.Length) drop.Add(Guid.Parse(args[++i]));
     else if (args[i] == "--add" && i + 2 < args.Length) { add.Add((Guid.Parse(args[i + 1]), args[i + 2])); i += 2; }
+    else if (args[i] == "--add-steam" && i + 3 < args.Length) { addSteam.Add((Guid.Parse(args[i + 1]), ulong.Parse(args[i + 2]), args[i + 3])); i += 3; }
     else { Console.Error.WriteLine("unknown argument " + args[i]); return 2; }
 
 string? file = new[] { "modlist", "modlist.vrb", "modlist.bak.json" }.Select(n => Path.Combine(world, n)).FirstOrDefault(File.Exists);
-if (file == null && add.Count == 0) { Console.WriteLine("no mod list (the world loads no mods)"); return drop.Count == 0 ? 0 : 1; }
+if (file == null && add.Count == 0 && addSteam.Count == 0) { Console.WriteLine("no mod list (the world loads no mods)"); return drop.Count == 0 ? 0 : 1; }
 ModList Read(string path)
 {
     using var fs = File.OpenRead(path);
@@ -57,17 +62,21 @@ ModList Read(string path)
 void Print(ModList l)
 {
     foreach (var r in l.Records ?? Array.Empty<ModList.ModRecord>())
-        Console.WriteLine($"  {r.Project.Guid}  service \"{r.Project.ServiceId}\"  version {r.Version?.ToString() ?? "-"}  {r.DisplayName}");
+        Console.WriteLine($"  {r.Project.Guid}  service \"{r.Project.ServiceId}\"{(r.Project.ModId is { } m ? $"  mod {m.Id} ({m.ServiceName})" : "")}  version {r.Version?.ToString() ?? "-"}  {r.DisplayName}");
 }
 var list = file != null ? Read(file) : new ModList { Records = Array.Empty<ModList.ModRecord>() };
 Console.WriteLine($"{(file != null ? Path.GetFileName(file) : "(no mod list)")}: {list.Records?.Length ?? 0} mod(s)");
 Print(list);
-if (drop.Count == 0 && add.Count == 0) return 0;
+if (drop.Count == 0 && add.Count == 0 && addSteam.Count == 0) return 0;
 
 var keep = (list.Records ?? Array.Empty<ModList.ModRecord>()).Where(r => !drop.Contains(r.Project.Guid)).ToList();
 foreach (var (g, n) in add)   // (a local mod: ServiceId "", no ModId - LocalProjectLocator matches all three)
     if (!keep.Any(r => r.Project.Guid == g)) keep.Add(new ModList.ModRecord { Project = new Keen.VRage.Core.Project.VRageProjectID { Guid = g, ServiceId = "" }, DisplayName = n });
-if (keep.Count == (list.Records?.Length ?? 0) && add.Count == 0) { Console.WriteLine("nothing to drop: the list is unchanged"); return 0; }
+foreach (var (g, id, n) in addSteam)
+    if (!keep.Any(r => r.Project.Guid == g)) keep.Add(new ModList.ModRecord { Project = new Keen.VRage.Core.Project.VRageProjectID { Guid = g,
+        ModId = new Keen.VRage.Core.Services.Data.UGCItemId(Keen.VRage.Core.Services.UGCHelper.GuidFromULong(id), Keen.VRage.Core.Services.Data.GameServiceNames.ServiceSteam),
+        ServiceId = Keen.VRage.Core.Services.Data.GameServiceNames.ServiceSteam.String }, DisplayName = n });
+if (keep.Count == (list.Records?.Length ?? 0) && add.Count == 0 && addSteam.Count == 0) { Console.WriteLine("nothing to drop: the list is unchanged"); return 0; }
 var edited = new ModList { Records = keep.ToArray() };
 string outPath = Path.Combine(world, "modlist");
 using (var fs = File.Create(outPath))
