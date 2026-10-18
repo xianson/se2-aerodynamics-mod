@@ -34,7 +34,7 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void AttitudeJob(AeroGridComponent aero, WorldTransform wt)
     {
-        if (!aero._initialized || !AeroSwitch.Enabled || AeroTestHarness.ShouldSkipGrid(aero)) return;
+        if (!aero._initialized || !AeroSwitch.Enabled) return;
         if (!ThrustTorque.Enabled || (aero._thrusterCache.Count == 0 && aero._gyroCache.Count == 0)) return;
         // (a quiet grid - the sim job's quiet path, this tick - was at rest for QuietAfter steps: ThrustTorque's rest branch
         //  ran each of them and darkened its flames; nothing to do until it stirs)
@@ -43,13 +43,6 @@ public partial class AeroGridComponent
         AeroCost.EnterSim();
         try
         {
-            if (aero._thrusterCache.Count > 0 && aero._clearedOverride != 1)
-            {
-                // (the old system wrote a grid-level thrust override: cleared once, so the game's own thrust,
-                // dampeners and gravity compensation run untouched)
-                PhysicsHack.TrySetOverriddenThrust(aero.Entity, aero.Data, Vector3.Zero);
-                aero._clearedOverride = 1;
-            }
             PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
             aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
@@ -114,7 +107,7 @@ public partial class AeroGridComponent
         if (airVel.LengthSquared() > 0.0025f || angVel.LengthSquared() > 4e-6f) return false;
         if (EntryHeat > 1e-3f || FlowPublished || AeroEntryFx.TestSpeed > 0f || AeroEntryFx.TestForcesOn) return false;
         // (the test harnesses tick at the end of the full step and count its frames: never quiet under them)
-        if (AeroTestHarness.Enabled || AeroFlightTest.Enabled || AeroSpeedSpike.Enabled) return false;
+        if (AeroFlightTest.Enabled || AeroSpeedSpike.Enabled) return false;
         if (System.Diagnostics.Stopwatch.GetTimestamp() < StructFocusUntil || Data.Has<TargetControlData>()) return false;
         if (Data.Has<ActiveThrustData>()) return false;
         // (an external entry source - a grid on another mod's rails - checked on the full steps only: it ends quiet there)
@@ -132,13 +125,6 @@ public partial class AeroGridComponent
         if (!AeroSwitch.Enabled) { AeroSwitch.WasOff = true; return; }
         if (AeroSwitch.WasOff) { AeroSwitch.WasOff = false; System.Threading.Interlocked.Increment(ref AeroSwitch.Generation); }
         if (aero._switchGen != AeroSwitch.Generation) { aero._switchGen = AeroSwitch.Generation; aero.ForceFullRebuild(); }
-
-        // Test harness: skip frozen grids
-        if (AeroTestHarness.ShouldSkipGrid(aero))
-        {
-            PhysicsHack.TrySetVelocity(aero.Data, Vector3.Zero, Vector3.Zero);
-            return;
-        }
 
         aero._simFrameCount++;
         AeroStats.BeginGrid();
@@ -169,6 +155,7 @@ public partial class AeroGridComponent
             if (++aero._quietFrames > QuietAfter && aero._quietFrames % QuietRefresh != 0)
             {
                 aero.LastLinVel = linVel; aero.LastAngVel = angVel; aero.LastSpeed = linVel.Length();
+                aero.SetAir(airVel, aero.LastDensity);
                 aero.AeroForcesApplied = false; aero.LastAeroTorque = Vector3.Zero; aero.LastSurfaceTorque = Vector3.Zero;
                 AeroCost.Count(ref _tQuietSkips, ref AeroStats.QuietSkips);   // (per thread, a batch at a time: AeroCost.Count)
                 AeroCost.Pre.Stop(tpre);
@@ -207,7 +194,9 @@ public partial class AeroGridComponent
         aero.LastCoM = com;
         aero.LastMass = mass;
         aero.LastDensity = density;
+        aero.AirKnown = true;   // (its air is its own from here: AeroGridComponent.AirKnown)
         aero.LastSpeed = linVel.Length();
+        aero.SetAir(airVel, density);   // (every step: the air - LastAirVel, LastSoundSpeed, LastMach - for the Mach curves and the propulsors)
         if (massRead)
         {
             aero.LastInvInertia = invI;
@@ -238,18 +227,6 @@ public partial class AeroGridComponent
             OffsetThrustJob.RebuildGyroCache(aero.Entity, aero._gyroCache);
             AeroCost.Gyros.Stop(tg);
             aero._gyroCacheDirty = false;
-        }
-
-        // ── Clear stale override values on first frame (persisted from save) ──
-        // Only for the legacy offset-thrust path (ThrustTorque off), which writes overrides itself: with the default
-        // ThrustTorque nothing of ours is in them, and this wiped the PLAYER's terminal overrides on every load.
-        if (aero._simFrameCount == 1 && !ThrustTorque.Enabled)
-        {
-            // Clear per-thruster ThrusterOverrideData
-            for (int i = 0; i < aero._thrusterCache.Count; i++)
-                OffsetThrustJob.ForceOverride(aero._thrusterCache[i], 0f);
-            // Clear grid-level OverriddenThrustData
-            PhysicsHack.TrySetOverriddenThrust(aero.Entity, aero.Data, Vector3.Zero);
         }
 
         // ── Aero computation ──
@@ -293,17 +270,6 @@ public partial class AeroGridComponent
         // Fixed sim step: UpdateTime.UPDATE_STEPS_PER_SECOND is a compile-time constant in SE2.
         float dt = AeroPhysics.Dt;
 
-        // Gyro handoff: when a pilot is present (TargetControlData) and error is large,
-        // let game gyros handle coarse correction (smooth, no coupling artifacts).
-        // Phantom + SAS take over for fine hold below threshold.
-        // Without a pilot, game gyros are passive — phantom must handle all errors.
-        const float GyroHandoffRad = 0.087f; // ~5 degrees
-        bool gyroCoarseMode = !aero.SuppressPhantomTorque
-            && !aero.HarnessControlsAttitude
-            && aero._gyroCache.Count > 0
-            && aero.Data.Has<TargetControlData>()
-            && aero.EulerError.LengthSquared() > GyroHandoffRad * GyroHandoffRad;
-
         aero.LastAeroTorque = Vector3.Zero; aero.LastSurfaceTorque = Vector3.Zero;
         Vector3 appliedF = Vector3.Zero, appliedT = Vector3.Zero;   // (the structure's air loads: StructureServer)
         aero.AeroForcesApplied = aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn;
@@ -326,8 +292,6 @@ public partial class AeroGridComponent
                     $"localF=({forceLocal.X:F0},{forceLocal.Y:F0},{forceLocal.Z:F0})");
             }
 
-            Vector3 sasTorque = (ThrustTorque.Enabled || aero.SuppressPhantomTorque || gyroCoarseMode) ? Vector3.Zero : aero.SasTorque;   // (no phantom: ThrustTorque)
-            Vector3 totalTorque = torqueLocal + sasTorque;
             // (the attitude control's feedforward: the airframe's own torque - not the block components' (control surfaces:
             //  they are actuators, deflected on purpose; fed forward, the aero-aware law had the gyros cancel every turn they
             //  helped with, 2026-10-12). The world's multipliers taken as they scale the whole.)
@@ -338,7 +302,7 @@ public partial class AeroGridComponent
             // ref into component storage and uses the engine's own inertia math, instead of
             // PhysicsHack's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
             long tap = AeroCost.Start();
-            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, totalTorque, dt);
+            AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, torqueLocal, dt);
             AeroCost.Apply.Stop(tap);
             appliedF = forceLocal; appliedT = torqueLocal;
         }
@@ -346,88 +310,8 @@ public partial class AeroGridComponent
         if (aero.IsServerScene) aero.TickStructure(dt, appliedF, appliedT, WorldTransform.TransformDirectionInv(airVel, wt), AeroTuning.LiftMultiplier);
         if (aero.ApiWatched) aero.PublishApiTick(airVel, linVel, appliedF, appliedT, gravity, wt);   // (the public API's tick record: AeroGridComponent.Api.cs)
 
-        // ── Thrust torque and attitude: AttitudeJob, after the game's gyros (ThrustTorque.Enabled) ──
-        // ── Offset thrust (RCS) correction (the old system: phantom attitude torque; ThrustTorque.Enabled = false) ──
-        if (!ThrustTorque.Enabled && aero._thrusterCache.Count > 0)
-        {
-            aero._clearedOverride = 0;
-            float thrustMach = 0f;
-            Vector3 velLocalHat = Vector3.Zero;
-            Vector3 velLocal = WorldTransform.TransformDirectionInv(linVel, wt);
-            if (aero.LastSpeed > 1f)
-            {
-                velLocalHat = velLocal / velLocal.Length();
-
-                // Compute Mach from speed + atmosphere, independent of aero HasResult.
-                // Without atmosphere model, use standard sea-level speed of sound (343 m/s).
-                if (aero.HasResult)
-                    thrustMach = (float)aero.LastResult.Mach;
-                else
-                    thrustMach = aero.LastSpeed / 343f;
-            }
-
-            // Pass aero torque for feedforward cancellation in attitude controller
-            Vector3 aeroTorqueFF = aero.HasResult
-                ? aero.LastResult.Torque + aero.SasTorque
-                : Vector3.Zero;
-
-            Vector3 gravLocal = WorldTransform.TransformDirectionInv(gravity, wt);
-            // Read actual dampener state from grid entity (DampeningData tag = dampeners on)
-            // Test harness forces dampeners on so per-thruster attitude control is active
-            bool dampenersOn = aero.HarnessControlsAttitude || aero.SuppressPhantomTorque || aero.Data.Has<DampeningData>();
-
-            long tth = AeroCost.Start();
-            OffsetThrustJob.Execute(
-                aero._thrusterCache,
-                aero.Data,
-                aero.Entity,
-                wt,
-                angVel,
-                enableDampening: dampenersOn,
-                mach: thrustMach,
-                velocityLocalHat: velLocalHat,
-                velocityLocal: velLocal,
-                gravityLocal: gravLocal,
-                mass: mass,
-                targetAngVel: aero._lastGridAngVel,
-                aeroTorqueLocal: aeroTorqueFF,
-                skipOffsetLoop: false);
-            AeroCost.Thrust.Stop(tth);
-
-            // ── Phantom attitude + coupling cancellation ──
-            // 1. Cancel ALL offset coupling (prevents asymmetric thrust from spinning grid)
-            // 2. Apply attitude correction phantom (PD controller → torque)
-            // The per-thruster overrides handle hover/dampening (real thrust, visual, fuel).
-            // Attitude comes from phantom torque (clean, no cross-coupling artifacts).
-            Vector3 couplingCancel = -OffsetThrustJob.NetOffsetCouplingTorque;
-            Vector3 localAngVel2 = WorldTransform.TransformDirectionInv(angVel, wt);
-            // Scale by inertia so gains are ship-size-independent
-            // Kp_norm: desired angular accel per rad/s of target (rad/s²)
-            // Kd_norm: desired angular accel per rad/s of spin (rad/s²)
-            const float Kp_norm = 8.0f;   // 8 rad/s² per rad/s target
-            const float Kd_norm = 12.0f;  // 12 rad/s² per rad/s spin (strong damping)
-            // Approximate inertia from mass and grid extent
-            // For a uniform box: I ≈ mass * L² / 6. Typical grid L ≈ 10m.
-            // Better: use actual inverse inertia if available
-            float approxInertia = mass * 12f; // rough: mass * (average_radius)²
-            if (aero.LastInvInertia.LengthSquared() > 0f)
-            {
-                // Use actual inertia (inverse of inverse)
-                float avgInvI = (Math.Abs(aero.LastInvInertia.X) + Math.Abs(aero.LastInvInertia.Y) + Math.Abs(aero.LastInvInertia.Z)) / 3f;
-                if (avgInvI > 1e-10f) approxInertia = 1f / avgInvI;
-            }
-            Vector3 attTorque = (aero._lastGridAngVel * Kp_norm - localAngVel2 * Kd_norm) * approxInertia;
-            const float MaxAttTorque = 20000000f;
-            attTorque = new Vector3(
-                Math.Clamp(attTorque.X, -MaxAttTorque, MaxAttTorque),
-                Math.Clamp(attTorque.Y, -MaxAttTorque, MaxAttTorque),
-                Math.Clamp(attTorque.Z, -MaxAttTorque, MaxAttTorque));
-            // In gyro coarse mode, only apply coupling cancel (no phantom attitude).
-            // Gyros handle coarse correction smoothly; phantom takes over for fine hold.
-            Vector3 totalPhantom = gyroCoarseMode ? couplingCancel : couplingCancel + attTorque;
-            if (!aero.SuppressPhantomTorque && totalPhantom.LengthSquared() > 1f)
-                AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, totalPhantom, dt);
-        }
+        // (thrust torque and attitude: AttitudeJob, after the game's gyros - the only thrust path; ThrustTorque.Enabled off
+        //  leaves the game's own thrust untouched)
 
         // ── Throttled drag-vs-Mach log ──
         if (AeroLog.Verbose && aero.HasResult && aero.LastSpeed > 50f && --_simDragLogCooldown <= 0)
@@ -450,9 +334,6 @@ public partial class AeroGridComponent
             aero._components?.Count ?? 0,
             aero.LastSpeed,
             aero.HasResult ? (float)aero.LastResult.Mach : 0f);
-
-        // ── Test harness (runs after all production physics) ──
-        AeroTestHarness.Tick(aero, wt);
 
         // ── THROWAWAY: teleport-stepping feasibility spike ──
         AeroSpeedSpike.Tick(aero, wt);

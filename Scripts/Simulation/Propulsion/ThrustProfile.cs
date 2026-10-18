@@ -56,30 +56,9 @@ public sealed class ThrustProfile
         return _knots[^1].scale;
     }
 
-    /// <summary>
-    /// Evaluate with intake direction correction.
-    /// Forward-facing (cosIntake > 0): effectiveMach = mach * cosIntake.
-    /// Reverse flow (cosIntake &lt; 0): thrust penalized — reverse airflow disrupts
-    /// compressor/fan. Penalty: scale * (1 - |cosIntake| * reverseFlowPenalty).
-    /// </summary>
-    public double Evaluate(double mach, Vector3 velocityHat, Vector3 intakeDirection)
-    {
-        float cosIntake = Vector3.Dot(velocityHat, intakeDirection);
-        if (cosIntake >= 0)
-        {
-            double effectiveMach = mach * cosIntake;
-            return Evaluate(effectiveMach);
-        }
-        else
-        {
-            // Reverse flow: engine faces away from airflow.
-            // Compressor stalls, thrust drops with increasing reverse Mach.
-            // At mach=0 reverse is harmless (cosIntake~0), at high mach it kills thrust.
-            double reverseMach = mach * (-cosIntake);
-            double penalty = Math.Max(0.0, 1.0 - reverseMach * 0.5);
-            return Evaluate(0.0) * penalty;
-        }
-    }
+    // (2026-10-17: the old Evaluate(mach, velocityHat, intakeDirection) is retired - it lowered the Mach sideways, wrong
+    //  physics, and was handed the flame's direction as the intake, so straight flight read as reverse flow. The angle is
+    //  its own factor now: InletAngle, on top of Evaluate(mach))
 
     public override string ToString() => $"ThrustProfile({Name})";
 }

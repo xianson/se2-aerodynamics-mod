@@ -37,9 +37,52 @@ public sealed class ForceTable
     /// <summary>The Cd (drag / (q x the table's frontal area)) of a plain block face-on - the model's own, measured on a
     /// 4 m cube (AeroBench streamline: 0.87-0.90; a stepped cone of blocks the same: steps are flat faces) - and of a fine
     /// sloped nose (~2:1 slope blocks), the two ends of the scale.</summary>
-    public static float StreamCdBrick = 0.88f, StreamCdNeedle = 0.35f, WavePeakBrick = 3.2f, WavePeakNeedle = 1.2f;
+    public static float StreamCdBrick = 0.88f, StreamCdNeedle = 0.35f, WavePeakBrick = 3.2f, WavePeakNeedle = 1.12f;
     public static float StreamliningOf(float cd) => Math.Clamp((StreamCdBrick - cd) / Math.Max(0.01f, StreamCdBrick - StreamCdNeedle), 0f, 1f);
-    public static float WavePeak(float st) => WavePeakBrick + (WavePeakNeedle - WavePeakBrick) * Math.Clamp(st, 0f, 1f);
+    /// <summary>The transonic drag peak (x the subsonic drag) of a streamlining: the old law's line from WavePeakBrick to
+    /// WavePeakOldNeedle up to SleekFrom, then on to WavePeakNeedle (the sleek hull's wall, below).</summary>
+    public static float WavePeak(float st)
+    {
+        st = Math.Clamp(st, 0f, 1f);
+        float lin = WavePeakBrick + (WavePeakOldNeedle - WavePeakBrick) * MathF.Min(st, SleekFrom);
+        return st <= SleekFrom ? lin : lin + (WavePeakNeedle - lin) * Sleekness(st);
+    }
+    /// <summary>
+    /// THE SLEEK HULL'S MACH WALL (2026-10-17, the user's speed roles - "Mach 1 is a real wall", a sleek fighter just breaks it
+    /// and then cruises supersonic more easily than the crossing; Tests/AeroBench machwall). Before, a sleek hull's drag rose
+    /// 3.3x by Mach 1.05 and kept rising to ~4x by Mach 1.2 (the wave peak 1.2 x the full blend to the Newtonian table, ~3.6x
+    /// the subsonic drag on the F-6): it needed a static thrust-to-weight of 8.3 to break Mach 1 and topped out at 1.05. Now
+    /// the wave drag carries the wall for a sleek hull - a sharp peak (WavePeakNeedle 1.12x; 1.45x until the wall was made
+    /// reachable the same day - with the engines' 0.55 pinch that asked a static T/W of 3.4 at sea level and 2.6 at 0.4
+    /// kg/m3; now 1.9 and 1.5 with the 0.76 pinch and the ram rise, Tests/AeroBench machwall) AT Mach 1 (WavePeakMachNeedle:
+    /// the pinch of the engines' curve), falling fast past it (WaveFallNeedle: (peak / M)^8, ~1.01x by Mach 1.4) - and its
+    /// pressures HOLD their subsonic recovery through the jet band (SleekHold: the blend to the Newtonian table is held back
+    /// from Mach 0.75-0.85 up to 1.6, released fully by 3.0 - hypersonic flight, entry, keeps the Newtonian law).
+    /// It grows from streamlining SleekFrom (0.5, where the wave drag starts at Mach 0.75) to 1 (Sleekness); below SleekFrom
+    /// - a brick - everything is the old law (peak by the old line, at Mach 1.05, fall ^1.3, the full blend). So below Mach
+    /// 0.75 nothing changed at any streamlining (the subsonic calibrations: the Tu-134's L/D at Mach 0.79 - machwall checks
+    /// it). WavePeakNeedle 1.2, WavePeakMachNeedle 1.05, WaveFallNeedle 1.3, SleekHold 0: the old law exactly.
+    /// </summary>
+    public static float WavePeakOldNeedle = 1.2f, SleekFrom = 0.5f;
+    public static float WavePeakMachBrick = 1.05f, WavePeakMachNeedle = 1.0f, WaveFallBrick = 1.3f, WaveFallNeedle = 8f, SleekHold = 1f;
+    /// <summary>0 up to SleekFrom, 1 at streamlining 1 (linear): how much of the sleek hull's law a streamlining gets.</summary>
+    public static float Sleekness(float st) => Math.Clamp((st - SleekFrom) / MathF.Max(1e-3f, 1f - SleekFrom), 0f, 1f);
+    public static float WavePeakMach(float st) => WavePeakMachBrick + (WavePeakMachNeedle - WavePeakMachBrick) * Sleekness(st);
+    public static float WaveFall(float st) => WaveFallBrick + (WaveFallNeedle - WaveFallBrick) * Sleekness(st);
+    /// <summary>Where the sleek hold acts (Mach): on from HoldOn0 to HoldOn1, off from HoldOff0 to HoldOff1 (smoothsteps).</summary>
+    public const float HoldOn0 = 0.75f, HoldOn1 = 0.85f, HoldOff0 = 1.6f, HoldOff1 = 3.0f;
+    /// <summary>The share of the Newtonian blend held back at this Mach for this streamlining (0..1: 0 the full blend).</summary>
+    public static float BlendHold(float mach, float st)
+    {
+        float k = SleekHold * Sleekness(st);
+        if (k <= 0f || !(mach > HoldOn0) || mach >= HoldOff1) return 0f;
+        float a = Math.Clamp((mach - HoldOn0) / (HoldOn1 - HoldOn0), 0f, 1f), b = Math.Clamp((mach - HoldOff0) / (HoldOff1 - HoldOff0), 0f, 1f);
+        a = a * a * (3f - 2f * a); b = b * b * (3f - 2f * b);
+        return Math.Clamp(k * a * (1f - b), 0f, 1f);
+    }
+    /// <summary>The hull's wave drag multiplier at a Mach for a streamlining (the one law: the table and the face loop).</summary>
+    public static float HullWave(float mach, float st)
+        => (float)CompressibleFlow.WaveDragMultiplier(mach, 0.7 + 0.1 * st, WavePeak(st), WavePeakMach(st), WaveFall(st));
     /// <summary>
     /// TRANSONIC ONSET (2026-10-12, the user: a Tu-134 at Mach 0.79 flew at L/D 3.4 where the real one makes ~7): where the
     /// hull's pressures begin to turn from the subsonic table (pressure recovered behind a smooth shape) to the supersonic
@@ -173,7 +216,8 @@ public sealed class ForceTable
         float t = supersonicLimit > lo ? (mach - lo) / (supersonicLimit - lo) : 0f;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         t = t * t * (3f - 2f * t);
-        float wave = invSoS > 0 ? (float)CompressibleFlow.WaveDragMultiplier(mach, 0.7 + 0.1 * st, WavePeak(st)) : 1f;
+        t *= 1f - BlendHold(mach, st);   // (a sleek hull keeps its subsonic recovery through the jet band: BlendHold)
+        float wave = invSoS > 0 ? HullWave(mach, st) : 1f;
         float k = q * wave;
 
         var f = new Vector3(s[0] + (s[3] - s[0]) * t, s[1] + (s[4] - s[1]) * t, s[2] + (s[5] - s[2]) * t) * k;

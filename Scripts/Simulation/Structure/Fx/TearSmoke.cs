@@ -20,6 +20,9 @@ namespace AeroMod;
 ///    pooled one-shot gets no timeout of the game's) - on the grid's removal from the scene too (EndAll); effects off: ended.
 /// An event no client grid takes in KeepSeconds is dropped (a dedicated server: never taken - the list is capped and aged
 /// on publish too). Pairing is in-process (single player and a host), as the rest of the mod's server-to-client effects.
+/// ROTOR STRIKES (2026-10-17) ride the same pairing: PublishStrike (server, RotorStrikeServer) -> PlayStrike (client) - the game's
+/// mesh-collision sparks (+ its voxel-hit burst on rock, the fracture debris on a break) for StrikeSeconds and a crunch at the
+/// point (StructureFeel.PlayAt: the game's FMOD impacts by what was hit).
 /// The particle API is VRage.Game.Client / VRage.Render (not mod references): late-bound as FlightField.Render.cs does it
 /// (docs/REFLECTION_AND_WHITELIST.md).
 /// </summary>
@@ -45,6 +48,8 @@ public static class TearSmoke
     sealed class Ev
     {
         public Entity Grid; public Vector3 Local, Out; public long Stamp;
+        // (a ROTOR STRIKE's event - PublishStrike: Kind 1, what was hit - RotorStrike.Material -, its energy share, a break)
+        public int Kind, Mat; public float Sev; public bool Broke;
         // the server grid's pose, read on the server (Publish, then the grid's own step while the event waits: ServerPose).
         // The client pairs with this, never with the server grid itself: its alive, transform, velocity and bounds read from
         // the client's job were the cross-thread read the game's DataGuard asserts on ("Concurrent access (read) ...
@@ -78,6 +83,64 @@ public static class TearSmoke
             _events.Add(ev);
             Pending = _events.Count; Published++;
         }
+    }
+
+    // ── ROTOR STRIKES (2026-10-17): sparks and a crunch at a strike point, through the same server -> client pairing ──
+    /// <summary>The strike effects: the game's mesh-collision sparks (MeshCollision: a 360 spark burst and metal debris, once), on rock
+    /// its voxel-hit burst too (VoxelMaterialHit), on a break the fracture debris (DebrisBurst).</summary>
+    public static Guid SparksDef = new Guid("4d194022-4526-437d-a6cd-27ec21c84bbd"), RockHitDef = new Guid("b9249d0e-5b0c-4c67-95f5-f6cf142b83a3");
+    /// <summary>Seconds a strike's effects live before they are stopped; their scale at no energy and at a full-speed strike.</summary>
+    public static float StrikeSeconds = 1.5f, StrikeScaleLow = 0.6f, StrikeScaleHigh = 1.6f;
+    /// <summary>The crunch (the game's FMOD impacts, by what was hit: rock, metal, a character) and the break.</summary>
+    public static string[] StrikeRockSounds = { "event:/SFX/Impacts/ImpactMetalRock" }, StrikeMetalSounds = { "event:/SFX/Impacts/ImpactMetalMetal" },
+        StrikeCharacterSounds = { "event:/SFX/Impacts/ImpactCharacterMetal" }, StrikeBreakSounds = { "event:/SFX/Explosions/DestroyMetalBlockSmall" };
+    public static int StrikesPublished, StrikesPlayed;
+
+    /// <summary>(server) A rotor strike on this grid: grid-local point, the hit surface's normal (grid frame), what was hit
+    /// (RotorStrike.Material as int), the strike's energy share (0..1) and whether the blades broke.</summary>
+    internal static void PublishStrike(Entity grid, Vector3 local, Vector3 normal, int mat, float severity, bool broke)
+    {
+        if (!Enabled || grid == null || !AeroSettings.SawClient) return;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var ev = new Ev { Grid = grid, Local = local, Out = normal.LengthSquared() > 1e-6f ? Vector3.Normalize(normal) : Vector3.UnitY, Stamp = now, Kind = 1, Mat = mat, Sev = Math.Clamp(severity, 0f, 1f), Broke = broke };
+        if (PhysicsHack.Alive(grid.Data))
+        {
+            var wt = grid.Data.GetWorldTransform();
+            PhysicsHack.TryGetVelocity(grid.Data, out var lin, out var ang);
+            ev.HasBox = grid.Data.TryGet<BoundingBoxData>(out var sb);
+            SetPose(ev, wt, lin.Length(), ang.Length(), sb.BoundingBox.Min, sb.BoundingBox.Max);
+        }
+        lock (_lock)
+        {
+            Age(now);
+            if (_events.Count >= 16) { Dropped++; return; }
+            _events.Add(ev);
+            Pending = _events.Count; StrikesPublished++;
+        }
+    }
+
+    /// <summary>(client) A strike's sparks and crunch on its client grid.</summary>
+    static void PlayStrike(AeroEntryFxComponent c, Entity grid, Ev e, long now)
+    {
+        long end = now + (long)(StrikeSeconds * System.Diagnostics.Stopwatch.Frequency);
+        var at = new RelativeTransform(e.Local, Quaternion.CreateFromTwoVectors(Vector3.UnitZ, e.Out));
+        float scale = StrikeScaleLow + (StrikeScaleHigh - StrikeScaleLow) * e.Sev;
+        for (int k = 0; k < 3; k++)
+        {
+            Guid def = k == 0 ? SparksDef : k == 1 ? (e.Mat == 0 ? RockHitDef : Guid.Empty) : (e.Broke ? DebrisDef : Guid.Empty);
+            if (def == Guid.Empty) continue;
+            if (System.Threading.Volatile.Read(ref Active) >= MaxActive) { Refused++; Status = $"{MaxActive} effects already"; break; }
+            var h = Spawn(grid, def, at, scale, out string why);
+            if (h == null) { Refused++; Status = "strike spawn: " + why; continue; }
+            (c.TornFx ??= new List<(object h, long end)>()).Add((h, end));
+            System.Threading.Interlocked.Increment(ref Active); Spawned++;
+        }
+        var gw = grid.Data.GetWorldTransform();
+        var world = new WorldTransform(WorldTransform.Transform((Vector3D)e.Local, in gw), gw.Orientation);
+        StructureFeel.PlayAt(e.Mat == 0 ? StrikeRockSounds : e.Mat == 1 ? StrikeMetalSounds : StrikeCharacterSounds, world);
+        if (e.Broke) StructureFeel.PlayAt(StrikeBreakSounds, world);
+        StrikesPlayed++;
+        Status = $"{grid.DebugName}: rotor strike at {e.Local} ({(e.Mat == 0 ? "rock" : e.Mat == 1 ? "metal" : "character")}{(e.Broke ? ", broke" : "")})";
     }
 
     static void SetPose(Ev e, in WorldTransform wt, float lin, float ang, Vector3 min, Vector3 max)
@@ -134,6 +197,7 @@ public static class TearSmoke
         long end = now + (long)(Seconds * System.Diagnostics.Stopwatch.Frequency);
         foreach (var e in mine)
         {
+            if (e.Kind == 1) { PlayStrike(c, grid, e, now); continue; }
             // (UnitZ out of the break: the mod's effects emit along their Z)
             var at = new RelativeTransform(e.Local, Quaternion.CreateFromTwoVectors(Vector3.UnitZ, e.Out));
             foreach (var (def, scale) in new[] { (SmokeDef, Scale), (DebrisDef, DebrisScale) })

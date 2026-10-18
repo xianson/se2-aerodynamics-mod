@@ -434,7 +434,7 @@ public static partial class AeroApi
 
     // ── thrust (version 3) ──
 
-    /// <summary>The thrust profiles by name (Rocket, Propeller, Turbofan, Turbojet, Ramjet, Scramjet, HelicopterRotor).
+    /// <summary>The thrust profiles by name (Rocket, Propeller, Turboprop, Jet, Turbofan, Turbojet, Ramjet, Scramjet, HelicopterRotor).
     /// The list is cleared first; returns the count.</summary>
     public static int GetThrustProfiles(List<string> names)
     {
@@ -458,18 +458,19 @@ public static partial class AeroApi
         return true;
     }
 
-    /// <summary>The grid's thrusters as aero sees them: each block entity, its profile ("Rocket": none, flat) and its
-    /// effectiveness now (the profile at the grid's Mach and the air's angle into the intake; at rest, Mach 0) - as
-    /// applied: the profiles apply only on the legacy thrust path (Aero.ThrustTorque off); with it on (the default) the
-    /// game's thrust is used as it is and every effectiveness is 1. Lists are cleared first; pass null for any you do
-    /// not want. Returns the count (0: no aero here or no thrusters).</summary>
+    /// <summary>The grid's thrusters as aero sees them: each block entity, its profile ("Rocket": none, flat; "Jet": a vanilla
+    /// atmospheric thruster; a propulsor block its own - "Turboprop", "HelicopterRotor", "DuctedFan" for the fans - each
+    /// sampled by Mach for axial flight at sea level) and its effectiveness now, as applied: with Aero.ThrustTorque on (the default) a vanilla
+    /// atmospheric thruster's Mach curve at the grid's Mach x its INLET-ANGLE factor in flight (InletAngle.Jet: the angle
+    /// between its intake and the true airspeed, faded in from 20 to 60 m/s - its game maximum is shaped by both: JetCurve),
+    /// 1 for the rest (hydrogen, ion; a propulsor block's curve is in its live maximum; turboprops have no inlet factor); with
+    /// Aero.ThrustTorque off the game's own thrust is untouched: 1 for every thruster. Lists are cleared first; pass null for any you do not want. Returns the
+    /// count (0: no aero here or no thrusters).</summary>
     public static int GetThrusters(Keen.VRage.DCS.Components.Entity grid, List<Keen.VRage.DCS.Components.Entity> thrusters, List<string> profiles, List<float> effectiveness)
     {
         thrusters?.Clear(); profiles?.Clear(); effectiveness?.Clear();
         var aero = AeroOf(grid);
         if (aero == null) return 0;
-        bool flying = AeroEntryFx.FlowOf(grid, out var p);
-        float mach = flying ? p.Mach : 0f; Vector3 travel = flying ? p.TravelLocal : Vector3.Zero;
         // (the list as last published - AeroGridComponent.ThrusterSnap, a copy made at each rebuild: the live one is cleared
         //  and refilled by the simulation thread, iterated bare it tore or threw, 2026-10-15)
         ThrusterInfo[] cache = aero.ThrusterSnap;
@@ -478,9 +479,8 @@ public static partial class AeroApi
         {
             var t = cache[i];
             thrusters?.Add(t.ThrusterEntity);
-            profiles?.Add(t.Profile?.Name ?? "Rocket");
-            var ap = OffsetThrustJob.AppliedProfile(t);   // (as applied - none with ThrustTorque on)
-            effectiveness?.Add(ap == null ? 1f : flying ? (float)ap.Evaluate(mach, travel, t.IntakeDirection) : (float)ap.Evaluate(0.0));
+            profiles?.Add(t.Profile?.Name ?? (t.Propulsor && t.AirBreathing ? "DuctedFan" : "Rocket"));
+            effectiveness?.Add(t.Settings != null ? t.Settings.JetFactor : 1f);   // (as applied: the factor in its maximum now; 1 with the curve lifted)
         }
         return n;
     }

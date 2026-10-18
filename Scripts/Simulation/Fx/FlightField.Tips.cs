@@ -27,14 +27,10 @@ internal sealed partial class FlightField
     /// <summary>The tip particles' backward speed multiplier (x the effect's 4 m/s, +-25 %): each frame's clump smears along
     /// the trail and fills the gap behind it. 0.01: none (laid still in the air).</summary>
     public static float TipSpread = 0.01f;   // (no push: with 90 % inheritance alone the trail is continuous from the tip - the 2026-10-08 sweep; a push opened a gap at the tip and broke it up)
-    // (the tips inherit TipInherit of the ship's motion - Vapour_Tip EmitterMotionInheritance - and are pushed back at
-    //  4 m/s x TipSpread: relative to the ship they drift back at (1 - TipInherit) x airspeed + that push - the spacing of one
-    //  frame's batch from the next, and the spawn line that fills it)
     // WIND (the user, 2026-10-09: "they're not following the windspeed"): the tips inherit ALL of the ship's motion
     // (Vapour_Tip EmitterMotionInheritance 1) and are emitted backwards at the AIRSPEED - so each particle moves with the air
     // itself: still in the world in real flight, streaming back at the airflow past a held (puppeted) ship. At 90 % and no
     // push they drifted back at a tenth of the airspeed - and not at all past a held ship.
-    public static float TipInherit = 1f;
     private float TipDrift => _speed;
     /// <summary>The tips' VelocityMultiplier for the airspeed: 4 m/s x TipScale (the effect's speed, scaled by its
     /// EmitterScaleMultiplier) x it = the airspeed.</summary>

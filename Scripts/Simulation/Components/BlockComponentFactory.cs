@@ -139,7 +139,7 @@ public class BlockComponentFactory
     public static bool IsSelfModelled(CubeBlockComponent block)
     {
         var g = GetDefinitionGuid(block);
-        return g.HasValue && _selfModelled.Contains(g.Value);
+        return g.HasValue && (_selfModelled.Contains(g.Value) || PropulsorBlocks.Blocks.Contains(g.Value));   // (a propulsor's disc is reserved room, not a body)
     }
 
     internal static Guid? GetDefinitionGuid(CubeBlockComponent block)
@@ -184,8 +184,8 @@ public class BlockComponentFactory
         Vector3I blockPos = blockMin;
 
         var orientation = block.BlockOrientation;
-        Vector3 forward = DirectionToVector(orientation.Forward);
-        Vector3 up = DirectionToVector(orientation.Up);
+        Vector3 forward = Base6Directions.GetVector(orientation.Forward);
+        Vector3 up = Base6Directions.GetVector(orientation.Up);
 
         // Grid-local position in meters (block center)
         // SE2 cells are 0.25m each and cell i is centred at i x 0.25 (CubeGridCoords.GridToLocal), so the centre of the
@@ -201,14 +201,5 @@ public class BlockComponentFactory
 
         var aabb = block.AABB;
         return new BlockInfo(position, blockPos, forward, up, blockSize, extents) { CellKey = aabb.Min + aabb.Max, Settings = block.Entity?.TryGet<AeroSurfaceSettingsComponent>(), Gear = block.Entity?.TryGet<AeroGearComponent>(), Airbrake = block.Entity?.TryGet<AeroAirbrakeComponent>() };
-    }
-
-    /// <summary>
-    /// Convert a Base6Directions.Direction to a float unit vector.
-    /// </summary>
-    private static Vector3 DirectionToVector(Base6Directions.Direction dir)
-    {
-        var iv = Base6Directions.GetIntVector(dir);
-        return new Vector3(iv.X, iv.Y, iv.Z);
     }
 }

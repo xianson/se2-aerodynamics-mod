@@ -143,17 +143,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     // ── Face override index (for Cp heatmap) ──
     private bool _faceOverridesDirty = true;
 
-    // ── Cascaded flight controller state ──
-
-    // ── SAS (hidden stability augmentation) ──
-    // Direct torque applied to physics, independent of aero surfaces.
-    internal Vector3 SasTorque;  // local frame, computed per frame
-    internal Vector3 EulerError; // local frame, orientation error in radians
-    internal bool SuppressPhantomTorque; // disables SAS + phantom attitude torque (meant for a test harness: nothing sets it now - always false)
-    internal bool HarnessControlsAttitude; // test harness: skip UpdateAttitudeHold, harness drives _lastGridAngVel + SasTorque
-    internal Quaternion _holdOrientation = Quaternion.Identity; // orientation to hold when unpiloted
-    internal bool _holdOrientationValid;                        // true once captured
-
     // ── Accumulated changes for incremental wing update ──
     private List<Vector3I> _wingAddedCells = new();
     private List<Vector3I> _wingRemovedCells = new();
@@ -164,7 +153,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     // ── Offset thrust (RCS) ──
     internal List<ThrusterInfo> _thrusterCache = new();
-    static readonly object HarnessTrackLock = new object();
     private bool _thrusterCacheDirty = true;
 
     // ── Gyroscope control ──
@@ -184,7 +172,40 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Vector3 LastCoM;
     internal float LastMass;
     internal float LastDensity;
+    /// <summary>LastDensity / LastAirVel / LastMach hold this grid's own air: set by its first full step (AeroSimJob), cleared
+    /// when it leaves the scene. Before that they are zeros - not a vacuum. A reader of the air (the propulsors, the solid
+    /// nozzles) takes the game's air or its rating until it is set, then this grid's air WHATEVER the force model did that
+    /// step (2026-10-17: the solid nozzle switched sources on HasResult - set only above AeroConfig.MinSpeed - so its
+    /// pressure ratio jumped between two scales as a held grid started and stopped moving).</summary>
+    internal bool AirKnown;
     internal float LastSpeed;
+    /// <summary>The grid's Mach number every step (AeroSimJob): its airspeed (the wind out) over the local speed of sound - the
+    /// aero model's own (AtmosphereBridge at the air's density, as AeroResult.Mach), VacuumSoundSpeed where it has none (vacuum). Unlike
+    /// LastResult.Mach it is kept on the steps the force model skips or returns early (slow, thin air). The vanilla atmospheric
+    /// thrusters' Mach curve reads it (AeroThrustSettingsComponent.Jet, JetCurve).</summary>
+    internal float LastMach;
+    /// <summary>The grid's AIRSPEED vector every step (world, m/s: its velocity less the wind's - AeroWind), and the local
+    /// speed of sound it was taken over (m/s; the force model's, VacuumSoundSpeed where it has none). With LastMach the ONE
+    /// source of the air a grid meets (2026-10-17): the propulsors' curves and axial speed (AeroPropulsorComponent), the
+    /// entry heat, the flow record, the structure's stall warning - never the ground speed, never a fixed speed of sound.</summary>
+    internal Vector3 LastAirVel;
+    internal float LastSoundSpeed = VacuumSoundSpeed;
+    /// <summary>The speed of sound taken where the model has none (vacuum, no atmosphere model yet: m/s) - the sea-level one.</summary>
+    internal const float VacuumSoundSpeed = ThrustProfiles.SeaLevelSoundSpeed;
+    /// <summary>The local speed of sound (m/s) in air of this density - the force model's own (AtmosphereBridge).</summary>
+    internal static float SoundSpeedOf(float density)
+    {
+        double a = _atmosphereBridge != null ? _atmosphereBridge.GetState(density).SpeedOfSound : 0.0;
+        return a > 1.0 && double.IsFinite(a) ? (float)a : VacuumSoundSpeed;
+    }
+    /// <summary>One step's air (AeroSimJob, every step, the quiet path too): LastAirVel, LastSoundSpeed and LastMach together.</summary>
+    internal void SetAir(Vector3 airVel, float density)
+    {
+        LastAirVel = airVel;
+        LastSoundSpeed = SoundSpeedOf(density);
+        float m = airVel.Length() / LastSoundSpeed;
+        LastMach = float.IsFinite(m) ? m : 0f;
+    }
     /// <summary>Entry heat (AeroEntryFx.Server: Mach-based, lagged).</summary>
     internal float EntryHeat;
     internal bool FlowPublished;   // (AeroEntryFx.Flow: published for other effects)
@@ -222,8 +243,17 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal AeroResult LastResult;
     internal float[] _thrustUse = Array.Empty<float>();
     internal Vector3[] _rcsArm = Array.Empty<Vector3>(), _rcsDir = Array.Empty<Vector3>();
+    /// <summary>ThrustTorque: which thrusters are reversible (ThrusterInfo.Rev, for thruster list _rcsRevGen), any, and each
+    /// one's game side now (+1 / -1: where the game books its maximum).</summary>
+    internal bool[] _rcsRev = Array.Empty<bool>(); internal float[] _rcsSide = Array.Empty<float>(); internal int _rcsRevGen = -1; internal bool _rcsAnyRev;
     internal float[] _rcsCap = Array.Empty<float>(), _rcsF = Array.Empty<float>(), _rcsPrev = Array.Empty<float>(), _rcsY = Array.Empty<float>();
     internal bool _rcsWarm;
+    /// <summary>ThrustTorque: this grid's lit solid rocket nozzles in its attitude solve (AeroSolidNozzleComponent.SteerSlots) and
+    /// the solve's arrays with them appended after the thrusters (grown only, never shrunk: no per-frame allocation).</summary>
+    internal readonly System.Collections.Generic.List<AeroSolidNozzleComponent> _solidSteer = new();
+    internal Vector3[] _sArm = Array.Empty<Vector3>(), _sDir = Array.Empty<Vector3>();
+    internal float[] _sCap = Array.Empty<float>(), _sLo = Array.Empty<float>(), _sF0 = Array.Empty<float>(), _sF = Array.Empty<float>(), _sPrev = Array.Empty<float>(), _sY = Array.Empty<float>();
+    internal bool[] _sRev = Array.Empty<bool>();
     internal bool IsServerScene = true;
     static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
     internal int _rcsWarmGen = -1;
@@ -255,7 +285,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal List<(Vector3I lo, Vector3I hi, Vector3 axis)> EngineBoxes()
     {
         var l = new List<(Vector3I, Vector3I, Vector3)>();
-        foreach (var t in _thrusterCache) if (t.Profile != null && t.CellMax.X >= t.CellMin.X) l.Add((t.CellMin, t.CellMax, t.ThrustDirection));
+        foreach (var t in _thrusterCache) if (t.AirBreathing && t.CellMax.X >= t.CellMin.X) l.Add((t.CellMin, t.CellMax, t.ThrustDirection));
         return l;
     }
     /// <summary>The air's torque applied this frame (local, N m, the world's multipliers in; zero: none) - the attitude
@@ -273,7 +303,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>The wind at the grid (world m/s; AeroWind), whether aero applied its forces last tick (the game's own wind
     /// push is then taken back), and the impulse taken back (world N s).</summary>
     internal Vector3 LastWind, LastWindUndone; internal bool AeroForcesApplied;
-    internal int _clearedOverride;
     private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>
     internal int FacesNow => _surface?.FaceCount > 0 ? _surface.FaceCount : _lastFaces;
@@ -385,21 +414,23 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _dirty = true;
         _fullRebuildNeeded = true;
         _initialized = true;
-        lock (HarnessTrackLock) AeroTestHarness.TrackGrid(this);   // (client and server grids are added on their own threads: the harness's sets are unlocked)
     }
 
     void IInSceneListener.OnBeforeRemovedFromScene()
     {
         lock (Live) Live.Remove(this);
-        try { PhysicsHack.RestoreGyroTorque(Data); } catch { }   // (a harness test's zeroed gyros given back - rare: removal only)
         DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
         Ground.Release();            // (the ground ray's native hit/ignore lists)
         _initialized = false;
-        lock (HarnessTrackLock) AeroTestHarness.UntrackGrid(this);
+        AirKnown = false;            // (re-added: its air is read again before anyone takes it)
         AeroScheduler.Remove(this);
-        ObservedWorldTransform.DetachFrom(Data, Data);
+        // (2026-10-16: a crashed rotorcraft's pieces being removed killed the game here - NullReferenceException in the engine's
+        //  ObservedWorldTransformSystem.DetachOWTFrom: its observed transform was already gone, and it dereferences the missing
+        //  data. Only detach what is still attached; removal is rare, so the guard costs nothing)
+        try { if (Data.Has<ObservedWorldTransform>()) ObservedWorldTransform.DetachFrom(Data, Data); }
+        catch (Exception e) { Log.Default?.Info($"[AERO] grid removal: observed transform detach failed ({e.GetType().Name}) - skipped"); }
     }
 
 }

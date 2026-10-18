@@ -124,9 +124,7 @@ public partial class DampedShadowedDragModel
                 st = ForceTable.StreamliningOf(dragNow / (qNow * frontalArea));
             }
             LastStreamlining = st;
-            double mcrit = 0.7 + 0.1 * st;
-            double peak = ForceTable.WavePeak(st);
-            float waveMul = (float)CompressibleFlow.WaveDragMultiplier(mach0, mcrit, peak);
+            float waveMul = ForceTable.HullWave(mach0, st);   // (the hull's one wave law: ForceTable.HullWave)
             totalFx *= waveMul; totalFy *= waveMul; totalFz *= waveMul;
             totalTx *= waveMul; totalTy *= waveMul; totalTz *= waveMul;
             frontalArea *= waveMul;

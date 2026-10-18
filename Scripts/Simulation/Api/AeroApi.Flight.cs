@@ -119,7 +119,8 @@ public static partial class AeroApi
         }
     }
 
-    /// <summary>(version 7) Each thruster's force on the last tick (N, along its thrust direction), in the order of
+    /// <summary>(version 7) Each thruster's force on the last tick (N, along its thrust direction; negative: a reversible
+    /// thruster pushing the other way), in the order of
     /// <see cref="GetThrusters"/>; thrusterList: the thruster list's generation (it moves when the thrusters are listed
     /// again - read GetThrusters again then). Fills min(length, count); returns the count (0: none, or not published yet).
     /// The attitude law's forces when it flies the ship (ThrustTorque), else the game's. Any thread; no allocation.</summary>

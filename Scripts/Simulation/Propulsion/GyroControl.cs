@@ -88,13 +88,18 @@ public static class GyroControl
 
     /// <summary>The most torque (N m, per local axis) the game's gyros give this grid: ComputeTorqueTarget at full error.</summary>
     public static Vector3 Reach(DEntityContext data, in RigidBodyMassProperties mass, in TargetControlData target)
+        => Reach(data, in mass, target.PerAxisDampeningMultiplier);
+
+    /// <summary>... with this per-axis multiplier (the pilot's: TargetControlData.PerAxisDampeningMultiplier - 1, 1 and the
+    /// roll boost, so Vector3.One is the plain reach: RotorLimiter's authority, piloted or not).</summary>
+    public static Vector3 Reach(DEntityContext data, in RigidBodyMassProperties mass, Vector3 perAxis)
     {
         if (!data.TryGet<MaxTorqueData>(out var mt) || mt.MaxTorque <= 0f || !data.TryGet<MovementData>(out var md) || !data.TryGet<BoundingBoxData>(out var bb)) return Vector3.Zero;
         var rot = md.Definition.Value.TargetGyroRotation;
         float m = mass.InvMass > 0f ? 1f / mass.InvMass : 0f;
         float num = MathF.Min(rot.MaximumTorqueLimiterCoefficient * m * m, mt.MaxTorque * rot.TorqueDampenerPowerMultiplier);
         if (!(num > 0f)) return Vector3.Zero;
-        Vector3 v = new Vector3(num) * target.PerAxisDampeningMultiplier;
+        Vector3 v = new Vector3(num) * perAxis;
         Vector3 w = Weights(in bb);
         return Vector3.Lerp(v * w, v, MathHelper.Saturate((w.Min() - 0.1f) / 0.15f));
     }

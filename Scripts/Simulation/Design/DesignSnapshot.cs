@@ -25,6 +25,9 @@ internal sealed partial class DesignSnapshot
     public Vector3[] ThrPos = Array.Empty<Vector3>(), ThrDir = Array.Empty<Vector3>();
     public float[] ThrSeaMax = Array.Empty<float>();
     public ThrustProfile[] ThrProfile = Array.Empty<ThrustProfile>();
+    /// <summary>Each thruster is reversible (ReversibleThrustComponent): it pushes either way along ThrDir - counted both ways
+    /// (empty: none).</summary>
+    public bool[] ThrRev = Array.Empty<bool>();
 
     /// <summary>The thrust along a direction at a Mach (N) and its centre (grid-local): each thruster pointing at least half
     /// that way, its sea-level maximum x its profile at the Mach x how much it points that way.</summary>
@@ -36,6 +39,7 @@ internal sealed partial class DesignSnapshot
         for (int i = 0; i < ThrDir.Length; i++)
         {
             float along = Vector3.Dot(ThrDir[i], dHat);
+            if (i < ThrRev.Length && ThrRev[i]) along = MathF.Abs(along);   // (reversible: its maximum either way)
             if (along < 0.5f) continue;
             var ap = ThrProfile[i];
             float prof = ap == null ? 1f : (float)ap.Evaluate(mach);
@@ -126,7 +130,6 @@ internal sealed partial class DesignShip
 {
     public readonly List<DesignSnapshot> S = new();
     public long At;
-    public DesignSnapshot RootSnap => S[0];
 
     public Vector3 ToRootDir(int m, Vector3 d) => m == 0 ? d : Vector3.Transform(Vector3.Transform(d, S[m].Orient), Quaternion.Inverse(S[0].Orient));
     public Vector3 ToMemberDir(int m, Vector3 d) => m == 0 ? d : Vector3.Transform(Vector3.Transform(d, S[0].Orient), Quaternion.Inverse(S[m].Orient));
@@ -174,7 +177,8 @@ internal sealed partial class DesignShip
             {
                 var r = ToRootPoint(m, s.ThrPos[i]) - com;
                 float tq = Vector3.Dot(Vector3.Cross(r, ToRootDir(m, s.ThrDir[i]) * s.ThrSeaMax[i]), a);
-                if (tq > 0f) pos += tq; else neg -= tq;
+                if (i < s.ThrRev.Length && s.ThrRev[i]) { pos += MathF.Abs(tq); neg += MathF.Abs(tq); }   // (reversible: both ways)
+                else if (tq > 0f) pos += tq; else neg -= tq;
             }
         }
     }

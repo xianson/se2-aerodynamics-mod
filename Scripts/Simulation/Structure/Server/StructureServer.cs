@@ -171,7 +171,7 @@ public partial class AeroGridComponent
         L.AeroF = forceLocal; L.AeroT = torqueLocal; L.AeroCom = LastCoM; L.AirVel = airVelLocal; L.LiftScale = liftScale; L.AngVel = LastAngVel;
         TakeContacts(L);   // (the window's collisions and ground contact, as forces)
         // (the stall warning's: the speed of sound, which way is up, the weight)
-        snap.SoS = HasResult && LastResult.Mach > 0.01f ? (float)(LastSpeed / LastResult.Mach) : 340f;
+        snap.SoS = LastSoundSpeed;   // (the local speed of sound - SetAir; it was the ground speed over the model's Mach)
         // (a railed re-entry: the Orbital mod's state - the travel, density, the band's temperature, the frame's braking.
         //  The temperature is the hull's ambient there: on rails LastDensity is 0 and AirT above was 3 K, a vacuum's)
         if (OrbitalLink.TryGetEntryState2(Entity, out var entryAir, out float entryRho, out float entryT, out var entryBrake))
@@ -185,7 +185,8 @@ public partial class AeroGridComponent
         snap.Weight = LastMass * PhysicsHack.GetGravityDirection(Data).Length();
         // (the predicted loss of control's: the commanded attitude, the ship's now, the actuators' reach)
         snap.HasTarget = LoacHasTarget; snap.Target = LoacTarget; snap.Orient = Data.GetWorldTransform().Orientation;
-        snap.Reach = LoacReach; snap.SurfPush = SurfacePush; snap.SurfPull = SurfacePull; snap.SurfNeutral = SurfaceNeutral; snap.Airframe = LastAeroTorque;
+        bool sFresh = SurfaceReachFresh;   // (a reach measured in faster air is not the surfaces' now: 2026-10-17)
+        snap.Reach = LoacReach; snap.SurfPush = sFresh ? SurfacePush : Vector3.Zero; snap.SurfPull = sFresh ? SurfacePull : Vector3.Zero; snap.SurfNeutral = SurfaceNeutral; snap.Airframe = LastAeroTorque;
         // (the gyros: our attitude law's torque, or - the game flying them - the game's own this frame)
         L.GyroT = LastGyroAware ? LastGyroTorque : GyroControl.GameImpulse(Data) / AeroPhysics.Dt;
         (L.CellSize, L.CellOffset) = FxCellGeo;
@@ -204,12 +205,13 @@ public partial class AeroGridComponent
             {
                 var t = _thrusterCache[i];
                 if (t.ThrusterEntity == null || !index.TryGetValue(t.ThrusterEntity, out int bi)) continue;
+                // (a reversible thruster's share is signed along its ThrustDirection - ReversibleThrust)
                 L.ThrBlock.Add(bi); L.ThrF.Add(t.ThrustDirection * shares[i]);
                 L.ThrF0.Add(t.ThrustDirection * (game != null && i < game.Length ? game[i] : shares[i]));
             }
             foreach (var g in _gyroCache) if (g.GyroEntity != null && index.TryGetValue(g.GyroEntity, out int gi)) L.GyroBlock.Add(gi);
         }
-        SnapBlockLoads(L, index);   // (the extra block loads published this tick: PublishBlockLoad)
+        SnapBlockLoads(L, index, evalDt);   // (the extra block loads published this tick: PublishBlockLoad; the impulses of the window: PublishBlockImpulse)
         // the blocks' health: every IntegrityEvery s (and after a rebuild) - a pass over every block, the costliest part
         // of the snapshot; between, the last
         _stIntegAge += evalDt;

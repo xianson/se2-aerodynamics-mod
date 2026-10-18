@@ -231,116 +231,16 @@ public static class PhysicsHack
         return true;
     }
 
-    /// <summary>
-    /// Zero out the grid's gyroscope MaxTorque so game gyros don't compete.
-    /// Uses Set&lt;MaxTorqueData&gt; via reflection.
-    /// </summary>
-    /// (Per grid, 2026-10-15: one static float - the first grid ever zeroed, kept across world loads, never given back: the
-    ///  game keeps MaxTorque as a sum of gyro deltas and never recomputes it, so a zeroed grid kept 0 for good.)
-    private static readonly System.Collections.Generic.Dictionary<Keen.VRage.DCS.Accessors.DEntity, float> _savedMaxTorque = new();
-
-
-    public static bool TryZeroGyroTorque(DEntityContext data)
-    {
-        if (!SafeTryGet<MaxTorqueData>(data, out var mt))
-            return false;
-        if (mt.MaxTorque == 0f)
-            return true;
-        lock (_savedMaxTorque) _savedMaxTorque.TryAdd(data.Entity, mt.MaxTorque);
-        float was = mt.MaxTorque;
-        if (!TrySetGyroTorque(data, 0f, "zeroed"))
-            return false;
-        Log.Default?.Info($"[AERO] Physics: zeroed MaxTorque (was {was:F0})");
-        return true;
-    }
-
-    /// <summary>A grid's MaxTorque given back as TryZeroGyroTorque found it, plus whatever gyros changed since (the game
-    /// adds their deltas to the zero). False: not zeroed by us. (AeroGridComponent leaving its scene; a harness teardown.)</summary>
-    public static bool RestoreGyroTorque(DEntityContext data)
-    {
-        float saved;
-        lock (_savedMaxTorque) if (!_savedMaxTorque.Remove(data.Entity, out saved)) return false;
-        if (!SafeTryGet<MaxTorqueData>(data, out var mt)) return false;
-        if (!TrySetGyroTorque(data, mt.MaxTorque + saved, "restored")) return false;
-        Log.Default?.Info($"[AERO] Physics: restored MaxTorque ({mt.MaxTorque + saved:F0})");
-        return true;
-    }
-
-    private static bool TrySetGyroTorque(DEntityContext data, float value, string label)
-    {
-        ref MaxTorqueData mt = ref TryWrite<MaxTorqueData>(data);
-        if (Unsafe.IsNullRef(in mt))
-            return false;
-        mt.MaxTorque = value;
-        return true;
-    }
-
     internal static bool IsFinite(Vector3 v) =>
         !float.IsNaN(v.X) && !float.IsNaN(v.Y) && !float.IsNaN(v.Z) &&
         !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 
     // ═══════════════════════════════════════════════════════════════
-    // Thruster data access
+    // Control data and pose writes (dev: AeroFlightTest, AeroSpeedSpike)
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>ThrustData is a directly referenced type now, so access is always available.</summary>
-    public static bool ThrusterAccessAvailable => true;
-
-    public static bool GroundSystemReady => _groundSystemInitialized;
-
-
-    /// <summary>True if the thruster currently carries the IsThrusting tag.</summary>
-    public static bool IsEntityThrusting(DEntityContext data)
-    {
-        return SafeHas<IsThrusting>(data);
-    }
-
-    /// <summary>ThrusterOverrideData.OverridePower, or -1 when no override is set.</summary>
-    public static float GetThrustOverride(DEntityContext data)
-    {
-        return SafeTryGet<ThrusterOverrideData>(data, out var o) ? o.OverridePower : -1f;
-    }
-
-    /// <summary>Set ThrusterOverrideData; this drives the game's thrust visuals.</summary>
-    public static bool TrySetThrustOverride(DEntityContext data, float overridePower)
-    {
-        return SafeSet(data, new ThrusterOverrideData { OverridePower = overridePower });
-    }
-
-    /// <summary>Drop ThrusterOverrideData, returning the thruster to normal control.</summary>
-    public static bool TryRemoveThrustOverride(DEntityContext data)
-    {
-        return SafeTryRemove<ThrusterOverrideData>(data);
-    }
-
-
     /// <summary>
-    /// Write grid-level OverriddenThrustData, which ComputeThrust reads.
-    ///
-    /// Prefers ThrustComponent.SetData so the value lands in the component's scene pool where
-    /// ComputeThrust looks; DEntityContext.Set is the fallback. SetData is PROTECTED on
-    /// Component, so this is the reflection holdout -- see EngineOverrides.
-    /// </summary>
-    public static bool TrySetOverriddenThrust(Entity gridEntity, DEntityContext gridData, Vector3 directionalThrust)
-    {
-        var overridden = new OverriddenThrustData { DirectionalThrust = directionalThrust };
-
-        if (EngineOverrides.TrySetComponentData<ThrustComponent, OverriddenThrustData>(gridEntity, overridden))
-            return true;
-
-        return SafeSet(gridData, overridden);
-    }
-
-    /// <summary>Magnitude of ActiveThrustData.ComputedThrustPerFrame on the GRID entity.</summary>
-    public static float GetGridActiveThrust(DEntityContext gridData)
-    {
-        return SafeTryGet<ActiveThrustData>(gridData, out var atd)
-            ? atd.ComputedThrustPerFrame.Length()
-            : 0f;
-    }
-
-    /// <summary>
-    /// Write synthetic ControlData (test harness player-input simulation) onto a grid.
+    /// Write synthetic ControlData (AeroFlightTest's player-input simulation) onto a grid.
     /// Uses the protected Component.SetData -- see EngineOverrides.
     /// </summary>
     public static bool TrySetControlData(Entity gridEntity, Vector3 movement, Vector3 rotation)
@@ -349,19 +249,8 @@ public static class PhysicsHack
         return EngineOverrides.TrySetComponentData<ThrustComponent, ControlData>(gridEntity, cd);
     }
 
-
-
-
-    /// <summary>OverriddenThrustData.DirectionalThrust on a grid, or zero when absent.</summary>
-    public static Vector3 GetOverriddenThrust(DEntityContext gridData)
-    {
-        return SafeTryGet<OverriddenThrustData>(gridData, out var o) ? o.DirectionalThrust : Vector3.Zero;
-    }
-
-
     /// <summary>
-    /// Set orientation while keeping position. Does NOT zero angular velocity -- call
-    /// TryZeroAngularVelocity on a later frame, after physics has processed the teleport.
+    /// Set orientation while keeping position. Does NOT zero angular velocity.
     /// </summary>
     public static bool TrySetOrientation(DEntityContext data, Quaternion targetOrientation)
     {
@@ -376,20 +265,6 @@ public static class PhysicsHack
         if (!SafeGetWorldTransform(data, out var wt)) return false;
         var newWt = new WorldTransform(newPosition, wt.Orientation);
         try { data.SetWorldTransform(in newWt); return true; } catch { return false; }
-    }
-
-    public static bool TryZeroAngularVelocity(DEntityContext data)
-    {
-        return TrySetAngularVelocity(data, Vector3.Zero);
-    }
-
-    public static bool TrySetAngularVelocity(DEntityContext data, Vector3 angVel)
-    {
-        if (!IsFinite(angVel)) return false;
-        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
-        if (Unsafe.IsNullRef(in rb)) return false;
-        rb.AngularVelocity = angVel;
-        return true;
     }
 
     public static bool TrySetLinearVelocity(DEntityContext data, Vector3 linearVel)
@@ -439,17 +314,6 @@ public static class PhysicsHack
         if (!SafeTryGet<RigidBodyMassProperties>(data, out var mass)) return false;
         if (wt.Equals(default(WorldTransform)) && !SafeGetWorldTransform(data, out wt)) return false;
         rb.ApplyAngularImpulseLocal(in mass, in wt, localTorqueImpulse);
-        return true;
-    }
-
-    /// <summary>Apply a world-space linear impulse at the centre of mass.</summary>
-    public static bool ApplyLinearImpulse(DEntityContext data, Vector3 impulse)
-    {
-        if (!IsFinite(impulse)) return false;
-        ref RigidBodyData rb = ref TryWrite<RigidBodyData>(data);
-        if (Unsafe.IsNullRef(in rb)) return false;
-        if (!SafeTryGet<RigidBodyMassProperties>(data, out var mass)) return false;
-        rb.ApplyLinearImpulse(in mass, impulse);
         return true;
     }
 
@@ -547,9 +411,8 @@ public static class PhysicsHack
 
     /// <summary>The ground ray ignores the grid itself and what is attached to it (harness: aeroset PhysicsHack.GroundIgnoreSelf 0).</summary>
     public static bool GroundIgnoreSelf = true;
-    /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none, failed (none since the
-    /// ray went synchronous, 2026-10-15: kept for the harness); the last reading.</summary>
-    public static int GroundCasts, GroundHits, GroundMisses, GroundFails;
+    /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none; the last reading.</summary>
+    public static int GroundCasts, GroundHits, GroundMisses;
     public static float GroundLast = -1f;
 
     /// <summary>

@@ -102,7 +102,7 @@ public static partial class AeroSettings
             "The aerodynamic force across the motion (lift: wings, control surfaces, the hull's own), times this.")
             .Ui("Lift strength", GFlight, Basic, "×", 0.05);
         B("Aero.ThrustTorque", "world", false, () => ThrustTorque.Enabled, v => ThrustTorque.Enabled = v,
-            "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the older phantom attitude hold.")
+            "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the game's own thrust, untouched.")
             .Ui("Off-centre thrust turns ships", GFlight, Basic);
         B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
             "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.")

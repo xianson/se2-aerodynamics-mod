@@ -8,7 +8,10 @@ namespace AeroMod;
 /// by EntityInjector. Stores the fraction of thrust capacity reserved for
 /// attitude control (0..1, default 0.5 = 50/50 split).
 ///
-/// Value is read by OffsetThrustJob each physics frame.
+/// NOT READ by any controller (2026-10-17): the attitude law (ThrustTorque) never used it, and the old per-thruster path
+/// that was meant to went with the legacy thrust path - it is only saved, restored and shown (the slider is off). Wire it
+/// into ThrustTorque or remove it with its save key ("aero-thrust:1 f").
+/// It also carries the vanilla atmospheric thrusters' Mach curve (AeroThrustSettingsComponent.Jet.cs, JetCurve).
 /// Value is set via the terminal slider (AeroThrustBlockDetailModel).
 /// Saved with the block, only off the default (AeroBlockSave, 2026-10-15; settings DESIGN.md W5(d) - it was lost on every
 /// load; the first fix's "thrust x y z fraction" lines in the world's settings text are still read: AeroSurfaceSaved).
@@ -41,5 +44,5 @@ public partial class AeroThrustSettingsComponent : Component, IInSceneListener
         lock (All) All.Add(this);
     }
 
-    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
+    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); RestoreJet(); }   // (the Mach curve's rating written back: .Jet.cs)
 }

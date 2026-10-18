@@ -14,6 +14,10 @@ namespace AeroMod;
 /// <item>gear: "aero-gear:1 down airshock" (1/0 1/0)</item>
 /// <item>airbrake: "aero-airbrake:1 maxOpening" (deg)</item>
 /// <item>thruster: "aero-thrust:1 attitudeFraction" (0..1; written only off the default 0.5)</item>
+/// <item>solid rocket nozzle: "aero-solidnozzle:1 lit level" (1; written only while it burns; level: its power level 0.5..1,
+/// latched at ignition - a key without one reads 1)</item>
+/// <item>rotor / prop blades (rotor strikes, 2026-10-17): "aero-blades:1 health" (0..1, 0 = broken; written only below 1 - whole
+/// blades carry no key)</item>
 /// </list>
 /// A later format may append values: a reader takes the ones it knows from any format &gt;= 1.
 /// Also the reader of the OLD form (<see cref="ParseLegacy"/>): the "surface / gear / airbrake / thrust x y z ..." lines after
@@ -23,6 +27,7 @@ public static class AeroBlockSaveForm
 {
     public const int Format = 1;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
+    public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:";
     static readonly CultureInfo C = CultureInfo.InvariantCulture;
 
     static string B(bool b) => b ? "1" : "0";
@@ -87,6 +92,34 @@ public static class AeroBlockSaveForm
         string[] w = Values(key, ThrustKey, 1);
         if (w == null || !Float(w[1], out attitudeFraction)) return false;
         attitudeFraction = Math.Clamp(attitudeFraction, 0f, 1f);
+        return true;
+    }
+
+    /// <summary>A solid rocket nozzle that is burning, and its power level (null when not burning: the default).</summary>
+    public static string SolidNozzle(bool lit, float level = 1f) => lit ? SolidNozzleKey + Format + " 1 " + F(SolidRocket.LevelOr1(level)) : null;
+
+    public static bool TryReadSolidNozzle(string key, out bool lit) => TryReadSolidNozzle(key, out lit, out _);
+
+    /// <summary>... and its power level (0.5..1; 1 when the key has none - saved before levels, 2026-10-17).</summary>
+    public static bool TryReadSolidNozzle(string key, out bool lit, out float level)
+    {
+        lit = false; level = 1f;
+        string[] w = Values(key, SolidNozzleKey, 1);
+        if (w == null) return false;
+        lit = w[1] == "1";
+        if (w.Length > 2 && Float(w[2], out float l)) level = SolidRocket.LevelOr1(l);
+        return true;
+    }
+
+    /// <summary>A rotor's or prop's blades' health after strikes (0..1, 0 broken; RotorStrike). Null when whole (the default).</summary>
+    public static string Blades(float health) => float.IsFinite(health) && health < 1f ? BladesKey + Format + " " + F(Math.Clamp(health, 0f, 1f)) : null;
+
+    public static bool TryReadBlades(string key, out float health)
+    {
+        health = 1f;
+        string[] w = Values(key, BladesKey, 1);
+        if (w == null || !Float(w[1], out float h)) return false;
+        health = Math.Clamp(h, 0f, 1f);
         return true;
     }
 

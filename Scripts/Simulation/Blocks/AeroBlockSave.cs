@@ -35,6 +35,9 @@ internal static partial class AeroBlockSave   // (the dev counters and requests:
     internal static readonly System.Guid GearId = new("ae205e77-1a65-4c0d-9b1e-0000000000b2");
     internal static readonly System.Guid AirbrakeId = new("ae205e77-1a65-4c0d-9b1e-0000000000b3");
     internal static readonly System.Guid ThrustId = new("ae205e77-1a65-4c0d-9b1e-0000000000b4");
+    internal static readonly System.Guid SolidSegmentId = new("ae205e77-1a65-4c0d-9b1e-0000000000b5");   // (2026-10-17: solid rocket segment, nozzle)
+    internal static readonly System.Guid SolidNozzleId = new("ae205e77-1a65-4c0d-9b1e-0000000000b6");
+    internal static readonly System.Guid BladesId = new("ae205e77-1a65-4c0d-9b1e-0000000000b7");   // (2026-10-17: rotor strikes - the blades' health)
 
     /// <summary>The build info a saving component is injected with (its fixed id, a fresh default builder).</summary>
     internal static Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo Info(System.Type component, System.Guid id)
@@ -164,5 +167,59 @@ public partial class AeroThrustSettingsComponent
                     return th.AttitudeFraction;
         }
         return f;
+    }
+}
+
+public partial class AeroSolidSegmentComponent
+{
+    // (nothing of its own to save or read: the game saves the tank - an empty map, the builder still complete. The retired
+    //  "aero-solid:1 fraction" key a few hours of 2026-10-17 builds wrote is no longer read: it was ignored anyway - the tank
+    //  decides - and the next save writes this empty map over it)
+    [Keen.VRage.DCS.Annotations.Serializer]
+    private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
+    {
+        ob.NamedEntities = AeroBlockSave.One(null, Entity);
+    }
+}
+
+public partial class AeroSolidNozzleComponent
+{
+    /// <summary>Burning when saved: burning again at its power level (the game restores its switch and override with the block).</summary>
+    [Keen.VRage.DCS.Annotations.Init]
+    private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
+    {
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.SolidNozzleKey);
+        if (!AeroBlockSaveForm.TryReadSolidNozzle(key, out bool lit, out float level)) return;
+        RestoredLit = lit; RestoredLevel = level;
+        AeroBlockSave.CountRestored(AeroBlockSave.KSolidNozzle, key);
+    }
+
+    // (only while it burns; the client copy - injected with the same builder - writes nothing)
+    [Keen.VRage.DCS.Annotations.Serializer]
+    private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
+    {
+        string key = AeroBlockSaveForm.SolidNozzle(SolidRocket.SavedLit(Motor.Phase), Motor.Level);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KSolidNozzle, key);
+    }
+}
+
+public partial class AeroRotorStrikeComponent
+{
+    /// <summary>The blades' health as saved (worn or broken); whole blades carry no key. The block's integrity is the game's: a worn
+    /// rotor loads with its block still under full integrity, and welding it up repairs the blades (RotorStrike.Repaired).</summary>
+    [Keen.VRage.DCS.Annotations.Init]
+    private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
+    {
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.BladesKey);
+        if (!AeroBlockSaveForm.TryReadBlades(key, out float h)) return;
+        Health = h;
+        AeroBlockSave.CountRestored(AeroBlockSave.KBlades, key);
+    }
+
+    [Keen.VRage.DCS.Annotations.Serializer]
+    private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
+    {
+        string key = AeroBlockSaveForm.Blades(Health);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KBlades, key);
     }
 }

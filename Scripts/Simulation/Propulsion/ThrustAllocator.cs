@@ -10,6 +10,16 @@ namespace AeroMod;
 ///  - Solve: each thruster's force so the torque is the one wanted and the net force stays the game's.
 /// Thrusters: arm = (position - centre of mass) x dir (torque per newton), dir = the way it pushes the ship, cap = its
 /// maximum (N). All grid-local.
+/// REVERSIBLE thrusters (rev[i]; ReversibleThrust, 2026-10-17): dir is their definition's way and their force f is SIGNED,
+/// -cap..cap along it; side[i] (+1 / -1) is where the game booked their maximum (their ThrustData.Direction). The game's
+/// share of one is signed by that side (GameShare); the solve moves it either way, rotation first: its departure from the
+/// game's share costs RevForceWeight of a one-way thruster's net-force error (Fista), the one-way thrusters take back what
+/// they can of the net force it changed (KeepNetThrust), and the rest is its real thrust change (Solve's attitudePriority
+/// above 0 so the caller applies it). rev / side null: no reversible thrusters - exactly the one-way maths.
+/// BOUNDED slots (lo, 2026-10-17: a lit SOLID ROCKET nozzle - SolidRocket.cs): a rev slot whose lower bound is lo[i] instead of
+/// -cap (lo null: -cap for every rev slot). f0 is then the slot's base (the thrust it holds when no torque is asked): it moves
+/// within lo..cap only for torque, preferring its base exactly as a reversible thruster prefers the game's share, and the
+/// one-way thrusters take back what they can of its departure from the base (KeepNetThrust) - its base stays its own push.
 /// </summary>
 public static class ThrustAllocator
 {
@@ -25,17 +35,29 @@ public static class ThrustAllocator
     /// <summary>The game's thrust gameF shared as the game shares it (f0: each thruster's force; capDir: the six
     /// directions' summed maxima). Returns the torque that sharing makes (the offset torque).</summary>
     public static Vector3 GameShare(Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] capDir, float[] f0, int n)
+        => GameShare(gameF, arms, dirs, caps, capDir, f0, n, null);
+
+    /// <summary>... side: each thruster's game side (+1 / -1; null: all +1) - a reversible thruster's maximum is booked on
+    /// dir x side (capDir counts it there) and its share is signed by it.</summary>
+    public static Vector3 GameShare(Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] capDir, float[] f0, int n, float[] side)
     {
         Vector3 torque = Vector3.Zero;
         for (int i = 0; i < n; i++)
         {
-            float along = Vector3.Dot(gameF, dirs[i]);
-            int k = DirIndex(dirs[i]);
-            f0[i] = along > 0f && capDir[k] > 0f ? Math.Min(caps[i], along * caps[i] / capDir[k]) : 0f;
+            float s = side != null && side[i] < 0f ? -1f : 1f;
+            Vector3 d = dirs[i] * s;
+            float along = Vector3.Dot(gameF, d);
+            int k = DirIndex(d);
+            f0[i] = s * (along > 0f && capDir[k] > 0f ? Math.Min(caps[i], along * caps[i] / capDir[k]) : 0f);
             torque += arms[i] * f0[i];
         }
         return torque;
     }
+
+    /// <summary>A reversible thruster's net-force error weight in the solve, of a one-way thruster's: rotation comes first on
+    /// it (its torque need not be traded for keeping the game's net force - a lone reversible thruster on an axis would
+    /// otherwise give only a fraction of the torque asked).</summary>
+    public static float RevForceWeight = 1e-4f;
 
     /// <summary>The attitude law: the error from current to target (local axis-angle, rad), the rate wanted (kp per rad,
     /// at most maxRate), and the angular acceleration (local, rad/s^2) that reaches it in responseTime. Zero when resting
@@ -112,22 +134,38 @@ public static class ThrustAllocator
     /// thrust change, the thrusters' own).</summary>
     public static void Solve(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f0, float[] f,
         float[] prev, float[] y, float armSq, int n, int iterations, out float attitudePriority)
+        => Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, iterations, out attitudePriority, null);
+
+    /// <summary>... rev: the reversible thrusters (null: none) - their f signed, -cap..cap (see the class).</summary>
+    public static void Solve(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f0, float[] f,
+        float[] prev, float[] y, float armSq, int n, int iterations, out float attitudePriority, bool[] rev)
+        => Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, iterations, out attitudePriority, rev, null);
+
+    /// <summary>... lo: the rev slots' lower bounds (null: -cap) - a bounded slot (a lit solid rocket nozzle: see the class).</summary>
+    public static void Solve(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f0, float[] f,
+        float[] prev, float[] y, float armSq, int n, int iterations, out float attitudePriority, bool[] rev, float[] lo)
     {
         attitudePriority = 0f;
         float mu = n > 0 ? Math.Max(armSq / n, 1f) : 1f;
-        for (int i = 0; i < n; i++) f[i] = Math.Clamp(f[i], 0f, caps[i]);
-        Fista(tauTarget, gameF, arms, dirs, caps, f, prev, y, mu, n, iterations);
+        if (rev != null) { bool any = false; for (int i = 0; i < n; i++) any |= rev[i]; if (!any) rev = null; }   // (none: the one-way maths exactly)
+        // (a reversible thruster starts from the game's share each step, not last step's force: its departure from that share
+        //  is what is weighed - one with no torque arm then keeps the game's translation exactly)
+        for (int i = 0; i < n; i++) f[i] = rev != null && rev[i] ? Math.Clamp(f0[i], Lo(lo, caps, i), caps[i]) : Math.Clamp(f[i], 0f, caps[i]);
+        Fista(tauTarget, gameF, arms, dirs, caps, f, prev, y, mu, n, iterations, rev, f0, lo);
         // f: the solver's balance of torque and force. Keep the game's net thrust (f -> kept); if that leaves the torque far
         // worse than an attitude-first sharing could (force weighed 50x less), move toward that one just as far as the torque
         // needs (the least-squares step along the line between them), at most MaxThrustLoss of the thrust.
         var free = _free != null && _free.Length >= n ? _free : (_free = new float[Math.Max(n, 16)]);
         Array.Copy(f, free, n);
-        KeepNetThrust(f, f0, dirs, caps, n);
+        KeepNetThrust(f, f0, dirs, caps, n, rev);
         Vector3 tKeep = Vector3.Zero, fKeep = Vector3.Zero;
         for (int i = 0; i < n; i++) { tKeep += arms[i] * f[i]; fKeep += dirs[i] * f[i]; }
+        // (a reversible thruster's turn the one-way ones could not take back: a real net force change - applied by the caller)
+        float keepPrio = rev != null && (fKeep - gameF).Length() > 1f ? KeptChange : 0f;
+        attitudePriority = keepPrio;
         float need = tauTarget.Length(), eKeep = (tKeep - tauTarget).Length();
         if (need < 1f || eKeep < 0.5f * need) return;   // (the kept thrust gives at least half the torque wanted: nothing given up)
-        Fista(tauTarget, gameF, arms, dirs, caps, free, prev, y, mu * 0.02f, n, iterations);
+        Fista(tauTarget, gameF, arms, dirs, caps, free, prev, y, mu * 0.02f, n, iterations, rev, f0, lo);
         Vector3 tFree = Vector3.Zero, fFree = Vector3.Zero;
         for (int i = 0; i < n; i++) { tFree += arms[i] * free[i]; fFree += dirs[i] * free[i]; }
         Vector3 dT = tFree - tKeep;
@@ -137,15 +175,23 @@ public static class ThrustAllocator
         float loss = (fFree - fKeep).Length(), maxLoss = MaxThrustLoss * gameF.Length();
         if (loss * a > maxLoss) a = loss > 0f ? maxLoss / loss : 0f;
         if (a > 0f) for (int i = 0; i < n; i++) f[i] += (free[i] - f[i]) * a;
-        attitudePriority = a;
+        attitudePriority = MathF.Max(a, keepPrio);
     }
+    /// <summary>Solve's attitudePriority when only a reversible thruster's turn changed the net force (the caller applies it).</summary>
+    public const float KeptChange = 1e-3f;
+
+    /// <summary>A rev slot's lower bound: lo[i] (a bounded slot), else -cap (a reversible thruster).</summary>
+    static float Lo(float[] lo, float[] caps, int i) => lo != null ? MathF.Min(lo[i], caps[i]) : -caps[i];
 
     /// <summary>Accelerated projected gradient (FISTA) on |sum a_i f_i - tau|^2 + mu |sum d_i f_i - F|^2, from f.</summary>
     static void Fista(Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps, float[] f, float[] prev, float[] y,
-        float mu, int n, int iterations)
+        float mu, int n, int iterations, bool[] rev = null, float[] f0 = null, float[] lo = null)
     {
         for (int i = 0; i < n; i++) { prev[i] = f[i]; y[i] = f[i]; }
-        float lmax = LargestEigen(arms, dirs, mu, n);
+        // (a reversible thruster: its net force counted at the game's share, f0, and its own departure from it weighed
+        //  muRev = RevForceWeight x mu - rotation first)
+        float muRev = mu * RevForceWeight;
+        float lmax = LargestEigen(arms, dirs, mu, n, rev) + (rev != null ? muRev : 0f);
         float step = lmax > 0f ? 1f / lmax : 0f;
         // + Drain x sum f_i: a cost on the thrust used. Couples (opposing thrusters firing against each other) make no force
         // and, balanced, no torque - free to the solve, so after a turn they stayed, warm-started frame to frame: every
@@ -157,10 +203,21 @@ public static class ThrustAllocator
         for (int it = 0; it < iterations && step > 0f; it++)
         {
             Vector3 tr = -tauTarget, fr = -gameF;
-            for (int i = 0; i < n; i++) { tr += arms[i] * y[i]; fr += dirs[i] * y[i]; }
+            for (int i = 0; i < n; i++) { tr += arms[i] * y[i]; fr += dirs[i] * (rev != null && rev[i] ? f0[i] : y[i]); }
             float tk1 = (1f + MathF.Sqrt(1f + 4f * tk * tk)) / 2f, mom = (tk - 1f) / tk1;
             for (int i = 0; i < n; i++)
             {
+                if (rev != null && rev[i])
+                {
+                    // (both ways: -cap..cap; no drain - it was for idle couples of one-way thrusters, and against the tiny
+                    //  muRev it bled a reversible one's translation away)
+                    float gr = Vector3.Dot(arms[i], tr) + muRev * (y[i] - f0[i]);
+                    float lb = Lo(lo, caps, i);   // (-cap; a bounded slot's own floor)
+                    float fr2 = Math.Clamp(y[i] - step * gr, lb, caps[i]);
+                    y[i] = Math.Clamp(fr2 + mom * (fr2 - prev[i]), lb, caps[i]);
+                    prev[i] = fr2; f[i] = fr2;
+                    continue;
+                }
                 float fi = Math.Clamp(y[i] - step * (Vector3.Dot(arms[i], tr) + mu * Vector3.Dot(dirs[i], fr) + drain), 0f, caps[i]);
                 y[i] = Math.Clamp(fi + mom * (fi - prev[i]), 0f, caps[i]);
                 prev[i] = fi; f[i] = fi;
@@ -171,13 +228,14 @@ public static class ThrustAllocator
 
     /// <summary>The largest eigenvalue of sum v v^T, v = (arm, sqrt(mu) dir) in R^6 (power iteration): the
     /// gradient step's bound. (The trace is a safe bound too, but far too timid with many thrusters.)</summary>
-    static float LargestEigen(Vector3[] arms, Vector3[] dirs, float mu, int n)
+    static float LargestEigen(Vector3[] arms, Vector3[] dirs, float mu, int n, bool[] rev = null)
     {
         Span<float> G = stackalloc float[36];
-        float sm = MathF.Sqrt(mu);
+        float smAll = MathF.Sqrt(mu);
         Span<float> v = stackalloc float[6];   // (once: stackalloc in the loop held stack per thruster until return)
         for (int i = 0; i < n; i++)
         {
+            float sm = rev != null && rev[i] ? 0f : smAll;   // (a reversible thruster's force term is its own: muRev, added by the caller)
             v[0] = arms[i].X; v[1] = arms[i].Y; v[2] = arms[i].Z; v[3] = sm * dirs[i].X; v[4] = sm * dirs[i].Y; v[5] = sm * dirs[i].Z;
             for (int r = 0; r < 6; r++) for (int c = 0; c < 6; c++) G[r * 6 + c] += v[r] * v[c];
         }
@@ -196,20 +254,30 @@ public static class ThrustAllocator
         return lambda * 1.05f;
     }
 
-    [ThreadStatic] static float[] _grpS, _grpT, _grpH;
+    [ThreadStatic] static float[] _grpS, _grpT, _grpH, _grpR;
     /// <summary>The sharing f changed so that along each axis the net thrust (the +axis group's total minus the -axis
     /// group's) is the game's again (f0's): the excess comes off the side that has too much, the rest goes onto the other
     /// side (within each thruster's maximum). Steering then comes only from rebalancing within a side and from couples
     /// (both sides firing) - never from more or less net thrust.</summary>
-    public static void KeepNetThrust(float[] f, float[] f0, Vector3[] dirs, float[] caps, int n)
+    public static void KeepNetThrust(float[] f, float[] f0, Vector3[] dirs, float[] caps, int n) => KeepNetThrust(f, f0, dirs, caps, n, null);
+
+    /// <summary>... rev: the reversible thrusters (null: none) - their signed force left as the solve set it (rotation
+    /// first) but counted in the net; the one-way thrusters take back what they can of the change.</summary>
+    public static void KeepNetThrust(float[] f, float[] f0, Vector3[] dirs, float[] caps, int n, bool[] rev)
     {
         var S = _grpS ??= new float[6]; var T = _grpT ??= new float[6]; var H = _grpH ??= new float[6];
-        Array.Clear(S, 0, 6); Array.Clear(T, 0, 6); Array.Clear(H, 0, 6);
-        for (int i = 0; i < n; i++) { int k = DirIndex(dirs[i]); S[k] += f[i]; T[k] += f0[i]; H[k] += caps[i] - f[i]; }
+        var R = _grpR ??= new float[3];
+        Array.Clear(S, 0, 6); Array.Clear(T, 0, 6); Array.Clear(H, 0, 6); Array.Clear(R, 0, 3);
+        for (int i = 0; i < n; i++)
+        {
+            int k = DirIndex(dirs[i]);
+            if (rev != null && rev[i]) { R[k / 2] += (k % 2 == 0 ? 1f : -1f) * (f[i] - f0[i]); continue; }   // (its net change along +axis)
+            S[k] += f[i]; T[k] += f0[i]; H[k] += caps[i] - f[i];
+        }
         for (int ax = 0; ax < 3; ax++)
         {
             int kp = 2 * ax, km = 2 * ax + 1;
-            float delta = (S[kp] - S[km]) - (T[kp] - T[km]);   // >0: too much along +axis
+            float delta = (S[kp] - S[km]) - (T[kp] - T[km]) + R[ax];   // >0: too much along +axis
             if (MathF.Abs(delta) < 1f) continue;
             int down = delta > 0f ? kp : km, up = delta > 0f ? km : kp;
             float need = MathF.Abs(delta);
@@ -218,14 +286,14 @@ public static class ThrustAllocator
             if (cut > 0f && S[down] > 0f)
             {
                 float k = (S[down] - cut) / S[down];
-                for (int i = 0; i < n; i++) if (DirIndex(dirs[i]) == down) f[i] *= k;
+                for (int i = 0; i < n; i++) if (DirIndex(dirs[i]) == down && !(rev != null && rev[i])) f[i] *= k;
                 need -= cut;
             }
             // then: more on the other side, by its headroom
             if (need > 0f && H[up] > 0f)
             {
                 float add = MathF.Min(need, H[up]), k = add / H[up];
-                for (int i = 0; i < n; i++) if (DirIndex(dirs[i]) == up) f[i] += (caps[i] - f[i]) * k;
+                for (int i = 0; i < n; i++) if (DirIndex(dirs[i]) == up && !(rev != null && rev[i])) f[i] += (caps[i] - f[i]) * k;
             }
         }
     }

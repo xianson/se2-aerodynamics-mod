@@ -174,8 +174,7 @@ public static class AeroEntryFx
         else ext = ExternalAt(aero.Entity, out extAir, out es);
         if (ext) { vel = extAir; extStrength = es; }
         float speed = vel.Length();
-        double m0 = aero.LastResult.Mach;
-        float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
+        float a = aero.LastSoundSpeed;   // (the local speed of sound, AeroGridComponent.SetAir - it was the GROUND speed over the model's Mach: wrong in any wind)
         float mr = speed / MathF.Max(1f, a) / MathF.Max(0.1f, OnsetMach);
         float target = density > 0f ? OnsetHeat * mr * mr * mr : 0f;
         float k = MathF.Min(1f, dt / MathF.Max(0.05f, HeatLag));
@@ -218,8 +217,8 @@ public static class AeroEntryFx
     [ThreadStatic] static AeroGridComponent _extFor; [ThreadStatic] static bool _extHas; [ThreadStatic] static Vector3 _extAir; [ThreadStatic] static float _extS;
 
     /// <summary>Server, each aero step, for every grid (not gated by the entry plasma's switch or heat): the air past it -
-    /// its travel in its own frame, Mach (speed over the speed of sound the aero model last used; 340 m/s before it has
-    /// one), density. TestSpeed applies here too (sea-level air).</summary>
+    /// its travel in its own frame, Mach (speed over the local speed of sound: AeroGridComponent.LastSoundSpeed, the sea-level one where
+    /// the model has none), density. TestSpeed applies here too (sea-level air).</summary>
     internal static void Flow(AeroGridComponent aero, in WorldTransform wt, Vector3 vel, float density, Vector3 moving)
     {
         // (vel: the air past it - its velocity less the wind; moving: its real motion, what carries its published position
@@ -242,8 +241,7 @@ public static class AeroEntryFx
             return;
         }
         aero.RefreshFxGroup();   // (the ship it is part of: one set of tip trails per ship)
-        double m0 = aero.LastResult.Mach;
-        float a = m0 > 0.01 && aero.LastSpeed > 1f ? (float)(aero.LastSpeed / m0) : 340f;
+        float a = aero.LastSoundSpeed;   // (the local speed of sound, AeroGridComponent.SetAir - it was the GROUND speed over the model's Mach: wrong in any wind)
         lock (_flow)
         {
             if (!_flow.TryGetValue(aero, out var p)) { _flow[aero] = p = new FlowPub(); aero.FlowPublished = true; _flowCount = _flow.Count; }

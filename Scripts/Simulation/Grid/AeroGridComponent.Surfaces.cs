@@ -91,13 +91,10 @@ public partial class AeroGridComponent
         if (hasTargetData)
         {
             inputMode = "RETICLE";
-            _holdOrientationValid = false; // re-capture when pilot exits
-
             // ── OUTER LOOP: Attitude → Desired angular rate ──
             // Orientation error in local frame (same as GridGyroscopesComponent.ComputeTorqueTarget)
             Quaternion errorQuat = Quaternion.Inverse(gridOrientation) * targetData.TargetOrientation;
             Vector3 eulerError = errorQuat.ConvertToEuler(); // radians, local frame (matches game convention)
-            EulerError = eulerError; // expose for thruster attitude controller
 
             // Proportional on the attitude error (the rate damping is ControlSurface.RateCommand's, per surface).
             // ConvertToEuler returns (Pitch, Yaw, Roll) = (X, Y, Z) — same frame as
@@ -121,23 +118,18 @@ public partial class AeroGridComponent
             // (damping on the rate ERROR - the old "- w Kd" here plus 3 w per surface damped the turn the gyros were making)
             targetAngVel = attitudeCmd;
 
-            // ── SAS: PD orientation tracker (toward the reticle) ──
-            SasTorque = SasTorqueFor(localAngVel, eulerError);
-
             if (shouldLog)
             {
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE eulerError=({eulerError.X:F5},{eulerError.Y:F5},{eulerError.Z:F5}) rad");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE attitudeCmd=({attitudeCmd.X:F5},{attitudeCmd.Y:F5},{attitudeCmd.Z:F5})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE localAngVel=({localAngVel.X:F5},{localAngVel.Y:F5},{localAngVel.Z:F5})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE bodyTorque=({bodyTorque.X:F1},{bodyTorque.Y:F1},{bodyTorque.Z:F1})");
-                Log.Default?.Info($"[AERO-CS] STEP3 RETICLE SAS=({SasTorque.X:F0},{SasTorque.Y:F0},{SasTorque.Z:F0})");
                 Log.Default?.Info($"[AERO-CS] STEP3 RETICLE PD_cmd=({targetAngVel.X:F5},{targetAngVel.Y:F5},{targetAngVel.Z:F5})");
             }
         }
         else if (hasAngularData && angularData.TargetAngularVelocity.LengthSquared() > 0.0001f)
         {
             inputMode = "KEYBOARD";
-            _holdOrientationValid = false; // re-capture when pilot exits
 
             Vector3 raw = angularData.TargetAngularVelocity;
             targetAngVel = new Vector3(
@@ -154,7 +146,7 @@ public partial class AeroGridComponent
         else
         {
             inputMode = "HOLD";
-            // _lastGridAngVel and SasTorque already set by UpdateAttitudeHold()
+            // _lastGridAngVel already set by UpdateAttitudeHold()
             // which runs before early returns in TryCompute
             targetAngVel = _lastGridAngVel;
         }
@@ -354,7 +346,7 @@ public partial class AeroGridComponent
             }
             cs.DeflectionInput = b; t0 += cs.Compute(cond).TorqueAbout(com);
         }
-        if (list.Count == 0) { SurfacePush = SurfacePull = Vector3.Zero; SurfaceNeutral = t0; return; }
+        if (list.Count == 0) { SurfacePush = SurfacePull = Vector3.Zero; SurfaceNeutral = t0; _surfReachFrame = _simFrameCount; return; }
         // the world's tuning scale (applied torque / computed), as the sim job took it last tick
         float lc = LastComponentTorque.Length();
         float scale = lc > 1e-3f ? LastSurfaceTorque.Length() / lc : 1f;

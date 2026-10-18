@@ -6,11 +6,11 @@ Pure math, compiled by the offline tests. The game side is `Air/`.
 |---|---|
 | `AtmosphereModel.cs` | Layered barometric atmosphere |
 | `AtmosphereState.cs` | Density, pressure, temperature, speed of sound, viscosity |
-| `CompressibleFlow.cs` | Isentropic and shock relations, the wave-drag multiplier |
+| `CompressibleFlow.cs` | The wave-drag multiplier (`ForceTable`) |
 | `AtmosphereTail.cs` | The air's upper tail past the game's linear generator edge |
 
 ## Entry points
-- `AtmosphereBridge` (`Air/`) builds states from `AtmosphereModel`; `CompressibleFlow` is used by the drag model and
+- `AtmosphereBridge` (`Air/`) builds states from `AtmosphereModel`; `CompressibleFlow` by
   `ForceTable`; `AtmosphereTail` by `AtmosphereProbe` and `AeroApi`.
 
 ## Threading

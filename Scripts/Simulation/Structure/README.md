@@ -11,6 +11,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `ShipStructure.cs` (+ `.Network`, `.Sections`, `.Shape`) | The blocks' joint network, cuts and sections, the free-body solve, utilisation per joint. Thrusters are rigid (2026-10-17, `Thruster`, `RigidThrusters`): never worn or failed inside, a joint to one is its mount's - the mount breaks (`Breaks`) and the engine leaves whole. |
 | `StructureEval.cs` | One evaluation: the loads (`Loads`) spread onto the blocks, then the damage to do (`Damage`, by section). Each block component's air (control surfaces, airbrakes, gear legs, intakes, scoops, drag patches) goes on its own block at its point (2026-10-17, `ComponentLoadsAtBlocks` - `Structure.ComponentLoads`, aeroset-able; `CompPlaced` / `CompMissed`), taken off the rest of the air like the wings' - the ship's total load unchanged; extra block loads (`Loads.LoadBlock`, `PublishBlockLoad`) add at their block. |
+| `ImpulseWindow.cs` | Game-free (Tests/StructureTests `ImpulseLoads`): one-tick impulses at a block as a load the 4/s snapshot takes exactly once - the window's sum over its length (a blade grinding on) or its largest tick over the crush time (a hit), whichever is larger; moments kept about the grid's origin; angular impulses the same way. |
 | `StructureFatigue.cs` | Health loss per utilisation (fatigue from the tensile part at the full rate; compression at `BucklingFatigueShare` 1 for a buckling-limited member, `CompressionFatigueShare` 0.2 for a stocky one: `TensilePart`, `CompressionShare`), and the per-grid `Ledger` of loss not yet written to the game (it re-anchors on each fresh health reading: welds and outside damage). |
 | `StructureBend.cs` | Permanent bends: which joints set, the far side, the displacement. |
 | `StructMaterial.cs` | Material classes from block names: wall thickness, strength by temperature, burn rate, each class's scorch thresholds (`ScorchAt`). |
@@ -26,22 +27,22 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 |---|---|
 | `StructureLoads.cs` | Settings (`Structure.*`, `Heat.*`) and diagnostics: `aeroget/aeroset StructureLoads.X`. |
 | `StructureServer.cs` | `AeroGridComponent` partial: the snapshot (`TickStructure`), the background evaluation (`EvaluateStructure`), the steer cap. |
-| `StructureServer.BlockLoads.cs` | The snapshot's block-component and drag-patch air (`SnapComponentLoads`: the world's multipliers as on the total, `AeroTuning.ScalePart`), and `PublishBlockLoad` - a force at a block this tick the structure sees nowhere else (a rotor's cyclic, a mod engine's thrust; latest per block, any thread; `isEngine`: rigid like a thruster). |
+| `StructureServer.BlockLoads.cs` | The snapshot's block-component and drag-patch air (`SnapComponentLoads`: the world's multipliers as on the total, `AeroTuning.ScalePart`), and `PublishBlockLoad` - a force at a block this tick the structure sees nowhere else (latest per block, any thread; `isEngine`: rigid like a thruster - a block with the game's `ThrusterComponent` is already, no rebuild). Callers (2026-10-17): `RotorCyclic.PublishLoads` (each main rotor's cyclic force and torque and its reaction, at its hub, isEngine), `AeroSolidNozzleComponent.PublishLoad` (a solid rocket's thrust now - base + steering - at its nozzle, isEngine; the nozzle is out of the thruster cache, so ThrF never holds it). `PublishBlockImpulse` - a ONE-TICK impulse at a block (a rotor strike's reaction, a broken rotor's angular momentum: `RotorStrikeServer`), gathered per block and taken ONCE by the next snapshot as the larger of the window's mean and its peak tick over `StructureContactLoads.CrushSeconds`, as the hull's collisions (`Model/ImpulseWindow.cs`). |
 | `StructureServer.Rebuild.cs` | The blocks read for a rebuild (cells, mass, kind, mount points; definitions by reflection) and the heat faces. |
 | `StructureServer.Damage.cs` | The fatigue ledger's writes to the game's blocks, `Gone` (every damage call's guard). |
 | `StructureServer.Failure.cs` | A failing block split or destroyed; a failed cut's crack run member by member (`StepCracks`, the hinge crumpled); a failed cut watched until the grid splits (the jagged line's stubs spared first). |
 | `StructureServer.Deform.cs` | Dents and permanent bends through the deformation bones. |
 | `StructureServer.Api.cs` | The public API's side (AeroApi version 7): another heat model's temperatures in (`ApiHeatOverride`), the failures into the event queue and the blocks' / faces' state out (`ApiPublishStructure`), both from the background evaluation. |
 | `StructureServer.Dump.cs` | (harness) `.struct` / `.loads` dumps for the offline bench. |
-| `StructureContacts.cs` | Collisions and ground contact read from the physics as loads; gear touchdowns for the gear. |
+| `StructureContacts.cs` | Collisions and ground contact read from the physics as loads; gear touchdowns for the gear. `NoteKnownImpulse`: an impulse this mod put into the body that is no contact (a rotor's cyclic force, a strike's reaction) - taken off the balance at the next read, so the wheels / locked plates never carry it as well. |
 | `StructureTear.cs` | A large piece torn off stays tied by soft constraints - one spring per anchor over the failed section, let go in the crack's order (the hinge last) over `TearSeconds`. |
 | `WingStrainServer.cs` | Wing root strain (Lift/WingStrain) and its wear / breaks (`Structure.WingStrain`, off by default). |
 
 ## Fx/ - what the player gets of it (client, except HeatScorch.Update)
 | File | What |
 |---|---|
-| `StructureFeel.cs` | Creaks, groans and cockpit shake with the structure's utilisation. |
-| `TearSmoke.cs` | Smoke and debris at a torn edge (the server publishes, the client grid that pairs plays it). |
+| `StructureFeel.cs` | Creaks, groans and cockpit shake with the structure's utilisation; `PlayAt` - a one-shot at a world place (the rotor strikes' crunch). |
+| `TearSmoke.cs` | Smoke and debris at a torn edge (the server publishes, the client grid that pairs plays it); also the ROTOR STRIKES' sparks and crunch (`PublishStrike` / `PlayStrike`: the game's MeshCollision sparks, VoxelMaterialHit on rock, DebrisBurst on a break; FMOD impacts by what was hit). |
 | `HeatScorch.cs` | Re-entry scorch decals: spots gathered on the server (light / dark by each block class's own heat limits), stamped on the client from the effects job twice a second; a fault waits 10 s (`RetrySeconds`). |
 
 ## Entry points
@@ -51,7 +52,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 - The flow, step by step: `docs/ARCHITECTURE.md` §6.
 
 ## Threading
-- `PublishBlockLoad`: any thread (a lock); read by the snapshot on the simulation thread.
+- `PublishBlockLoad`, `PublishBlockImpulse`, `NoteKnownImpulse`: any thread (a lock); read by the snapshot / the contact read on the simulation thread.
 - Simulation thread (`AeroSimJob`, per grid): `TickStructure` (snapshot, contacts, results applied: damage, failure,
   bends; a running crack's releases every tick - `StepCracks`, never the ledger), `TickWingStrain`, `HeatScorch.Update`. `TearJob` once a tick (the first server grid's), before physics.
 - Background (`AeroWork`, one evaluation per grid, `StructureLoads.MaxInFlight` in all): `EvaluateStructure` -

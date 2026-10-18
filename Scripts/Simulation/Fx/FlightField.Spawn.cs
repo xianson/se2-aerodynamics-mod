@@ -28,11 +28,6 @@ internal sealed partial class FlightField
         StopPuffs();
         int N = P3.GetLength(0) - 1, step = Math.Max(1, PuffEvery);
         var turn = Quaternion.CreateFromTwoVectors(Vector3.UnitZ, -f);
-        if (PuffTest > 0)
-        {
-            Puff(ShockSparks, _nose, PuffTest == 3 ? Quaternion.Identity : turn, PuffTest == 1 ? 9f : 1f);
-            return;
-        }
         float cell = (P3[N, 0] - P3[0, 0]).Length() / N;
         if (Weighted)
         {

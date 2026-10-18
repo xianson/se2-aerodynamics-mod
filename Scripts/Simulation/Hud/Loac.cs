@@ -42,6 +42,13 @@ public partial class AeroGridComponent
     // and their torque at their trim (local N m)
     internal Quaternion LoacTarget; internal bool LoacHasTarget;
     internal Vector3 LoacReach, SurfacePush, SurfacePull, SurfaceNeutral;
+    /// <summary>The sim frame SurfacePush / SurfacePull were last measured on (AllocateSurfaces: server, while the aero-aware law
+    /// flies and the air is fast enough for a result). They are not cleared when it stops - a slowed or parked ship kept its
+    /// last fast-flight reach - so a reader that acts on them asks SurfaceReachFresh (2026-10-17: the rotor limiter).</summary>
+    internal int _surfReachFrame = int.MinValue / 2;
+    /// <summary>The surfaces' reach was measured within the last few frames (the slowest compute interval, 4, plus the frame
+    /// budget's most skips): it describes the air now.</summary>
+    internal bool SurfaceReachFresh => _simFrameCount - _surfReachFrame <= 4 + AeroFrameBudget.MaxSkips + 1;
 
     /// <summary>The surfaces' torque left in each direction from where they are trimmed (the allocator's measure this tick:
     /// each one's torque per unit input, about its trim/flap base; inputs reach +-1): per axis, the most they add toward
@@ -59,7 +66,7 @@ public partial class AeroGridComponent
             push += Vector3.Max(Vector3.Max(up, down), Vector3.Zero);
             pull -= Vector3.Min(Vector3.Min(up, down), Vector3.Zero);
         }
-        SurfacePush = push; SurfacePull = pull; SurfaceNeutral = t0 * scale;
+        SurfacePush = push; SurfacePull = pull; SurfaceNeutral = t0 * scale; _surfReachFrame = _simFrameCount;
     }
 
     void EvaluateLoac(StructSnap snap)

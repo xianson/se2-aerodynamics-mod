@@ -142,69 +142,6 @@ public class AtmosphereModel
             layers: layers);
     }
 
-    /// <summary>Simple single-layer atmosphere — constant lapse rate from surface to vacuum.</summary>
-    public static AtmosphereModel CreateSimple(
-        double surfaceTemperature,
-        double surfacePressure,
-        double lapseRate,
-        double surfaceGravity,
-        double gamma = 1.4,
-        double molarMass = 0.02896)
-    {
-        const double R_universal = 8.31446;
-        double R = R_universal / molarMass;
-
-        double atmosphereHeight;
-        if (Math.Abs(lapseRate) > 1e-10)
-        {
-            atmosphereHeight = -surfaceTemperature / lapseRate;
-            if (atmosphereHeight < 0)
-                atmosphereHeight = 200000;
-        }
-        else
-        {
-            double scaleHeight = R * surfaceTemperature / surfaceGravity;
-            atmosphereHeight = scaleHeight * 7;
-        }
-
-        var layers = new List<Layer> { new Layer(0, surfaceTemperature, surfacePressure, lapseRate) };
-        double viscRef = 1.716e-5 * Math.Sqrt(molarMass / 0.02896);
-
-        return new AtmosphereModel(
-            surfaceGravity: surfaceGravity,
-            specificGasConstant: R,
-            gamma: gamma,
-            atmosphereHeight: atmosphereHeight,
-            viscosityRef: viscRef,
-            viscosityTRef: 273.15,
-            sutherlandConst: 110.4 * (molarMass / 0.02896),
-            layers: layers);
-    }
-
-    /// <summary>Mars-like: thin CO₂ atmosphere.</summary>
-    public static AtmosphereModel Mars()
-    {
-        return CreateSimple(
-            surfaceTemperature: 210,
-            surfacePressure: 636,
-            lapseRate: -0.0045,
-            surfaceGravity: 3.72,
-            gamma: 1.3,
-            molarMass: 0.04401);
-    }
-
-    /// <summary>Titan-like: thick cold N₂ atmosphere.</summary>
-    public static AtmosphereModel Titan()
-    {
-        return CreateSimple(
-            surfaceTemperature: 94,
-            surfacePressure: 146700,
-            lapseRate: -0.0012,
-            surfaceGravity: 1.352,
-            gamma: 1.4,
-            molarMass: 0.02802);
-    }
-
     // ─── Layer computation ────────────────────────────────────────────
 
     private readonly struct Layer

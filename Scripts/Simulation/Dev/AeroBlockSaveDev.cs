@@ -18,10 +18,10 @@ namespace AeroMod;
 /// </summary>
 internal static partial class AeroBlockSave
 {
-    // ── counters (per block kind: surface, gear, airbrake, thrust) ──
-    public const int KSurface = 0, KGear = 1, KAirbrake = 2, KThrust = 3;
-    static readonly int[] _restored = new int[4], _written = new int[4], _legacy = new int[4];
-    static readonly string[] KindNames = { "surface", "gear", "airbrake", "thrust" };
+    // ── counters (per block kind: surface, gear, airbrake, thrust, solid rocket segment, solid rocket nozzle, rotor blades) ──
+    public const int KSurface = 0, KGear = 1, KAirbrake = 2, KThrust = 3, KSolid = 4, KSolidNozzle = 5, KBlades = 6;
+    static readonly int[] _restored = new int[7], _written = new int[7], _legacy = new int[7];
+    static readonly string[] KindNames = { "surface", "gear", "airbrake", "thrust", "solid", "solidnozzle", "blades" };
     static string _last = "none";
 
     /// <summary>Blocks that took their state from their own saved data, this process (both scenes' thruster copies).</summary>
@@ -30,13 +30,13 @@ internal static partial class AeroBlockSave
     public static int Written => Sum(_written);
     /// <summary>Blocks given their state by an old position-matched line (AeroSurfaceSaved.ApplyPending).</summary>
     public static int LegacyClaimed => Sum(_legacy);
-    /// <summary>Per kind: "restored s/g/a/t written s/g/a/t legacy s/g/a/t".</summary>
+    /// <summary>Per kind: "restored s/g/a/t/seg/noz written ... legacy ...".</summary>
     public static string Counts => $"restored {Per(_restored)} written {Per(_written)} legacy {Per(_legacy)}";
     /// <summary>The last count's kind and what it was ("restored aero-gear:1 0 0").</summary>
     public static string Last => Volatile.Read(ref _last);
 
     static int Sum(int[] a) { int n = 0; for (int i = 0; i < a.Length; i++) n += Volatile.Read(ref a[i]); return n; }
-    static string Per(int[] a) => $"{Volatile.Read(ref a[0])}/{Volatile.Read(ref a[1])}/{Volatile.Read(ref a[2])}/{Volatile.Read(ref a[3])}";
+    static string Per(int[] a) { var sb = new System.Text.StringBuilder(); for (int i = 0; i < a.Length; i++) { if (i > 0) sb.Append('/'); sb.Append(Volatile.Read(ref a[i])); } return sb.ToString(); }
 
     internal static void CountRestored(int kind, string key) { Interlocked.Increment(ref _restored[kind]); Volatile.Write(ref _last, "restored " + key); }
     internal static void CountWritten(int kind, string key) { if (key == null) return; Interlocked.Increment(ref _written[kind]); Volatile.Write(ref _last, "written " + key); }

@@ -87,7 +87,7 @@ public static class FlightFixture
                 float p = pitch * MathF.PI / 180f, y = yaw * MathF.PI / 180f;
                 // yaw 0 pitch 0: forward (-Z); yaw about +Y, pitch up toward +Y
                 var dir = new Vector3(-MathF.Sin(y) * MathF.Cos(p), MathF.Sin(p), -MathF.Cos(y) * MathF.Cos(p));
-                if (AeroApi.PredictHullForces(grid, dir * 100f, 1.225f, 340f, out var f, out var tq, out var area))
+                if (AeroApi.PredictHullForces(grid, dir * 100f, DesignProbe.SeaRho, DesignProbe.SeaSos, out var f, out var tq, out var area))
                     sb.Append("air ").Append(V(dir)).Append(' ').Append(V(f)).Append(' ').Append(V(tq)).Append(' ').Append(area.ToString("R", CI)).Append('\n');
             }
         return sb.ToString();

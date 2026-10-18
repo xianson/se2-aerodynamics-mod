@@ -19,9 +19,6 @@ public readonly struct AtmosphereState
     /// <summary>Dynamic pressure q = ½ρv² (Pa).</summary>
     public double GetDynamicPressure(double speed) => 0.5 * Density * speed * speed;
 
-    /// <summary>Reynolds number per unit length: Re/L = ρv/μ (1/m).</summary>
-    public double GetReynoldsPerMeter(double speed) => Density * speed / DynamicViscosity;
-
     public static readonly AtmosphereState Vacuum = new()
     {
         Temperature = 2.7, // CMB

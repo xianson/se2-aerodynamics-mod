@@ -54,8 +54,10 @@ public partial class AeroGridComponent
     /// its load off with Structure.ThrustLoads.
     /// Sampling: like the thrusters' loads - the latest value when an evaluation's snapshot is taken (StructureLoads.Rate a
     /// second), not an average; one entry per block, a second call in a tick replaces the first (publish the block's total).
-    /// Call every tick it acts; one not renewed for BlockLoadTicks ticks is gone. Any thread (a lock; no allocation once
-    /// the block has an entry). Server: only the server's structure reads it.
+    /// Call every tick it acts; one not renewed for BlockLoadTicks ticks is gone. The SERVER SIM THREAD, with the server
+    /// scene's block (it reads the block's data - ThrusterComponent, alive - which DataGuard forbids across scenes /
+    /// threads); a lock, no allocation once the block has an entry. Callers: RotorCyclic.PublishLoads (ThrustTorque.Apply),
+    /// AeroSolidNozzleComponent.PublishLoad (its server tick). Server: only the server's structure reads it.
     /// </summary>
     internal void PublishBlockLoad(Entity block, Vector3 forceLocal, Vector3 pointLocal, Vector3 torqueLocal, bool isEngine)
     {
@@ -76,23 +78,72 @@ public partial class AeroGridComponent
         {
             bool added = false;
             lock (_loadEngines) if (!_loadEngines.TryGetValue(block, out _)) { _loadEngines.Add(block, _engineMark); added = true; }
-            if (added) System.Threading.Interlocked.Increment(ref StructBlockVersion);   // (rebuilt: the engine rigid - IsThrusterBlock)
+            // (rebuilt: the engine rigid - IsThrusterBlock. Not for a block with the game's ThrusterComponent - a rotor, a solid
+            //  rocket nozzle: it is rigid already, and its rebuild would only cost one; its first call only, 2026-10-17)
+            if (added && !(PhysicsHack.Alive(block.Data) && block.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null))
+                System.Threading.Interlocked.Increment(ref StructBlockVersion);
+        }
+    }
+
+    /// <summary>One block's impulses since the last snapshot (PublishBlockImpulse): ImpulseWindow's sums and peaks.</summary>
+    struct BlockImpulse { public Entity Block; public ImpulseWindow W; }
+    readonly List<BlockImpulse> _blockImpulses = new();
+
+    /// <summary>
+    /// A ONE-TICK IMPULSE AT A BLOCK (2026-10-17; the representation and its reasons: Structure/Model/ImpulseWindow.cs): an
+    /// impulse (N s) at <paramref name="pointLocal"/> and an angular impulse (N m s) on <paramref name="block"/> that this mod
+    /// put into the body THIS tick - a rotor strike's reaction at the strike point (RigidBodyDataFunctions.TryApplyImpulse), a
+    /// broken rotor's angular momentum (RotorStrikeServer step 4). Unlike PublishBlockLoad (latest value, two ticks): every
+    /// impulse is gathered per block and the NEXT snapshot takes the window once - the larger of its mean (sum / window) and
+    /// its largest tick over StructureContactLoads.CrushSeconds, as the hull's collisions are. Never an engine's (no
+    /// ThrustLoads gate). The server sim thread, with the server scene's block (caller: RotorStrikeServer); a lock, no
+    /// allocation once the block has an entry. Grid-local. Server.
+    /// </summary>
+    internal void PublishBlockImpulse(Entity block, Vector3 impulseLocal, Vector3 pointLocal, Vector3 angularLocal)
+    {
+        if (block == null || !PhysicsHack.IsFinite(impulseLocal) || !PhysicsHack.IsFinite(pointLocal) || !PhysicsHack.IsFinite(angularLocal)) return;
+        if (impulseLocal.LengthSquared() <= 0f && angularLocal.LengthSquared() <= 0f) return;
+        int now = _simFrameCount;
+        lock (_blockImpulses)
+        {
+            int at = -1;
+            for (int i = 0; i < _blockImpulses.Count; i++) if (ReferenceEquals(_blockImpulses[i].Block, block)) { at = i; break; }
+            var e = at >= 0 ? _blockImpulses[at] : new BlockImpulse { Block = block };
+            e.W.Add(impulseLocal, pointLocal, angularLocal, now);
+            if (at >= 0) _blockImpulses[at] = e; else _blockImpulses.Add(e);
         }
     }
 
     /// <summary>The published block loads still fresh, into the snapshot: each on its block (index - the structure's; one
     /// not in it yet: -1, found by its point in the evaluation), stale ones dropped. Simulation thread.</summary>
-    void SnapBlockLoads(StructureEval.Loads L, Dictionary<Entity, int> index)
+    /// <summary>... and the impulses gathered since the last snapshot (PublishBlockImpulse) as loads over its window
+    /// (<paramref name="window"/> s: the evaluation's), each taken once; one older than the window (published while no
+    /// snapshot was taken - the grid not flown) is dropped unloaded.</summary>
+    void SnapBlockLoads(StructureEval.Loads L, Dictionary<Entity, int> index, float window)
     {
-        if (_blockLoads.Count == 0) return;
         int now = _simFrameCount;
-        lock (_blockLoads)
-            for (int i = _blockLoads.Count - 1; i >= 0; i--)
+        if (_blockLoads.Count > 0)
+            lock (_blockLoads)
+                for (int i = _blockLoads.Count - 1; i >= 0; i--)
+                {
+                    var e = _blockLoads[i];
+                    if (now - e.Frame > BlockLoadTicks) { _blockLoads.RemoveAt(i); continue; }
+                    L.LoadBlock.Add(index != null && index.TryGetValue(e.Block, out int b) ? b : -1);
+                    L.LoadF.Add(e.F); L.LoadP.Add(e.P); L.LoadT.Add(e.T); L.LoadEngine.Add(e.Engine);
+                }
+        if (_blockImpulses.Count == 0) return;
+        int oldest = (int)MathF.Ceiling(window / AeroPhysics.Dt) + BlockLoadTicks;
+        float crush = StructureContactLoads.CrushSeconds;
+        lock (_blockImpulses)
+        {
+            for (int i = 0; i < _blockImpulses.Count; i++)
             {
-                var e = _blockLoads[i];
-                if (now - e.Frame > BlockLoadTicks) { _blockLoads.RemoveAt(i); continue; }
+                var e = _blockImpulses[i];
+                if (now - e.W.Frame > oldest || !e.W.Held(window, crush, out var f, out var p, out var t)) continue;
                 L.LoadBlock.Add(index != null && index.TryGetValue(e.Block, out int b) ? b : -1);
-                L.LoadF.Add(e.F); L.LoadP.Add(e.P); L.LoadT.Add(e.T); L.LoadEngine.Add(e.Engine);
+                L.LoadF.Add(f); L.LoadP.Add(p); L.LoadT.Add(t); L.LoadEngine.Add(false);
             }
+            _blockImpulses.Clear();   // (taken once; the list keeps its capacity)
+        }
     }
 }

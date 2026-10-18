@@ -70,5 +70,4 @@ internal sealed class ReaderGate
     }
 
     public void Close() => _open = false;
-    public bool IsOpen => _open;
 }

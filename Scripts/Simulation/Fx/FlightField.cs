@@ -21,12 +21,8 @@ namespace AeroMod;
 /// </summary>
 internal sealed partial class FlightField
 {
-    public static float Emissive = 20f, Length = 4f, Width = 0.35f, Flare = 0.6f, GlowSize = 2.2f, SpecA = 0f, Fresnel = 1f;
-    public static int Count = 16, Every = 4;
-    /// <summary>0: separate streamers (each its own cell); 1: one grid sheet - a sleeve off the frontal outline and a
-    /// cap on the nose - whose UVs together cover ONE atlas cell, all of it stepping to the next cell (the animation).</summary>
-    public static int Mode = 1, Around = 32, Along = 8;
-    /// <summary>Mode 2, the bow shock: a sheet standing off the hull's windward surface (the front-most hull point
+    /// <summary>The bow shock (the grid the sparks sit on - Mode 2 of the old mesh prototypes, whose other modes and knobs went
+    /// 2026-10-17): a sheet standing off the hull's windward surface (the front-most hull point
     /// along the flow in each cell of a Res x Res grid across it: the shadow map's lit surface), blurred Blur times so it
     /// follows the hull loosely, pushed upwind by Standoff x R, and past the silhouette swept back downwind
     /// (Sweep x d^2 / R) out to Margin x R. Its UVs span one atlas cell.</summary>
@@ -37,50 +33,14 @@ internal sealed partial class FlightField
     public static float MinStandoff = 0.12f, TrimPast = 0.85f;
     public static int Dilate = 2;
     public static int Res = 96, Blur = 12;   // (64 / 48 tried: finer, but the texture was the problem)
-    /// <summary>Mode 3, the look prototyped offline (D:\aero\tools\plasma_proto\proto.py): the bow shock as Shells
-    /// sheets ShellStep x R apart (the atlas in its own colours), and a trailing skirt - the shock continued past the
-    /// silhouette downwind - in three overlapping sleeves (lengths SkirtLen x R x 0.45 / 0.75 / 1, hue-replaced orange,
-    /// red, violet), each round the ship in SkirtTiles overlapping strips of one frame stretched along the flow.
-    /// The frames flicker between FrameLo and FrameHi (ping-pong at FrameFps), not the atlas's whole sequence.</summary>
-    public static int Shells = 4, SkirtTiles = 9, FrameLo = 10, FrameHi = 16, SkirtFrame = 12;
-    /// <summary>Segments down each skirt strip; the rim (the skirt's start round the silhouette) smoothed RimSmooth
-    /// passes (a ragged hull outline made a jagged skirt). Single-image textures (an emitter with a 1 x 1 "atlas"):
-    /// TileU x TileV repeats over each sheet (the texture's own detail, not one 128 px cell stretched over the ship),
-    /// scrolled downwind at Scroll repeats a second (the motion, in place of the atlas frames).</summary>
-    public static int SkirtAlong = 12, RimSmooth = 0;
-    public static float TileU = 3f, TileV = 2f, Scroll = 0.6f;
-    public static float ShellStep = 0.1f, SkirtFlare = 0.35f, SkirtLen = 3f, SkirtOverlap = 0.6f, SkirtV0 = 0.25f, SkirtV1 = 0.97f, FrameFps = 8f;
-    /// <summary>The skirts' colouring (hue, saturation replaced; value shifted): orange, red, violet.</summary>
-    public static float[] SkirtHue = { 0.06f, 0.015f, 0.78f }, SkirtSat = { 0.75f, 0.85f, 0.75f }, SkirtDim = { 0f, -0.05f, -0.05f };
-    /// <summary>The plasma's own light (the mesh is lit by the scene - PBRTransparent: glass - so at night only a light
-    /// makes it, and the hull, glow): the aero mod's light-only effect (Assets/Particles/PlasmaLight_1000, 1000 at
-    /// scale 1, orange; tools/particles/gen_plasma_light.py) between the hull's nose and the shock. Its intensity is
-    /// 1000 x scale^2 (ParticleLightEntityComponent), so Light (intensity) sets the scale; extended radius on (the
-    /// default cap would cut its reach); 0: none. LightAhead: where, as a fraction of the way from the hull to the shock.</summary>
-    public static float Light = 16000f, LightAhead = 0.5f;
-    // (Light and LightAhead are read by nothing since the spot light - FlightField.Render.cs SpawnSpot, Spot* - replaced
-    //  that particle light; LightTint still tints the spot.)
+    /// <summary>The rim (the shock's edge round the silhouette) smoothed RimSmooth passes.</summary>
+    public static int RimSmooth = 0;
+    /// <summary>The plasma spot light's tint (FlightField.Render.cs SpawnSpot).</summary>
     public static float[] LightTint = { 1f, 1f, 1f };
 
-    private Vector3 _nose, _axis;
-    /// <summary>Mode 4, calibration: eight flat patches beside the ship, each one uniform (every corner on the same
-    /// texel, CalibUV, of the glow atlas), white at CalibLevels (sRGB) - a screenshot gives the game's curve.</summary>
-    public static float[] CalibLevels = { 1f, 0.7f, 0.5f, 0.35f, 0.25f, 0.18f, 0.12f, 0.08f };
-    public static Vector2 CalibUV = new Vector2(0.125f, 0.25f);
-    /// <summary>The patches' colour (x each level; live: CalR CalG CalB) - white, or a hue to see how the game keeps it.</summary>
-    public static float[] CalibTint = { 1f, 1f, 1f };
-    public static float CalibSize = 8f;
-    /// <summary>The colours (sRGB, packed 8-bit): the shock, then the skirts - calibrated so the game shows the offline
-    /// prototype's look (tools/plasma_proto): measured, the game shows glow g as Reinhard(1.77 g) at night, and the
-    /// material's strength is 4; Bright scales them all (live).</summary>
-    public static float[][] GlowColor = { new[] { 0.278f, 0.181f, 0.074f }, new[] { 0.254f, 0.195f, 0.118f }, new[] { 0.241f, 0.111f, 0.079f }, new[] { 0.207f, 0.111f, 0.241f } };
+    private Vector3 _axis;
+    /// <summary>The effects' brightness (Fx.Brightness).</summary>
     public static float Bright = 1f;
-    /// <summary>Mode 3's material: false (default) the game's own particle atlas as it is (the meteor fire, on the
-    /// transparent material: the first in-game look); true the generated glow textures on the safe-zone material.</summary>
-    public static bool UseGlow = false;
-    /// <summary>Saturation (live): each colour pushed from its grey (linear) by this - the game's tone map pulls bright
-    /// colours to white, so they need more than the prototype's.</summary>
-    public static float Sat = 1f;
 
     private float _shapeR;
 
@@ -139,9 +99,6 @@ internal sealed partial class FlightField
     public static float SegLen = 1.5f, LineScale = 3f;   // (SegLen: the spacing of the emitters along the outline; LineScale 20 -> 3: very tiny sparks - the user, 2026-10-09)
     public static int LineSmooth = 2;
     public static float SurfaceLift = 0.01f;   // (was 0.05: tighter to the skin)
-    /// <summary>Lights over the windward surface, every LightGrid cells (0: the one light at the nose), each LightEach
-    /// strong, LightLift x R off the hull; at most LightMax of them.</summary>
-    public static int LightGrid = 0, LightMax = 24;   // (point lights spilled everywhere: the spot below instead)
     /// <summary>The plasma's light as ONE spot light (RenderContracts.CreateSpotLightEntity), SpotDist x R upwind of
     /// the front, aimed down the flow, its cone just covering SpotCover x R: the windward surface lit (with the hull's
     /// own shadows when SpotShadow), nothing below or behind - a "plasma sun". Spot: its strength (linear; a vanilla
@@ -151,7 +108,6 @@ internal sealed partial class FlightField
     public static bool SpotShadow = true, SpotFlip;
     private object _spotRoot, _spot;
     private string _spotWhy;
-    public static float LightEach = 6000f, LightLift = 0.08f;
     private readonly List<object> _gridLights = new List<object>();
     public static float FrontDepth = 0.5f;
     /// <summary>Sparks' brightness (their colour multiplier: the emissive glow too) and colour: 0 orange to red,
@@ -163,8 +119,6 @@ internal sealed partial class FlightField
     public static int Sparks = 1;
     /// <summary>The sparks' speed x (on top of the spacing the effects are authored per metre of).</summary>
     public static float SparkSpeed = 16f;   // (~96 m/s off the hull, a quarter of the life: crazy fast and tight - the user, 2026-10-09; was 0.05)
-    /// <summary>TEST: one spark effect at the nose only - 1 scale 9 turned downwind, 2 scale 1 turned, 3 scale 1 unturned.</summary>
-    public static int PuffTest;
     private static readonly Guid ShockSparksOrange = new Guid("88d92e33-42d6-57d6-92e5-6c1b6e145b75"), TailSparksOrange = new Guid("a5dffd10-c970-5b4b-b93c-60fb8b1eb3fe");
     private static readonly Guid ShockSparksViolet = new Guid("65e9fe79-ae22-5e17-9378-95aab9f9beb7"), TailSparksViolet = new Guid("8d41a37a-bc8a-53d5-9e6a-e8822ba2d124");
     /// <summary>SparkColor 2: sparks born the spot light's colour (PlasmaColor), cooling to violet, at SparkLevel

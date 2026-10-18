@@ -25,6 +25,10 @@ namespace AeroMod;
 /// </summary>
 public static class ThrustTorque
 {
+    /// <summary>The world setting Aero.ThrustTorque - the only thrust path the mod has (the old per-thruster one with its
+    /// phantom attitude torque was removed 2026-10-17). Off: the game's own thrust untouched - applied at the centre of mass,
+    /// the game's gyros and dampeners alone, the vanilla atmospherics' Mach curve lifted (JetCurve: their rating written
+    /// back). Kept as a player switch (a world setting saved with worlds and host .cfg files).</summary>
     public static bool Enabled = true;
     /// <summary>Apply the torque and force (off: computed, reported and shown as flames only - for A/B tests).</summary>
     public static bool ApplyForces = true;   // (torque only, the game's net thrust kept - KeepNetThrust)
@@ -92,11 +96,17 @@ public static class ThrustTorque
     /// <summary>A thruster's maximum now, the game's own rule (GridMovementCollectorComponent.OnThrusterChanged): 0 when
     /// disabled (off, unpowered, damaged - DisabledTag), else its ThrustData.MaxThrustPower, x a player's power override
     /// (server only: the client copy's overrides are this mod's flames). -1: not readable (the cached maximum stands).</summary>
-    internal static float LiveMax(Entity thruster, bool server)
+    internal static float LiveMax(Entity thruster, bool server) => LiveMax(thruster, server, out _);
+    /// <summary>... and the way it pushes NOW (grid-local unit vector; zero: not readable): its ThrustData.Direction - the
+    /// game books its maximum on that side (GridMovementCollectorComponent.OnThrusterChanged). A reversible thruster's turns
+    /// round (ReversibleThrustComponent); every other one's is fixed.</summary>
+    internal static float LiveMax(Entity thruster, bool server, out Vector3 push)
     {
+        push = Vector3.Zero;
         var d = thruster?.Data;
         // (a thruster removed - the ship cut, a block ground off - is not alive: its data threw, 2026-10-10)
         if (d == null || !PhysicsHack.Alive(d.Value) || !d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ThrustData>(out var td)) return -1f;
+        push = Base6Directions.GetVector(td.Direction);
         if (d.Value.Has<Keen.Game2.Simulation.WorldObjects.CubeBlocks.DisabledTag>()) return 0f;
         float m = td.MaxThrustPower;
         if (server && d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterOverrideData>(out var o)) m *= Math.Max(0f, o.OverridePower);
@@ -125,15 +135,28 @@ public static class ThrustTorque
     {
         var rep = new Report { Mode = "off" };
         aero.LastControlTorque = Vector3.Zero; aero.LastControlTorqueValid = false;
+        aero.LastExtraForceWorld = Vector3.Zero;   // (every step: an early return - at rest, no thrusters - left the last one standing in the contact balance)
         aero.LastThrustCount = 0;   // (set where the thrusters' forces are published)   // (set below while the aware law flies)
         var thrusters = aero._thrusterCache;
         if (aero.IsServerScene) AeroCost.Count(ref _tServer, ref ServerCalls); else AeroCost.Count(ref _tClient, ref ClientCalls);
         if (!Enabled) { Unpublish(aero); return rep; }   // (the game's own flames again)
         var data = aero.Data;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || mass.InvMass <= 0f) { Unpublish(aero); return rep; }
+        // SOLID ROCKET nozzles (2026-10-17, AeroSolidNozzleComponent): out of the thruster set, forced on by the game's thrust
+        // override - their thrust (in the game's, server: GameThrust adds the overrides) is theirs: taken out of what is shared among
+        // the thrusters below, and their own offset torque (r x F, as every thruster's) applied and answered like a rotor's reaction
+        bool solid = AeroSolidNozzleComponent.GridThrust(aero.Entity, mass.CenterOfMass, out Vector3 solidF, out Vector3 solidTau);
+        // (2026-10-17, the user: "It does not respond to rotational control unless it's already on, in which case it reacts to
+        //  rotational demands") the LIT ones (server: their full thrust is known there) are also bounded slots of the attitude solve
+        //  below - 0.5..1 of their full thrust, preferring their base (SolveWithSolids); a nozzle not lit is never one. steerTau: their
+        //  torque at the thrust the game gives them now - applied as theirs, and in the solve as its slots instead of an outside torque
+        int steerN = solid && aero.IsServerScene ? AeroSolidNozzleComponent.SteerSlots(aero.Entity, aero._solidSteer) : 0;
+        if (steerN == 0) aero._solidSteer.Clear();
+        Vector3 steerTau = Vector3.Zero;
+        for (int j = 0; j < steerN; j++) { var z = aero._solidSteer[j]; steerTau += Vector3.Cross(z.PosLocal - mass.CenterOfMass, z.PushLocal * z.ThrustNow); }
         // ── 0. Flown by the aero-aware law: the game gyros' turn this frame taken back (they are flown below) ──
         TargetControlData tcd = default;
-        bool aware = AeroAware && aero.HasResult && aero.LastDensity > AwareMinDensity && !aero.SuppressPhantomTorque && !aero.HarnessControlsAttitude
+        bool aware = AeroAware && aero.HasResult && aero.LastDensity > AwareMinDensity
             && data.TryGet<TargetControlData>(out tcd) && tcd.TargetOrientation.IsValidAndRotationIsNormalized() && aero.AttitudeTarget(wt, out _, out _);
         Vector3 gyroReach = Vector3.Zero;
         if (aware)
@@ -148,9 +171,9 @@ public static class ThrustTorque
                     if (data.TryGet<RigidBodyData>(out var rbNow)) angVelWorld = rbNow.AngularVelocity;
                 }
             }
-            if (aware && thrusters.Count == 0) { rep.Mode = "pilot target (aero-aware, gyros)"; rep.Aware = true; FlyGyros(aero, wt, in mass, angVelWorld, gyroReach, dt, ref rep); return rep; }
+            if (aware && thrusters.Count == 0 && steerN == 0) { rep.Mode = "pilot target (aero-aware, gyros)"; rep.Aware = true; FlyGyros(aero, wt, in mass, angVelWorld, gyroReach, dt, ref rep); if (solid) ApplySolid(aero, wt, solidTau, dt, ref rep); return rep; }
         }
-        if (thrusters.Count == 0) { Unpublish(aero); return rep; }
+        if (thrusters.Count == 0 && steerN == 0) { if (solid) ApplySolid(aero, wt, solidTau, dt, ref rep); Unpublish(aero); return rep; }   // (a lit nozzle and no thrusters: the solve below, its slots alone)
         Vector3 com = mass.CenterOfMass;
         int n = thrusters.Count;
         if (aero._rcsArm.Length != n)
@@ -159,15 +182,29 @@ public static class ThrustTorque
             aero._rcsNom = new float[n]; aero._rcsClass = new Keen.Game2.Simulation.GameSystems.Movement.ThrustClassData[n]; aero._rcsHasClass = new bool[n];
         }
         var arms = aero._rcsArm; var dirs = aero._rcsDir; var caps = aero._rcsCap; var f = aero._rcsF; var f0 = aero._thrustUse;
+        // reversible thrusters (ReversibleThrustComponent on the block, cached with the thruster list - ThrusterInfo.Rev): their
+        // game side now (+1 / -1: the side the game books their maximum on) and the solver's both-way bounds
+        if (aero._rcsRev.Length != n) { aero._rcsRev = new bool[n]; aero._rcsSide = new float[n]; aero._rcsRevGen = -1; }
+        var rev = aero._rcsRev; var side = aero._rcsSide;
+        if (aero._rcsRevGen != aero._thrusterGen)
+        {
+            aero._rcsRevGen = aero._thrusterGen; aero._rcsAnyRev = false;
+            for (int i = 0; i < n; i++) { rev[i] = thrusters[i].Rev != null; side[i] = 1f; aero._rcsAnyRev |= rev[i]; }
+        }
+        bool anyRev = aero._rcsAnyRev && ReversibleThrust.Enabled;
 
         // ── 1. The game's thrust this frame (grid-local, N), as the game shares it: by direction, by capacity ──
         Vector3 gameF = GameThrust(data, aero.IsServerScene);
+        if (solid && aero.IsServerScene) gameF -= solidF;   // (the client's GameThrust leaves the overrides out already)
         // At rest - nothing pushing, not moving, not turning, no pilot steering: nothing to do (a parked ship cost
         // as much as a flying one, every frame)
-        if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>())
+        if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>() && steerN == 0)
         {
             rep.Mode = "rest";
-            Publish(aero, wt, null);   // (every flame dark - still ours: handed back to the game's and taken again, they flickered)
+            Publish(aero, wt, null);
+            RotorCyclic.Publish(aero, wt, null, n);   // (a parked helicopter's rotor still turns up / down)
+            RotorCyclic.KeepCaps(aero, n);   // (its rotors' torque caps stay set for the lift-off)   // (every flame dark - still ours: handed back to the game's and taken again, they flickered)
+            if (solid) ApplySolid(aero, wt, solidTau, dt, ref rep);
             return rep;
         }
         // the thrusters' geometry: only when they or the centre of mass change (it was recomputed every frame)
@@ -185,7 +222,8 @@ public static class ThrustTorque
                 dirs[i] = t.ThrustDirection;                                       // the way it pushes the ship
                 // (ThrustDirection IS the push: the game's MaxThrustData counts a Forward thruster as -Z thrust. Negated, the
                 //  game's thrust was shared among the opposite thrusters and the offset torque taken at their positions -
-                //  Tests/ThrustTests checks the grouping against the game's capacities on dumped ships)
+                //  Tests/ThrustTests checks the grouping against the game's capacities on dumped ships. A reversible thruster's
+                //  is its definition's way: its force is signed along it)
                 arms[i] = Vector3.Cross(t.GridLocalPosition - com, dirs[i]);       // torque per newton
                 nom[i] = -1f;   // (its live maximum, below)
                 sq += (t.GridLocalPosition - com).LengthSquared();
@@ -203,9 +241,15 @@ public static class ThrustTorque
         bool liveChanged = false;
         for (int i = 0; i < n; i++)
         {
-            float m = LiveMax(thrusters[i].ThrusterEntity, aero.IsServerScene);
+            float m = LiveMax(thrusters[i].ThrusterEntity, aero.IsServerScene, out Vector3 push);
             if (m < 0f) m = Math.Max(0f, thrusters[i].MaxPower);
             if (m != nom[i]) { nom[i] = m; liveChanged = true; }
+            // (a reversible thruster's game side: where its ThrustData.Direction points now - the game books its maximum there)
+            if (rev[i])
+            {
+                float s = push != Vector3.Zero && Vector3.Dot(push, dirs[i]) < 0f ? -1f : 1f;
+                if (s != side[i]) { side[i] = s; liveChanged = true; }
+            }
         }
         if (liveChanged || MathF.Abs(air - aero._rcsGeomAir) > 1e-4f)
         {
@@ -216,54 +260,119 @@ public static class ThrustTorque
             {
                 float eff = has[i] ? Keen.Game2.Simulation.WorldObjects.CubeGrids.Movement.GridMovementCollectorComponent.GetThrustEfficiency(in cls[i], air, 0f) : 1f;
                 caps[i] = nom[i] * eff;
-                cap[ThrustAllocator.DirIndex(dirs[i])] += caps[i];
+                cap[ThrustAllocator.DirIndex(dirs[i] * side[i])] += caps[i];   // (on the side the game booked it)
             }
         }
         float armSq = aero._rcsArmSq;
-        Vector3 offsetTorque = ThrustAllocator.GameShare(gameF, arms, dirs, caps, cap, f0, n);
+        // the controllability limiter (RotorCyclic.Limit, RotorLimiter): each main rotor's thrust capped to what this grid can
+        // hold against its reaction torque - predicted from the authority now (the thrusters' caps and arms, the gyros' reach);
+        // its propulsor writes the cap into the rotor's maximum (applied from its next write)
+        if (RotorCyclic.Has(aero, n)) RotorCyclic.Limit(aero, data, in mass, arms, dirs, caps, anyRev ? rev : null, n, dt);
+        Vector3 offsetTorque = ThrustAllocator.GameShare(gameF, arms, dirs, caps, cap, f0, n, anyRev ? side : null);
+        // a helicopter rotor's reaction torque (RotorCyclic.ReactionTorque): the thrust's own torque about the rotor axis, as
+        // the offset torque is - applied with it, and the attitude law below asks the actuators to answer it
+        Vector3 rotorReaction = RotorCyclic.Has(aero, n) ? RotorCyclic.ReactionTorque(aero, dirs, f0, n) : Vector3.Zero;
+        // (+ the solid rockets' offset torque: an outside torque like the reaction - applied whoever steers, answered by the actuators;
+        //  the lit ones in the solve (steerTau) are its slots instead - their torque applied as theirs, below)
+        if (solid) rotorReaction += solidTau - steerTau;
+        offsetTorque += rotorReaction + steerTau;
         rep.OffsetTorque = offsetTorque;   // the imbalance as the game shares it
 
         // ── 2. With an attitude target, a flight controller shares it instead ──
         Vector3 torque = offsetTorque, extraForce = Vector3.Zero;
         Vector3 w = WorldTransform.TransformDirectionInv(angVelWorld, wt);
         bool steered = aero.AttitudeTarget(wt, out Quaternion target, out rep.Mode);
-        Vector3 tauNeed = Vector3.Zero;
+        Vector3 tauNeed = Vector3.Zero, rotorTau = Vector3.Zero;
+        bool solved = false;
+        Vector3 tauTarget = Vector3.Zero;
         if (steered)
         {
             Vector3 accel = ThrustAllocator.RateCommand(wt.Orientation, target, w, Kp, MaxRate, ResponseTime, RestAngle, rep.Mode == "damp" ? DampRestRate : RestRate, out rep.Error);
-            Vector3 tauTarget = accel == Vector3.Zero ? Vector3.Zero : Inertia(mass, accel);
+            tauTarget = accel == Vector3.Zero ? Vector3.Zero : Inertia(mass, accel);
             if (aware)
             {
                 // the aero-aware law: all it needs (the air's torque answered); the thrusters asked for what the gyros cannot give
-                rep.Reach = gyroReach + ThrusterReach(aero, n); rep.Target = target; rep.HasTarget = true;
-                tauNeed = AwareNeed(aero, in mass, w, rep.Error, rep.Reach, dt, out rep.AeroTorque);
-                tauTarget = tauNeed - Vector3.Clamp(tauNeed, -gyroReach, gyroReach);
+                rep.Reach = gyroReach + ThrusterReach(aero, n) + SolidReach(aero, com, steerN); rep.Target = target; rep.HasTarget = true;
+                tauNeed = AwareNeed(aero, in mass, w, rep.Error, rep.Reach, dt, out rep.AeroTorque) - rotorReaction;
+                // (a helicopter rotor's cyclic / anti-torque first - RotorCyclic: the gyros and thrusters the rest)
+                if (RotorCyclic.Has(aero, n)) { rotorTau = RotorCyclic.Give(aero, wt, com, tauNeed, dirs, f0, n, dt, true); tauNeed -= rotorTau; }
+                // (the lit rockets' torque at their base is in the solve's slots: the gyros take what they can of the need BEYOND it,
+                //  so a rocket holds its level while the gyros suffice and moves only for what they cannot give)
+                Vector3 baseTau = SolidBaseTorque(aero, com, steerN), beyond = tauNeed - baseTau;
+                tauTarget = beyond - Vector3.Clamp(beyond, -gyroReach, gyroReach) + baseTau;
                 rep.Mode += " (aero-aware)"; rep.Aware = true;
             }
-            // Each thruster's force so the torque is the one wanted and the net force stays the game's (ThrustAllocator.Solve).
+            else
+            {
+                tauTarget -= rotorReaction;
+                if (RotorCyclic.Has(aero, n)) { rotorTau = RotorCyclic.Give(aero, wt, com, tauTarget, dirs, f0, n, dt, true); tauTarget -= rotorTau; }
+            }
+            solved = true;
+        }
+        else
+        {
+            // a rate pilot (no target orientation: the mouse's turn rate) - the rotors' cyclic toward that rate (the game's
+            // gyros, if any, by their own law)
+            bool rate = RateInput(data, out Vector3 wCmd);
+            if (RotorCyclic.Has(aero, n) && rate)
+                rotorTau = RotorCyclic.Give(aero, wt, com, Inertia(mass, (wCmd - w) / ResponseTime), dirs, f0, n, dt, true);
+            // a grid with reversible thrusters, main rotors or a lit solid rocket: its thrusters answer the turn too (the rate error
+            // x inertia, less the rotors' reaction and what the cyclic gave; no input: the rate held at 0 - a helicopter without
+            // gyros keeps its heading against its own rotor; a lit rocket's offset thrust is trimmed out) - the same solve as a
+            // steered grid's
+            if (anyRev || RotorCyclic.Has(aero, n) || steerN > 0)
+            {
+                tauTarget = Inertia(mass, (wCmd - w) / ResponseTime) - rotorReaction - rotorTau;
+                solved = true;
+                if (rep.Mode == "off" || string.IsNullOrEmpty(rep.Mode)) rep.Mode = "rate";
+            }
+            else aero._rcsWarm = false;
+        }
+        if (solved)
+        {
+            // Each thruster's force so the torque is the one wanted and the net force stays the game's (ThrustAllocator.Solve;
+            // a reversible thruster's either way, rotation first - ReversibleThrust).
             // Warm start: last frame's sharing (targets move slowly, so the iterations add up over frames), else the game's.
             var prev = aero._rcsPrev; var y = aero._rcsY;
             if (prev.Length != n || !aero._rcsWarm || aero._rcsWarmGen != aero._thrusterGen) { aero._rcsWarmGen = aero._thrusterGen; aero._rcsPrev = prev = new float[n]; aero._rcsY = y = new float[n]; for (int i = 0; i < n; i++) f[i] = f0[i]; }
             // (the structure's cap on the controller's own steering: never more torque from the thrusters than the ship can
             //  carry - StructureServer sets it from the structure's load, 1 unless structure damage is on and it binds)
             if (aero.StructSteerCap < 1f) tauTarget *= MathF.Max(aero.StructSteerCap, 0f);
-            ThrustAllocator.Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority);
+            if (steerN > 0) SolveWithSolids(aero, com, tauTarget, gameF, arms, dirs, caps, f0, f, armSq, n, steerN, anyRev ? rev : null, out rep.AttitudePriority);
+            else ThrustAllocator.Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority, anyRev ? rev : null);
             for (int i = 0; i < n; i++) if (!float.IsFinite(f[i])) { for (int j = 0; j < n; j++) f[j] = f0[j]; aero._rcsWarm = false; rep.Mode += " (reset: not finite)"; break; }
             aero._rcsWarm = true;
             torque = Vector3.Zero; Vector3 total = Vector3.Zero;
             float moved = 0f, sumCap = 0f;
             for (int i = 0; i < n; i++) { torque += arms[i] * f[i]; total += dirs[i] * f[i]; moved += Math.Abs(f[i] - f0[i]); sumCap += caps[i]; }
+            torque += rotorReaction + steerTau;   // (the rotors' reaction acts whoever steers; the lit rockets' torque at the game's thrust on them now)
             extraForce = total - gameF;   // (0 while the game's thrust is kept; with attitude priority, the thrust given up - applied below)
+            // (a lit rocket moved off its base for torque: the thrusters took back what they could of that change - KeepNetThrust - and
+            //  their change is real thrust, applied as the other thrust changes are; the rocket's own change is the game's, through its
+            //  override, never ours)
+            if (steerN > 0 && extraForce.LengthSquared() > 1f) rep.AttitudePriority = MathF.Max(rep.AttitudePriority, ThrustAllocator.KeptChange);
             rep.RcsUse = sumCap > 0f ? moved / sumCap : 0f;
         }
-        else aero._rcsWarm = false;
+        var use = solved ? f : f0;
+        // a reversible thruster's push side (its force's sign, with hysteresis): what its block draws; and its record for the
+        // client copy (its game side for ThrustData.Direction, its push side)
+        if (anyRev)
+            for (int i = 0; i < n; i++)
+            {
+                if (!rev[i]) continue;
+                var rc = thrusters[i].Rev;
+                if (aero.IsServerScene) rc.PushSide = ReversibleThrust.Side(rc.PushSide, use[i], caps[i]);
+                PublishReversible(aero, wt, thrusters[i].Cell, (int)side[i], rc.PushSide);
+            }
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
         // the gyros: what the thrusters' torque left of the need, up to their reach
-        if (rep.Aware) { rep.Need = tauNeed; rep.Delivered = torque; }
+        // (the rotors' reaction is in torque - applied - and taken out of the need: the actuators answer it; the need and what
+        //  was delivered are counted without it, as the loss-of-control warning compares them)
+        if (rep.Aware) { rep.Need = tauNeed + rotorTau; rep.Delivered = torque - rotorReaction + rotorTau; }
         if (rep.Aware && gyroReach != Vector3.Zero)
         {
-            rep.GyroTorque = Vector3.Clamp(tauNeed - torque, -gyroReach, gyroReach);
-            rep.Delivered = torque + rep.GyroTorque;
+            rep.GyroTorque = Vector3.Clamp(tauNeed - (torque - rotorReaction), -gyroReach, gyroReach);
+            rep.Delivered = torque - rotorReaction + rep.GyroTorque + rotorTau;
             if (ApplyForces && rep.GyroTorque.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, rep.GyroTorque, dt);
         }
         // (applied: 68bda99 replaced this call with the flame publishing below, and thrust stopped turning ships at all -
@@ -271,9 +380,10 @@ public static class ThrustTorque
         // Torque only: the sharing keeps the game's net thrust (KeepNetThrust), so no linear force is ever added. (Applying
         // the solver's force difference cancelled the game's thrust while steering - the engines felt dead.)
         // Torque, and - only when the thrusters had to give up some of the game's thrust to hold attitude (a whole group at
-        // full power: ThrustAllocator.MaxThrustLoss) - that thrust change, the thrusters' own (world axes).
+        // full power: ThrustAllocator.MaxThrustLoss), or a reversible thruster's turn the others could not take back - that
+        // thrust change, the thrusters' own (world axes).
         aero.LastExtraForceWorld = Vector3.Zero;
-        if (ApplyForces && torque.LengthSquared() > 0f)
+        if (ApplyForces && (torque.LengthSquared() > 0f || (rep.AttitudePriority > 0f && extraForce.LengthSquared() > 0f)))
         {
             var extraW = rep.AttitudePriority > 0f ? WorldTransform.TransformDirection(extraForce, wt) : Vector3.Zero;
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, extraW, torque, dt);
@@ -281,10 +391,101 @@ public static class ThrustTorque
         }
         // The flames: each thruster's share, published for the client copy to show - the controller's sharing while it
         // steers, the game's own otherwise (free, rate input: the gyros turn it), so a flame is never handed back mid-flight.
-        Publish(aero, wt, steered ? f : f0);
-        aero.LastThrustShares = steered ? f : f0; aero.LastThrustGame = f0; aero.LastThrustCount = n; aero.LastThrustGen = aero._thrusterGen;   // (the structure's thrust loads: StructureServer; the game's own, for the steering's part)
+        Publish(aero, wt, use);
+        RotorCyclic.Publish(aero, wt, use, n);   // (the rotors' rpm, thrust, maximum and disc tilt: their client animation)
+        // (the rotors' cyclic and reaction, as applied above, at their blocks for the structure - nothing else carries them)
+        if (RotorCyclic.Has(aero, n)) RotorCyclic.PublishLoads(aero, com, dirs, n, ApplyForces);
+        aero.LastThrustShares = use; aero.LastThrustGame = f0; aero.LastThrustCount = n; aero.LastThrustGen = aero._thrusterGen;   // (the structure's thrust loads: StructureServer; the game's own, for the steering's part)
         if (Probe) ProbeLog(aero, data, wt, gameF, mass.InvMass, rep);
         return rep;
+    }
+
+    /// <summary>
+    /// The attitude solve with this grid's LIT solid rocket nozzles in it (2026-10-17): each a bounded slot after the n thrusters -
+    /// ThrustAllocator.Solve's rev slot with lo: bounds 0.5..1 x its stack's full thrust (SolidRocket.SteerBounds), its base (its
+    /// latched level x full) as the share it prefers, its force counted at that base in the net (so the base stays its own push
+    /// and only its departure is the allocator's: the one-way thrusters take back what they can, KeepNetThrust). The thrusters'
+    /// forces come back in f (0..n); each nozzle gets the share of full it was solved to (AeroSolidNozzleComponent.Steer) - written
+    /// through its override from its next step: the game's thrust, which its burn follows. Arrays grown only (no per-frame
+    /// allocation); the thrusters' part copied in and out (warm start kept in f).
+    /// </summary>
+    static void SolveWithSolids(AeroGridComponent aero, Vector3 com, Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps,
+        float[] f0, float[] f, float armSq, int n, int m, bool[] rev, out float attitudePriority)
+    {
+        int N = n + m;
+        if (aero._sArm.Length < N)
+        {
+            int c = Math.Max(N, 8);
+            aero._sArm = new Vector3[c]; aero._sDir = new Vector3[c]; aero._sCap = new float[c]; aero._sLo = new float[c];
+            aero._sF0 = new float[c]; aero._sF = new float[c]; aero._sPrev = new float[c]; aero._sY = new float[c]; aero._sRev = new bool[c];
+        }
+        var sa = aero._sArm; var sd = aero._sDir; var sc = aero._sCap; var sl = aero._sLo; var s0 = aero._sF0; var sf = aero._sF; var sr = aero._sRev;
+        for (int i = 0; i < n; i++)
+        {
+            sa[i] = arms[i]; sd[i] = dirs[i]; sc[i] = caps[i]; s0[i] = f0[i]; sf[i] = f[i];
+            sr[i] = rev != null && rev[i]; sl[i] = -caps[i];   // (a reversible thruster: both ways, as before)
+        }
+        Vector3 netF = gameF; float sq = armSq;
+        var steer = aero._solidSteer;
+        for (int j = 0; j < m; j++)
+        {
+            var z = steer[j]; int k = n + j;
+            SolidRocket.SteerBounds(z.FullThrust, z.Motor.Level, out float lo, out float hi, out float b);
+            Vector3 r = z.PosLocal - com;
+            sa[k] = Vector3.Cross(r, z.PushLocal); sd[k] = z.PushLocal; sc[k] = hi; sl[k] = lo; s0[k] = b; sf[k] = b; sr[k] = true;
+            netF += z.PushLocal * b;   // (its base is its own push: the net the solve keeps)
+            sq += r.LengthSquared();
+        }
+        ThrustAllocator.Solve(tauTarget, netF, sa, sd, sc, s0, sf, aero._sPrev, aero._sY, sq, N, Iterations, out attitudePriority, sr, sl);
+        for (int i = 0; i < n; i++) f[i] = sf[i];
+        for (int j = 0; j < m; j++) { var z = steer[j]; z.Steer(SolidRocket.FractionOf(sf[n + j], sc[n + j], z.Motor.Level)); }
+    }
+
+    /// <summary>The lit solid rockets' torque at their bases (N m, local): what their slots give when the solve leaves them there.</summary>
+    static Vector3 SolidBaseTorque(AeroGridComponent aero, Vector3 com, int m)
+    {
+        Vector3 t = Vector3.Zero;
+        var steer = aero._solidSteer;
+        for (int j = 0; j < m && j < steer.Count; j++)
+        {
+            var z = steer[j];
+            SolidRocket.SteerBounds(z.FullThrust, z.Motor.Level, out _, out _, out float b);
+            t += Vector3.Cross(z.PosLocal - com, z.PushLocal) * b;
+        }
+        return t;
+    }
+
+    /// <summary>The lit solid rockets' torque reach about their bases (N m per local axis, the smaller way: SolidRocket.AddSteerReach)
+    /// - the aware law's braking plan.</summary>
+    static Vector3 SolidReach(AeroGridComponent aero, Vector3 com, int m)
+    {
+        if (m == 0) return Vector3.Zero;
+        Vector3 plus = Vector3.Zero, minus = Vector3.Zero;
+        var steer = aero._solidSteer;
+        for (int j = 0; j < m && j < steer.Count; j++)
+        {
+            var z = steer[j];
+            SolidRocket.SteerBounds(z.FullThrust, z.Motor.Level, out float lo, out float hi, out float b);
+            SolidRocket.AddSteerReach(Vector3.Cross(z.PosLocal - com, z.PushLocal), lo, hi, b, ref plus, ref minus);
+        }
+        return Vector3.Min(plus, minus);
+    }
+
+    /// <summary>The solid rockets' offset torque alone (no thruster shares it: no thrusters, or at rest).</summary>
+    static void ApplySolid(AeroGridComponent aero, in WorldTransform wt, Vector3 solidTau, float dt, ref Report rep)
+    {
+        rep.OffsetTorque += solidTau;
+        if (ApplyForces && solidTau.LengthSquared() > 0f) AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, Vector3.Zero, solidTau, dt);
+    }
+
+    /// <summary>A rate pilot's commanded turn (grid-local rad/s): the cockpit's AngularControlData, else ControlData's rotation
+    /// (the stick, as a rate - ThrustTorque.MaxRate at full deflection).</summary>
+    static bool RateInput(DEntityContext data, out Vector3 wCmd)
+    {
+        wCmd = Vector3.Zero;
+        if (data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f) { wCmd = ac.TargetAngularVelocity; return true; }
+        if (data.TryGet<ControlData>(out var cd) && cd.Rotation.LengthSquared() > 1e-4f) { wCmd = cd.Rotation * MaxRate; return true; }
+        return false;
     }
 
     /// <summary>Each thruster's thrust class (ThrustData.ThrustClass -> the game's ThrustClassesConfiguration): on a new
@@ -332,6 +533,12 @@ public static class ThrustTorque
     /// <summary>The grid's retractable gears (AeroGearComponent): progress 0 up .. 1 down and the suspension's compression
     /// (m) by block AABB Min + Max - the index replaced when a gear is new to it, the values written in place.</summary>
     internal sealed class GearTable { public float[] Progress, Compression; public readonly Dictionary<Vector3I, int> Index = new(); }
+    /// <summary>The grid's helicopter rotors (RotorCyclic.Publish, every server step): RotorStride floats per rotor by block
+    /// AABB Min + Max - the index replaced when a rotor is new to it, the values written in place (AeroRotorAnimComponent).</summary>
+    internal sealed class RotorTable { public float[] V; public readonly Dictionary<Vector3I, int> Index = new(); }
+    /// <summary>A rotor's record: rpm (0..1 governed), thrust (N, this step), its maximum now (N, x rpm^2), rated (N), the
+    /// disc's tilt (grid-local x, y, z: the way the thrust leans, length = angle rad), on (1 / 0).</summary>
+    internal const int RotorStride = 8;
     /// <summary>One server grid's record: where it is (to match its client copy) and its shares.</summary>
     internal sealed class Published
     {
@@ -346,7 +553,17 @@ public static class ThrustTorque
         /// changed after, Angle (rad) written in place every step - a client reads both without the lock (as the flames).</summary>
         public volatile FlapTable Flaps;
         public volatile GearTable Gears;
+        public volatile RotorTable Rotors;
+        public volatile RevTable Reversibles;
+        /// <summary>The grid's rotor / prop blades' health (rotor strikes: AeroRotorStrikeComponent), by block AABB Min + Max.</summary>
+        public volatile BladeTable Blades;
     }
+    /// <summary>The grid's struck rotors' and props' blade health (0..1, 0 broken; RotorStrike): the index replaced when one is new to
+    /// it, the values written in place (as the gears). Only a rotor whose blades are not whole (or were repaired a moment ago) is in it.</summary>
+    internal sealed class BladeTable { public float[] Health; public readonly Dictionary<Vector3I, int> Index = new(); }
+    /// <summary>The grid's reversible thrusters (ReversibleThrustComponent): game side and push side (+1 / -1) by block AABB
+    /// Min + Max - the index replaced when one is new to it, the values written in place (as the gears).</summary>
+    internal sealed class RevTable { public int[] Game, Push; public readonly Dictionary<Vector3I, int> Index = new(); }
     static readonly Dictionary<AeroGridComponent, Published> _published = new();
     static volatile int _publishedCount;
     /// <summary>Thruster flames for the thrusters' shares (harness: aeroflames on|off).</summary>
@@ -377,7 +594,7 @@ public static class ThrustTorque
     {
         // (the client copy runs Apply too, for its own prediction: its publish, 0 m from its own thrusters, won the match)
         if (!aero.IsServerScene) return;
-        if (!FlamesEnabled) { if (aero._flamePub?.Flaps == null && aero._flamePub?.Gears == null) Unpublish(aero); else aero._flamePub.Table = null; return; }
+        if (!FlamesEnabled) { if (aero._flamePub?.Flaps == null && aero._flamePub?.Gears == null && aero._flamePub?.Rotors == null && aero._flamePub?.Reversibles == null && aero._flamePub?.Blades == null) Unpublish(aero); else aero._flamePub.Table = null; return; }
         var p = Record(aero, wt);
         var thrusters = aero._thrusterCache; int n = thrusters.Count;
         var tab = p.Table;
@@ -390,7 +607,7 @@ public static class ThrustTorque
         }
         var share = tab.Share; var caps = aero._rcsCap;
         for (int i = 0; i < n; i++)
-            share[i] = use != null && i < use.Length && i < caps.Length && caps[i] > 0f ? Math.Clamp(use[i] / caps[i], 0f, 1f) : 0f;
+            share[i] = use != null && i < use.Length && i < caps.Length && caps[i] > 0f ? Math.Clamp(MathF.Abs(use[i]) / caps[i], 0f, 1f) : 0f;   // (a reversible thruster's force is signed)
         System.Threading.Volatile.Write(ref p.TableStamp, System.Diagnostics.Stopwatch.GetTimestamp());
     }
 
@@ -459,6 +676,132 @@ public static class ThrustTorque
             }
         }
         t.Progress[i] = progress; t.Compression[i] = compression;
+    }
+
+    /// <summary>Server: one rotor's state this step (RotorCyclic.Publish; one grid's rotors from its one attitude job - grown under
+    /// the record's lock all the same, as the gears).</summary>
+    internal static void PublishRotor(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float rpm, float thrust, float maxNow, float rated, Vector3 tilt, bool on)
+    {
+        if (!aero.IsServerScene) return;
+        var p = Record(aero, wt);
+        var t = p.Rotors;
+        if (t == null || !t.Index.TryGetValue(key, out int i))
+        {
+            lock (p)
+            {
+                t = p.Rotors;
+                if (t == null || !t.Index.TryGetValue(key, out i))
+                {
+                    int n = t != null ? t.V.Length / RotorStride : 0;
+                    var nt = new RotorTable { V = new float[(n + 1) * RotorStride] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.V, nt.V, t.V.Length); }
+                    nt.Index[key] = i = n;
+                    p.Rotors = t = nt;
+                }
+            }
+        }
+        var v = t.V; int o = i * RotorStride;
+        v[o] = rpm; v[o + 1] = thrust; v[o + 2] = maxNow; v[o + 3] = rated; v[o + 4] = tilt.X; v[o + 5] = tilt.Y; v[o + 6] = tilt.Z; v[o + 7] = on ? 1f : 0f;
+    }
+
+    /// <summary>Server: one reversible thruster's sides this step (ThrustTorque.Apply).</summary>
+    internal static void PublishReversible(AeroGridComponent aero, in WorldTransform wt, Vector3I key, int gameSide, int pushSide)
+    {
+        if (!aero.IsServerScene) return;
+        var p = Record(aero, wt);
+        var t = p.Reversibles;
+        if (t == null || !t.Index.TryGetValue(key, out int i))
+        {
+            lock (p)
+            {
+                t = p.Reversibles;
+                if (t == null || !t.Index.TryGetValue(key, out i))
+                {
+                    int n = t?.Game.Length ?? 0;
+                    var nt = new RevTable { Game = new int[n + 1], Push = new int[n + 1] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Game, nt.Game, n); Array.Copy(t.Push, nt.Push, n); }
+                    nt.Index[key] = i = n;
+                    p.Reversibles = t = nt;
+                }
+            }
+        }
+        t.Game[i] = gameSide < 0 ? -1 : 1; t.Push[i] = pushSide < 0 ? -1 : 1;
+    }
+
+    /// <summary>Server: one rotor's blade health (AeroRotorStrikeComponent, its propulsor's job - rotors of a grid run in parallel: the
+    /// table grown under the record's lock, as the gears). Keeps the record fresh while the grid is parked.</summary>
+    internal static void PublishBlades(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float health)
+    {
+        if (!aero.IsServerScene) return;
+        var p = Record(aero, wt);
+        var t = p.Blades;
+        if (t == null || !t.Index.TryGetValue(key, out int i))
+        {
+            lock (p)
+            {
+                t = p.Blades;
+                if (t == null || !t.Index.TryGetValue(key, out i))
+                {
+                    int n = t?.Health.Length ?? 0;
+                    var nt = new BladeTable { Health = new float[n + 1] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Health, nt.Health, n); }
+                    nt.Index[key] = i = n;
+                    p.Blades = t = nt;
+                }
+            }
+        }
+        t.Health[i] = health;
+    }
+
+    /// <summary>A client rotor's blade health from its grid's server record (false: none matched - whole blades are not published).</summary>
+    internal static bool BladeState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float health)
+    {
+        health = 1f;
+        if (kept == null || kept.Gone || now >= recheckAt)
+        {
+            recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
+            if (!FindBlades(grid, key, kept, now, out var m)) { kept = null; return false; }
+            kept = m;
+        }
+        var t = kept.Blades;
+        if (t == null || !t.Index.TryGetValue(key, out int i) || i >= t.Health.Length) return false;
+        health = t.Health[i];
+        return true;
+    }
+
+    // (the lookup's closure made only when a lookup is due - in BladeState itself the captured key allocated it on every call)
+    static bool FindBlades(Entity grid, Vector3I key, Published kept, long now, out Published m)
+        => FindRecord(grid, p => p.Blades?.Index.ContainsKey(key) == true, kept, now, out m);
+
+    /// <summary>A client reversible thruster's sides from its grid's server record (false: none matched).</summary>
+    internal static bool ReversibleState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out int gameSide, out int pushSide)
+    {
+        gameSide = pushSide = 1;
+        if (kept == null || kept.Gone || now >= recheckAt)
+        {
+            recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
+            if (!FindRecord(grid, p => p.Reversibles?.Index.ContainsKey(key) == true, kept, now, out var m)) { kept = null; return false; }
+            kept = m;
+        }
+        var t = kept.Reversibles;
+        if (t == null || !t.Index.TryGetValue(key, out int i) || i >= t.Game.Length || i >= t.Push.Length) return false;
+        gameSide = t.Game[i]; pushSide = t.Push[i];
+        return true;
+    }
+
+    /// <summary>A client rotor's state from its grid's server record into 'into' (RotorStride floats; false: none matched).</summary>
+    internal static bool RotorState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, float[] into)
+    {
+        if (kept == null || kept.Gone || now >= recheckAt)
+        {
+            recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
+            if (!FindRecord(grid, p => p.Rotors?.Index.ContainsKey(key) == true, kept, now, out var m)) { kept = null; return false; }
+            kept = m;
+        }
+        var t = kept.Rotors;
+        if (t == null || !t.Index.TryGetValue(key, out int i) || (i + 1) * RotorStride > t.V.Length) return false;
+        Array.Copy(t.V, i * RotorStride, into, 0, RotorStride);
+        return true;
     }
 
     /// <summary>A client gear's state from its grid's server record (false: none matched); matched as the flaps.</summary>
@@ -625,7 +968,9 @@ public static class ThrustTorque
         // law clamps the acceleration it plans to the reach it is given, and with the gyros' and thrusters' alone it never
         // asked for more than the gyros could do - the surfaces only took a share of that, never added to it. Their reach
         // left either way from their trim (the allocator's, a tick old), the smaller side (the plan brakes with it too).
-        if (AeroGridComponent.AllocEnabled) reach += SurfaceReachShare * Vector3.Min(aero.SurfacePush, aero.SurfacePull);
+        // (fresh only: the allocator does not run every frame the law flies - its first, a test input - and a reach measured
+        //  in faster air is not the surfaces' now; 2026-10-17)
+        if (AeroGridComponent.AllocEnabled && aero.SurfaceReachFresh) reach += SurfaceReachShare * Vector3.Min(aero.SurfacePush, aero.SurfacePull);
         var axisReach = new Vector3(AxisAccel(in mass, Vector3.UnitX, reach.X), AxisAccel(in mass, Vector3.UnitY, reach.Y), AxisAccel(in mass, Vector3.UnitZ, reach.Z));
         Vector3 acc = ThrustAllocator.AttitudeAccel(error, w - d * dt, axisReach, DeltaW(in mass, aeroTorque), RestAngle, RestRate);
         Vector3 demand = Inertia(mass, acc) - aeroTorque;
@@ -650,7 +995,8 @@ public static class ThrustTorque
     static Vector3 ThrusterReach(AeroGridComponent aero, int n)
     {
         var arms = aero._rcsArm; var caps = aero._rcsCap; Vector3 r = Vector3.Zero;
-        for (int i = 0; i < n && i < arms.Length && i < caps.Length; i++) r += Vector3.Abs(arms[i]) * caps[i];
+        var rev = aero._rcsRev; bool anyRev = aero._rcsAnyRev && ReversibleThrust.Enabled;
+        for (int i = 0; i < n && i < arms.Length && i < caps.Length; i++) r += Vector3.Abs(arms[i]) * caps[i] * (anyRev && i < rev.Length && rev[i] ? 2f : 1f);   // (a reversible one: both ways)
         return r * 0.5f;
     }
 

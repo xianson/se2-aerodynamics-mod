@@ -15,15 +15,14 @@ internal sealed partial class FlightField
 
     /// <summary>Mach bands (in, full .. full, out): the cone and the edge sheets; density factor (rho / VapourRho)^0.5,
     /// capped at 1. The flow axis follows the real travel (AoA); past AxisTol degrees the field is placed again.
-    /// ConeScale: the cone ring x the grid's widest radius; VapourEdgeScale: the edge sprays' size; ChordShift: how far
+    /// VapourEdgeScale: the edge sprays' size; ChordShift: how far
     /// back along the chord the edge emitters sit (0.5 = mid-chord).</summary>
     public static float[] ConeBand = { 0.90f, 0.97f, 1.02f, 1.08f }, EdgeBand = { 0.80f, 0.90f, 1.02f, 1.10f };
-    public static float VapourRho = 1.0f, AxisTol = 5f, ConeScale = 1.0f, VapourEdgeScale = 0.75f, ChordShift = 0.5f, VapourSpeed = 20f;   // (VapourSpeed 2.5 -> 10 with a quarter of the life: fast and tight - the user, 2026-10-09)
+    public static float VapourRho = 1.0f, AxisTol = 5f, VapourEdgeScale = 0.75f, ChordShift = 0.5f, VapourSpeed = 20f;   // (VapourSpeed 2.5 -> 10 with a quarter of the life: fast and tight - the user, 2026-10-09)
     /// <summary>TEST: a fixed Mach (0: the real one) - the shape at any speed.</summary>
     public static float MachOverride;
-    /// <summary>DIAGNOSTIC: 0 the cone as built, 1 without collisions, 2 without collisions or the inner-cone ring;
-    /// EdgeCollide 0: the edge without collisions.</summary>
-    public static int ConeVariant, EdgeCollide = 1;
+    /// <summary>DIAGNOSTIC: EdgeCollide 0: the edge without collisions.</summary>
+    public static int EdgeCollide = 1;
     /// <summary>The cone as a LOOP of emitters (the user's idea): 0 the single ellipsoid emitter (old), 1 the plane's whole
     /// frontal silhouette, 2 its convex hull (a rounder loop) - at ConeStation of the hull's length from the nose, pushed
     /// ConeMargin metres out from the body (from the fuselage axis: the shadow cell with the longest chord), an emitter every
@@ -37,9 +36,8 @@ internal sealed partial class FlightField
     public static float ConeSlab = 1.5f, ConeOutlier = 1.3f;
     /// <summary>Wingtip lines: the tip vortex trail (Vapour_Tip) from every outline point that sticks out furthest from
     /// the fuselage axis - a local maximum of its distance, at least TipMinFrac of the farthest - at that tip's trailing
-    /// edge; on from TipBand (Mach), x density. Not transonic: tip vortices condense whenever fast in humid air.</summary>
+    /// edge. Not transonic: tip vortices condense whenever fast in humid air.</summary>
     public static float TipMinFrac = 0.7f, TipScale = 6f, TipSpeed = 1f;   // (6: the trail moving with the air reads at a distance - 3 vanished)
-    public static float[] TipBand = { 0.25f, 0.45f, 5f, 6f };   // (unused since the tips run at all speeds; kept for the knob)
     /// <summary>Flight mode (7): the vapour's spray (the plasma keeps DownMix / Jitter); the plasma's held time = the aero
     /// mod's entry strength (AeroEntryFx.EntryStrength: Mach 2 onset, density-scaled) x each line's weight, the spot light
     /// x the strength (placed again when it moves a quarter).</summary>
@@ -49,11 +47,9 @@ internal sealed partial class FlightField
     private readonly List<(object h, float w)> _plasma = new List<(object, float)>();
     /// <summary>Tip trails at ALL speeds, by flight regime: on from TipMinSpeed (full by 3x it), strength TipBase + TipLiftGain x
     /// the lift strength (a slow, high-lift approach shows them strongest - the vortex is the lift), x (1 + TipMachBoost x the
-    /// transonic band), x density. Length grows with airspeed: TipLenBase + TipLenPerMs x speed metres, up to TipLenMax
-    /// (placed again when the speed moves TipRespawn of itself - the length is fixed at spawn).</summary>
+    /// transonic band), x density.</summary>
     public static float TipMinSpeed = 60f, TipBase = 0.3f, TipLiftGain = 0.8f, TipMachBoost = 0.5f;   // (a floor: at 0 the trails came out sparse and dotted - read as separate pieces)   // (from lift only, and from 60 m/s: a ship cruising at 44 m/s drew three fat trails)
-    public static float TipLenBase = 20f, TipLenPerMs = 0.25f, TipLenMax = 150f, TipRespawn = 1.0f;   // (respawned only when the speed doubles or halves: at 25 % the trails vanished and regrew every few seconds)
-    private float _speed, _tipSpeedUsed = -1f;
+    private float _speed;
     private static readonly Guid VapourTip = new Guid("5d0c7a3e-0107-4000-8000-000000000001");
     private float _tipI;
     private static readonly Guid VapourConeSpray = new Guid("5d0c7a3e-0106-4000-8000-000000000001");

@@ -71,6 +71,28 @@ public partial class AeroGridComponent
     int _cSinceMove = int.MaxValue;
     /// <summary>The attitude control's extra force (world, N), applied after this grid's tick (ThrustTorque).</summary>
     internal Vector3 LastExtraForceWorld;
+    /// <summary>Impulses this mod put into the body since the last read that are no contact (world, N s: a rotor's cyclic tilt
+    /// force, a rotor strike's reaction - NoteKnownImpulse), taken by the next read off the balance.</summary>
+    Vector3 _cKnownJ;
+    readonly object _cKnownLock = new();
+
+    /// <summary>
+    /// A KNOWN IMPULSE (2026-10-17): this mod put <paramref name="worldJ"/> (N s) into the body - not a contact. The balance reads
+    /// every velocity change it cannot explain as the supports' (the contacts scaled to it, the remainder on locked plates): a
+    /// rotor's cyclic force or a strike's reaction read there would load the wheels or plates AND, published at their own
+    /// blocks (PublishBlockLoad / PublishBlockImpulse), count twice. Gathered here and taken at the next read - whichever of
+    /// the read and the impulse comes first in a tick, the velocity change and its impulse are paired exactly. Any thread.
+    /// </summary>
+    internal void NoteKnownImpulse(Vector3 worldJ)
+    {
+        if (!PhysicsHack.IsFinite(worldJ) || worldJ.LengthSquared() <= 0f) return;
+        lock (_cKnownLock) _cKnownJ += worldJ;
+    }
+
+    Vector3 TakeKnownImpulse()
+    {
+        lock (_cKnownLock) { var j = _cKnownJ; _cKnownJ = Vector3.Zero; return j; }
+    }
     /// <summary>After a fault: seconds the contact loads stay off (2 s, doubling to 60 s a fault) - it latched them off for
     /// the session (a wheel removed inside the support refresh's second threw once, 2026-10-15).</summary>
     float _cFaultWait; int _cFaults;
@@ -218,6 +240,10 @@ public partial class AeroGridComponent
         // (the mass or the centre of mass changed - a block lost, cargo: the centre's velocity jumps with no force)
         if (had && (MathF.Abs(m - _cPrevMass) > 1e-4f * MathF.Max(m, 1f) || Vector3.DistanceSquared(LastCoM, _cPrevCoM) > 1e-4f)) had = false;
         Vector3 v0 = _cPrevVel, g0 = _cPrevGrav, x0 = _cPrevExtra;
+        // (the impulses this mod put in since the last read that are no contact - NoteKnownImpulse: as a force over the step,
+        //  with the extra force; taken every read, so none is carried past a masked or unpaired one)
+        Vector3 knownJ = TakeKnownImpulse();
+        if (dt > 0f) x0 += knownJ / dt;
         // a jump the velocity cannot explain: a teleport (no flag for it). The body moves at its velocity after the step,
         // so a hard crash (the velocity's big change) is NOT a jump - nor a velocity the other mod wrote after the move
         if (_cHavePrev)

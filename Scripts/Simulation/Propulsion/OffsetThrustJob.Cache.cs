@@ -7,31 +7,13 @@ using Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement;
 
 namespace AeroMod;
 
-/// <summary>The grid's thruster and gyro caches: profiles by block GUID, the block scan, and the one private
+/// <summary>The grid's thruster and gyro caches: the block scan, and the one private
 /// _definition field each (docs/REFLECTION_AND_WHITELIST.md) for power, direction, class and gyro torque.</summary>
 public static partial class OffsetThrustJob
 {
     // ═══════════════════════════════════════════════════════════════
     // Thruster cache building
     // ═══════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// GUID → ThrustProfile mapping for custom thruster blocks.
-    /// Register entries before the first RebuildThrusterCache call.
-    /// Vanilla SE2 thrusters (hydrogen, ion) get null profile (= rocket, flat 1.0).
-    /// </summary>
-    public static readonly Dictionary<Guid, ThrustProfile> ProfileByGuid = new();
-
-    static OffsetThrustJob()
-    {
-        // Atmospheric thrusters = Turbofan (air-breathing, thrust drops at transonic)
-        var atmo = ThrustProfiles.Turbofan;
-        ProfileByGuid[new Guid("8dfddd91-eb3a-4979-8b16-2fdf43061486")] = atmo; // Atmo 100
-        ProfileByGuid[new Guid("272859d7-957d-41ba-9f9c-8f84cddb5cb3")] = atmo; // Atmo 250
-        ProfileByGuid[new Guid("8a005c16-0a05-444d-ab26-786653199b52")] = atmo; // Atmo 500
-        ProfileByGuid[new Guid("bfbbff3e-7396-428a-a12c-3f32ec14c712")] = atmo; // Atmo 1000
-        // Hydrogen & Ion = Rocket (no Mach penalty, null profile by default)
-    }
 
     /// <summary>
     /// Scan all blocks on the grid and build a cache of thruster info.
@@ -84,6 +66,9 @@ public static partial class OffsetThrustJob
                     // Get CubeBlockComponent from this entity for orientation/position
                     var block = childEntity.TryGet<CubeBlockComponent>();
                     if (block == null) continue;
+                    // a SOLID ROCKET nozzle (2026-10-17): never in the thruster set - no allocation, steering or offset share ever
+                    // uses it (ThrustTorque takes its forced thrust out of the game's and adds its own torque: AeroSolidNozzleComponent)
+                    if (SolidRocketBlocks.IsNozzle(block)) continue;
 
                     float maxPower = 0;
                     int directionInt = 0;
@@ -115,34 +100,42 @@ public static partial class OffsetThrustJob
                     //  CubeGridCoords.GridToLocal(AABB).Center); the old (min + max + 1) / 2 put every thruster 0.125 m off on
                     //  each axis - a fake couple of 0.125 m x the total thrust, pitch and yaw, on a symmetric ship)
                     Vector3 localPos = CellCoords.BlockCentre(aabb.Min, aabb.Max);
-                    Vector3 drawPos = localPos;
 
-                    Vector3 thrustDir = DirectionToVector(directionInt);
+                    Vector3 thrustDir = Base6Directions.GetVector(directionInt);
 
-                    // Classify by ThrustClass from ThrusterDefinition
+                    // Classify by ThrustClass from ThrusterDefinition: a vanilla atmospheric thruster flies the Jet curve
+                    // (JetCurve); our propulsor blocks (atmospheric underneath) their own - a fan none by Mach (by airspeed)
                     ThrustProfile profile = null;
                     string thrustClass = GetThrustClass(thrusterComp);
-                    if (thrustClass != null && thrustClass.Contains("Atmospheric"))
-                        profile = ThrustProfiles.Turbofan;
+                    bool isAtmo = thrustClass != null && thrustClass.Contains("Atmospheric");
+                    var prow = PropulsorBlocks.RowOf(childEntity);
+                    bool propulsor = prow != null || childEntity.TryGet<AeroPropulsorComponent>() != null;
+                    if (isAtmo)
+                        profile = !propulsor ? ThrustProfiles.Jet
+                            : prow == null ? null
+                            : prow.Kind == AeroPropulsorComponent.Kinds.Turboprop ? ThrustProfiles.Turboprop
+                            : prow.Kind == AeroPropulsorComponent.Kinds.Fan ? null
+                            : ThrustProfiles.HelicopterRotor;
+                    // a RAMJET (2026-10-17): a hydrogen thruster underneath, an air-breather all the same - its curve for the reports
+                    // (its own component shapes its maximum: AppliedProfile gives a propulsor none), a flow-through engine box
+                    bool ramjet = prow != null && AeroPropulsorComponent.IsRamjet(prow.Kind);
+                    if (ramjet) profile = ThrustProfiles.Ramjet;
 
-                    // Read per-thruster attitude fraction from injected component
                     var aeroSettings = childEntity.TryGet<AeroThrustSettingsComponent>();
-                    float attFrac = 0.5f; // hardcoded default — terminal slider can override later
 
                     outThrusters.Add(new ThrusterInfo
                     {
                         ThrusterEntity = childEntity,
-                        ThrusterComponent = thrusterComp,
                         GridLocalPosition = localPos,
-                        DrawPosition = drawPos,
                         ThrustDirection = thrustDir,
                         MaxPower = maxPower,
                         Profile = profile,
-                        IntakeDirection = thrustDir, // intake faces into airflow = same direction as thrust
-                        AttitudeFraction = attFrac,
+                        AirBreathing = isAtmo || ramjet,
+                        Propulsor = propulsor,
                         Settings = aeroSettings,
                         Cell = aabb.Min + aabb.Max,
                         CellMin = aabb.Min, CellMax = aabb.Max,
+                        Rev = childEntity.TryGet<ReversibleThrustComponent>(),
                     });
                 }
             }
@@ -150,29 +143,9 @@ public static partial class OffsetThrustJob
 
         int airBreathing = 0;
         for (int i = 0; i < outThrusters.Count; i++)
-            if (outThrusters[i].Profile != null) airBreathing++;
+            if (outThrusters[i].AirBreathing) airBreathing++;
 
         Log.Default?.Info($"[AERO] OffsetThrust: scanned {totalChildren} hierarchy children, {thrustBlocks} with ThrusterComponent, cached {outThrusters.Count} thrusters ({airBreathing} air-breathing)");
-    }
-
-
-
-    /// <summary>
-    /// Convert Base6Directions.Direction (int) to a unit vector.
-    /// Forward=0, Backward=1, Left=2, Right=3, Up=4, Down=5
-    /// </summary>
-    private static Vector3 DirectionToVector(int dir)
-    {
-        switch (dir)
-        {
-            case 0: return -Vector3.UnitZ; // Forward
-            case 1: return Vector3.UnitZ;  // Backward
-            case 2: return -Vector3.UnitX; // Left
-            case 3: return Vector3.UnitX;  // Right
-            case 4: return Vector3.UnitY;  // Up
-            case 5: return -Vector3.UnitY; // Down
-            default: return Vector3.Zero;
-        }
     }
 
     // ─── ThrusterComponent reflection resolution ─────────
@@ -204,43 +177,6 @@ public static partial class OffsetThrustJob
         }
     }
 
-    /// <summary>
-    /// Whether the thruster is firing. Component.HasData is protected, but Component.Data is a
-    /// public DEntityContext, so the public Has&lt;T&gt; gets there without reflection.
-    /// </summary>
-    private static bool IsComponentThrusting(Component thrusterComp)
-    {
-        if (thrusterComp == null || !PhysicsHack.Alive(thrusterComp.Data)) return false;
-        try { return thrusterComp.Data.Has<IsThrusting>(); }
-        catch { System.Threading.Interlocked.Increment(ref PhysicsHack.Caught); return false; }
-    }
-
-    /// <summary>
-    /// Game-computed thrust for this thruster this frame, in newtons; 0 when the game produced
-    /// none. SE2's equivalent of SE1 Thrust.CurrentStrength * ForceMagnitude.
-    /// Component.TryGetData is protected, but Component.Data is public, so TryGet works.
-    /// </summary>
-    private static float GetActualThrust(Component thrusterComp)
-    {
-        if (thrusterComp == null || !PhysicsHack.Alive(thrusterComp.Data)) return -1f;
-        try
-        {
-            return thrusterComp.Data.TryGet<ActiveThrustData>(out var atd)
-                ? atd.ComputedThrustPerFrame.Length()
-                : 0f;
-        }
-        catch { return -1f; }
-    }
-
-    /// <summary>Public wrapper to force a thrust override from outside.</summary>
-    public static void ForceOverride(ThrusterInfo thruster, float value)
-    {
-        if (value > 0f)
-            PhysicsHack.TrySetThrustOverride(thruster.ThrusterEntity.Data, value);
-        else
-            PhysicsHack.TryRemoveThrustOverride(thruster.ThrusterEntity.Data);
-    }
-
     /// <summary>Read ThrustClass (StringId) from ThrusterDefinition on a ThrusterComponent.</summary>
     private static string GetThrustClass(Component thrusterComp)
     {
@@ -256,12 +192,11 @@ public static partial class OffsetThrustJob
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // Gyroscope detection and control
+    // Gyroscope detection
     // ═══════════════════════════════════════════════════════════════
 
     private static Type _gyroCompType;
     private static System.Reflection.FieldInfo _gyroDefField;
-    private static Type _powerableBlockType;
     private static bool _gyroReflectionResolved;
 
     private static void EnsureGyroReflectionResolved()
@@ -272,11 +207,10 @@ public static partial class OffsetThrustJob
         try
         {
             // Same shape as the thruster: public type, private _definition field, public
-            // GyroscopeDefinition.MaxTorque. PowerableBlockComponent.Enabled is public outright.
+            // GyroscopeDefinition.MaxTorque.
             _gyroCompType = typeof(GyroscopeComponent);
             _gyroDefField = _gyroCompType.GetField("_definition",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            _powerableBlockType = typeof(PowerableBlockComponent);
 
             Log.Default?.Info($"[AERO] GyroscopeComponent def field={_gyroDefField != null}");
         }
@@ -321,48 +255,14 @@ public static partial class OffsetThrustJob
                 catch { }
             }
 
-            // Find the PowerableBlockComponent on the same entity for Enabled toggle
-            Component blockComp = null;
-            if (_powerableBlockType != null)
-            {
-                var blockTag = DefaultTag.Get(_powerableBlockType);
-                blockComp = child.TryGet(blockTag);
-                blockComp ??= child.TryGet<PowerableBlockComponent>();
-            }
-
             outGyros.Add(new GyroInfo
             {
                 GyroEntity = child,
-                BlockComponent = blockComp,
                 MaxTorque = maxTorque,
             });
         }
 
         if (outGyros.Count > 0)
             Log.Default?.Info($"[AERO] GyroCache: found {outGyros.Count} gyros, totalTorque={outGyros.Sum(g => g.MaxTorque):F0} N·m");
-    }
-
-    /// <summary>
-    /// Enable or disable all gyros on a grid via PowerableBlockComponent.Enabled.
-    /// </summary>
-    public static void SetGyrosEnabled(List<GyroInfo> gyros, bool enabled)
-    {
-        int toggled = 0;
-        for (int i = 0; i < gyros.Count; i++)
-        {
-            if (gyros[i].BlockComponent == null) continue;
-            try
-            {
-                bool current = ((PowerableBlockComponent)gyros[i].BlockComponent).Enabled;
-                if (current != enabled)
-                {
-                    ((PowerableBlockComponent)gyros[i].BlockComponent).Enabled = enabled;
-                    toggled++;
-                }
-            }
-            catch { }
-        }
-        if (toggled > 0)
-            Log.Default?.Info($"[AERO] Gyros: {(enabled ? "enabled" : "disabled")} {toggled}/{gyros.Count}");
     }
 }

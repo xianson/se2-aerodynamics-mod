@@ -22,7 +22,7 @@ namespace AeroMod;
 /// </summary>
 internal static class DesignProbe
 {
-    public const float SeaRho = 1.225f, SeaSos = 340.3f;
+    public const float SeaRho = 1.225f, SeaSos = ThrustProfiles.SeaLevelSoundSpeed;   // (340.3 m/s: the one sea-level value)
     static readonly Dictionary<AeroGridComponent, CompressibleWingModel> _wingModels = new();
 
     /// <summary>The server aero of a grid: its own when it is the server copy; else the server copy at the same place,
@@ -130,12 +130,12 @@ internal static class DesignProbe
         int n = cache.Count;
         if (n > 0)
         {
-            s.ThrPos = new Vector3[n]; s.ThrDir = new Vector3[n]; s.ThrSeaMax = new float[n]; s.ThrProfile = new ThrustProfile[n];
+            s.ThrPos = new Vector3[n]; s.ThrDir = new Vector3[n]; s.ThrSeaMax = new float[n]; s.ThrProfile = new ThrustProfile[n]; s.ThrRev = new bool[n];
             for (int i = 0; i < n; i++)
             {
                 var t = cache[i];
-                s.ThrPos[i] = t.GridLocalPosition; s.ThrDir[i] = t.ThrustDirection; s.ThrSeaMax[i] = SeaLevelMax(t);
-                s.ThrProfile[i] = OffsetThrustJob.AppliedProfile(t);   // (the profile the simulation applies: none by default)
+                s.ThrPos[i] = t.GridLocalPosition; s.ThrDir[i] = t.ThrustDirection; s.ThrSeaMax[i] = SeaLevelMax(t, out var curve); s.ThrRev[i] = t.Reversible;
+                s.ThrProfile[i] = curve;   // (the curve the simulation applies, taken at the Mach the probe asks: SeaLevelMax)
             }
         }
         w.Snap = s;
@@ -252,11 +252,28 @@ internal static class DesignProbe
         return s == null ? 0f : s.ThrustAlong(dirLocal, mach, out centre);
     }
 
-    /// <summary>A thruster's maximum at sea level (N): its live maximum (its definition's when unreadable) x its class's
-    /// sea-level efficiency. (Server, the grid's own step: PublishDesign - it reads the thruster's entity.)</summary>
-    static float SeaLevelMax(in ThrusterInfo t)
+    /// <summary>A thruster's maximum at sea level and Mach 0 (N), and the curve the probe applies to it at the Mach it asks:
+    /// - a vanilla atmospheric: its live maximum with its Jet curve AND its inlet-angle factor taken out (JetCurve: the live
+    ///   value carries both at the grid's Mach and air angle now; the probe assumes straight-in air - InletAngle 1) x its
+    ///   class's sea-level efficiency, and the Jet curve (OffsetThrustJob.AppliedProfile);
+    /// - one of our PROPULSOR blocks (2026-10-17): its RATING (AeroPropulsorComponent.Rated, the definition's ThrustPower) x
+    ///   its density factor at sea level, and its kind's curve (PropulsorKinds.CurveOf) - its live maximum carries its
+    ///   airspeed factor, the game's efficiency share, its rpm and its torque cap NOW, which a design figure must not
+    ///   (a hovering helicopter's rotors probed at their hover load; a turboprop at 0.2 of its rating in cruise);
+    /// - anything else: its live maximum (its definition's when unreadable) x the efficiency, flat or its applied profile.
+    /// (Server, the grid's own step: PublishDesign - it reads the thruster's entity.)</summary>
+    static float SeaLevelMax(in ThrusterInfo t, out ThrustProfile curve)
     {
-        float max = ThrustTorque.LiveMax(t.ThrusterEntity, true); if (max < 0f) max = t.MaxPower;
+        if (t.Propulsor && t.ThrusterEntity?.TryGet<AeroPropulsorComponent>() is { } p)
+        {
+            curve = AeroPropulsorComponent.CurveOf(p.Kind);
+            float rated = p.Rated > 0f ? p.Rated : t.MaxPower;
+            return rated * AeroPropulsorComponent.DensityFactor(SeaRho);
+        }
+        curve = OffsetThrustJob.AppliedProfile(t);
+        float max = ThrustTorque.LiveMax(t.ThrusterEntity, true);
+        if (max < 0f) max = t.MaxPower;
+        else if (t.Settings != null) max = t.Settings.JetUnshaped(max);
         return max * ThrustTorque.SeaLevelEfficiency(t.ThrusterEntity, SeaRho);
     }
 

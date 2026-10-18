@@ -1,4 +1,6 @@
 #pragma warning disable CS0649, CS8632, CS1591, CS1573, CS1570, CS1574, CS0419, CS1734
+using System;
+using System.Collections.Generic;
 namespace AeroMod;
 
 /// <summary>
@@ -23,23 +25,146 @@ public static class ThrustProfiles
         });
 
     // ═══════════════════════════════════════════════════════════════════
-    //  PROPELLER — peak at low speed, drops to zero by M ~0.7.
-    //  Tip compressibility kills efficiency.
-    //  Operating range: M 0 – 0.75
+    //  PROPELLER — a piston engine on a fixed-pitch prop (2026-10-17: kept
+    //  apart from the turboprop, the user: "is there a difference between a
+    //  propeller and a turboprop?"). The fixed pitch is efficient near one
+    //  speed only, so thrust falls steadily as airspeed rises; practical top
+    //  speed ~300-500 km/h. Not used by a block yet (a future piston prop).
+    //  Operating range: M 0 – 0.45
     // ═══════════════════════════════════════════════════════════════════
 
     public static readonly ThrustProfile Propeller = new("Propeller",
         new (double, double)[]
         {
             (0.00, 1.00),
-            (0.10, 0.95),
-            (0.30, 0.80),
-            (0.50, 0.55),
-            (0.60, 0.35),
-            (0.70, 0.10),
-            (0.75, 0.00),
+            (0.10, 0.92),
+            (0.20, 0.78),
+            (0.30, 0.55),
+            (0.38, 0.30),
+            (0.45, 0.00),
         },
-        maxOperatingMach: 0.75);
+        maxOperatingMach: 0.45);
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  TURBOPROP — a gas turbine driving a constant-speed prop: roughly
+    //  constant POWER, so full static thrust up to TurbopropV0, then thrust
+    //  ∝ 1/airspeed; the prop tips' compressibility fades it out from M 0.6
+    //  to nothing at M 0.75. The Turboprop blocks use TurbopropFraction
+    //  (AeroPropulsorComponent.Speed, at their true airspeed and local Mach);
+    //  this profile samples the same curve for axial flight at sea level, so
+    //  the reports and the design probe show what the blocks do.
+    //  Operating range: M 0 – 0.75
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>The SEA-LEVEL speed of sound (m/s) - only where a curve indexed by Mach needs an airspeed to sample a curve that
+    /// is really by airspeed (the Turboprop and DuctedFan profiles below: the reports' and the design probe's sea-level
+    /// figures; DesignProbe.SeaSos is this). In flight the blocks never use it: they take the grid's true airspeed and its
+    /// local speed of sound (AeroGridComponent.LastAirVel / LastMach - 2026-10-17: it was a fixed 330 m/s over the GROUND speed).</summary>
+    public const float SeaLevelSoundSpeed = 340.3f;
+    /// <summary>Turboprop: the airspeed (m/s along the thrust) where constant power takes over from static thrust.</summary>
+    public static float TurbopropV0 = 40f;
+    /// <summary>Turboprop: tip compressibility - full up to this Mach, nothing at MachZero.</summary>
+    public static float TurbopropMachFade = 0.6f, TurbopropMachZero = 0.75f;
+
+    /// <summary>A turboprop's thrust fraction at its true airspeed along its thrust (m/s, + forward) and its flight Mach (the
+    /// whole airspeed over the local speed of sound): the constant-power fall past TurbopropV0 and the tip-Mach fade (the
+    /// constants above: game-free, so the tests use the same curve).</summary>
+    public static float TurbopropFraction(float along, float mach)
+    {
+        float v0 = TurbopropV0;
+        float f = along > v0 ? v0 / along : 1f;
+        float fade = TurbopropMachFade, zero = TurbopropMachZero;
+        if (mach > fade) f *= MathF.Max(0f, 1f - (mach - fade) / (zero - fade));
+        return f;
+    }
+
+    /// <summary>Ducted fan: the true airspeed (m/s along the thrust) where its thrust is gone - a fan's static thrust falls
+    /// off faster than a prop's.</summary>
+    public static float FanVZero = 130f;
+    /// <summary>A ducted fan's thrust fraction at its true airspeed along its thrust (m/s, + forward): 1 - v / FanVZero, never below 0.</summary>
+    public static float FanFraction(float along) => Math.Clamp(1f - MathF.Max(along, 0f) / FanVZero, 0f, 1f);
+
+    static (double, double)[] TurbopropKnots()
+    {
+        // (sampled every M 0.0125 for axial flight at sea level: dense enough that the profile's smoothing between knots stays within ~1 %)
+        int n = (int)MathF.Ceiling(TurbopropMachZero / 0.0125f);
+        var k = new (double, double)[n + 1];
+        for (int i = 0; i <= n; i++)
+        {
+            float m = MathF.Min(i * 0.0125f, TurbopropMachZero), v = m * SeaLevelSoundSpeed;
+            k[i] = (m, TurbopropFraction(v, m));
+        }
+        return k;
+    }
+
+    static (double, double)[] FanKnots()
+    {
+        float mz = FanVZero / SeaLevelSoundSpeed;
+        int n = (int)MathF.Ceiling(mz / 0.0125f);
+        var k = new (double, double)[n + 1];
+        for (int i = 0; i <= n; i++) { float m = MathF.Min(i * 0.0125f, mz); k[i] = (m, FanFraction(m * SeaLevelSoundSpeed)); }
+        return k;
+    }
+
+    public static readonly ThrustProfile Turboprop = new("Turboprop", TurbopropKnots(),
+        maxOperatingMach: TurbopropMachZero);
+
+    /// <summary>DUCTED FAN - FanFraction sampled for axial flight at sea level (as Turboprop: the reports' and the design
+    /// probe's curve by Mach; the blocks themselves use FanFraction at their true airspeed). Gone at FanVZero (~M 0.38).</summary>
+    public static readonly ThrustProfile DuctedFan = new("DuctedFan", FanKnots(),
+        maxOperatingMach: FanVZero / SeaLevelSoundSpeed);
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  JET — the VANILLA ATMOSPHERIC THRUSTERS (2026-10-17, the user's speed
+    //  roles: "turboprops kings of subsonic, atmos king of transonic-ish,
+    //  ramjets for supersonic", "a lil more respeck on mach 1's name"). A
+    //  transonic PINCH - the intake chokes through Mach 1 - then the RAM RISE
+    //  (2026-10-17, "fix this": the Mach wall made reachable): past ~Mach 1.2
+    //  the inlet's ram pressure takes the thrust above its rating, to
+    //  JetRamPeak at Mach 1.7 - the supersonic cruise is easier than the
+    //  crossing - then the compressor's limit cuts it fast: below the ramjet's
+    //  curve from Mach 2.0 (the ramjet owns Mach 2-6), gone at 2.8.
+    //  Applied in normal play to the game's own maximum (JetCurve,
+    //  AeroThrustSettingsComponent.Jet; above the rating too: JetCurve.MaxFactor);
+    //  the game's air-density efficiency stacks on it (this curve has no
+    //  density in it). JetPinch, the Mach 1 knot, is the tuning knob
+    //  (Tests/AeroBench machwall: a sleek fighter breaks Mach 1 in level flight
+    //  at T/W 1.5 in air of 0.4 kg/m3 and at <= 2.5 at sea level, then cruises
+    //  on to ~Mach 1.6; a brick stalls subsonic).
+    //  Operating range: M 0 – 2.8
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>The Jet curve's value at Mach 1 (the pinch's depth: its lowest point in the transonic band).</summary>
+    public const double JetPinch = 0.76;
+    /// <summary>The ram rise's top (x the rating, at Mach 1.7).</summary>
+    public const double JetRamPeak = 1.80;
+
+    public static readonly ThrustProfile Jet = JetWithPinch(JetPinch);
+
+    /// <summary>The Jet curve with another value at Mach 1 (the tuning tests' sweep: Tests/AeroBench machwall).</summary>
+    public static ThrustProfile JetWithPinch(double pinch) => new("Jet",
+        new (double, double)[]
+        {
+            (0.00, 1.00),
+            (0.60, 0.95),
+            (0.85, 0.85),
+            (0.95, 0.80),
+            (1.00, pinch),
+            (1.10, 0.95),
+            (1.20, 1.12),
+            (1.30, 1.30),
+            (1.40, 1.48),
+            (1.50, 1.65),
+            (1.60, 1.77),
+            (1.70, JetRamPeak),
+            (1.80, 1.55),
+            (1.90, 1.20),
+            (2.00, 0.82),
+            (2.20, 0.45),
+            (2.40, 0.25),
+            (2.80, 0.00),
+        },
+        maxOperatingMach: 2.8);
 
     // ═══════════════════════════════════════════════════════════════════
     //  TURBOFAN (high bypass, BPR ~5-8)
@@ -157,6 +282,9 @@ public static class ThrustProfiles
     {
         [nameof(Rocket)]          = Rocket,
         [nameof(Propeller)]       = Propeller,
+        [nameof(Turboprop)]       = Turboprop,
+        [nameof(DuctedFan)]       = DuctedFan,
+        [nameof(Jet)]             = Jet,
         [nameof(Turbofan)]        = Turbofan,
         [nameof(Turbojet)]        = Turbojet,
         [nameof(Ramjet)]          = Ramjet,

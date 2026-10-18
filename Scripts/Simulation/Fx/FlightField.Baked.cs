@@ -199,7 +199,7 @@ internal sealed partial class FlightField
     }
 
     /// <summary>One direction baked: the anchors on the outline seen along d, their strengths and spray directions.</summary>
-    public static double BkCells, BkChunk, BkLoop, BkNormal, BkPressure; static long _bkN0;
+    public static double BkCells, BkChunk, BkLoop, BkNormal, BkPressure;
     public static string BakeProfile => $"bake ms total: cells {BkCells:F0} chunkdrag {BkChunk:F0} outline {BkLoop:F0} (normals {BkNormal:F0}, pressure {BkPressure:F0})";
     private void Bake(int vi)
     {

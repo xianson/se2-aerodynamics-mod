@@ -270,6 +270,37 @@ public static class StructureFeel
         catch (Exception e) { _seatPlay = null; _seatStop = null; Status = "sound failed: " + e.Message; }
     }
 
+    // ── a one-shot at a world place (ROTOR STRIKES' crunch, 2026-10-17: TearSmoke.PlayStrike, from any client grid's effects job) ──
+    static readonly object _atLock = new();
+    static readonly Dictionary<string[], AudioEvent[]> _atEvents = new();
+    public static int PlayedAt;
+
+    /// <summary>(client) One of these events (a variant at random) at a world place, through the engine's 3D one-shot player (the
+    /// one the seat-less fallback uses - its volume ignored). Serialized: the grids' effects jobs run in parallel; its own event cache
+    /// (the seat's cache is the focus grid's job's alone). Not found: nothing (Status says why).</summary>
+    internal static void PlayAt(string[] paths, in WorldTransform at)
+    {
+        if (paths == null || paths.Length == 0) return;
+        lock (_atLock)
+        {
+            try
+            {
+                if (!_engineLooked) LookEngine();
+                if (_enginePlay == null) return;
+                if (!_atEvents.TryGetValue(paths, out var evs))
+                {
+                    var list = new List<AudioEvent>(paths.Length);
+                    foreach (var p in paths) if (!string.IsNullOrEmpty(p) && (_catalog == null || _catalog.Contains(p))) list.Add(new AudioEvent(p));
+                    _atEvents[paths] = evs = list.ToArray();
+                }
+                if (evs.Length == 0) return;
+                _enginePlay(evs[evs.Length == 1 ? 0 : (int)((uint)System.Diagnostics.Stopwatch.GetTimestamp() % (uint)evs.Length)], at, 1f);
+                PlayedAt++;
+            }
+            catch (Exception e) { Status = "sound at a place failed: " + e.Message; }
+        }
+    }
+
     static void QueueStop(AudioEvent ev, Action<AudioEvent, bool> stop, long at)
     {
         int slot = 0; long oldest = long.MaxValue;

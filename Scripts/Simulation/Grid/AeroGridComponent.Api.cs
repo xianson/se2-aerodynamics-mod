@@ -56,7 +56,7 @@ public partial class AeroGridComponent
     {
         var f = s.FlightBack;
         float airspeed = airVel.Length();
-        float mach = HasResult ? (float)LastResult.Mach : 0f;
+        float mach = LastMach;   // (the grid's Mach every step - SetAir: the force result's went stale on the steps the model skips)
         f[AeroApi.FsAge] = 0f;
         f[AeroApi.FsAirspeed] = airspeed; f[AeroApi.FsGroundSpeed] = linVel.Length();
         f[AeroApi.FsMach] = mach; f[AeroApi.FsDensity] = LastDensity;
@@ -105,6 +105,7 @@ public partial class AeroGridComponent
         int nt = shares != null && LastThrustGen == _thrusterGen ? Math.Min(Math.Min(LastThrustCount, shares.Length), _thrusterCache.Count) : 0;
         s.ThrForceB = ApiGridState.Fit(s.ThrForceB, nt);
         if (nt > 0) Array.Copy(shares, s.ThrForceB, nt);
+        // (a reversible thruster's - ReversibleThrustComponent - is signed: negative pushing against its listed direction)
 
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (s.Lock)
