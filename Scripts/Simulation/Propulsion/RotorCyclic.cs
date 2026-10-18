@@ -78,7 +78,8 @@ public static class RotorCyclic
     internal static bool Has(AeroGridComponent aero, int n) => Enabled && Rotors(aero, n).Length > 0;
 
     /// <summary>Give what the rotors can of <paramref name="want"/> (local N m), apply it - the torque and the tilt's force -
-    /// and return the torque given. thrust: each thruster's thrust this frame (N, the game's share).</summary>
+    /// and return the torque given. thrust: each thruster's thrust this frame (N, the game's share). apply false: only what
+    /// they would give (no torque, no tilt, no load set - ThrustTorque.Apply's plan before its solve).</summary>
     internal static Vector3 Give(AeroGridComponent aero, in WorldTransform wt, Vector3 com, Vector3 want, Vector3[] dirs, float[] thrust, int n, float dt, bool apply)
     {
         var idx = Rotors(aero, n); var comps = aero._rotorComp;
@@ -140,6 +141,7 @@ public static class RotorCyclic
             // (no contact: the structure's contact balance must not read it as the wheels' or the plates' - NoteKnownImpulse)
             if (aero.IsServerScene) aero.NoteKnownImpulse(forceW * dt);
         }
+        if (!apply) return given;   // (a plan - ThrustTorque.Apply's, before its solve: nothing set, nothing logged)
         Last = $"{(aero.IsServerScene ? "server" : "client")} h {h[0]:F2} m T {thrust[idx[0]]:F0} N reaction {aero._rotorReaction:F0} N m rotors {idx.Length}: want ({want.X:F0}, {want.Y:F0}, {want.Z:F0}) gave ({given.X:F0}, {given.Y:F0}, {given.Z:F0}) N m, tilt force ({force.X:F0}, {force.Y:F0}, {force.Z:F0}) N, reach cyclic {cycSum:F0}, anti-torque {(aero._limAuth.Length > 0 ? aero._limAuth[0] : 0f):F0} N m (reversible / sideways thrusters + gyros + control surfaces: RotorLimiter)";
         if (Log && aero.IsServerScene)
         {
