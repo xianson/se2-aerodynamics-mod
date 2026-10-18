@@ -24,7 +24,7 @@ Time to learn how to be a real aerospace engineer. Ships fly by their shape, thr
 [*][b]Space Engineers 2, version 2.4.x[/b] (made on 2.4.0.95).
 [*][b]The launch option -loadScripts.[/b] Steam > Library > right-click Space Engineers 2 > Properties > General > Launch Options, type [b]-loadScripts[/b]. Without it the game loads the mod's blocks but never runs its scripts: ships fly exactly as in the unmodded game and there is no Aerodynamics section under Settings > Mods.
 [*][b]Single player or hosting a game.[/b] Dedicated servers are not supported yet.
-[*][b]Works on its own.[/b] Pairs with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3822389424][b]Orbital Mod[/b][/url]: its flight HUD shows this mod's stall and loss-of-control warnings, and its re-entries heat the hull.
+[*][b]Works on its own.[/b] Pairs with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3822389424][b]Orbital Mechanics Mod[/b][/url]: its flight HUD shows this mod's stall and loss-of-control warnings, and its re-entries heat the hull.
 [/list]
 
 [h2]Features[/h2]

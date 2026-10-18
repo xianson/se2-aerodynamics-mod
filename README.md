@@ -37,7 +37,7 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   wear, fatigue, bend, crack across and tear off, with creaks, shake and smoke.
 - **Rotor strikes:** rotors and props are damaged by what they hit, and damage it back. Weld to repair.
 - **Re-entry:** plasma, vapour cones, wingtip trails, hull heating with heat damage, and scorch marks.
-- **Warnings:** a stall warning and a predicted loss-of-control warning (on the Orbital Mod's HUD), and an optional Mach
+- **Warnings:** a stall warning and a predicted loss-of-control warning (on the Orbital Mechanics Mod's HUD), and an optional Mach
   readout.
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
@@ -50,7 +50,7 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Add `-loadScripts` to the game's launch options.** Steam > Library > Space Engineers 2 > right-click > Properties >
   General > Launch Options: type `-loadScripts`. Without it the game loads the mod's blocks and effects but never runs
   its scripts, and ships fly exactly as in the unmodded game. (It turns scripts on for every mod you load.)
-- No other mod is needed. **Optional:** the Orbital Mod, whose flight HUD shows this mod's warnings and whose railed
+- No other mod is needed. **Optional:** the Orbital Mechanics Mod, whose flight HUD shows this mod's warnings and whose railed
   re-entries heat the hull.
 - **Single player or hosting only.** SE2 2.4 runs the server inside the game, so a remote client sees the game's normal
   flight.
