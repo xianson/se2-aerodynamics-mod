@@ -68,7 +68,7 @@ public partial class ConnectedComponentWingDetector
                     float gapLimit = MathF.Max(maxGapM, maxSpan * 0.20f);
                     if (gap > gapLimit)
                     {
-                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                        if (AeroLog.Detail && a.PlanformArea > 100f && b.PlanformArea > 100f)
                             Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT gap={gap:F2}>{gapLimit:F2} aS=[{aMinS:F1},{aMaxS:F1}] bS=[{bMinS2:F1},{bMaxS2:F1}] spanAx=({a.SpanAxis.X:F3},{a.SpanAxis.Y:F3},{a.SpanAxis.Z:F3})");
                         continue;
                     }
@@ -76,7 +76,7 @@ public partial class ConnectedComponentWingDetector
                     float normalSep = MathF.Abs(Vector3.Dot(a.Centroid - b.Centroid, a.Normal));
                     if (normalSep > CellSize * 6f)
                     {
-                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                        if (AeroLog.Detail && a.PlanformArea > 100f && b.PlanformArea > 100f)
                             Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT normalSep={normalSep:F2}>{CellSize * 6f:F2}");
                         continue;
                     }
@@ -85,12 +85,12 @@ public partial class ConnectedComponentWingDetector
                     float maxChord = MathF.Max(a.MeanChord, b.MeanChord);
                     if (chordSep > maxChord * 2f)
                     {
-                        if (a.PlanformArea > 100f && b.PlanformArea > 100f)
+                        if (AeroLog.Detail && a.PlanformArea > 100f && b.PlanformArea > 100f)
                             Log.Default?.Info($"[AERO-MERGE] W{i}+W{j} REJECT chordSep={chordSep:F2}>{maxChord * 2f:F2}");
                         continue;
                     }
 
-                    Log.Default?.Info(
+                    if (AeroLog.Detail) Log.Default?.Info(
                         $"[AERO-MERGE] W{i}+W{j} MERGING " +
                         $"nDot={nDot:F4} gap={gap:F2} gapLim={gapLimit:F2} " +
                         $"normSep={normalSep:F2} chordSep={chordSep:F2}/{maxChord * 2f:F2} " +

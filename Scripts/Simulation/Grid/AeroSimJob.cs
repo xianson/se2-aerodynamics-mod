@@ -259,7 +259,7 @@ public partial class AeroGridComponent
         AeroEntryFx.Server(aero, wt, airVel, density, AeroPhysics.Dt);
         if (aero.IsServerScene) aero.TickWingStrain(AeroPhysics.Dt);   // (under TestForces too: the forces at the test airflow strain the wings - damage only with Structure.WingStrain on)   // (wing strain: WingStrainServer.cs)
 
-        if (aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
+        if (AeroLog.Detail && aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
         {
             Log.Default?.Info($"[AERO-SIM] EARLY f={aero._simFrameCount} v={aero.LastSpeed:F1} " +
                 $"d={density:F4} mass={mass:F0} hasResult={aero.HasResult} " +
@@ -283,7 +283,7 @@ public partial class AeroGridComponent
             Vector3 deltaV = worldForce * (dt / mass); // diagnostics only; the impulse path uses worldForce
 
             // Log first 120 frames of force application to diagnose launch acceleration
-            if (aero._simFrameCount < 120 && aero._simFrameCount % 10 == 0)
+            if (AeroLog.Detail && aero._simFrameCount < 120 && aero._simFrameCount % 10 == 0)   // (every grid that spawns moving: detail only)
             {
                 float fDotV = aero.LastSpeed > 0.1f ? Vector3.Dot(worldForce, linVel / aero.LastSpeed) : 0f;
                 Log.Default?.Info($"[AERO-SIM] f={aero._simFrameCount} v={aero.LastSpeed:F1} " +

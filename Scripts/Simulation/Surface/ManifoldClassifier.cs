@@ -134,7 +134,7 @@ public class ManifoldClassifier
 
         _classified = true;
 
-        if (CavityFaceCount > 0)
+        if (CavityFaceCount > 0 && AeroLog.Detail)
             Log.Default?.Info($"[AERO] ManifoldClassifier: {HullFaceCount} hull, {CavityFaceCount} cavity faces culled");
     }
 

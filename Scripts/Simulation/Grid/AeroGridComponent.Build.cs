@@ -122,7 +122,7 @@ public partial class AeroGridComponent
                 _builtWings = cWings; _builtShadow = null; _builtChunks = cChunks; _builtTable = cTable;
                 FromCache = true;
                 _rebuildNote = $"from the table cache in {sw.Elapsed.TotalMilliseconds:F0} ms ({cChunks.ChunkCount} chunks, {cWings.Count} wings)";
-                Log.Default?.Info($"[AERO] grid {Entity?.DebugName}: {_rebuildNote}");
+                if (AeroLog.Detail) Log.Default?.Info($"[AERO] grid {Entity?.DebugName}: {_rebuildNote}");
                 return;
             }
             FromCache = false;

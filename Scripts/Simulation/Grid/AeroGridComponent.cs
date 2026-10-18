@@ -372,7 +372,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     {
         lock (Live) Live.Add(this);
         DevResetOnNewSession(Entity?.GetSession());
-        Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");
+        if (AeroLog.Detail) Log.Default?.Info("[AERO] AeroGridComponent.OnAddedToScene()");   // (every grid, both scenes, each re-add: 750 lines a session - detail only)
         // (re-added after a removal: a rebuild left half-done would block every later one - _staggeredBuildActive stayed set)
         _staggeredBuildActive = false; _finalizeTask = null; SchedBegin = false; SchedGrant = 0;
         _buildGen++;   // (a build still running for the last time in the scene: stale)

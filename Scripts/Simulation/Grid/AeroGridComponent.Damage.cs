@@ -150,7 +150,7 @@ public partial class AeroGridComponent
         var t = OrphanChunks.Take(wt.Position, wt.Orientation, keys, 8, 3, IsServerScene);
         if (t == null) return;
         _model.InstallForceTable(t);
-        Log.Default?.Info($"[AERO] grid {Entity?.DebugName} seeded from its parent: {keys.Count} chunks, try {_seedTries}");
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO] grid {Entity?.DebugName} seeded from its parent: {keys.Count} chunks, try {_seedTries}");
     }
 
     /// <summary>Simulation thread, every frame of a chunked grid: install a finished local update, start the next
