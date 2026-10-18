@@ -10,19 +10,23 @@ static partial class Program
     static void JetChecks()
     {
         // 1. the curve: the spec's table exactly at its knots (rating fractions), 1 at rest, 0 past Mach 2.8, never NaN
-        // (2026-10-17, the Mach wall made reachable - "fix this": the pinch 0.76 and the supersonic RAM RISE above the rating,
-        //  JetRamPeak 1.8 at Mach 1.7, below the ramjet's curve from Mach 2.0 - Tests/AeroBench machwall tunes it)
-        var spec = new (float m, float f)[] { (0f, 1f), (0.6f, 0.95f), (0.85f, 0.85f), (0.95f, 0.80f), (1.0f, (float)ThrustProfiles.JetPinch), (1.1f, 0.95f), (1.2f, 1.12f), (1.3f, 1.30f), (1.4f, 1.48f),
-            (1.5f, 1.65f), (1.6f, 1.77f), (1.7f, (float)ThrustProfiles.JetRamPeak), (1.8f, 1.55f), (1.9f, 1.20f), (2.0f, 0.82f), (2.2f, 0.45f), (2.4f, 0.25f), (2.8f, 0f) };
+        // (2026-10-17, the Mach wall made reachable - "fix this": the supersonic RAM RISE above the rating, below the ramjet's
+        //  curve from Mach 2.0 - Tests/AeroBench machwall tunes it. 2026-10-18, the user: '1 and 2' - soften the pinch, scale
+        //  the block wings' wave drag: NO PINCH - the 0.76 at Mach 1 (0.80 at 0.95, 0.95 at 1.1) gone, the ram rise from
+        //  ~Mach 0.97, JetMach1 1.08 at Mach 1, to JetRamPeak 1.98 at Mach 1.6 (was 1.80 at 1.7); from Mach 1.8 on unchanged)
+        var spec = new (float m, float f)[] { (0f, 1f), (0.6f, 0.95f), (0.85f, 0.85f), (1.0f, (float)ThrustProfiles.JetMach1), (1.1f, 1.28f), (1.2f, 1.48f), (1.3f, 1.68f), (1.45f, 1.94f),
+            ((float)ThrustProfiles.JetRamPeakMach, (float)ThrustProfiles.JetRamPeak), (1.7f, 1.85f), (1.8f, 1.55f), (1.9f, 1.20f), (2.0f, 0.82f), (2.2f, 0.45f), (2.4f, 0.25f), (2.8f, 0f) };
         bool knots = spec.All(k => MathF.Abs(JetCurve.Factor(k.m) - k.f) < 1e-4f);
         Check(knots && JetCurve.Factor(3f) == 0f && JetCurve.Factor(float.NaN) == 1f && JetCurve.Factor(-1f) == 1f,
             $"Jet curve: the spec's knots ({string.Join(", ", spec.Select(k => $"M{k.m:F2} {JetCurve.Factor(k.m):F2}"))}), 0 past 2.8, 1 at rest / NaN");
+        // (no pinch, 2026-10-18: the subsonic lapse bottoms out at Mach 0.85 - nothing deeper in the transonic band - and the
+        //  curve is past its rating by Mach 1)
         float lo = 1f, loAt = 0f; for (float m = 0.6f; m <= 1.3f; m += 0.005f) if (JetCurve.Factor(m) < lo) { lo = JetCurve.Factor(m); loAt = m; }
-        Check(MathF.Abs(loAt - 1f) < 0.011f, $"Jet curve: its deepest point in the transonic band is at Mach 1 ({lo:F2} at M{loAt:F2})");
-        float hi = 0f, hiAt = 0f; bool rising = true;
-        for (float m = 0f; m <= 2.8f; m += 0.005f) { float f = JetCurve.Factor(m); if (f > hi) { hi = f; hiAt = m; } if (m >= 1.0f && m < 1.69f && JetCurve.Factor(m + 0.005f) < f - 1e-6f) rising = false; }
-        Check(rising && hi <= JetCurve.MaxFactor && MathF.Abs(hi - (float)ThrustProfiles.JetRamPeak) < 1e-4f && MathF.Abs(hiAt - 1.7f) < 0.006f && JetCurve.Factor(1.2f) > 1f && JetCurve.Factor(1.15f) < 1.1f,
-            $"Jet curve: the ram rise - above the rating from ~Mach 1.2, rising all the way from the pinch to its top {hi:F2} at M{hiAt:F2} (<= MaxFactor {JetCurve.MaxFactor})");
+        Check(MathF.Abs(loAt - 0.85f) < 0.011f && JetCurve.Factor(1f) > 1f, $"Jet curve: no transonic pinch - its lowest point from Mach 0.6 to 1.3 is the subsonic lapse's end ({lo:F2} at M{loAt:F2}); {JetCurve.Factor(1f):F2} at Mach 1");
+        float hi = 0f, hiAt = 0f, over = -1f; bool rising = true;
+        for (float m = 0f; m <= 2.8f; m += 0.005f) { float f = JetCurve.Factor(m); if (f > hi) { hi = f; hiAt = m; } if (over < 0f && m > 0.5f && f > 1f) over = m; if (m >= 0.85f && m < (float)ThrustProfiles.JetRamPeakMach - 0.01f && JetCurve.Factor(m + 0.005f) < f - 1e-6f) rising = false; }
+        Check(rising && hi <= JetCurve.MaxFactor && MathF.Abs(hi - (float)ThrustProfiles.JetRamPeak) < 1e-4f && MathF.Abs(hiAt - (float)ThrustProfiles.JetRamPeakMach) < 0.006f && over > 0.9f && over < 1f,
+            $"Jet curve: the ram rise - above the rating from Mach {over:F3}, rising all the way from Mach 0.85 to its top {hi:F2} at M{hiAt:F2} (<= MaxFactor {JetCurve.MaxFactor})");
         Check(ThrustProfiles.All.TryGetValue("Jet", out var jp) && ReferenceEquals(jp, ThrustProfiles.Jet) && ThrustProfiles.All.ContainsKey("Turbofan") && ThrustProfiles.All.ContainsKey("Turbojet"),
             "profiles: Jet listed by name; the old names still answer");
         // 2. who: vanilla atmospherics only - not our propulsor blocks (their own curves), not hydrogen or ion (rockets)

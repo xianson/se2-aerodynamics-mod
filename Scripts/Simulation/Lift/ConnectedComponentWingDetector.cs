@@ -113,7 +113,7 @@ public partial class ConnectedComponentWingDetector : IWingDetector
         public readonly List<Vector3I> Component = new();
         public readonly Dictionary<int, List<Vector3I>> BySpan = new();
         public readonly Stack<List<Vector3I>> SpanLists = new();
-        public readonly Dictionary<int, int> ChordExtent = new(), LeBySpan = new();
+        public readonly Dictionary<int, int> ChordExtent = new(), LeBySpan = new(), TeBySpan = new();
         public readonly List<int> ChordValues = new();
         public readonly Dictionary<(int, int), int> ColumnThickness = new();
         // (ColumnMode's)
@@ -132,7 +132,7 @@ public partial class ConnectedComponentWingDetector : IWingDetector
         {
             MinX.Clear(); MaxX.Clear(); MinY.Clear(); MaxY.Clear(); MinZ.Clear(); MaxZ.Clear();
             foreach (var e in Exposed) e.Clear();
-            Visited.Clear(); Queue.Clear(); Component.Clear(); ChordExtent.Clear(); LeBySpan.Clear(); ChordValues.Clear(); ColumnThickness.Clear();
+            Visited.Clear(); Queue.Clear(); Component.Clear(); ChordExtent.Clear(); LeBySpan.Clear(); TeBySpan.Clear(); ChordValues.Clear(); ColumnThickness.Clear();
             ClearSpans();
         }
         public void ClearSpans() { foreach (var l in BySpan.Values) { l.Clear(); SpanLists.Push(l); } BySpan.Clear(); }
@@ -149,9 +149,73 @@ public partial class ConnectedComponentWingDetector : IWingDetector
     public List<LiftingSurface> Detect(IGridAccessor grid, ISurfaceProvider surface, float blockSize)
     {
         Acquire();
-        try { return DetectAll(grid, blockSize); }
+        try { var wings = DetectAll(grid, blockSize); MeasureEdges(wings); return wings; }
         finally { Release(); }
     }
+
+    // ─── The wings' edge faces (2026-10-18, fix a-wing-wave) ─────
+    private HashSet<int> _edgeSeen; private Dictionary<long, int> _edgeCols; private Dictionary<int, (int lo, int hi)> _edgeRows;
+
+    /// <summary>Each wing's edge faces as the hull charges them, and its own thickness (LiftingSurface.EdgeLo / EdgeHi /
+    /// OwnThickness), from the surface the detection ran on (ManifoldSurface - alive here; a big or cached grid's is released
+    /// after its build, so this travels with the wing and its cache record): per skin cell, the column under it down to the
+    /// other skin (as LiftingSurfaceModel.BuildFaceOverrideIndex finds it), its faces across the other four directions.
+    /// No surface: the wings as they are (not measured).</summary>
+    private void MeasureEdges(List<LiftingSurface> wings)
+    {
+        var surface = ManifoldSurface;
+        if (wings == null || surface == null || surface.FaceCount == 0) return;
+        var faces = surface.Faces;
+        var seen = _edgeSeen ??= new HashSet<int>(); seen.Clear();
+        var cols = _edgeCols ??= new Dictionary<long, int>();
+        var rows = _edgeRows ??= new Dictionary<int, (int lo, int hi)>();
+        for (int wi = 0; wi < wings.Count; wi++)
+        {
+            var wing = wings[wi];
+            if (wing.Cells == null || wing.Cells.Count == 0) continue;
+            int dir = DirOf(wing.Normal), opp = dir ^ 1;
+            var step = StepOf(dir);
+            float lo = 0f, hi = 0f;
+            cols.Clear(); rows.Clear();
+            foreach (var cell in wing.Cells)
+            {
+                int sp = (int)MathF.Round(cell.X * wing.SpanAxis.X + cell.Y * wing.SpanAxis.Y + cell.Z * wing.SpanAxis.Z);
+                int ch = (int)MathF.Round(cell.X * wing.ChordAxis.X + cell.Y * wing.ChordAxis.Y + cell.Z * wing.ChordAxis.Z);
+                rows[sp] = rows.TryGetValue(sp, out var r) ? (Math.Min(r.lo, ch), Math.Max(r.hi, ch)) : (ch, ch);
+                var c = cell;
+                int depth = 0;
+                for (int k = 0; k < LiftingSurfaceModel.MaxSkinDepthCells; k++, c -= step)
+                {
+                    depth = k + 1;
+                    for (int d = 0; d < 6; d++)
+                    {
+                        if (d == dir || d == opp) continue;   // (the skins: the wing's own)
+                        int fi = surface.GetFaceIndex(c, d);
+                        if (fi < 0 || fi >= faces.Count || !seen.Add(fi)) continue;
+                        var f = faces[fi];
+                        float cs = Vector3.Dot(f.Normal, wing.ChordAxis), c3 = cs * cs * MathF.Abs(cs) * f.Area;
+                        if (cs > 0f) hi += c3; else lo += c3;
+                    }
+                    if (surface.GetFaceIndex(c, opp) >= 0) break;
+                }
+                long key = ((long)sp << 32) ^ (uint)ch;
+                cols[key] = cols.TryGetValue(key, out int dd) ? Math.Max(dd, depth) : depth;   // (two skin cells in one column: its deeper walk)
+            }
+            float tSum = 0f, cSum = 0f;
+            foreach (var d in cols.Values) tSum += d;
+            foreach (var r in rows.Values) cSum += r.hi - r.lo + 1;
+            float own = cols.Count > 0 && cSum > 0f ? (tSum / cols.Count) / (cSum / rows.Count) : 0f;
+            wings[wi] = wing.WithEdges(lo, hi, own);
+        }
+    }
+
+    private static int DirOf(Vector3 n) => n.X > 0.5f ? 0 : n.X < -0.5f ? 1 : n.Y > 0.5f ? 2 : n.Y < -0.5f ? 3 : n.Z > 0.5f ? 4 : 5;
+    private static Vector3I StepOf(int dir) => dir switch
+    {
+        0 => new Vector3I(1, 0, 0), 1 => new Vector3I(-1, 0, 0),
+        2 => new Vector3I(0, 1, 0), 3 => new Vector3I(0, -1, 0),
+        4 => new Vector3I(0, 0, 1), _ => new Vector3I(0, 0, -1),
+    };
 
     private List<LiftingSurface> DetectAll(IGridAccessor grid, float blockSize)
     {

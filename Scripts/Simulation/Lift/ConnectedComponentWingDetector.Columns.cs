@@ -353,8 +353,8 @@ public partial class ConnectedComponentWingDetector
         var centroid = (mid + new Vector3(CellOffset)) * cs;
         Vector3I spanI = spanIsA ? ax1 : ax2, chordI = spanIsA ? ax2 : ax1;
         Vector3 spanVec = spanIsA ? v1 : v2, chordVec = spanIsA ? v2 : v1;
-        float sweep = ComputeSweep(tops, spanI, chordI, blockSize, sc.LeBySpan);
-        var aeroCenter = centroid - chordVec * (0.25f * meanChord);
-        return new LiftingSurface(nF, spanVec, chordVec, area, span, tc, sweep, centroid, aeroCenter, comp.Count, cells);
+        // (both edges' sweeps and the quarter chord's offset: the leading edge is the flow's - 2026-10-18, fix a-wing-edge)
+        ComputeSweep(tops, spanI, chordI, blockSize, sc.LeBySpan, sc.TeBySpan, out float sweepLo, out float sweepHi);
+        return new LiftingSurface(nF, spanVec, chordVec, area, span, tc, sweepLo, sweepHi, centroid, 0.25f * meanChord, comp.Count, cells);
     }
 }

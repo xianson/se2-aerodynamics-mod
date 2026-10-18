@@ -178,7 +178,8 @@ public static partial class AeroApi
 
     /// <summary>A detected wing (local): lift normal, span and chord axes (unit; chord toward the trailing edge), quarter-chord
     /// point (m), planform area (m2), span and mean chord (m), leading-edge sweep (rad), lift slope (per rad), maximum
-    /// lift coefficient, stall angle (rad).</summary>
+    /// lift coefficient, stall angle (rad). Which edge leads is the air's (2026-10-18, fix a-wing-edge): the chord axis,
+    /// quarter chord and sweep are for the last tick's flow (none yet: the edge at the low end of the grid axis leads).</summary>
     public static bool TryGetWing(Keen.VRage.DCS.Components.Entity grid, int index, out Vector3 normalLocal, out Vector3 spanAxisLocal, out Vector3 chordAxisLocal,
         out Vector3 aeroCenterLocal, out float area, out float span, out float meanChord, out float sweep, out float clAlpha, out float clMax, out float alphaStall)
     {
@@ -186,8 +187,10 @@ public static partial class AeroApi
         var wings = AeroOf(grid)?.FxWings;
         if (wings == null || index < 0 || index >= wings.Count) return false;
         var w = wings[index];
-        normalLocal = w.Normal; spanAxisLocal = w.SpanAxis; chordAxisLocal = w.ChordAxis; aeroCenterLocal = w.AeroCenter;
-        area = w.PlanformArea; span = w.Span; meanChord = w.MeanChord; sweep = w.SweepAngle; clAlpha = w.CLAlpha; clMax = w.CLMax; alphaStall = w.AlphaStall;
+        var forces = AeroOf(grid)?.FxModel?.LastWingForces;
+        float lead = forces != null && index < forces.Count && forces[index].Lead > 0f ? 1f : -1f;   // (the last tick's leading edge, whole)
+        normalLocal = w.Normal; spanAxisLocal = w.SpanAxis; chordAxisLocal = w.TrailingFor(lead); aeroCenterLocal = w.AeroCenterFor(lead);
+        area = w.PlanformArea; span = w.Span; meanChord = w.MeanChord; sweep = w.SweepFor(lead); clAlpha = w.CLAlpha; clMax = w.CLMax; alphaStall = w.AlphaStall;
         return true;
     }
 

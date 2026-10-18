@@ -5,6 +5,12 @@ namespace AeroMod;
 /// <summary>
 /// Detected wing geometry — pure data, no physics.
 /// Computed at build-time by an IWingDetector and cached until the grid changes.
+/// ORIENTATION-FREE (2026-10-18, fix a-wing-edge): the detector cannot know which way the ship flies - the chord axis is
+/// a positive grid axis whichever edge leads. So a wing holds both edges' sweeps, its mid-chord centroid and how far its
+/// quarter chord lies from it; the lift model picks the leading edge per tick by the air (CompressibleWingModel, lead:
+/// +1 the wing moves toward +ChordAxis - its leading edge the high end, -1 toward -ChordAxis). Before, the low end always
+/// led: a ship flying toward +ChordAxis had its lift at 3/4 chord, its Mach tuck forward and its sweep from the
+/// trailing edge.
 /// </summary>
 public readonly struct LiftingSurface
 {
@@ -16,7 +22,7 @@ public readonly struct LiftingSurface
     /// <summary>Span direction unit vector.</summary>
     public readonly Vector3 SpanAxis;
 
-    /// <summary>Chord direction unit vector (toward trailing edge).</summary>
+    /// <summary>Chord direction unit vector: a positive grid axis, unsigned - which end leads is the flow's (see lead).</summary>
     public readonly Vector3 ChordAxis;
 
     /// <summary>Planform area in m².</summary>
@@ -34,20 +40,45 @@ public readonly struct LiftingSurface
     /// <summary>Mean thickness-to-chord ratio.</summary>
     public readonly float ThicknessRatio;
 
-    /// <summary>Leading edge sweep angle in radians.</summary>
+    /// <summary>Sweep (rad, unsigned) of the edge at the low end of ChordAxis: the leading edge's when the wing moves
+    /// toward -ChordAxis.</summary>
+    public readonly float SweepLo;
+
+    /// <summary>Sweep (rad, unsigned) of the edge at the high end of ChordAxis: the leading edge's when the wing moves
+    /// toward +ChordAxis.</summary>
+    public readonly float SweepHi;
+
+    /// <summary>Orientation-free summary sweep (rad): the mean of the two edges' (~ the mid-chord line's) - for the
+    /// precomputed coefficients below and the logs. The force path uses the leading edge's (SweepFor).</summary>
     public readonly float SweepAngle;
 
-    /// <summary>Area-weighted centroid, grid-local meters.</summary>
+    /// <summary>Area-weighted centroid (the mid chord), grid-local meters.</summary>
     public readonly Vector3 Centroid;
 
-    /// <summary>Quarter-chord point, grid-local meters.</summary>
-    public readonly Vector3 AeroCenter;
+    /// <summary>The quarter chord's distance (m) from the centroid along the chord axis, toward the leading edge: 0.25 x
+    /// the mean chord (a merged wing: its pieces' area-weighted).</summary>
+    public readonly float AcOffset;
 
     /// <summary>Number of exposed faces in this wing.</summary>
     public readonly int FaceCount;
 
     /// <summary>Grid cells belonging to this wing. Used for shadow wake decay.</summary>
     public readonly List<Vector3I> Cells;
+
+    // ─── Edge faces (2026-10-18, fix a-wing-wave: the wave drag's double-count guard) ─────
+
+    /// <summary>The Newtonian frontal area (m2) of the wing's edge faces with the low end of ChordAxis leading (moving toward
+    /// -ChordAxis) and with the high end leading: sum of area x cos^3 over the windward faces of its columns that are not
+    /// skins (leading and trailing edges, steps, tips - HULL faces: the face model charges them CdBluff x this subsonic,
+    /// CpMax x this at its Newtonian end), cos = the face's smoothed normal . the chord direction the air comes from.
+    /// Measured from the real surface at detection (ConnectedComponentWingDetector.MeasureEdges); 0: not measured.</summary>
+    public readonly float EdgeLo, EdgeHi;
+
+    /// <summary>The wing's OWN thickness ratio: its columns' mean depth between its two skins over its span rows' mean chord
+    /// extent (ThicknessRatio is the merged pieces' area-weighted one, each piece's from every occupied cell across it -
+    /// 0.3-0.5 on most block wings). 0: not measured (CompressibleWingModel.WaveThickness: a wing given by hand takes
+    /// ThicknessRatio, a detected one no wave drag of its own).</summary>
+    public readonly float OwnThickness;
 
     // ─── Precomputed aero coefficients ─────────────────────────────
 
@@ -65,10 +96,11 @@ public readonly struct LiftingSurface
 
     public LiftingSurface(
         Vector3 normal, Vector3 spanAxis, Vector3 chordAxis,
-        float planformArea, float span, float thicknessRatio, float sweepAngle,
-        Vector3 centroid, Vector3 aeroCenter, int faceCount,
-        List<Vector3I>? cells = null)
+        float planformArea, float span, float thicknessRatio, float sweepLo, float sweepHi,
+        Vector3 centroid, float acOffset, int faceCount,
+        List<Vector3I>? cells = null, float edgeLo = 0f, float edgeHi = 0f, float ownThickness = 0f)
     {
+        EdgeLo = edgeLo; EdgeHi = edgeHi; OwnThickness = ownThickness;
         Normal = normal;
         SpanAxis = spanAxis;
         ChordAxis = chordAxis;
@@ -77,9 +109,11 @@ public readonly struct LiftingSurface
         MeanChord = span > 0 ? planformArea / span : 0;
         AspectRatio = span > 0 ? span * span / planformArea : 0;
         ThicknessRatio = thicknessRatio;
-        SweepAngle = sweepAngle;
+        SweepLo = sweepLo;
+        SweepHi = sweepHi;
+        float sweepAngle = SweepAngle = 0.5f * (sweepLo + sweepHi);
         Centroid = centroid;
-        AeroCenter = aeroCenter;
+        AcOffset = acOffset;
         FaceCount = faceCount;
         Cells = cells ?? new List<Vector3I>();
 
@@ -102,8 +136,23 @@ public readonly struct LiftingSurface
         OswaldE = MathF.Max(0.5f, MathF.Min(0.95f, OswaldE));
     }
 
+    /// <summary>This wing with its edge faces measured (EdgeLo, EdgeHi, OwnThickness).</summary>
+    public LiftingSurface WithEdges(float edgeLo, float edgeHi, float ownThickness) =>
+        new LiftingSurface(Normal, SpanAxis, ChordAxis, PlanformArea, Span, ThicknessRatio, SweepLo, SweepHi, Centroid, AcOffset, FaceCount, Cells,
+            edgeLo, edgeHi, ownThickness);
+
+    /// <summary>The quarter-chord point (grid-local m) for a flow with this lead (+1 the high end of ChordAxis leads,
+    /// -1 the low end; between: blended through the mid chord - see CompressibleWingModel.LeadBlend).</summary>
+    public Vector3 AeroCenterFor(float lead) => Centroid + ChordAxis * (lead * AcOffset);
+
+    /// <summary>The leading edge's sweep (rad) for a flow with this lead (blended between the edges as AeroCenterFor).</summary>
+    public float SweepFor(float lead) => SweepLo + (SweepHi - SweepLo) * (0.5f + 0.5f * lead);
+
+    /// <summary>The chord direction toward the trailing edge for a flow with this lead (0: +ChordAxis, the old default).</summary>
+    public Vector3 TrailingFor(float lead) => lead > 0f ? -ChordAxis : ChordAxis;
+
     public override string ToString() =>
         $"Wing(AR={AspectRatio:F1}, S={PlanformArea:F1}m², span={Span:F1}m, t/c={ThicknessRatio:F2}, " +
-        $"sweep={SweepAngle * 180f / MathF.PI:F0}°, CLα={CLAlpha:F2}, faces={FaceCount})";
+        $"sweep={SweepLo * 180f / MathF.PI:F0}/{SweepHi * 180f / MathF.PI:F0}°, CLα={CLAlpha:F2}, faces={FaceCount})";
 
 }

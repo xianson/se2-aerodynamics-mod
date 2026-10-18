@@ -292,7 +292,8 @@ public static class AeroEntryFx
 
     /// <summary>The wing tips of a grid from the aero mod's detected wings (grid-local metres): each wing's span end(s) far
     /// from the wings' middle (a half wing's outer end; both ends of a wing that spans the fuselage; a fin's top), at that
-    /// end's trailing edge. normals: each tip's wing lift normal. Returns the count (0: no aero / no wings yet).</summary>
+    /// end's trailing edge (the last tick's flow decides which chord edge trails - 2026-10-18, fix a-wing-edge; none yet:
+    /// the high end of the grid axis). normals: each tip's wing lift normal. Returns the count (0: no aero / no wings yet).</summary>
     public static int WingTips(Keen.VRage.DCS.Components.Entity grid, List<Vector3> tips, List<Vector3> normals)
     {
         tips.Clear(); normals.Clear();
@@ -307,9 +308,12 @@ public static class AeroEntryFx
         foreach (var w in wings) if (w.Cells != null) foreach (var c in w.Cells) { mid += Pos(c); n++; }
         if (n == 0) return 0;
         mid /= n;
-        foreach (var w in wings)
+        var forces = aero.FxModel?.LastWingForces;
+        for (int wi = 0; wi < wings.Count; wi++)
         {
+            var w = wings[wi];
             if (w.Cells == null || w.Cells.Count == 0) continue;
+            var trail = w.TrailingFor(forces != null && wi < forces.Count ? forces[wi].Lead : 0f);
             float sMin = float.MaxValue, sMax = float.MinValue;
             foreach (var c in w.Cells) { float s = Vector3.Dot(Pos(c), w.SpanAxis); sMin = Math.Min(sMin, s); sMax = Math.Max(sMax, s); }
             float sMid = Vector3.Dot(mid, w.SpanAxis);
@@ -326,10 +330,10 @@ public static class AeroEntryFx
                 {
                     var p = Pos(c);
                     if (MathF.Abs(Vector3.Dot(p, w.SpanAxis) - sEnd) > 1.5f * cs) continue;
-                    float ch = Vector3.Dot(p, w.ChordAxis);
+                    float ch = Vector3.Dot(p, trail);
                     if (ch > bestCh) { bestCh = ch; best = p; }
                 }
-                tips.Add(best + w.SpanAxis * (sign * 0.5f * cs) + w.ChordAxis * (0.5f * cs));
+                tips.Add(best + w.SpanAxis * (sign * 0.5f * cs) + trail * (0.5f * cs));
                 normals.Add(w.Normal);
             }
         }

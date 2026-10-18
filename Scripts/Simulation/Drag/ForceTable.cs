@@ -93,6 +93,17 @@ public sealed class ForceTable
     /// </summary>
     public static float TransonicSleek = 0.8f;
     public static float TransonicOnset(float subsonicLimit, float st) => subsonicLimit + (MathF.Max(subsonicLimit, TransonicSleek) - subsonicLimit) * Math.Clamp(st, 0f, 1f);
+    /// <summary>The speed-of-sound blend (0: the subsonic table, 1: the Newtonian one) at a Mach for a streamlining - the
+    /// table's one law (Evaluate), read by the wings' wave-drag guard too (2026-10-18, fix a-wing-wave: what the hull already
+    /// charges on a wing's edge faces - CompressibleWingModel.WingWaveDrag).</summary>
+    public static float NewtonBlend(float mach, float subsonicLimit, float supersonicLimit, float st)
+    {
+        float lo = TransonicOnset(subsonicLimit, st);
+        float t = supersonicLimit > lo ? (mach - lo) / (supersonicLimit - lo) : 0f;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        t = t * t * (3f - 2f * t);
+        return t * (1f - BlendHold(mach, st));   // (a sleek hull keeps its subsonic recovery through the jet band: BlendHold)
+    }
     /// <summary>The streamlining along vHat from a sampled table entry (s: Stride values); the fixed one when off or
     /// when there is no frontal area.</summary>
     public static float ShapeStreamlining(ReadOnlySpan<float> s, Vector3 vHat, float fallback)
@@ -212,11 +223,7 @@ public sealed class ForceTable
         float invSoS = ctx.Atmosphere.SpeedOfSound > 0 ? 1f / (float)ctx.Atmosphere.SpeedOfSound : 0;
         float mach = speed * invSoS;
         float st = ShapeStreamlining(s, vHat, streamlining);
-        float lo = TransonicOnset(subsonicLimit, st);
-        float t = supersonicLimit > lo ? (mach - lo) / (supersonicLimit - lo) : 0f;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        t = t * t * (3f - 2f * t);
-        t *= 1f - BlendHold(mach, st);   // (a sleek hull keeps its subsonic recovery through the jet band: BlendHold)
+        float t = NewtonBlend(mach, subsonicLimit, supersonicLimit, st);
         float wave = invSoS > 0 ? HullWave(mach, st) : 1f;
         float k = q * wave;
 

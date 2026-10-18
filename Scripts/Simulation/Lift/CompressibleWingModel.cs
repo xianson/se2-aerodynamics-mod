@@ -29,6 +29,27 @@ public class CompressibleWingModel : IWingLiftModel
     private float[] _alphaEff = Array.Empty<float>();
     private float[] _efficiency = Array.Empty<float>();
     private float[] _oswaldMod = Array.Empty<float>();
+    private float[] _leads = Array.Empty<float>(), _sweepLE = Array.Empty<float>();
+
+    /// <summary>THE LEADING EDGE BY THE AIR (2026-10-18, fix a-wing-edge): a wing's chord axis is a positive grid axis -
+    /// the detector cannot know which way the ship flies, and the low end always led: a ship flying toward +ChordAxis got
+    /// its lift at 3/4 chord from its real leading edge, its Mach tuck FORWARD (destabilising) and its sweep from the
+    /// trailing edge. Now per wing per tick the lead is the chordwise component of the wing's motion through the air
+    /// (+1 toward +ChordAxis: the high end leads; -1: the low end): the aerodynamic centre a quarter chord from THAT edge,
+    /// that edge's sweep for M_perp and the lift slope, the camber read from that end, the AoA and Mach CoP shifts
+    /// downstream. Near-spanwise flow (pure sideslip, a flat fall, a hover) does not flip it hard: within LeadBlend of the
+    /// wing's speed the lead goes linearly through 0 - the force point slides through the mid chord, no jitter, no state
+    /// (a flat plate's centre of pressure IS its mid chord broadside on).</summary>
+    public static float LeadBlend = 0.1f;
+
+    /// <summary>The lead (-1..1) of wing w moving at v (local m/s) through the air: see LeadBlend.</summary>
+    internal static float LeadOf(in LiftingSurface w, Vector3 v)
+    {
+        float along = Vector3.Dot(v, w.ChordAxis);
+        float band = LeadBlend * v.Length();
+        if (band <= 1e-6f) return along > 0f ? 1f : along < 0f ? -1f : 0f;
+        return Math.Clamp(along / band, -1f, 1f);
+    }
     private float[] _arSys = Array.Empty<float>(); private int[] _sys = Array.Empty<int>(); private double _sysSig = double.NaN;
 
     /// <summary>WING SYSTEMS (2026-10-10, AeroBench polar): the detector hands over a wing in pieces - a Tu-134's main wing
@@ -173,6 +194,8 @@ public class CompressibleWingModel : IWingLiftModel
         _alphaEff = new float[n];
         _efficiency = new float[n];
         _oswaldMod = new float[n];
+        _leads = new float[n];
+        _sweepLE = new float[n];
         // Influence is n*n, allocated separately
     }
 
@@ -229,19 +252,159 @@ public class CompressibleWingModel : IWingLiftModel
         return claSub + (claSup - claSub) * t;
     }
 
+    /// <summary>WING WAVE DRAG (2026-10-18, fix a-wing-wave, the user: wings had no wave drag of their own - only the hull's
+    /// one multiplier by streamlining - so a thick straight slab crossed Mach 1 as cheaply as a thin swept blade). Per wing
+    /// per tick, from its thickness ratio, this tick's leading-edge sweep L (the air's: LeadBlend) and its CL:
+    ///   drag divergence (Korn):  M_dd cos L = KornKappa - (t/c) / cos L - |CL| / (10 cos^2 L)
+    ///   transonic rise (Lock):   dCd = 20 (M - M_crit)^4,  M_crit = M_dd - (0.1/80)^(1/3)   (slope 0.1 at M_dd)
+    ///   supersonic (Ackeret, simple sweep theory on the normal section): Cd = WaveK (t/c)^2 cos L / sqrt(Mn^2 - 1),
+    ///                            Mn = M cos L - the normal section's 2D wave drag (K (t/c_n)^2 / beta_n) x cos^3 L
+    /// The transonic rise is capped at the Ackeret value at beta = WaveBetaCap (transonic similarity: the singularity at
+    /// Mn = 1 rounded to the peak ~ tau^(5/3)), and handed over to Ackeret from Mn 1 to sqrt(1 + beta_cap^2) (a smoothstep -
+    /// both sides equal the cap there, so no jump). A SUBSONIC leading edge at M > 1 (Mn < 1) gets no Ackeret term - its
+    /// normal flow is subsonic (simple sweep theory) - only Lock's rise in M against Korn's swept M_dd, which stays small
+    /// while Mn < Mn_dd; the volume's wave drag at M > 1 is the hull's (its streamlining law). WaveK 16/3: a biconvex section (the double wedge,
+    /// the minimum for its thickness, is 4; a flat-topped hexagon with ramps over a fraction f of the chord is 2/f).
+    /// t/c: the wing's OWN (its columns' depth between its skins over its rows' chord - LiftingSurface.OwnThickness;
+    /// WaveThickness), not the detector's ThicknessRatio (a stepped block wing's comes out 0.3-0.5, its pieces' over the
+    /// whole grid's cells across them - the F-6's 0.28-0.42 where its own are 0.12-0.19).
+    /// THE DOUBLE-COUNT GUARD: a wing's leading-edge, trailing-edge and tip faces are HULL faces (only its skins are left
+    /// out - LiftingSurfaceModel.ExcludeWingFaces), so the hull's speed-of-sound law already charges part of its thickness
+    /// drag there: what it adds over its subsonic level on them - P x (wave x (r CdBluff (1 - t) + CpMax t) - r CdBluff),
+    /// r = EdgeBluffKept the share of the bluff charge its pressure recovery leaves subsonic (0.37 measured on a stepped
+    /// bench wing, 1 on a square edge - with 0.4 the estimate is within 5 % of the measured rise in the sleek band, and
+    /// above it on square edges: it errs toward adding less), P = their Newtonian frontal area (sum of area x cos^3 over
+    /// the windward edge faces, measured at detection from the real surface: LiftingSurface.EdgeLo / EdgeHi), t and wave the
+    /// hull's own blend and wave multiplier this tick (ForceTable.NewtonBlend / HullWave, handed over by SetHullState) -
+    /// comes off the theory value; the wing adds only what is missing, never less than 0. Measured (AeroBench
+    /// wingwaveprobe, Lift/README.md): a square edge's rise is 1-3x the theory value through the transonic band and 2-25x
+    /// supersonic (nothing added, a little where the hull's blend lags: 0.009 on a t/c 0.17 slab at Mach 0.9); a stepped
+    /// edge (smoothed to a ramp, a sleek hull holding its recovery) is charged almost nothing until Mach 1.6 (the theory
+    /// added), less from there, none by Mach 3. False: none (the A/B).</summary>
+    public static bool WingWaveDrag = true;
+    /// <summary>THE BLOCK WINGS' WAVE-DRAG THICKNESS (2026-10-18, the user: '1 and 2' - soften the pinch, scale the block
+    /// wings' wave drag): the wave drag takes a wing's t/c x this - its OWN t/c (WaveThickness) read as that of the real wing
+    /// a builder means. Block wings are 12-19 % thick (a cell's depth over a few cells of chord: the F-6's 0.12-0.19) where a
+    /// real fighter's are 4-6 %; charged at their own t/c they hit the full transonic wall of a thick 1940s section (the F-6's
+    /// drag at Mach 1 1.92x its subsonic, T/W 3.4 to break Mach 1 at sea level). x 0.4: the F-6's wings read as 0.05-0.075,
+    /// a real fighter's to a thick-ish modern one. Why a scale on the t/c, not on the drag or on WaveK: the whole theory stays
+    /// one consistent (thinner) wing - Korn's onset, Lock's rise, the transonic cap and Ackeret all from the same t/c - and the
+    /// ordering is kept exactly: monotonic in t/c, and the supersonic (Ackeret, ~ (t/c)^2) ratio between two wings unchanged
+    /// (thin swept vs thick straight at Mach 2: 7.3x before and after - AeroBench wingwave). A thick straight block wing still
+    /// diverges first (Korn: M_dd falls with t/c) and pays most; a drag scale would have kept its onset at Mach ~0.72 and
+    /// scaled a thin wing's (already realistic) drag by the same factor; a smaller WaveK leaves Lock's rise and the onset
+    /// untouched. 1: the real wing of that t/c (the A/B).</summary>
+    public static float BlockWingThicknessScale = 0.4f;
+    public static float KornKappa = 0.87f, WaveK = 16f / 3f, WaveGammaPlus1 = 2.4f, EdgeBluffKept = 0.4f;
+    /// <summary>Where linear theory stops near Mn = 1 (the cap's beta): transonic similarity - Ackeret holds while
+    /// beta^2 >> ((gamma + 1) tau)^(2/3), tau the normal section's t/c (tc / cos L) - so beta_cap = ((gamma + 1) tau)^(1/3)
+    /// and the peak K tau^2 / beta_cap ~ tau^(5/3), the transonic similarity law (NACA 0012: ~0.12 against ~0.1 measured at
+    /// Mach 1). Floored at 0.15.</summary>
+    internal static float WaveBetaCap(float tc, float cosSweep) => MathF.Max(0.15f, MathF.Cbrt(WaveGammaPlus1 * MathF.Max(0f, tc) / MathF.Max(0.1f, cosSweep)));
+    /// <summary>(0.1/80)^(1/3): M_dd - M_crit in Lock's law (dCd/dM = 0.1 at M_dd).</summary>
+    const float LockGap = 0.10772f;
+
+    /// <summary>SUPERSONIC DRAG DUE TO LIFT (2026-10-18, fix a-wing-wave): CDi was CL^2 / (pi e AR) at every Mach - full
+    /// leading-edge suction - so supersonic lift came ~3x too cheap. Now CDi = CL^2 [k_sub + (1/CLa - k_sub) s], k_sub =
+    /// 1/(pi e AR) (x the ground factor, as before), 1/CLa the drag of lift with NO suction (the force normal to the
+    /// plate: CL x alpha; with the supersonic slope 4/beta that is CL^2 sqrt(M^2 - 1)/4 for a supersonic leading edge -
+    /// this wing's own runtime CLa, its leading-edge Mach, as the lift), s the suction lost: a smoothstep in M_perp over
+    /// the lift slope's own blend band (SubsonicBlendLimit .. SupersonicBlendLimit - the same as ComputeCLAlpha), and for a
+    /// SUBSONIC leading edge in supersonic flight at least SubsonicEdgeSuctionLoss of it (smoothstep in the free-stream
+    /// Mach over the same band): linear theory keeps some suction on a swept edge but a real one - and a blocky one -
+    /// loses much of it. Past the stall the no-suction share fades as the separated flow's flat-plate drag (cdSep - the
+    /// same thing, the normal force tilted back) takes over. Never below k_sub. False: CL^2 / (pi e AR) at all Mach.</summary>
+    public static bool SupersonicLiftDrag = true;
+    public static float SubsonicEdgeSuctionLoss = 0.5f;
+
+    /// <summary>Korn's drag-divergence Mach (free stream) of a section of thickness ratio tc on an edge swept by sweep (rad)
+    /// at lift coefficient cl: M_dd = (KornKappa - tc / cos L - |cl| / (10 cos^2 L)) / cos L; its normal component floored at
+    /// 0.4 (a slab thicker than the relation knows), cos L at 0.1.</summary>
+    internal static float KornMdd(float tc, float sweep, float cl)
+    {
+        float c = MathF.Max(0.1f, MathF.Cos(sweep));
+        float mn = KornKappa - MathF.Max(0f, tc) / c - MathF.Abs(cl) / (10f * c * c);
+        return MathF.Max(0.4f, mn) / c;
+    }
+
+    /// <summary>The thickness wave drag coefficient (on the planform, free-stream q) of a wing at Mach mach, leading-edge
+    /// sweep sweep (rad), thickness ratio tc, lift coefficient cl - theory only (the hull's share comes off in
+    /// ComputeWingForces): Lock's rise above Korn's M_dd, capped at the Ackeret peak, handed to Ackeret on the normal Mach.
+    /// Finite everywhere (0 for NaN input).</summary>
+    internal static float ThicknessWaveCd(float mach, float sweep, float tc, float cl)
+    {
+        if (!(mach > 0f) || !(tc > 0f) || !float.IsFinite(sweep + cl)) return 0f;
+        float c = MathF.Max(0.1f, MathF.Cos(sweep));
+        float mCrit = KornMdd(tc, sweep, cl) - LockGap;
+        float x = mach - mCrit;
+        float lockCd = x > 0f ? 20f * x * x * x * x : 0f;
+        float k = WaveK * tc * tc * c;
+        float betaCap = WaveBetaCap(tc, c);
+        float peak = k / betaCap;
+        float trans = MathF.Min(lockCd, peak);
+        float mn = mach * c;
+        if (mn <= 1f) return trans;
+        float b2 = mn * mn - 1f, bCap = betaCap * betaCap;
+        float sup = b2 > bCap ? k / MathF.Sqrt(b2) : peak;
+        // (the hand-over: Mn 1 .. sqrt(1 + bCap) - both ends equal the cap there)
+        float s = Math.Clamp(b2 / bCap, 0f, 1f);
+        s = s * s * (3f - 2f * s);
+        return trans + (sup - trans) * s;
+    }
+
+    /// <summary>The share of leading-edge suction lost (0..1) at this leading-edge Mach and free-stream Mach: see
+    /// SupersonicLiftDrag.</summary>
+    internal float SuctionLoss(float machPerp, float mach)
+    {
+        float lo = SubsonicBlendLimit, hi = SupersonicBlendLimit;
+        if (!(hi > lo)) return machPerp >= hi ? 1f : 0f;
+        float a = Math.Clamp((machPerp - lo) / (hi - lo), 0f, 1f), b = Math.Clamp((mach - lo) / (hi - lo), 0f, 1f);
+        a = a * a * (3f - 2f * a); b = b * b * (3f - 2f * b);
+        return MathF.Max(a, SubsonicEdgeSuctionLoss * b);
+    }
+
+    // -- the hull's state this tick (SetHullState: the double-count guard of WingWaveDrag) --
+    float _hullCdBluff, _hullCpMax, _hullT, _hullWave = 1f;
+
+    /// <summary>Hand over this tick's hull state for the wave-drag guard: the face model's CdBluff and CpMax, its
+    /// speed-of-sound blend t and wave multiplier (ForceTable.NewtonBlend, HullWave) - LiftingSurfaceModel.HandHullEdges.
+    /// Stays until the next call; never set (or CdBluff = CpMax = 0): no hull charge known - the full theory value.</summary>
+    public void SetHullState(float cdBluff, float cpMax, float blend, float wave)
+    {
+        _hullCdBluff = cdBluff; _hullCpMax = cpMax; _hullT = blend; _hullWave = wave;
+    }
+
+    /// <summary>The thickness ratio a wing's wave drag takes, x BlockWingThicknessScale: its own (LiftingSurface.OwnThickness); a wing given by hand
+    /// (no cells: the bench's) the detector's ThicknessRatio; a detected wing never measured (no live surface at its
+    /// detection - a cached small grid's incremental update) 0 - no wave drag of its own rather than one from the detector's
+    /// 0.3-0.5 with no guard (its edges are still the hull's).</summary>
+    internal static float WaveThickness(in LiftingSurface w) =>
+        BlockWingThicknessScale * (w.OwnThickness > 0f ? w.OwnThickness : w.Cells == null || w.Cells.Count == 0 ? w.ThicknessRatio : 0f);
+
+    /// <summary>What the hull charges on a wing's edge faces over their subsonic level this tick (drag area, m2; x q a
+    /// force), the edge leading by lead (blended as the force point, LeadBlend).</summary>
+    internal float HullEdgeRise(in LiftingSurface w, float lead)
+    {
+        float pe = w.EdgeLo + (w.EdgeHi - w.EdgeLo) * (0.5f + 0.5f * lead);
+        float kept = EdgeBluffKept * _hullCdBluff;
+        float over = _hullWave * (kept * (1f - _hullT) + _hullCpMax * _hullT) - kept;
+        return over > 0f && pe > 0f ? pe * over : 0f;
+    }
+
     /// <summary>Ground effect: switch (harness aeroset CompressibleWingModel.GroundEffect 0) and the height the
     /// lift boost and drag cut fade out by (spans).</summary>
     public static bool GroundEffect = true;
     float[] _groundPhi = Array.Empty<float>();
 
     /// <summary>The wing's ground factor (McCormick): phi = (16 h/b)^2 / (1 + (16 h/b)^2), floored at 0.1 - h its own height
-    /// above the ground (the grid's, plus its aerodynamic centre's offset along 'up'), b its span; 1 far from the ground or
-    /// unknown. (Without the 16 it halved induced drag a whole span up; it now fades smoothly - ~1 % left at h = b.)</summary>
-    static float GroundPhi(in AeroContext ctx, in LiftingSurface w)
+    /// above the ground (the grid's, plus its aerodynamic centre's offset along 'up' - ac: this tick's), b its span; 1 far
+    /// from the ground or unknown. (Without the 16 it halved induced drag a whole span up; it now fades smoothly - ~1 %
+    /// left at h = b.)</summary>
+    static float GroundPhi(in AeroContext ctx, in LiftingSurface w, Vector3 ac)
     {
         if (!GroundEffect || ctx.GroundHeight < 0f || w.Span <= 0.1f) return 1f;
         float h = ctx.GroundHeight;
-        if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(w.AeroCenter, ctx.GroundUpLocal);
+        if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(ac, ctx.GroundUpLocal);
         h = MathF.Max(0.05f, h);
         float x = 16f * h / w.Span;
         if (x > 60f) return 1f;   // (phi within 0.03 % of 1)
@@ -273,7 +436,11 @@ public class CompressibleWingModel : IWingLiftModel
         for (int i = 0; i < n; i++)
         {
             ref readonly var w = ref wings[i];
-            var v = ctx.VelocityAtPoint(w.AeroCenter);
+            // (the leading edge from the air at the mid chord, then the air at that edge's quarter chord: LeadBlend)
+            float lead = LeadOf(w, ctx.VelocityAtPoint(w.Centroid));
+            _leads[i] = lead;
+            _sweepLE[i] = w.SweepFor(lead);
+            var v = ctx.VelocityAtPoint(w.AeroCenterFor(lead));
             float speed = v.Length();
             _localSpeeds[i] = speed;
             if (speed < MinSpeed)
@@ -294,21 +461,23 @@ public class CompressibleWingModel : IWingLiftModel
             if (GeometricCamber && i < _camber.Length)
             {
                 // (the leading end is the one moving ahead: the chord line's rise toward it is the incidence)
-                // (moving toward +ChordAxis: its leading edge is the high end)
-                float along = Vector3.Dot(vInPlane, w.ChordAxis);
-                _alphas[i] -= along >= 0 ? _slope[i] : _camber[i];   // (_camber: alpha_L0 leading at the low end, _slope: at the high end)
+                // (moving toward +ChordAxis - lead +1: its leading edge is the high end; blended through near-spanwise
+                //  flow as the force point - it flipped hard at along = 0 before, 2026-10-18)
+                float hiShare = 0.5f + 0.5f * lead;
+                _alphas[i] -= _camber[i] + (_slope[i] - _camber[i]) * hiShare;   // (_camber: alpha_L0 leading at the low end, _slope: at the high end)
             }
 
             // Runtime CLAlpha from Mach regime
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
-            float machPerp = mach * MathF.Cos(w.SweepAngle);
+            float sweepLE = _sweepLE[i];   // (the leading edge's, by the air: LeadBlend)
+            float machPerp = mach * MathF.Cos(sweepLE);
             _machPerps[i] = machPerp;
             // (ground effect: near the ground the wing sees less downwash - as if its aspect ratio were AR / phi -
             //  so its lift slope rises; phi from its own height over its span, capped at 4x)
-            float phiG = GroundPhi(ctx, w);
+            float phiG = GroundPhi(ctx, w, w.AeroCenterFor(lead));
             _groundPhi[i] = phiG;
             float arI = _arSys[i];
-            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), w.SweepAngle,
+            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), sweepLE,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
             // Runtime stall angle, floored at 3 degrees
@@ -421,7 +590,7 @@ public class CompressibleWingModel : IWingLiftModel
             // Pressure drag of separated flow: none attached; past stall it grows to a flat plate's (normal force
             // 2 sin a: drag 2 sin^2 a), with the same blend as the lift. (The wing owns its skins - the face model
             // leaves them out - so without it a stalled wing kept an L/D of 17 at 36 degrees.)
-            float cdSep = 0f;
+            float cdSep = 0f, attached = 1f;   // (attached: the share of the lift still from attached flow - SupersonicLiftDrag)
             if (absAlpha <= alphaStall)
             {
                 cl = clAlpha * alpha;
@@ -438,7 +607,9 @@ public class CompressibleWingModel : IWingLiftModel
 
                 float blendToFlat = MathF.Min(1f, stallExcess * 0.5f);
                 float sinA = MathF.Sin(absAlpha);
-                cdSep = 2f * sinA * sinA * MathF.Max(blendToFlat, 1f - kirchhoffFactor);
+                float sepShare = MathF.Max(blendToFlat, 1f - kirchhoffFactor);
+                cdSep = 2f * sinA * sinA * sepShare;
+                attached = 1f - sepShare;
                 cl = clAttached * kirchhoffFactor * (1f - blendToFlat) + clFlatPlate * blendToFlat;
             }
 
@@ -458,7 +629,7 @@ public class CompressibleWingModel : IWingLiftModel
 
             // Induced drag: CDi = CL²/(π·e·AR)
             float e = _oswaldMod[i];
-            float cdi = _arSys[i] > 0.1f ? cl * cl / (MathF.PI * e * _arSys[i]) : 0;
+            float kSub = _arSys[i] > 0.1f ? 1f / (MathF.PI * e * _arSys[i]) : 0;
 
             // (profile drag: two turbulent skins on the chord plus a little form - ~0.006 for an airliner's wing, as
             //  measured - with ReynoldsSkin; the flat 0.010 without)
@@ -468,28 +639,53 @@ public class CompressibleWingModel : IWingLiftModel
             // φ = (h / b)² / (1 + (h / b)²), where h = ground height, b = span
             // CDi_eff = CDi * φ  (approaches 0 at h→0, 1 at h→∞)
             // Also boosts effective CL slightly (reduced downwash = more effective AoA)
-            cdi *= _groundPhi[i];   // (this wing's own height: GroundPhi)
+            kSub *= _groundPhi[i];   // (this wing's own height: GroundPhi)
+            float cdi = cl * cl * kSub;
 
-            float totalCd = cdi + cd0 + cdSep;
+            // (supersonic drag due to lift, 2026-10-18 fix a-wing-wave: the leading-edge suction lost toward CL^2/CLa -
+            //  SupersonicLiftDrag; the ground factor stays on the suction part only - CLa already has it through AR/phi)
+            float mach = speedOfSound > 0 ? speed / speedOfSound : 0f;
+            if (SupersonicLiftDrag && clAlpha > 0.01f && attached > 0f)
+            {
+                float loss = SuctionLoss(_machPerps[i], mach);
+                float extra = 1f / clAlpha - kSub;
+                if (loss > 0f && extra > 0f) cdi += cl * cl * extra * loss * attached;
+            }
+
+            // (the wing's own wave drag: thickness and sweep, less what the hull already charges on its edge faces -
+            //  WingWaveDrag, 2026-10-18 fix a-wing-wave)
+            float cdw = 0f;
+            if (WingWaveDrag && w.PlanformArea > 1e-3f)
+            {
+                float th = ThicknessWaveCd(mach, _sweepLE[i], WaveThickness(w), cl);
+                if (th > 0f) cdw = MathF.Max(0f, th - HullEdgeRise(w, _leads[i]) / w.PlanformArea);
+            }
+
+            float totalCd = cdi + cd0 + cdSep + cdw;
             float dragMag = q * w.PlanformArea * totalCd;
             // (against the motion: vHat is the direction the wing moves - it pushed the wing forward before, ~95 kN
             // of free thrust on the Jetliner, hidden by a drag floor)
             var inducedDrag = -vHat * dragMag;
 
+            // (downstream: toward the trailing edge of this tick's flow - LeadBlend; it was always +ChordAxis, forward
+            //  for a ship flying toward +ChordAxis; scaled by the lead, so it fades to the mid chord in near-spanwise flow)
+            float lead = _leads[i];
+            Vector3 downstream = w.ChordAxis * -lead;
+
             // ── Center of pressure shift with AoA ──
             float absAlphaFrac = absAlpha / (MathF.PI * 0.5f);
             float cpBlend = absAlphaFrac * absAlphaFrac;
-            Vector3 cpShiftAoA = w.ChordAxis * (w.MeanChord * 0.25f * cpBlend);
+            Vector3 cpShiftAoA = downstream * (w.MeanChord * 0.25f * cpBlend);
 
             // ── Mach tuck: CoP shifts aft at transonic (uses machPerp for sweep) ──
             float machTuck = MachTuckFactor(_machPerps[i]);
-            Vector3 cpShiftMach = w.ChordAxis * (w.MeanChord * machTuck);
+            Vector3 cpShiftMach = downstream * (w.MeanChord * machTuck);
 
-            Vector3 applicationPoint = w.AeroCenter + cpShiftAoA + cpShiftMach;
+            Vector3 applicationPoint = w.AeroCenterFor(lead) + cpShiftAoA + cpShiftMach;
 
             _resultsList[i] = new WingForceResult(
                 liftForce, inducedDrag, applicationPoint,
-                cl, cdi, alpha, _efficiency[i]);
+                cl, cdi, alpha, _efficiency[i], lead, cdw);
         }
 
         // Throttled wing diagnostics (~1/sec)
@@ -501,13 +697,13 @@ public class CompressibleWingModel : IWingLiftModel
             {
                 ref readonly var w = ref wings[i];
                 var wf = _resultsList[i];
-                float sweepDeg = w.SweepAngle * 180f / MathF.PI;
+                float sweepDeg = _sweepLE[i] * 180f / MathF.PI;   // (the leading edge's, by the air)
                 float alphaDeg = _alphas[i] * 180f / MathF.PI;
                 float tuck = MachTuckFactor(_machPerps[i]);
                 Log.Default?.Info(
-                    $"[AERO-WING] W{i} M={mach:F2} Mperp={_machPerps[i]:F2} sweep={sweepDeg:F1}° " +
+                    $"[AERO-WING] W{i} M={mach:F2} Mperp={_machPerps[i]:F2} sweep={sweepDeg:F1}° lead={_leads[i]:F2} " +
                     $"AoA={alphaDeg:F1}° CL={wf.CL:F3} CLa={_clAlphas[i]:F3} " +
-                    $"L={wf.LiftForce.Length():F0}N Di={wf.InducedDrag.Length():F0}N " +
+                    $"L={wf.LiftForce.Length():F0}N Di={wf.InducedDrag.Length():F0}N CDi={wf.CDi:F4} CDw={wf.CDw:F4} t/c={w.ThicknessRatio:F2} " +
                     $"AR={w.AspectRatio:F1} S={w.PlanformArea:F1}m² span={w.Span:F1}m " +
                     $"tuck={tuck:F3} chord={w.MeanChord:F2}m " +
                     $"n=({w.Normal.X:F3},{w.Normal.Y:F3},{w.Normal.Z:F3}) " +

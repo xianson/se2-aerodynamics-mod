@@ -116,7 +116,7 @@ The modeller's kitbash of each vanilla atmospheric thruster into a ramjet with a
   - **inlet unstart:** a **pop** (the flame it had, 1.8 x bright for 70 ms), a 0.35 s **sputter**, then **out** until the inlet relights; it comes back from nothing as the inlet spools up;
   - aero off: a plain hydrogen thruster's flame (its share, no Mach gate, no diamonds). Knobs: `aeroset ExhaustLaw.*` / `AeroExhaustComponent.*` (harness: `DevMach`, `DevThrust`, `DevUnstart`).
 - **Menu:** its own G-menu group, "Ramjets".
-- **Speed ladder (Tests/ThrustTests `RamjetChecks`, sea level, axial):** per rated newton the ramjet passes the jet from Mach 1.98; per block of a kit (its 1.5 × rating) from Mach 1.88 (2026-10-17, after the jet's ram rise; before it 1.78 and 1.28). It leads from Mach 2 to 6; the turboprop gives nothing past Mach 0.75. On the Atmo500 kit: Mach 1.5 - jet 2502 kN, Ramjet_250 1476 kN; Mach 2.0 - jet 1243 kN, ramjet 1930 kN; Mach 3 - jet 0, ramjet 2384 kN. In thinner air both scale alike (the jet by the game's Atmospheric efficiency, 1/3 at 0.4 kg/m³; the ramjet by ρ / 1.225, 0.33 there), so the crossovers hold at altitude.
+- **Speed ladder (Tests/ThrustTests `RamjetChecks`, sea level, axial):** per rated newton the ramjet passes the jet from Mach 1.98; per block of a kit (its 1.5 × rating) from Mach 1.88 (2026-10-17, after the jet's ram rise; before it 1.78 and 1.28; unchanged by the 2026-10-18 retune - the jet's curve from Mach 1.8 on is the same). It leads from Mach 2 to 6; the turboprop gives nothing past Mach 0.75. On the Atmo500 kit: Mach 1.5 - jet 2957 kN (2502 before the 2026-10-18 retune), Ramjet_250 1476 kN; Mach 2.0 - jet 1243 kN, ramjet 1930 kN; Mach 3 - jet 0, ramjet 2384 kN. In thinner air both scale alike (the jet by the game's Atmospheric efficiency, 1/3 at 0.4 kg/m³; the ramjet by ρ / 1.225, 0.33 there), so the crossovers hold at altitude.
 
 ## Speed roles (the user, 2026-10-17)
 
@@ -125,7 +125,7 @@ Each engine leads thrust per kW in its own band, and Mach 1 is a real wall.
 | Band | King | Thrust vs its rating |
 |---|---|---|
 | Subsonic, up to ~Mach 0.6 | **Turboprop** | Full static thrust, then constant power (∝ 1/true airspeed past 100 m/s - from 40 on 2026-10-18); fades from Mach 0.6, gone at 0.75 (`ThrustProfiles.TurbopropFraction`, at the local Mach). 0.32 kW per kN. |
-| Through the barrier, ~Mach 0.6–2 | **Vanilla atmospheric** (a jet) | A transonic pinch, then a ram rise above the rating (`ThrustProfiles.Jet`, `JetPinch` 0.76, `JetRamPeak` 1.8; 2026-10-17, the Mach wall made reachable): 100% at rest, 95% at Mach 0.6, 85% at 0.85, **80% at 0.95, 76% at 1.0, 95% at 1.1**, 112% at 1.2, 130% at 1.3, 148% at 1.4, 165% at 1.5, 177% at 1.6, **180% at 1.7**, 155% at 1.8, 120% at 1.9, 82% at 2.0 (below the ramjet from here), 45% at 2.2, 25% at 2.4, 0 at 2.8. Before the fix: 65% at 0.95, 55% at 1.0, 60% at 1.1, 80% at 1.3, 90% at 1.6, 60% at 2.0. |
+| Through the barrier, ~Mach 0.6–2 | **Vanilla atmospheric** (a jet) | The subsonic lapse, then a ram rise above the rating - **no transonic pinch** (`ThrustProfiles.Jet`, `JetMach1` 1.08, `JetRamPeak` 1.98 at `JetRamPeakMach` 1.6; 2026-10-18, the user: "1 and 2"): 100% at rest, 95% at Mach 0.6, 85% at 0.85, **108% at 1.0**, 128% at 1.1, 148% at 1.2, 168% at 1.3, 194% at 1.45, **198% at 1.6**, 185% at 1.7, 155% at 1.8, 120% at 1.9, 82% at 2.0 (below the ramjet from here), 45% at 2.2, 25% at 2.4, 0 at 2.8. 2026-10-17 to 10-18 (the pinch): 80% at 0.95, 76% at 1.0, 95% at 1.1, 112% at 1.2, 130% at 1.3, 148% at 1.4, 165% at 1.5, 177% at 1.6, 180% at 1.7. Before that: 65% at 0.95, 55% at 1.0, 60% at 1.1, 80% at 1.3, 90% at 1.6, 60% at 2.0. |
 | Supersonic, ~Mach 2–6 | **Ramjet** (built 2026-10-17, see "Ramjets") | Zero static thrust; needs a boost to ~Mach 0.5; 100 % at Mach 2.5–3.5 (105 % at 3); fades by Mach 6. Burns hydrogen. |
 | Hypersonic (later) | Scramjet | Mach 4–15 curve kept in `ThrustProfiles`. |
 
@@ -161,13 +161,32 @@ Each engine leads thrust per kW in its own band, and Mach 1 is a real wall.
 
     (The "before" density figures use the bridge's speed of sound; the morning's report took 340 m/s at every density, hence its 2.24 at 0.8.)
   - Past the crossing, up to Mach 1.4, nothing asks more than 93 % of the crossing thrust (1.81 of 1.94, at Mach 1.05).
+- **Mach 1 retuned (2026-10-18, the user: "1 and 2" - soften the pinch, scale the block wings' wave drag).** The wings' own wave drag (fix a-wing-wave, 12b97e7: each wing from its own t/c, sweep and CL - Lift/README.md) put the F-6 back behind a wall: **T/W 3.36** at sea level, 2.53 at 0.4 kg/m³, its drag at Mach 1 1.92× its subsonic. Block wings are 12-19 % thick, real fighters' 4-6 %. For reference: a real F-16 goes supersonic at sea level on about T/W 0.75; SE ships are about twice as draggy per ton (big frontal areas). Two levers:
+  - **(1) No pinch.** A real afterburning engine doesn't choke through Mach 1; its sea-level thrust rises with ram from the high subsonic on. The curve now rises from its subsonic low (85 % at Mach 0.85) through Mach 1 (108 %) to 198 % at Mach 1.6. With no pinch to make Mach 1 the costly point, the rise must keep up with the drag past it (the hull's grows as M²) for the cruise to stay easier than the crossing - so it is steeper and higher than the old ram rise (194 % at 1.45 where it was ~156 %). From Mach 1.8 on it is unchanged: the ramjet still takes over at Mach 1.98 per rated newton, 1.88 per block of a kit.
+  - **(2) Block wings read as thinner** (`CompressibleWingModel.BlockWingThicknessScale` 0.4: the wave drag takes 0.4 × a wing's own t/c - the F-6's 0.12-0.19 read as 0.05-0.075). Thickness and sweep still order the wings (thin swept vs thick straight: 7.8× less at Mach 1.2, 7.3× at Mach 2, as at their own t/c).
+  - **The goals (Tests/AeroBench `machwall`, whole model):** the F-6 breaks Mach 1 at T/W 1.35-1.65 at sea level and ≤ 1.3 at 0.4 kg/m³, Mach 1 the bottleneck, on to ≥ Mach 1.4 on that thrust, supersonic on T/W 1.5 at 0.4 kg/m³; the wing terms still cost (above the hull wall's, and the real-t/c wings more); a brick stalls subsonic; nothing changes below Mach 0.75. The 2026-10-17 hull-only goals (≤ 2.5 / 1.5 on the pinch) are retired with the pinch.
+
+    | the F-6 (static sea-level T/W) | 12b97e7 | Now |
+    |---|---|---|
+    | T/W to break Mach 1, sea level | 3.36 | **1.55** |
+    | its bottleneck Mach | 1.01 | 1.02 |
+    | top level-flight Mach on that thrust | 1.73 | **1.44** |
+    | T/W to break Mach 1, 0.8 kg/m³ | 1.99 | 0.92 |
+    | T/W to break Mach 1, 0.4 kg/m³ | 2.53 | **1.17** |
+    | top Mach on T/W 1.5 at 0.4 kg/m³ | 0.89 | 1.64 |
+    | top Mach on T/W 2.5 at sea level | 0.91 | 1.74 |
+    | drag / subsonic drag area at Mach 0.8 / 0.9 / 1.0 / 1.2 / 1.5 / 2 / 3 | 1.12 / 1.69 / 1.92 / 1.86 / 1.56 / 1.64 / 3.58 | 1.01 / 1.17 / 1.26 / 1.17 / 1.09 / 1.51 / 3.58 |
+    | a brick's stall Mach (same frontal area, on the sea-level crossing thrust) | 0.65 | **0.45** |
+
+    With the wings' terms off the same curve asks T/W 1.37; at the wings' own t/c 2.38.
 - **Power per kW (Tests/ThrustTests power ladder, 2026-10-17): the turboprop route.** The turboprops draw **0.32 kW per kN** (`gen_propulsor_defs.py`; from 1.58). Constant power starts at **100 m/s** (`ThrustProfiles.TurbopropV0`; 40 until 2026-10-18), so they lead thrust per kW (sea level, axial) against **every** vanilla atmospheric until their tip fade ends the band. The jet takes over:
   - from Mach **0.655** against the 1000 (1.03 kW/kN, the vanilla's most efficient);
   - from **0.685** against the 500 (1.58 kW/kN);
   - from **0.695** against the 100 (1.88 kW/kN);
   - from **0.705** against the 250 (2.26 kW/kN).
+  (Crossovers measured with TurbopropV0 100 before the 2026-10-18 jet retune; re-run Tests/ThrustTests power ladder.)
 
-  Each of those leads from there to Mach 2 (with the ram rise, by far: 1.8× its rating at Mach 1.7).
+  Each of those leads from there to Mach 2 (with the ram rise, by far: 1.98× its rating at Mach 1.6 since 2026-10-18; 1.8× at Mach 1.7 before).
 
   **Raw thrust too:** the 2.5 m turboprop (1.9 MN) out-thrusts the AtmosphericThruster500 (1.516 MN) up to about Mach 0.4 (at 40 m/s it was only to ~Mach 0.15).
 

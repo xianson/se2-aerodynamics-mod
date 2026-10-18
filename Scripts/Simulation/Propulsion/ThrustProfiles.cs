@@ -119,46 +119,60 @@ public static class ThrustProfiles
     // ═══════════════════════════════════════════════════════════════════
     //  JET — the VANILLA ATMOSPHERIC THRUSTERS (2026-10-17, the user's speed
     //  roles: "turboprops kings of subsonic, atmos king of transonic-ish,
-    //  ramjets for supersonic", "a lil more respeck on mach 1's name"). A
-    //  transonic PINCH - the intake chokes through Mach 1 - then the RAM RISE
-    //  (2026-10-17, "fix this": the Mach wall made reachable): past ~Mach 1.2
-    //  the inlet's ram pressure takes the thrust above its rating, to
-    //  JetRamPeak at Mach 1.7 - the supersonic cruise is easier than the
-    //  crossing - then the compressor's limit cuts it fast: below the ramjet's
-    //  curve from Mach 2.0 (the ramjet owns Mach 2-6), gone at 2.8.
+    //  ramjets for supersonic", "a lil more respeck on mach 1's name").
+    //  The subsonic lapse to 0.85 at Mach 0.85, then the RAM RISE: the
+    //  inlet's ram pressure takes the thrust above its rating from ~Mach
+    //  0.97 (JetMach1 at Mach 1), to JetRamPeak at Mach 1.6, then the
+    //  compressor's limit cuts it fast: below the ramjet's curve from Mach
+    //  2.0 (the ramjet owns Mach 2-6), gone at 2.8.
+    //  NO TRANSONIC PINCH (2026-10-18, the user: '1 and 2' - soften the
+    //  pinch, scale the block wings' wave drag): the curve dipped to 0.76 at
+    //  Mach 1 (0.80 at 0.95, 0.95 at 1.1) - an intake choking through Mach 1;
+    //  a real afterburning engine does not pinch there, its sea-level thrust
+    //  rises with the ram from the high subsonic on. With the wings' own wave
+    //  drag (CompressibleWingModel.WingWaveDrag) the pinch made the crossing
+    //  an endgame wall (the F-6 T/W 3.4 at sea level). The rise is steeper
+    //  and higher than the pinch's ram rise (1.48 -> 1.94 at Mach 1.45, the
+    //  top 1.80 at 1.7 -> 1.98 at 1.6): with no pinch to make Mach 1 the
+    //  costly point, the supersonic cruise past it must still be easier than
+    //  the crossing - the hull's drag past Mach 1 grows as M^2 - so the curve
+    //  rises about as the F-6's drag does from Mach 1 to 1.45. The fall from
+    //  Mach 1.8 on (the ramjet's handover ~Mach 2.0) is unchanged.
     //  Applied in normal play to the game's own maximum (JetCurve,
     //  AeroThrustSettingsComponent.Jet; above the rating too: JetCurve.MaxFactor);
     //  the game's air-density efficiency stacks on it (this curve has no
-    //  density in it). JetPinch, the Mach 1 knot, is the tuning knob
-    //  (Tests/AeroBench machwall: a sleek fighter breaks Mach 1 in level flight
-    //  at T/W 1.5 in air of 0.4 kg/m3 and at <= 2.5 at sea level, then cruises
-    //  on to ~Mach 1.6; a brick stalls subsonic).
+    //  density in it). JetMach1, the Mach 1 knot, is the tuning knob
+    //  (Tests/AeroBench machwall, the whole model: the sleek F-6 breaks Mach 1
+    //  in level flight at static T/W ~1.55 at sea level and ~1.17 in air of
+    //  0.4 kg/m3, then cruises on to ~Mach 1.45; a brick stalls subsonic).
     //  Operating range: M 0 – 2.8
     // ═══════════════════════════════════════════════════════════════════
 
-    /// <summary>The Jet curve's value at Mach 1 (the pinch's depth: its lowest point in the transonic band).</summary>
-    public const double JetPinch = 0.76;
-    /// <summary>The ram rise's top (x the rating, at Mach 1.7).</summary>
-    public const double JetRamPeak = 1.80;
+    /// <summary>The Jet curve's value at Mach 1 (x the rating): the ram rise's transonic point (2026-10-18, the user: '1 and 2'
+    /// - soften the pinch, scale the block wings' wave drag: it was the pinch's depth, 0.76, the curve's lowest point in the
+    /// transonic band).</summary>
+    public const double JetMach1 = 1.08;
+    /// <summary>The ram rise's top (x the rating, at JetRamPeakMach; 2026-10-18: 1.80 at Mach 1.7 before - see JetMach1).</summary>
+    public const double JetRamPeak = 1.98;
+    /// <summary>Where the ram rise tops out (Mach).</summary>
+    public const double JetRamPeakMach = 1.60;
 
-    public static readonly ThrustProfile Jet = JetWithPinch(JetPinch);
+    public static readonly ThrustProfile Jet = JetWithMach1(JetMach1);
 
     /// <summary>The Jet curve with another value at Mach 1 (the tuning tests' sweep: Tests/AeroBench machwall).</summary>
-    public static ThrustProfile JetWithPinch(double pinch) => new("Jet",
+    public static ThrustProfile JetWithMach1(double atMach1) => new("Jet",
         new (double, double)[]
         {
             (0.00, 1.00),
             (0.60, 0.95),
             (0.85, 0.85),
-            (0.95, 0.80),
-            (1.00, pinch),
-            (1.10, 0.95),
-            (1.20, 1.12),
-            (1.30, 1.30),
-            (1.40, 1.48),
-            (1.50, 1.65),
-            (1.60, 1.77),
-            (1.70, JetRamPeak),
+            (1.00, atMach1),
+            (1.10, 1.28),
+            (1.20, 1.48),
+            (1.30, 1.68),
+            (1.45, 1.94),
+            (JetRamPeakMach, JetRamPeak),
+            (1.70, 1.85),
             (1.80, 1.55),
             (1.90, 1.20),
             (2.00, 0.82),

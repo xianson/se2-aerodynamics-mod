@@ -75,6 +75,7 @@ public partial class ConnectedComponentWingDetector
         result.AddRange(newWings);
 
         result = MergeCoplanarWings(result, blockSize);
+        MeasureEdges(result);   // (the edge faces after the change - LiftingSurface.EdgeLo, 2026-10-18)
 
         _cachedWings = result;
         BuildCellLookup();

@@ -200,6 +200,7 @@ public class LiftingSurfaceModel : IAeroDragModel
         }
 
         long liftStart = AeroStats.Timestamp();
+        if (LiftModel is CompressibleWingModel cwm) HandHullEdges(cwm, ctx);   // (the wave-drag guard: what the hull charges on the edges)
         var wingForces = LiftModel.ComputeWingForces(CollectionsMarshal.AsSpan(_wings), ctx);
         _lastWingForces = wingForces;
 
@@ -242,7 +243,7 @@ public class LiftingSurfaceModel : IAeroDragModel
             var liftF = wf.LiftForce; var cdiF = wf.InducedDrag;
             if (landing > 0f && ctx.GroundHeight >= 0f)
             {
-                float hW = ctx.GroundHeight + (ctx.GroundUpLocal.LengthSquared() > 0.5f ? Vector3.Dot(wing.AeroCenter, ctx.GroundUpLocal) : 0f);
+                float hW = ctx.GroundHeight + (ctx.GroundUpLocal.LengthSquared() > 0.5f ? Vector3.Dot(wing.AeroCenterFor(wf.Lead), ctx.GroundUpLocal) : 0f);   // (this tick's quarter chord: the leading edge is the air's, 2026-10-18)
                 float phiW = GroundEffect.Phi(hW, wing.Span);
                 if (phiW < 1f) { liftF *= GroundEffect.LiftBoost(phiW, landing); cdiF *= MathF.Pow(phiW, landing); }
             }
@@ -452,8 +453,23 @@ public class LiftingSurfaceModel : IAeroDragModel
         }
     }
 
+    /// <summary>Hand this tick's hull state to a wing model for its wave-drag guard (2026-10-18, fix a-wing-wave -
+    /// CompressibleWingModel.SetHullState: what the hull charges on each wing's edge faces, LiftingSurface.EdgeLo / EdgeHi):
+    /// the face model's CdBluff / CpMax, and the table's speed-of-sound blend and wave multiplier at this Mach for the ship's
+    /// streamlining along the flow (table: the force table used - null, this model's own; none: the face loop's last
+    /// streamlining). The flight path and the design probe (DesignProbe.ForcesAt) both call it.</summary>
+    public void HandHullEdges(CompressibleWingModel wm, in AeroContext ctx, ForceTable table = null)
+    {
+        float speed = ctx.Speed, sos = (float)ctx.Atmosphere.SpeedOfSound;
+        if (InnerModel is not DampedShadowedDragModel d || !(speed > 0.01f) || !(sos > 0f)) { wm.SetHullState(0f, 0f, 0f, 1f); return; }
+        float mach = speed / sos;
+        table ??= _table;
+        float st = table != null ? table.StreamliningAlong(ctx.Velocity / speed, d.Streamlining) : d.LastStreamlining >= 0f ? d.LastStreamlining : d.Streamlining;
+        wm.SetHullState(d.CdBluff, d.CpMax, ForceTable.NewtonBlend(mach, d.SubsonicLimit, d.SupersonicLimit, st), ForceTable.HullWave(mach, st));
+    }
+
     /// <summary>How deep (cells) the other skin is looked for under a wing's skin: 4 m.</summary>
-    private const int MaxSkinDepthCells = 16;
+    internal const int MaxSkinDepthCells = 16;
 
     private static Vector3I DirStep(int dir) => dir switch
     {

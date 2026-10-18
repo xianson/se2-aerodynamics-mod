@@ -105,14 +105,23 @@ public partial class ConnectedComponentWingDetector
                     float fullSpan = MathF.Max(aMaxS, bMaxS2) - MathF.Min(aMinS, bMinS2) + CellSize;
 
                     var centroid = (a.Centroid * a.PlanformArea + b.Centroid * b.PlanformArea) / totalArea;
-                    var aeroCenter = (a.AeroCenter * a.PlanformArea + b.AeroCenter * b.PlanformArea) / totalArea;
+                    // (orientation-free, as each piece: the quarter chord's offset and both edges' sweeps, area-weighted -
+                    //  the leading edge is the flow's, per tick; 2026-10-18, fix a-wing-edge)
+                    // (a piece whose chord runs along a's span - one found the other way round - has its edges along another
+                    //  axis: its mean sweep for both of a's edges, or a mirrored ship's wing differed - the Pelican's main
+                    //  wing 10.0/18.0 deg, mirrored 10.4/17.6, not swapped; and no quarter-chord offset along a's chord, as
+                    //  with the area-weighted aero centres before - whose offset went sideways, along its own chord)
+                    bool bSame = MathF.Abs(Vector3.Dot(a.ChordAxis, b.ChordAxis)) > 0.5f;
+                    float acOffset = (a.AcOffset * a.PlanformArea + (bSame ? b.AcOffset : 0f) * b.PlanformArea) / totalArea;
                     float tc = (a.ThicknessRatio * a.PlanformArea + b.ThicknessRatio * b.PlanformArea) / totalArea;
-                    float sweep = (a.SweepAngle * a.PlanformArea + b.SweepAngle * b.PlanformArea) / totalArea;
+                    float bLo = bSame ? b.SweepLo : b.SweepAngle, bHi = bSame ? b.SweepHi : b.SweepAngle;
+                    float sweepLo = (a.SweepLo * a.PlanformArea + bLo * b.PlanformArea) / totalArea;
+                    float sweepHi = (a.SweepHi * a.PlanformArea + bHi * b.PlanformArea) / totalArea;
 
                     var merged = new LiftingSurface(
                         a.Normal, a.SpanAxis, a.ChordAxis,
-                        totalArea, fullSpan, tc, sweep,
-                        centroid, aeroCenter, a.FaceCount + b.FaceCount,
+                        totalArea, fullSpan, tc, sweepLo, sweepHi,
+                        centroid, acOffset, a.FaceCount + b.FaceCount,
                         allCells);
 
                     wings[i] = merged;
