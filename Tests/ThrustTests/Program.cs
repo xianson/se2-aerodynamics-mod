@@ -1246,6 +1246,7 @@ static partial class Program
         HeliLimiterChecks();
         HeliDampChecks();
         HonestDampChecks();
+        TiltHeliChecks();
         Console.WriteLine("1b. the vanilla atmospherics' Mach curve and the power ladder");
         JetChecks();
         InletChecks();

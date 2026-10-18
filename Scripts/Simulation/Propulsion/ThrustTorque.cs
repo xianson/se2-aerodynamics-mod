@@ -135,6 +135,8 @@ public static class ThrustTorque
     {
         var rep = new Report { Mode = "off" };
         aero.LastControlTorque = Vector3.Zero; aero.LastControlTorqueValid = false;
+        // (last step's forces of the attitude law - its thrust change and the cyclic's tilt: Resting's balance)
+        Vector3 lastLawForceW = aero.LastExtraForceWorld + WorldTransform.TransformDirection(aero._cycForce, wt); aero._cycForce = Vector3.Zero;
         aero.LastExtraForceWorld = Vector3.Zero;   // (every step: an early return - at rest, no thrusters - left the last one standing in the contact balance)
         aero.LastThrustCount = 0;   // (set where the thrusters' forces are published)   // (set below while the aware law flies)
         var thrusters = aero._thrusterCache;
@@ -207,6 +209,7 @@ public static class ThrustTorque
             RotorCyclic.Publish(aero, wt, null, n);   // (a parked helicopter's rotor still turns up / down)
             RotorCyclic.KeepCaps(aero, n);   // (its rotors' torque caps stay set for the lift-off)   // (every flame dark - still ours: handed back to the game's and taken again, they flickered)
             if (solid) ApplySolid(aero, wt, solidTau, dt, ref rep);
+            aero._rcsWarm = false;   // (no solve this step: the next starts from the game's share, not a sharing from before the rest)
             return rep;
         }
         // the thrusters' geometry: only when they or the centre of mass change (it was recomputed every frame)
@@ -271,6 +274,18 @@ public static class ThrustTorque
         // its propulsor writes the cap into the rotor's maximum (applied from its next write)
         if (RotorCyclic.Has(aero, n)) RotorCyclic.Limit(aero, data, in mass, arms, dirs, caps, anyRev ? rev : null, n, dt);
         Vector3 offsetTorque = ThrustAllocator.GameShare(gameF, arms, dirs, caps, cap, f0, n, anyRev ? side : null);
+        // THE CYCLIC'S TRIM (RotorTrim, 2026-10-18): the rotors' reach and plane at the game's share, the thrusters' own torque
+        // there (+ the lit rockets' at their thrust now) for it to answer - unless the ship rests on something (Resting) or its
+        // rotors' axes differ (the cyclic then as before: the ask alone, given first). Before, the cyclic answered only the
+        // attitude law's ask: a lone rotor's lift off the centre of mass is no torque the solve can move with the net force
+        // kept, and the unpiloted 3x helicopter pitched over to 66 deg and fell at 12.5 m/s2 on its per-axis hold (in game)
+        bool hasRotor = RotorCyclic.Has(aero, n), oneAxis = false, trim = false, project = false, cyc = false, cycApplied = false;
+        float cycReach = 0f; Vector3 cycAxis = Vector3.UnitY, cycAsk = Vector3.Zero, cycOwn = offsetTorque + steerTau;
+        if (hasRotor)
+        {
+            cycReach = RotorCyclic.Reach(aero, com, dirs, f0, n, out cycAxis, out oneAxis);
+            trim = oneAxis && !Resting(aero, data, wt, angVelWorld, mass.InvMass, lastLawForceW);
+        }
         // a helicopter rotor's reaction torque (RotorCyclic.ReactionTorque): the thrust's own torque about the rotor axis, as
         // the offset torque is - applied with it, and the attitude law below asks the actuators to answer it
         Vector3 rotorReaction = RotorCyclic.Has(aero, n) ? RotorCyclic.ReactionTorque(aero, dirs, f0, n) : Vector3.Zero;
@@ -297,7 +312,7 @@ public static class ThrustTorque
                 rep.Reach = gyroReach + ThrusterReach(aero, n) + SolidReach(aero, com, steerN); rep.Target = target; rep.HasTarget = true;
                 tauNeed = AwareNeed(aero, in mass, w, rep.Error, rep.Reach, dt, out rep.AeroTorque) - rotorReaction;
                 // (a helicopter rotor's cyclic / anti-torque first - RotorCyclic: the gyros and thrusters the rest)
-                if (RotorCyclic.Has(aero, n)) { rotorTau = RotorCyclic.Give(aero, wt, com, tauNeed, dirs, f0, n, dt, true); tauNeed -= rotorTau; }
+                if (hasRotor) { cyc = true; cycAsk = tauNeed; rotorTau = PlanCyclic(aero, wt, com, tauNeed, cycOwn, cycAxis, cycReach, oneAxis, trim, dirs, f0, n, dt, out project, out cycApplied); tauNeed -= rotorTau; }
                 // (the lit rockets' torque at their base is in the solve's slots: the gyros take what they can of the need BEYOND it,
                 //  so a rocket holds its level while the gyros suffice and moves only for what they cannot give)
                 Vector3 baseTau = SolidBaseTorque(aero, com, steerN), beyond = tauNeed - baseTau;
@@ -307,17 +322,20 @@ public static class ThrustTorque
             else
             {
                 tauTarget -= rotorReaction;
-                if (RotorCyclic.Has(aero, n)) { rotorTau = RotorCyclic.Give(aero, wt, com, tauTarget, dirs, f0, n, dt, true); tauTarget -= rotorTau; }
+                if (hasRotor) { cyc = true; cycAsk = tauTarget; rotorTau = PlanCyclic(aero, wt, com, tauTarget, cycOwn, cycAxis, cycReach, oneAxis, trim, dirs, f0, n, dt, out project, out cycApplied); tauTarget -= rotorTau; }
             }
             solved = true;
         }
         else
         {
             // a rate pilot (no target orientation: the mouse's turn rate) - the rotors' cyclic toward that rate (the game's
-            // gyros, if any, by their own law)
+            // gyros, if any, by their own law); no input and trimmed: toward the rate held at 0, the offset torque answered too
             bool rate = RateInput(data, out Vector3 wCmd);
-            if (RotorCyclic.Has(aero, n) && rate)
-                rotorTau = RotorCyclic.Give(aero, wt, com, Inertia(mass, (wCmd - w) / ResponseTime), dirs, f0, n, dt, true);
+            if (hasRotor && (rate || trim))
+            {
+                cyc = true; cycAsk = Inertia(mass, (wCmd - w) / ResponseTime) - rotorReaction;
+                rotorTau = PlanCyclic(aero, wt, com, cycAsk, cycOwn, cycAxis, cycReach, oneAxis, trim, dirs, f0, n, dt, out project, out cycApplied);
+            }
             // a grid with reversible thrusters, main rotors or a lit solid rocket: its thrusters answer the turn too (the rate error
             // x inertia, less the rotors' reaction and what the cyclic gave; no input: the rate held at 0 - a helicopter without
             // gyros keeps its heading against its own rotor; a lit rocket's offset thrust is trimmed out) - the same solve as a
@@ -339,14 +357,31 @@ public static class ThrustTorque
             if (prev.Length != n || !aero._rcsWarm || aero._rcsWarmGen != aero._thrusterGen) { aero._rcsWarmGen = aero._thrusterGen; aero._rcsPrev = prev = new float[n]; aero._rcsY = y = new float[n]; for (int i = 0; i < n; i++) f[i] = f0[i]; }
             // (the structure's cap on the controller's own steering: never more torque from the thrusters than the ship can
             //  carry - StructureServer sets it from the structure's load, 1 unless structure damage is on and it binds)
-            if (aero.StructSteerCap < 1f) tauTarget *= MathF.Max(aero.StructSteerCap, 0f);
-            if (steerN > 0) SolveWithSolids(aero, com, tauTarget, gameF, arms, dirs, caps, f0, f, armSq, n, steerN, anyRev ? rev : null, out rep.AttitudePriority);
-            else ThrustAllocator.Solve(tauTarget, gameF, arms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority, anyRev ? rev : null);
+            //  (and the cyclic then gives its plan, no more: it never takes back what the cap took off the thrusters - RotorTrim)
+            bool capped = aero.StructSteerCap < 1f;
+            if (capped) tauTarget *= MathF.Max(aero.StructSteerCap, 0f);
+            // (the cyclic's trim holding all of the in-plane need: the in-plane torque weighed low in the solve - RotorTrim.ProjectArms /
+            //  ProjectTorque: the solve gives the axial torque and leans to the game's share in-plane, the thrusters' side effects
+            //  the cyclic's after; never under the cap)
+            bool proj = project && !capped;
+            if (proj) { if (aero._rcsProj.Length != n) aero._rcsProj = new Vector3[n]; RotorTrim.ProjectArms(arms, cycAxis, aero._rcsProj, n); }
+            Vector3 solveTau = proj ? RotorTrim.ProjectTorque(tauTarget, cycAxis) : tauTarget;
+            var solveArms = proj ? aero._rcsProj : arms;
+            if (steerN > 0) SolveWithSolids(aero, com, solveTau, gameF, solveArms, dirs, caps, f0, f, armSq, n, steerN, anyRev ? rev : null, out rep.AttitudePriority, proj, cycAxis);
+            else ThrustAllocator.Solve(solveTau, gameF, solveArms, dirs, caps, f0, f, prev, y, armSq, n, Iterations, out rep.AttitudePriority, anyRev ? rev : null);
             for (int i = 0; i < n; i++) if (!float.IsFinite(f[i])) { for (int j = 0; j < n; j++) f[j] = f0[j]; aero._rcsWarm = false; rep.Mode += " (reset: not finite)"; break; }
             aero._rcsWarm = true;
             torque = Vector3.Zero; Vector3 total = Vector3.Zero;
             float moved = 0f, sumCap = 0f;
             for (int i = 0; i < n; i++) { torque += arms[i] * f[i]; total += dirs[i] * f[i]; moved += Math.Abs(f[i] - f0[i]); sumCap += caps[i]; }
+            // (the cyclic, given now: what the thrusters' torque as solved left of its ask, within its reach - RotorTrim.Give; its
+            //  plan's change goes into the need the gyros are left)
+            if (cyc && !cycApplied)
+            {
+                Vector3 want = RotorTrim.Give(cycAsk, torque + steerTau, rotorTau, cycAxis, cycReach, trim && !capped);
+                Vector3 given = RotorCyclic.Give(aero, wt, com, want, dirs, f0, n, dt, true);
+                tauNeed += rotorTau - given; rotorTau = given;
+            }
             torque += rotorReaction + steerTau;   // (the rotors' reaction acts whoever steers; the lit rockets' torque at the game's thrust on them now)
             extraForce = total - gameF;   // (0 while the game's thrust is kept; with attitude priority, the thrust given up - applied below)
             // (a lit rocket moved off its base for torque: the thrusters took back what they could of that change - KeepNetThrust - and
@@ -412,7 +447,7 @@ public static class ThrustTorque
     /// allocation); the thrusters' part copied in and out (warm start kept in f).
     /// </summary>
     static void SolveWithSolids(AeroGridComponent aero, Vector3 com, Vector3 tauTarget, Vector3 gameF, Vector3[] arms, Vector3[] dirs, float[] caps,
-        float[] f0, float[] f, float armSq, int n, int m, bool[] rev, out float attitudePriority)
+        float[] f0, float[] f, float armSq, int n, int m, bool[] rev, out float attitudePriority, bool proj = false, Vector3 axis = default)
     {
         int N = n + m;
         if (aero._sArm.Length < N)
@@ -434,13 +469,37 @@ public static class ThrustTorque
             var z = steer[j]; int k = n + j;
             SolidRocket.SteerBounds(z.FullThrust, z.Motor.Level, out float lo, out float hi, out float b);
             Vector3 r = z.PosLocal - com;
-            sa[k] = Vector3.Cross(r, z.PushLocal); sd[k] = z.PushLocal; sc[k] = hi; sl[k] = lo; s0[k] = b; sf[k] = b; sr[k] = true;
+            sa[k] = Vector3.Cross(r, z.PushLocal); if (proj) sa[k] = RotorTrim.ProjectTorque(sa[k], axis);   // (in the trim's solve space: arms passed so)
+            sd[k] = z.PushLocal; sc[k] = hi; sl[k] = lo; s0[k] = b; sf[k] = b; sr[k] = true;
             netF += z.PushLocal * b;   // (its base is its own push: the net the solve keeps)
             sq += r.LengthSquared();
         }
         ThrustAllocator.Solve(tauTarget, netF, sa, sd, sc, s0, sf, aero._sPrev, aero._sY, sq, N, Iterations, out attitudePriority, sr, sl);
         for (int i = 0; i < n; i++) f[i] = sf[i];
         for (int j = 0; j < m; j++) { var z = steer[j]; z.Steer(SolidRocket.FractionOf(sf[n + j], sc[n + j], z.Motor.Level)); }
+    }
+
+    /// <summary>The cyclic's plan before the solve (RotorTrim.Plan; project: it holds all of the in-plane need). Mixed rotor axes:
+    /// as before - the ask given at once (applied: true), the solve the rest.</summary>
+    static Vector3 PlanCyclic(AeroGridComponent aero, in WorldTransform wt, Vector3 com, Vector3 ask, Vector3 own, Vector3 axis, float reach, bool one, bool trim,
+        Vector3[] dirs, float[] f0, int n, float dt, out bool project, out bool applied)
+    {
+        applied = !one; project = false;
+        if (!one) return RotorCyclic.Give(aero, wt, com, ask, dirs, f0, n, dt, true);
+        return RotorTrim.Plan(ask, own, axis, reach, trim, out project);
+    }
+
+    /// <summary>A ship at rest that something else holds up (RotorTrim.Resting): slow, not turning, and the thrust and the
+    /// gravity the body gets (CustomGravity x the multiplier, after the honest hold's write) out of balance - with the attitude
+    /// law's own forces of the last step (lawW, world N: its thrust change, the cyclic's tilt - a trimmed hover's tilt force is
+    /// held by the dampeners' tail thrust: without it the hover read as resting).</summary>
+    static bool Resting(AeroGridComponent aero, DEntityContext data, in WorldTransform wt, Vector3 angVelWorld, float invMass, Vector3 lawW)
+    {
+        float turn = angVelWorld.Length();
+        if (aero.LastSpeed >= RotorTrim.RestSpeed || turn >= RotorTrim.RestTurn) return false;
+        Vector3 a = PhysicsHack.GetAppliedGravity(data) + lawW * invMass;
+        if (data.TryGet<ActiveThrustData>(out var atd)) a += WorldTransform.TransformDirection(atd.ComputedThrustPerFrame * 60f, wt) * invMass;
+        return RotorTrim.Resting(aero.LastSpeed, turn, a.Length());
     }
 
     /// <summary>The lit solid rockets' torque at their bases (N m, local): what their slots give when the solve leaves them there.</summary>
