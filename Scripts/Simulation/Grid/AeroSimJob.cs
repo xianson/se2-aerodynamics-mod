@@ -107,7 +107,7 @@ public partial class AeroGridComponent
         if (airVel.LengthSquared() > 0.0025f || angVel.LengthSquared() > 4e-6f) return false;
         if (EntryHeat > 1e-3f || FlowPublished || AeroEntryFx.TestSpeed > 0f || AeroEntryFx.TestForcesOn) return false;
         // (the test harnesses tick at the end of the full step and count its frames: never quiet under them)
-        if (AeroFlightTest.Enabled || AeroSpeedSpike.Enabled) return false;
+        if (AeroFlightTest.Enabled) return false;
         if (System.Diagnostics.Stopwatch.GetTimestamp() < StructFocusUntil || Data.Has<TargetControlData>()) return false;
         if (Data.Has<ActiveThrustData>()) return false;
         // (an external entry source - a grid on another mod's rails - checked on the full steps only: it ends quiet there)
@@ -334,9 +334,6 @@ public partial class AeroGridComponent
             aero._components?.Count ?? 0,
             aero.LastSpeed,
             aero.HasResult ? (float)aero.LastResult.Mach : 0f);
-
-        // ── THROWAWAY: teleport-stepping feasibility spike ──
-        AeroSpeedSpike.Tick(aero, wt);
 
         // ── Scripted flight test (synthetic stick, no teleporting after setup) ──
         AeroFlightTest.Tick(aero, wt);

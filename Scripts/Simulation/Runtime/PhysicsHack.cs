@@ -236,7 +236,7 @@ public static class PhysicsHack
         !float.IsInfinity(v.X) && !float.IsInfinity(v.Y) && !float.IsInfinity(v.Z);
 
     // ═══════════════════════════════════════════════════════════════
-    // Control data and pose writes (dev: AeroFlightTest, AeroSpeedSpike)
+    // Control data and pose writes (dev: AeroFlightTest)
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>

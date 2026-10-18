@@ -65,9 +65,7 @@ static class Program
     static int Main()
     {
         string sim = Path.Combine(Root(), "Scripts", "Simulation");
-        // (the dev harness copies are local and never committed: left out)
-        var files = Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.EndsWith("AeroSpeedSpike.cs")).OrderBy(f => f).ToList();
+        var files = Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories) .OrderBy(f => f).ToList();
         var trees = files.ToDictionary(f => f, f => CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot());
         string Rel(string f) => Path.GetRelativePath(sim, f).Replace('\\', '/');
 
