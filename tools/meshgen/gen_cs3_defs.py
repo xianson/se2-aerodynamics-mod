@@ -28,6 +28,12 @@ G = lambda sid, n: f"ae200001-ae00-{sid}-{n:04x}-000000000001"
 SHARED = "c500"
 DT_HINGE = G(SHARED, 0x30)
 KIND, GROUP = G(SHARED, 0x20), G(SHARED, 0x21)
+# its own placement (2026-10-16, the user: "control surface mirroring ... fucked"): a mirrored block is the original turned by
+# its symmetry rotation for that axis, then reflected (BlockPlacementBuilding: M (R S) M) - right only when S x the mirror is
+# a symmetry of the shape. The 3x3x1 is symmetric along its span (Forward) and through its thickness (Up),
+# not along its chord (Right: hinge ahead, flap behind) - so mirrored across Right it turns 180 deg about Up (the flap
+# back behind the hinge); the others as they are.
+PLACEMENT, SYMMETRIES = G(SHARED, 0x50), G(SHARED, 0x51)
 K_CSP = G(SHARED, 0x40)   # (composite-local key of ConditionalSubPartsComponent)
 
 MATERIALS = {
@@ -202,7 +208,7 @@ def gen_size(size, cfg, manifest):
             {"Kind": "Insert", "Index": 9, "Value": {"Definition": csp, "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsComponent"}}], "Removed": []}},
         "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), ccomp, True)
     definition(os.path.join(d, f"{N}_FunctionalBlockDefinition.partialdef"), partial(BASE["fbd"], {"Guid": fbd,
-        "UIData": {"Name": f"Control Surface 3x3x1 ({size})", "Icon": ICON}, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+        "UIData": {"Name": "Control Surface", "Icon": ICON}, "PlacerDefinition": PLACEMENT, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
         "Recipe": RECIPE, "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4", "BlockKind": KIND, "PCU": 50,
         "ConsumedResource": {"Type": ELECTRICITY, "Amount": POWER_KW[size]}, "ConsumptionPriority": {"Priority": 6}},
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition"), fbd, True)
@@ -258,6 +264,17 @@ def gen_size(size, cfg, manifest):
     return fbd
 
 
+def placement():
+    root = os.path.join(BLOCKS, "Assets", ROOT_REL)
+    definition(os.path.join(root, "ControlSurface3x3_PlacementDefinition.def"), {"$Bundles": B_GAME,
+        "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinitionObjectBuilder",
+        "$Value": {"Guid": PLACEMENT, "BestSnapSize": None, "AlignWithMountPoints": True, "AllowSquareSnapping": True, "AutoRotateFace": None,
+                   "SizeGroup": None, "MaxInVoxelRatio": 0.5, "SnapAlignment": 0, "OverrideSymmetries": SYMMETRIES}}, PLACEMENT, False)
+    definition(os.path.join(root, "ControlSurface3x3_BlockSymmetriesDefinition.def"), {"$Bundles": B_GAME,
+        "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinition+BlockSymmetriesDefinitionObjectBuilder",
+        "$Value": {"Guid": SYMMETRIES, "XAxis": {"X": 0, "Y": 2, "Z": 0}, "YAxis": {"X": 0, "Y": 0, "Z": 0}, "ZAxis": {"X": 0, "Y": 0, "Z": 0}}}, SYMMETRIES, False)
+
+
 def main():
     manifest = json.load(open(r"C:\Users\slob\AppData\Local\Temp\claude\D--aero\825c4945-9ced-4158-adbf-cbb8be91082b\scratchpad\fbx_manifest.json"))
     root = os.path.join(BLOCKS, "Assets", ROOT_REL)
@@ -267,12 +284,13 @@ def main():
         "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder", "$Value": {"Guid": DT_HINGE}}, DT_HINGE, False)
     definition(os.path.join(root, "ControlSurface3x3_BlockKind.def"), {"$Bundles": B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
-        "$Value": {"Guid": KIND, "Name": "Control Surface 3x3x1", "Description": "A hinged flap: aileron, elevator, rudder - whichever way it is placed. Moves with the pilot's steering.",
+        "$Value": {"Guid": KIND, "Name": "Control Surface", "Description": "A hinged flap: aileron, elevator, rudder - whichever way it is placed. Moves with the pilot's steering.",
                    "OrderingPriority": 0, "BlockGroups": [{"Key": G(SHARED, 0x22), "Value": GROUP}]}}, KIND, False)
     definition(os.path.join(root, "ControlSurface3x3_BlockGroup.def"), {"$Bundles": B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",
-        "$Value": {"Guid": GROUP, "Name": "Control Surface 3x3x1", "Order": 1,
+        "$Value": {"Guid": GROUP, "Name": "Control Surface", "Order": 1,
                    "Subcategories": [{"Key": G(SHARED, 0x23), "Value": "ae200001-ae00-0000-0002-000000000001"}], "BlockKinds": []}}, GROUP, False)
+    placement()
     # folder metas (lowercase <name>.meta beside each folder, the project's convention)
     for rt, dirs, _ in os.walk(root):
         for dn in dirs:

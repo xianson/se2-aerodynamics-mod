@@ -19,6 +19,11 @@ SHARED = "ab00"
 KIND, GROUP = G(SHARED, 0x20), G(SHARED, 0x21)
 DT_UP, DT_DOWN = G(SHARED, 0x30), G(SHARED, 0x31)
 K_CSP = G(SHARED, 0x40)
+# its own placement (2026-10-16, the user: "control surface mirroring ... fucked"): a mirrored block is the original turned by
+# its symmetry rotation for that axis, then reflected (BlockPlacementBuilding: M (R S) M) - right only when S x the mirror is
+# a symmetry of the shape. The airbrake is symmetric across (X: span) and up / down (Y: the two leaves), not
+# fore / aft (Z: the hinge at the front) - so mirrored across Z it turns 180 deg about Up (the hinge forward again).
+PLACEMENT, SYMMETRIES = G(SHARED, 0x50), G(SHARED, 0x51)
 SIZES = {"Large": dict(sid="ab02", kw=1.0, pcu=150), "Small": dict(sid="ab03", kw=0.2, pcu=60)}
 RECIPE = "6f209028-b561-4d9e-a1c8-ab9994b0a7e4"   # (LightArmor250's, as the control surfaces)
 OFF = gd.OFF
@@ -115,7 +120,7 @@ def gen_size(size, c):
             {"Kind": "Insert", "Index": 9, "Value": {"Definition": csp, "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsComponent"}}], "Removed": []}},
         "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), ccomp, True)
     gd.definition(os.path.join(d, f"{N}_PowerableBlockDefinition.partialdef"), gd.partial(B["fbd"], {"Guid": fbd,
-        "UIData": {"Name": f"Airbrake ({size})", "Icon": "{G}" + file_id(icon_rel)}, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+        "UIData": {"Name": "Airbrake", "Icon": "{G}" + file_id(icon_rel)}, "PlacerDefinition": PLACEMENT, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
         "Recipe": RECIPE, "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4", "BlockKind": KIND, "PCU": c["pcu"],
         "ConsumedResource": {"Type": gd.ELECTRICITY, "Amount": c["kw"]}, "ConsumptionPriority": {"Priority": 6}},
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition"), fbd, True)
@@ -125,6 +130,13 @@ def gen_size(size, c):
 def main():
     root = os.path.join(gd.BLOCKS, "Assets", ROOT_REL)
     for size, c in SIZES.items(): gen_size(size, c)
+    gd.definition(os.path.join(root, "Airbrake_PlacementDefinition.def"), {"$Bundles": gd.B_GAME,
+        "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinitionObjectBuilder",
+        "$Value": {"Guid": PLACEMENT, "BestSnapSize": None, "AlignWithMountPoints": True, "AllowSquareSnapping": True, "AutoRotateFace": None,
+                   "SizeGroup": None, "MaxInVoxelRatio": 0.5, "SnapAlignment": 0, "OverrideSymmetries": SYMMETRIES}}, PLACEMENT, False)
+    gd.definition(os.path.join(root, "Airbrake_BlockSymmetriesDefinition.def"), {"$Bundles": gd.B_GAME,
+        "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinition+BlockSymmetriesDefinitionObjectBuilder",
+        "$Value": {"Guid": SYMMETRIES, "XAxis": {"X": 0, "Y": 0, "Z": 0}, "YAxis": {"X": 0, "Y": 0, "Z": 0}, "ZAxis": {"X": 0, "Y": 2, "Z": 0}}}, SYMMETRIES, False)
     for name, dt in (("AirbrakeLeafUp", DT_UP), ("AirbrakeLeafDown", DT_DOWN)):
         gd.definition(os.path.join(root, f"{name}_DummyTypeDefinition.def"), {"$Bundles": gd.B_VRAGE,
             "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder", "$Value": {"Guid": dt}}, dt, False)

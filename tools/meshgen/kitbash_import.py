@@ -35,11 +35,14 @@ x = (max(xs) if xs else 0.0) + 1.0
 for o in col.objects:   # (after what is already in the row)
     x = max(x, max((o.matrix_world @ Vector(c)).x for c in o.bound_box) + 0.75)
 
+made_now = set()
 for g in groups:
     nominal, files = float(g[0]), g[1:]
     parts = []
     for path in files:
         name = os.path.splitext(os.path.basename(path))[0].replace("_LOD0", "")
+        if name in made_now: name = f"{name}_{g[0]}m"   # (the same file name at another size in this run: both kept)
+        made_now.add(name)
         old = bpy.data.objects.get(name)
         if old is not None: bpy.data.objects.remove(old)
         before = set(bpy.data.objects)
