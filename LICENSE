@@ -1,0 +1,26 @@
+Aerodynamics Mod and Orbital Mod for Space Engineers 2
+Copyright (c) 2026 xianson
+
+You may, free of charge:
+
+1. Use these mods in any world, server, video or stream.
+
+2. Make other mods that depend on them or call their public APIs (AeroApi / OrbitalApi).
+
+3. Re-upload them, modified or not, to the Steam Workshop or any other host, as long as
+   the upload is unlisted, private or friends-only (for example for a server or a
+   private modpack) - never publicly listed.
+
+4. Copy, modify and reuse any part of the source code in your own projects, EXCEPT in a
+   mod or program whose main purpose is aerodynamic flight simulation or orbital
+   mechanics for Space Engineers 2 and which presents itself as an alternative to these
+   mods.
+
+Credit is appreciated but not required: if you reuse code, a comment or a line in your
+description linking back to the original is a kind thing to do.
+
+All other rights are reserved; for any other use, ask the author.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO
+EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
