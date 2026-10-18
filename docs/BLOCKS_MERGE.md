@@ -116,7 +116,7 @@ type, tanks, conveyors): plan for builder errors; `%LOCALAPPDATA%\OrbitalModBuil
 - `after` (NEW content, migrated copy): no "Could not find", the same 297 grids, every grid name's blocks identical; the
   aero dump the same but for one name the baseline's dump had missed a grid of (scene membership at that moment).
 - `place`: all 42 blocks spawned alone, each with mass and cells.
-- `worlds` APPLY=1: the 7 worlds migrated (backups `D:ero\save_backupslocks-merge-20261018-124221\`); the Blocks
+- `worlds` APPLY=1: the 7 worlds migrated (backups `D:\aero\save_backups\blocks-merge-20261018-124221\`); the Blocks
   mod's folder moved to `Documents\SpaceEngineers2\ModsRetired\Aerodynamics Mod Blocks` (merge_blocks_assets.py's
   source, if ever needed again). A migrated world (Orbital Test Tu-134 Control Surfaces) loads with every block.
 - `%APPDATA%\SpaceEngineers2\Temp\LocalMods\ModIndex` (ModHub's local-mod index) still names the old folder: the game
