@@ -185,14 +185,14 @@ internal sealed partial class FlightField
         //  of the ship twice a second; kept only on success, as before)
         var pts = ReferenceEquals(_hullTips, _tipPtsA) ? _tipPtsB : _tipPtsA; pts.Clear();
         var e = _server?.Entity;
-        if (_server != null && e != null && PhysicsHack.Alive(e.Data))
+        if (_server != null && e != null && GridPhysics.Alive(e.Data))
         {
             var wtO = e.Data.GetWorldTransform();
             foreach (var m in _server.FxGroup.Length > 0 ? _server.FxGroup : new[] { _server })
             {
                 var ch = m?.FxChunks; var me = m?.Entity;
                 // (a grid of the group gone since the last group search - split off, closed: its transform threw)
-                if (ch == null || me == null || !PhysicsHack.Alive(me.Data)) continue;
+                if (ch == null || me == null || !GridPhysics.Alive(me.Data)) continue;
                 var wtM = me.Data.GetWorldTransform();
                 bool self = ReferenceEquals(m, _server);
                 lock (ch.OccLock)   // (that grid's lists are its simulation thread's, edited in place: ChunkedTable.OccLock)

@@ -207,7 +207,7 @@ public static class StructureFeel
     static CameraShakeComponent Shaker(Entity anyGrid, long now, long f)
     {
         var s = _shaker;
-        if (s != null && s.Entity != null && PhysicsHack.Alive(s.Entity.Data)) return s;
+        if (s != null && s.Entity != null && GridPhysics.Alive(s.Entity.Data)) return s;
         _shaker = null;
         if (now < _shakerAt) return null;
         _shakerAt = now + 2 * f;
@@ -261,7 +261,7 @@ public static class StructureFeel
                 if (_seatStop != null) QueueStop(ev, _seatStop, now + (long)(SoundMaxSeconds * f));
                 return;
             }
-            if (v >= FallbackMinVolume && _enginePlay != null && _seat != null && PhysicsHack.Alive(_seat.Data))
+            if (v >= FallbackMinVolume && _enginePlay != null && _seat != null && GridPhysics.Alive(_seat.Data))
             {
                 _enginePlay(ev, _seat.Data.GetWorldTransform(), v);
                 Played++;

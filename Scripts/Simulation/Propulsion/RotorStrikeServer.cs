@@ -139,11 +139,11 @@ public partial class AeroGridComponent
     internal static void HandleRotorStrike(in RotorStrikeServer.Strike s)
     {
         var rot = s.Rotor; var prop = s.Prop; var ship = s.Grid;
-        if (rot == null || prop == null || rot.Entity == null || !PhysicsHack.Alive(rot.Data) || rot.Broken) return;
+        if (rot == null || prop == null || rot.Entity == null || !GridPhysics.Alive(rot.Data) || rot.Broken) return;
         rot.Gap = RotorStrike.GapTicks(s.Rpm, s.TipRadius, AeroPhysics.Dt);
-        if (ship == null || !PhysicsHack.Alive(ship.Data)) return;
+        if (ship == null || !GridPhysics.Alive(ship.Data)) return;
         var hit = Entity.TryGetFromDataEntity(new DEntityContext(rot.Data.Scene, s.Body));
-        if (hit == null || !PhysicsHack.Alive(hit.Data)) return;
+        if (hit == null || !GridPhysics.Alive(hit.Data)) return;
         var rules = rot.Entity.GetSession()?.TryGet<IGameplayRules>();
 
         // 1. what was hit
@@ -201,7 +201,7 @@ public partial class AeroGridComponent
             {
                 RotorStrikeServer.OnMetal++;
                 float share = RotorStrike.BlockDamageShare(s.Radius, s.TipRadius, v);
-                if (block != null && block.Entity != null && PhysicsHack.Alive(block.Entity.Data) && block.HealthIntegrity > DestructionThreshold(block) + 1e-4f && share > 0f)
+                if (block != null && block.Entity != null && GridPhysics.Alive(block.Entity.Data) && block.HealthIntegrity > DestructionThreshold(block) + 1e-4f && share > 0f)
                     hit.TryGet<GridDamageReceiverComponent>()?.DealDamage(block, share * FullHealth(block));
                 float jm = RotorStrike.StrikeImpulse(mat, s.Radius, s.TipRadius, v);
                 // (its own grid: an internal force - no impulse; another grid takes the blade's push, the ship the reaction)
@@ -289,7 +289,7 @@ public partial class AeroGridComponent
     /// <summary>A world angular impulse (N m s) on a dynamic body (the engine's ApplyAngularImpulse).</summary>
     static void AngularImpulse(Entity e, Vector3 worldImpulse)
     {
-        if (e == null || !PhysicsHack.IsFinite(worldImpulse) || !AeroPhysics.IsDynamic(e)) return;
+        if (e == null || !GridPhysics.IsFinite(worldImpulse) || !AeroPhysics.IsDynamic(e)) return;
         var data = e.Data;
         ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
         if (Unsafe.IsNullRef(in rb) || !data.TryGet<RigidBodyMassProperties>(out var mass)) return;

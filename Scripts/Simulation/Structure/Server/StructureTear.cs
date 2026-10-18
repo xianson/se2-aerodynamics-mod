@@ -37,7 +37,7 @@ namespace AeroMod;
 ///    constraint) - so each tick, before any call: both entities alive, both bodies there, and no constraint flagged
 ///    Destroyed (HavokConstraint.Destroyed, by reflection: docs/REFLECTION_AND_WHITELIST.md); otherwise the handles are
 ///    dropped with no call into them (a lost motor is a few bytes). A throw drops that tear (Faults);
-///  - while tied, the pair are one connected body to the engine (PhysicsHack.IsSubPart: the piece a sub-part; the Orbital
+///  - while tied, the pair are one connected body to the engine (GridPhysics.IsSubPart: the piece a sub-part; the Orbital
 ///    mod's GridMembers.IsConstrained: neither moved on rails) - for TearSeconds only.
 ///  - every split that follows our break - a light piece too - publishes its torn edge for the client's smoke (TearSmoke,
 ///    2026-10-14: the joint in the piece's frame, out of it), before the checks that let a light one pop off.
@@ -148,7 +148,7 @@ public static class StructureTear
     /// step; the first server grid's job to come takes it).</summary>
     internal static void Step()
     {
-        var phys = PhysicsHack.Physics;
+        var phys = GridPhysics.Physics;
         lock (_lock)
         {
             for (int i = 0; i < _spawned.Count; i++) _waiting.Add(_spawned[i]);
@@ -192,7 +192,7 @@ public static class StructureTear
     {
         if (!Enabled || phys == null) return true;
         var od = w.Original.Data; var pd = w.Piece.Data;
-        if (!PhysicsHack.Alive(od) || !PhysicsHack.Alive(pd)) return true;
+        if (!GridPhysics.Alive(od) || !GridPhysics.Alive(pd)) return true;
         // (only a split that follows our break: one of this grid's breaks, still fresh - each kept while its splits wait)
         bool ours = false;
         lock (_lock) foreach (var p in _pending) if (p.Grid == w.Original) { ours = true; p.Age = Math.Min(p.Age, 0); }   // (a crack's, still running: kept to its end)
@@ -205,7 +205,7 @@ public static class StructureTear
         Splits++;
         var oct = w.Piece.TryGet<BlockOctreeComponent>();
         if (oct == null) { Skipped++; Status = $"{Name(w.Piece)}: no blocks"; return true; }
-        PhysicsHack.TryGetMassProperties(pd, out float mass, out Vector3 comLocal);
+        GridPhysics.TryGetMassProperties(pd, out float mass, out Vector3 comLocal);
         var wtO = od.GetWorldTransform(); var wtP = pd.GetWorldTransform();
         // the joint: the broken blocks (this grid's breaks) within PairRange of one of the piece's blocks
         int n = 0;
@@ -326,9 +326,9 @@ public static class StructureTear
     /// constraint destroyed by the engine (a body deleted or rebuilt).</summary>
     static bool Usable(Tear t)
     {
-        var phys = PhysicsHack.Physics;
+        var phys = GridPhysics.Physics;
         if (phys == null || !ReferenceEquals(phys, t.Phys)) return false;
-        if (!PhysicsHack.Alive(t.Piece.Data) || !PhysicsHack.Alive(t.Original.Data)) return false;
+        if (!GridPhysics.Alive(t.Piece.Data) || !GridPhysics.Alive(t.Original.Data)) return false;
         if (!phys.HasBody(t.Piece.DEntity) || !phys.HasBody(t.Original.DEntity)) return false;
         for (int k = 0; k < t.C.Length; k++) if (t.C[k] != null && IsDestroyed(t, k)) return false;
         return true;

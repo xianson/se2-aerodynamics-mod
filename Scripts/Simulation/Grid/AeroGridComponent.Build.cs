@@ -82,7 +82,7 @@ public partial class AeroGridComponent
         // (It was the last one seen in air - (0,0,0) for every table built before the grid met air: in space, or on
         //  entering gravity. Turning was then modelled about the grid's origin - 72 m from the Hercules' centre of mass - and
         //  the air's response to rotation was nonsense. Tests/ThrustTests on dumped ships)
-        var tableCom = PhysicsHack.TryGetMassProperties(Data, out _, out var massCom) ? massCom : _lastComLocal;
+        var tableCom = GridPhysics.TryGetMassProperties(Data, out _, out var massCom) ? massCom : _lastComLocal;
         int cellScale = SnapshotGridAccessor.CellScale(blockSize);
         var cellGeo = SnapshotGridAccessor.CellGeometry(cellScale);
         _cellScale = cellScale;

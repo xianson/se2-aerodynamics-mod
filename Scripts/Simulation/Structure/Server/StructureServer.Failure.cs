@@ -280,7 +280,7 @@ public partial class AeroGridComponent
     /// its cells in this grid now, if anything (into: added) - the bridge looked up again, never the stale one damaged.</summary>
     void Resolve(CubeBlockComponent b, HashSet<CubeBlockComponent> into)
     {
-        if (b == null || _octree == null || _goneBlocks.Contains(b) || b.Entity == null || !PhysicsHack.Alive(b.Entity.Data)) return;
+        if (b == null || _octree == null || _goneBlocks.Contains(b) || b.Entity == null || !GridPhysics.Alive(b.Entity.Data)) return;
         var bb = b.AABB;
         if ((long)(bb.Max.X - bb.Min.X + 1) * (bb.Max.Y - bb.Min.Y + 1) * (bb.Max.Z - bb.Min.Z + 1) > 4096) return;
         CutStale++;

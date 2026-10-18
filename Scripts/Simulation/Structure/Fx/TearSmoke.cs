@@ -69,10 +69,10 @@ public static class TearSmoke
         var o = outward.LengthSquared() > 1e-6f ? Vector3.Normalize(outward) : Vector3.UnitY;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         var ev = new Ev { Grid = grid, Local = local, Out = o, Stamp = now };
-        if (PhysicsHack.Alive(grid.Data))   // (the server's own grid, on the server: its pose now)
+        if (GridPhysics.Alive(grid.Data))   // (the server's own grid, on the server: its pose now)
         {
             var wt = grid.Data.GetWorldTransform();
-            PhysicsHack.TryGetVelocity(grid.Data, out var lin, out var ang);
+            GridPhysics.TryGetVelocity(grid.Data, out var lin, out var ang);
             ev.HasBox = grid.Data.TryGet<BoundingBoxData>(out var sb);
             SetPose(ev, wt, lin.Length(), ang.Length(), sb.BoundingBox.Min, sb.BoundingBox.Max);
         }
@@ -103,10 +103,10 @@ public static class TearSmoke
         if (!Enabled || grid == null || !AeroSettings.SawClient) return;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         var ev = new Ev { Grid = grid, Local = local, Out = normal.LengthSquared() > 1e-6f ? Vector3.Normalize(normal) : Vector3.UnitY, Stamp = now, Kind = 1, Mat = mat, Sev = Math.Clamp(severity, 0f, 1f), Broke = broke };
-        if (PhysicsHack.Alive(grid.Data))
+        if (GridPhysics.Alive(grid.Data))
         {
             var wt = grid.Data.GetWorldTransform();
-            PhysicsHack.TryGetVelocity(grid.Data, out var lin, out var ang);
+            GridPhysics.TryGetVelocity(grid.Data, out var lin, out var ang);
             ev.HasBox = grid.Data.TryGet<BoundingBoxData>(out var sb);
             SetPose(ev, wt, lin.Length(), ang.Length(), sb.BoundingBox.Min, sb.BoundingBox.Max);
         }
@@ -180,7 +180,7 @@ public static class TearSmoke
             for (int i = fx.Count - 1; i >= 0; i--) if (!on || now >= fx[i].end) { End(fx[i].h); fx.RemoveAt(i); }
         if (Pending == 0 || !on) return;
         var grid = c.Entity;
-        if (grid == null || !PhysicsHack.Alive(c.Data)) return;
+        if (grid == null || !GridPhysics.Alive(c.Data)) return;
         List<Ev> mine = null;
         lock (_lock)
         {

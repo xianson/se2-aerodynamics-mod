@@ -413,7 +413,7 @@ public static partial class AeroApi
     public static bool TryGetAtmosphere(Keen.VRage.DCS.Components.Entity entity, out float density, out float pressure, out float temperature, out float speedOfSound)
     {
         density = pressure = temperature = speedOfSound = 0f;
-        if (entity == null || !PhysicsHack.Alive(entity.Data)) return false;
+        if (entity == null || !GridPhysics.Alive(entity.Data)) return false;
         bool has = entity.Data.TryGet<AirData>(out var air);
         density = AtmosphereProbe.WithTail(entity.Data.GetWorldTransform().Position, has ? air.Density : 0f);
         if (!has && density <= 0f) return false;
@@ -722,7 +722,7 @@ public static partial class AeroApi
                 // (only a grid of the caller's own scene is read: the server copy was matched above by its flow record - its
                 //  transform read from here, the client's job, tripped the game's DataGuard, 2026-10-15)
                 if (!ReferenceEquals(g.Data.Scene, scene)) continue;
-                if (PhysicsHack.Alive(g.Data) && (g.Data.GetWorldTransform().Position - at).LengthSquared() < 1.0) return true;
+                if (GridPhysics.Alive(g.Data) && (g.Data.GetWorldTransform().Position - at).LengthSquared() < 1.0) return true;
             }
         return false;
     }

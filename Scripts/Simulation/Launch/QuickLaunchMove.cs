@@ -65,7 +65,7 @@ internal static class QuickLaunchMove
     internal static bool Move(Session session, Entity grid, Vector3D target, Quaternion orientation, Vector3D velocity, out int moved, out string why)
     {
         moved = 0;
-        if (!PhysicsHack.Alive(grid.Data)) { why = "the ship is gone"; return false; }
+        if (!GridPhysics.Alive(grid.Data)) { why = "the ship is gone"; return false; }
         if (!Finite(target) || !Finite(velocity)) { why = "no finite place"; return false; }
         var set = _set;
         if (!MoveSet(session, grid, set, out why)) return false;
@@ -75,7 +75,7 @@ internal static class QuickLaunchMove
         var to = _to; to.Clear();
         foreach (var e in set)
         {
-            if (!PhysicsHack.Alive(e.Data)) continue;   // (gone since the search: skipped before its transform is read)
+            if (!GridPhysics.Alive(e.Data)) continue;   // (gone since the search: skipped before its transform is read)
             var wt = e.Data.GetWorldTransform();
             Vector3D p = target + Vector3D.Transform(wt.Position - pivot, turn);
             if (!Finite(p)) { why = "no finite place for a joined part"; set.Clear(); return false; }   // (never hand Havok a NaN)

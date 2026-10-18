@@ -61,7 +61,7 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
     [MustHave(typeof(AeroRotorStrikeComponent))]
     private static void StrikeProbeJob(AeroRotorStrikeComponent c)
     {
-        if (c.Entity == null || !PhysicsHack.Alive(c.Data)) return;
+        if (c.Entity == null || !GridPhysics.Alive(c.Data)) return;
         var p = c._prop ??= c.Entity.TryGet<AeroPropulsorComponent>();
         if (p != null && p.RotorRadius > 0f) c.ServerTick(p);   // (its radius: the propulsor has read its row - PropulsorBlocks.Describe)
     }
@@ -104,7 +104,7 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
         _pubAt = 15;
         var top = Entity.GetTopLevelParent();
         var aero = top?.TryGet<AeroGridComponent>();
-        if (aero == null || !PhysicsHack.Alive(top.Data)) return;
+        if (aero == null || !GridPhysics.Alive(top.Data)) return;
         ThrustTorque.PublishBlades(aero, top.Data.GetWorldTransform(), _key, Health);
     }
     /// <summary>A change of the blades' health (RotorStrikeServer): published on this rotor's next tick.</summary>
@@ -113,9 +113,9 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
     /// <summary>This tick's rays over the disc; the closest hit not on the rotor itself, fast enough, queued.</summary>
     void Probe(AeroPropulsorComponent p)
     {
-        var phys = PhysicsHack.Physics;
+        var phys = GridPhysics.Physics;
         var grid = _block.Grid?.Entity;
-        if (phys == null || grid == null || !PhysicsHack.Alive(grid.Data)) return;
+        if (phys == null || grid == null || !GridPhysics.Alive(grid.Data)) return;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (--_selfAt <= 0) { _selfAt = 60; CollectSelf(); }
         var gwt = grid.Data.GetWorldTransform();

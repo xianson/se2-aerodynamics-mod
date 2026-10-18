@@ -127,7 +127,7 @@ static class Program
         var dp = trees[Path.Combine(sim, "Design", "DesignProbe.cs")];
         // (the server step's own: PublishDesign, PublishPose, and SeaLevelMax - a thruster's entity, PublishDesign's)
         var serverStep = new HashSet<string> { "PublishDesign", "PublishPose", "SeaLevelMax" };
-        const string engine = @"\.Data\b|PhysicsHack\.|GetWorldTransform|IsEntityAlive|\.TryGet<|\.Components\b(?!\.)|CaptureBoxes\(|RefreshFxGroup\(|_thrusterCache|ThrusterSnap|LiveMax\(|SeaLevelEfficiency\(|GetTopLevelParent|GetSession";
+        const string engine = @"\.Data\b|GridPhysics\.|GetWorldTransform|IsEntityAlive|\.TryGet<|\.Components\b(?!\.)|CaptureBoxes\(|RefreshFxGroup\(|_thrusterCache|ThrusterSnap|LiveMax\(|SeaLevelEfficiency\(|GetTopLevelParent|GetSession";
         // (code only: the comments name what they no longer do)
         static string Code(SyntaxNode n) => string.Concat(n.DescendantTokens().Select(t => t.Text));
         int probes = 0;
@@ -137,7 +137,7 @@ static class Program
             if (serverStep.Contains(name)) continue;
             probes++;
             // (ServerAero reads the caller's own grid - its own scene; the server grids only by their published poses)
-            if (name == "ServerAero") body = Regex.Replace(body, @"PhysicsHack\.Alive\(grid\.Data\)|grid\.Data\.(GetWorldTransform\(\)|TryGet<\w+>)|grid\.Components\b", "");
+            if (name == "ServerAero") body = Regex.Replace(body, @"GridPhysics\.Alive\(grid\.Data\)|grid\.Data\.(GetWorldTransform\(\)|TryGet<\w+>)|grid\.Components\b", "");
             var hit = Regex.Match(body, engine);
             Check(!hit.Success, $"DesignProbe.{name}: no engine read of a server grid off its step ('{hit.Value}')");
         }

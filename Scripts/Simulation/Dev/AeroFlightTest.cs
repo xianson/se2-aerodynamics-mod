@@ -168,12 +168,12 @@ public partial class AeroGridComponent
             {
                 float want = phase == "CRUISE" ? CruiseAoa : phase == "CLIMB" ? ClimbAoa : GlideAoa;
                 float rate = Hold(aero, wt, want);
-                PhysicsHack.TrySetControlData(aero.Entity, movement, Vector3.Zero);
+                GridPhysics.TrySetControlData(aero.Entity, movement, Vector3.Zero);
                 aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * rate });
             }
             else
             {
-                PhysicsHack.TrySetControlData(aero.Entity, movement, rotation);
+                GridPhysics.TrySetControlData(aero.Entity, movement, rotation);
                 // The stick: the game's gyros steer an unpiloted grid to AngularControlData (grid-local rad/s, +X nose up),
                 // and a rate command releases the aero mod's attitude hold. (ControlData's Rotation alone steered nothing.)
                 aero.Data.Set(new Keen.Game2.Simulation.WorldObjects.Movement.AngularControlData { TargetAngularVelocity = PitchAxisL * (-rotation.X * PitchRate) });
@@ -187,18 +187,18 @@ public partial class AeroGridComponent
         /// about the grid's own pitch axis, that closes ServoFrac of the gap to it this tick. Returns the rate (for the gyros).</summary>
         private static float Hold(AeroGridComponent aero, in WorldTransform wt, float want)
         {
-            if (!PhysicsHack.TryGetVelocity(aero.Data, out Vector3 vel, out Vector3 angW)) return 0f;
+            if (!GridPhysics.TryGetVelocity(aero.Data, out Vector3 vel, out Vector3 angW)) return 0f;
             float aoa = Aoa(vel, wt, out _);
             float rate = Math.Clamp(AoaGain * (want - aoa) * MathF.PI / 180f, -MaxRate, MaxRate);
             var pitchL = Vector3.Normalize(PitchAxisL);
             float q = Vector3.Dot(WorldTransform.TransformDirectionInv(angW, wt), pitchL);
-            if (!PhysicsHack.TryGetInertiaData(aero.Data, out Vector3 invI, out Quaternion major)) return rate;
+            if (!GridPhysics.TryGetInertiaData(aero.Data, out Vector3 invI, out Quaternion major)) return rate;
             // (the pitch axis in the principal axes: 1 / I about it = sum of its squared components x the inverse moments)
             var a = Vector3.Transform(pitchL, Quaternion.Inverse(major));
             float invIa = a.X * a.X * invI.X + a.Y * a.Y * invI.Y + a.Z * a.Z * invI.Z;
             if (!(invIa > 0f)) return rate;
             float impulse = ServoFrac * (rate - q) / invIa;
-            PhysicsHack.ApplyTorqueImpulse(aero.Data, pitchL * impulse, wt);
+            GridPhysics.ApplyTorqueImpulse(aero.Data, pitchL * impulse, wt);
             _trimSum += impulse * 60f; _trimN++;
             return rate;
         }
@@ -228,7 +228,7 @@ public partial class AeroGridComponent
         private static void Setup(AeroGridComponent aero, WorldTransform wt)
         {
             // Gravity gives us "down"; the horizon is anything perpendicular to it.
-            Vector3 g = PhysicsHack.GetGravityDirection(aero.Data);
+            Vector3 g = GridPhysics.GetGravityDirection(aero.Data);
             float glen = g.Length();
             if (glen < 1e-3f)
             {
@@ -264,12 +264,12 @@ public partial class AeroGridComponent
             // The grid's own -Z and +Y, where its nose goes to fwd and its up to up.
             Vector3 sideL = Vector3.Cross(_noseL, _upL), sideW = Vector3.Cross(fwd, up);
             Vector3 ToWorld(Vector3 l) => fwd * Vector3.Dot(l, _noseL) + up * Vector3.Dot(l, _upL) + sideW * Vector3.Dot(l, sideL);
-            PhysicsHack.TrySetOrientation(aero.Data, Quaternion.CreateFromForwardUp(ToWorld(new Vector3(0f, 0f, -1f)), ToWorld(new Vector3(0f, 1f, 0f))));
-            PhysicsHack.TrySetPosition(aero.Data, startPos);
-            PhysicsHack.TrySetVelocity(aero.Data, velDir * EntrySpeed, Vector3.Zero);
+            GridPhysics.TrySetOrientation(aero.Data, Quaternion.CreateFromForwardUp(ToWorld(new Vector3(0f, 0f, -1f)), ToWorld(new Vector3(0f, 1f, 0f))));
+            GridPhysics.TrySetPosition(aero.Data, startPos);
+            GridPhysics.TrySetVelocity(aero.Data, velDir * EntrySpeed, Vector3.Zero);
 
 
-            PhysicsHack.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
+            GridPhysics.TryGetMassProperties(aero.Data, out float mass, out Vector3 com);
             var wl = aero._model?.Wings;
             if (wl != null)
                 foreach (var w in wl)
@@ -285,7 +285,7 @@ public partial class AeroGridComponent
             if (wl == null || wl.Count == 0) return;
             var w = wl[0];
             foreach (var x in wl) if (x.PlanformArea > w.PlanformArea) w = x;
-            PhysicsHack.TryGetMassProperties(aero.Data, out _, out Vector3 com);
+            GridPhysics.TryGetMassProperties(aero.Data, out _, out Vector3 com);
             Vector3 up = Vector3.Normalize(w.Normal);
             if (Vector3.Dot(up, WorldTransform.TransformDirectionInv(worldUp, wt)) < 0f) up = -up;
             Vector3 chord = Vector3.Normalize(Vector3.Cross(w.SpanAxis, up));
@@ -299,10 +299,10 @@ public partial class AeroGridComponent
 
         private static void Report(AeroGridComponent aero, WorldTransform wt, string phase)
         {
-            PhysicsHack.TryGetVelocity(aero.Data, out Vector3 vel, out Vector3 angVel);
+            GridPhysics.TryGetVelocity(aero.Data, out Vector3 vel, out Vector3 angVel);
             float speed = vel.Length();
 
-            Vector3 g = PhysicsHack.GetGravityDirection(aero.Data);
+            Vector3 g = GridPhysics.GetGravityDirection(aero.Data);
             float glen = g.Length();
             Vector3 up = glen > 1e-3f ? -(g / glen) : new Vector3(0f, 1f, 0f);
 
@@ -327,19 +327,19 @@ public partial class AeroGridComponent
             string trim = "";
             if (AoaHold && _trimN > 0)
             {
-                trim = $" trim={_trimSum / _trimN / 1000.0,7:F0}kNm gyroMax={PhysicsHack.TryGetGyroMaxTorque(aero.Data) / 1000f:F0}kNm";
+                trim = $" trim={_trimSum / _trimN / 1000.0,7:F0}kNm gyroMax={GridPhysics.TryGetGyroMaxTorque(aero.Data) / 1000f:F0}kNm";
                 _trimSum = 0; _trimN = 0;
             }
             // THE RESIDUAL: the force the measured acceleration (over the last second) needs beyond gravity and the aero
             // model's own - thrust, dampeners, the trim servo's (angular only), anything unaccounted for; along the
             // travel (+ forward) and up (kN)
             string resid = "";
-            PhysicsHack.TryGetMassProperties(aero.Data, out float massR, out _);
+            GridPhysics.TryGetMassProperties(aero.Data, out float massR, out _);
             if (_hasLastVel && massR > 0f && aero.HasResult && speed > 1f)
             {
                 Vector3 accel = vel - _lastVel;   // (per second: the report is once a second)
                 Vector3 aeroW = WorldTransform.TransformDirection(aero.LastResult.Force, wt);
-                float gm = PhysicsHack.GravityMultiplier();   // (the engine's: a world at 2 flies in twice GravitySum)
+                float gm = GridPhysics.GravityMultiplier();   // (the engine's: a world at 2 flies in twice GravitySum)
                 Vector3 extra = accel * massR - aeroW - g * gm * massR;
                 resid = $" resid fwd={Vector3.Dot(extra, vel / speed) / 1000f,6:F0}kN up={Vector3.Dot(extra, up) / 1000f,6:F0}kN g={glen:F2}x{gm:F1} mult D{AeroTuning.DragMultiplier:F2} L{AeroTuning.LiftMultiplier:F2}";
             }

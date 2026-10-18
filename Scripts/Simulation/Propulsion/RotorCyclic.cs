@@ -55,7 +55,7 @@ public static class RotorCyclic
         for (int i = 0; i < n && i < thrusters.Count; i++)
         {
             var e = thrusters[i].ThrusterEntity;
-            if (e == null || !PhysicsHack.Alive(e.Data)) continue;
+            if (e == null || !GridPhysics.Alive(e.Data)) continue;
             var p = e.TryGet<AeroPropulsorComponent>();
             if (p == null) continue;
             // (the kind from the block's table row: the component's own Kind is set on its first tick, maybe after this)

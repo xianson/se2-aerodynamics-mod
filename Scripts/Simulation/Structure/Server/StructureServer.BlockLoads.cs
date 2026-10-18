@@ -26,7 +26,7 @@ public partial class AeroGridComponent
 
     static void AddCompLoad(StructureEval.Loads L, Vector3 f, Vector3 p, Vector3 m, Vector3 at, bool tune, float tk, Vector3 airVelLocal, Vector3 com)
     {
-        if (!PhysicsHack.IsFinite(f) || !PhysicsHack.IsFinite(m)) return;
+        if (!GridPhysics.IsFinite(f) || !GridPhysics.IsFinite(m)) return;
         if (tune) AeroTuning.ScalePart(ref f, ref m, p, com, tk, airVelLocal);
         L.CompF.Add(f); L.CompP.Add(p); L.CompT.Add(m); L.CompAt.Add(at);
     }
@@ -61,7 +61,7 @@ public partial class AeroGridComponent
     /// </summary>
     internal void PublishBlockLoad(Entity block, Vector3 forceLocal, Vector3 pointLocal, Vector3 torqueLocal, bool isEngine)
     {
-        if (block == null || !PhysicsHack.IsFinite(forceLocal) || !PhysicsHack.IsFinite(pointLocal) || !PhysicsHack.IsFinite(torqueLocal)) return;
+        if (block == null || !GridPhysics.IsFinite(forceLocal) || !GridPhysics.IsFinite(pointLocal) || !GridPhysics.IsFinite(torqueLocal)) return;
         int now = _simFrameCount;
         lock (_blockLoads)
         {
@@ -80,7 +80,7 @@ public partial class AeroGridComponent
             lock (_loadEngines) if (!_loadEngines.TryGetValue(block, out _)) { _loadEngines.Add(block, _engineMark); added = true; }
             // (rebuilt: the engine rigid - IsThrusterBlock. Not for a block with the game's ThrusterComponent - a rotor, a solid
             //  rocket nozzle: it is rigid already, and its rebuild would only cost one; its first call only, 2026-10-17)
-            if (added && !(PhysicsHack.Alive(block.Data) && block.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null))
+            if (added && !(GridPhysics.Alive(block.Data) && block.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null))
                 System.Threading.Interlocked.Increment(ref StructBlockVersion);
         }
     }
@@ -101,7 +101,7 @@ public partial class AeroGridComponent
     /// </summary>
     internal void PublishBlockImpulse(Entity block, Vector3 impulseLocal, Vector3 pointLocal, Vector3 angularLocal)
     {
-        if (block == null || !PhysicsHack.IsFinite(impulseLocal) || !PhysicsHack.IsFinite(pointLocal) || !PhysicsHack.IsFinite(angularLocal)) return;
+        if (block == null || !GridPhysics.IsFinite(impulseLocal) || !GridPhysics.IsFinite(pointLocal) || !GridPhysics.IsFinite(angularLocal)) return;
         if (impulseLocal.LengthSquared() <= 0f && angularLocal.LengthSquared() <= 0f) return;
         int now = _simFrameCount;
         lock (_blockImpulses)

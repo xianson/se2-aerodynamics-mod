@@ -21,7 +21,7 @@ public partial class AeroGridComponent
         if (--_subPartCheck <= 0)
         {
             _subPartCheck = 120;
-            try { _isSubPart = PhysicsHack.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
+            try { _isSubPart = GridPhysics.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
         }
         if (_isSubPart) { mode = "sub-part"; return false; }
         if (TestTurnGen != 0 && IsServerScene && Data.TryGet<TargetControlData>(out var tt))

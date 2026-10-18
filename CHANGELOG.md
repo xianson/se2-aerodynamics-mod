@@ -312,7 +312,7 @@ fly.
 
 - **Legacy clean-up (2026-10-17)**: `OffsetThrustJob.Execute` / `LegacyScale` and `OffsetThrustJob.Attitude.cs`, the SAS
   / phantom torque and gyro hand-off in `AeroSimJob`, the old attitude test harness (`Integration/AeroTestHarness.cs`), the
-  thruster-override and grid-override helpers in `PhysicsHack`, the retired solid-rocket segment key reader
+  thruster-override and grid-override helpers in `GridPhysics`, the retired solid-rocket segment key reader
   (`aero-solid:`), unused `CompressibleFlow` / `AtmosphereModel` relations, dead `FlightField` prototype knobs, and the
   duplicate direction helpers (the engine's `Base6Directions.GetVector`). `OffsetThrustJob` keeps its name: it holds the
   thruster and gyro caches.
@@ -330,7 +330,7 @@ fly.
   `NewtonianDragModel`, the never-created `ThinAirfoilWingModel` and `HelicopterRotor` (no block definition carries
   its two GUIDs: its registrations, GUIDs, debug draw, control feed and the `GetAeroBlocks` / `GetAeroBlockState`
   "HelicopterRotor" kind went with it; the "HelicopterRotor" thrust profile stays) - deleted with the user's approval,
-  `PhysicsHack.UncapSpeed` / `ApplyDeltaVAndTorque`, `EngineOverrides.UncapSpeed` / `TrySetConfigProperty`,
+  `GridPhysics.UncapSpeed` / `ApplyDeltaVAndTorque`, `EngineOverrides.UncapSpeed` / `TrySetConfigProperty`,
   `FlightField.LightPlace` and the old mesh-plasma leftovers, unused structure knobs and diagnostics; unused
   usings in 71 files; stale comments fixed.
 - **Shared helpers**: one `FindType`, `IsFinite`, `FloorDiv`, SAS torque, symmetric 3x3 solve, block-definition read,

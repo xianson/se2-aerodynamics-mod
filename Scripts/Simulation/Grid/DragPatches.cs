@@ -27,7 +27,7 @@ public partial class AeroGridComponent
 
     internal bool SetDragPatch(string key, Vector3 point, float cdA, Vector3 normal)
     {
-        if (string.IsNullOrEmpty(key) || !PhysicsHack.IsFinite(point) || !float.IsFinite(cdA) || !PhysicsHack.IsFinite(normal)) return false;
+        if (string.IsNullOrEmpty(key) || !GridPhysics.IsFinite(point) || !float.IsFinite(cdA) || !GridPhysics.IsFinite(normal)) return false;
         if (point.Length() > MaxPatchReach) return false;
         cdA = Math.Clamp(cdA, 0f, MaxPatchCdA);
         float nl = normal.Length();

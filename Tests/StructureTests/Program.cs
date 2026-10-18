@@ -732,7 +732,7 @@ static class Program
     /// with dampeners, the gravity hold (-m GravitySum, clamped to that side's maximum) taken off the body's CustomGravity IN
     /// PLACE (no thrust: ActiveThrustData leaves it out); the read (StructureContacts: its gravity paired to the next read); the
     /// physics step - the held gravity x the session's GravityMultiplier (Havok; vanilla 2), the ground. Returns the mean
-    /// support (N, up) with the gravity as the server now reads it (PhysicsHack.GetAppliedGravity: ContactBalance.AppliedGravity
+    /// support (N, up) with the gravity as the server now reads it (GridPhysics.GetAppliedGravity: ContactBalance.AppliedGravity
     /// of the held gravity) and as it read before (the planet's GravitySum), and the true mean contact force.
     /// </summary>
     static (float now, float before, float truth) RunGravity(float m, float gm, bool damp, float holdMax, bool ground, int ticks = 300)

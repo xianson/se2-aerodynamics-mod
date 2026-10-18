@@ -164,7 +164,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal float GroundHeight = -1f;
     /// <summary>Away from the ground (against gravity), grid frame, unit; zero out of gravity (AeroSimJob).</summary>
     internal Vector3 GroundUpLocal;
-    internal readonly PhysicsHack.GroundProbe Ground = new PhysicsHack.GroundProbe();
+    internal readonly GridPhysics.GroundProbe Ground = new GridPhysics.GroundProbe();
 
     // ── Cached physics state (written by sim job @ 60Hz, read by draw job) ──
     internal Vector3 LastLinVel;

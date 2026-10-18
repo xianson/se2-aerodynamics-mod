@@ -61,7 +61,7 @@ public partial class AeroFlameComponent : Component, IInSceneListener
         //  word on every call) and the override read: every frame, every such thruster - 2026-10-15)
         if (flame.Shown < 0f && flame._match == null && now < flame._recheckAt && !Probe && !_reflectFailed) { flame._tick = now; return; }
         var data = flame.Data;
-        if (!PhysicsHack.Alive(data)) return;
+        if (!GridPhysics.Alive(data)) return;
         float dt = flame._tick == 0 ? 0f : (float)Math.Min(0.1, (now - flame._tick) / freq);
         flame._tick = now;
         if (!ThrustTorque.FlamesEnabled || _reflectFailed) { Release(flame, data); return; }

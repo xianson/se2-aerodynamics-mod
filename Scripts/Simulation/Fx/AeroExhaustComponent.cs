@@ -73,7 +73,7 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
     [MustHave(typeof(AeroExhaustComponent))]
     private static void ExhaustJob(AeroExhaustComponent c)
     {
-        if (!PhysicsHack.Alive(c.Data)) return;
+        if (!GridPhysics.Alive(c.Data)) return;
         c.Step();
     }
 
@@ -147,7 +147,7 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
         if (data.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterOverrideData>(out var po)) return Math.Clamp(po.OverridePower, 0f, 1f);
         if (!data.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ThrustData>(out var td)) return 0f;
         var gridData = new DEntityContext(data.Scene, td.ParentGrid);
-        if (!PhysicsHack.Alive(gridData) || !gridData.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.VoluntaryThrustData>(out var vt)) return 0f;
+        if (!GridPhysics.Alive(gridData) || !gridData.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.VoluntaryThrustData>(out var vt)) return 0f;
         var v = vt.VoluntaryThrust; float n;
         switch (td.Direction)
         {
@@ -238,7 +238,7 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
         var cb = Entity.TryGet<CubeBlockComponent>();
         var top = Entity.GetTopLevelParent();
         var grid = cb?.Grid?.Entity ?? top;
-        if (grid == null || !PhysicsHack.Alive(grid.Data)) return false;
+        if (grid == null || !GridPhysics.Alive(grid.Data)) return false;
         if (!ReferenceEquals(grid, _grid) || _parent == null)
         {
             _grid = grid; _parent = EntryFxBridge.RenderParent(grid);

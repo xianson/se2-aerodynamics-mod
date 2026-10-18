@@ -43,7 +43,7 @@ public static class HonestDampeners
             else if (!on) aero._superCleared = false;
         }
         if (!on || !aero.IsServerScene) return;
-        float gm = PhysicsHack.GravityScale;
+        float gm = GridPhysics.GravityScale;
         // (the hold only with dampeners - GameFeatureConfig.ThrustAlwaysDampensGravity is a debug-screen switch, off - and only
         //  where the game held this tick: its thrust ran (ActiveThrustData) and moved CustomGravity off the planet's - a grid
         //  docked to a station, without thrusters or without thrust on the hold's side never held, and is left as it is)

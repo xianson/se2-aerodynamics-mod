@@ -32,7 +32,7 @@ internal static class DesignProbe
         if (grid == null) return null;
         foreach (var c in grid.Components) if (c is AeroGridComponent a && a.IsServerScene) return a;
         if (AeroEntryFx.FlowOf(grid, out var p) && p.Aero != null) return p.Aero;
-        if (!PhysicsHack.Alive(grid.Data)) return null;
+        if (!GridPhysics.Alive(grid.Data)) return null;
         var wt = grid.Data.GetWorldTransform();
         bool hasBox = grid.Data.TryGet<BoundingBoxData>(out var bb);
         // (the server grids' poses as their own steps publish them (PublishPose) - never their entities: Live holds both scenes'
@@ -124,8 +124,8 @@ internal static class DesignProbe
         if (!w.Due(now, f)) return;
         aero.RefreshFxGroup();   // (the joint search, here on the server grid's own thread - it ran from the caller's)
         var s = new DesignSnapshot { At = now, Pos = wt.Position, Orient = wt.Orientation, Group = aero.FxGroup };
-        s.HasMass = PhysicsHack.TryGetMassProperties(aero.Data, out s.Mass, out s.Com);
-        s.GyroMax = PhysicsHack.TryGetGyroMaxTorque(aero.Data);
+        s.HasMass = GridPhysics.TryGetMassProperties(aero.Data, out s.Mass, out s.Com);
+        s.GyroMax = GridPhysics.TryGetGyroMaxTorque(aero.Data);
         var cache = aero._thrusterCache;
         int n = cache.Count;
         if (n > 0)

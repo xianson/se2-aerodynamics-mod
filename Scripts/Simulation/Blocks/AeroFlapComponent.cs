@@ -45,7 +45,7 @@ public partial class AeroFlapComponent : Component, IInSceneListener
         AeroPanelProbe.Tick(c.Entity);   // (DEV: the control panel probe, once per harness request)
         if (!Enabled) return;
         var data = c.Data;
-        if (!PhysicsHack.Alive(data)) return;
+        if (!GridPhysics.Alive(data)) return;
         long now = System.Diagnostics.Stopwatch.GetTimestamp(); double freq = System.Diagnostics.Stopwatch.Frequency;
         float dt = c._tick == 0 ? 0f : (float)Math.Min(0.1, (now - c._tick) / freq);
         c._tick = now;
@@ -56,7 +56,7 @@ public partial class AeroFlapComponent : Component, IInSceneListener
             var bb = block.AABB; c._key = bb.Min + bb.Max; c._hasKey = true;
         }
         // the subpart: the block's child with a transform (spawned and despawned by the game: found again when gone)
-        if (c._flap == null || !PhysicsHack.Alive(c._flap.Data))
+        if (c._flap == null || !GridPhysics.Alive(c._flap.Data))
         {
             c._flap = null;
             var kids = c.Entity?.TryGet<HierarchyComponent>()?.Children;

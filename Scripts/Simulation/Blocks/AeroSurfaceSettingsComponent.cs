@@ -228,7 +228,7 @@ internal static class AeroSurfaceSaved
                 var w = _client[i];
                 if (now - w.Since > 60) { _client.RemoveAt(i); continue; }
                 var src = w.Src;
-                if (src?.Entity == null || !ReferenceEquals(src.Entity.Data.Scene, scene) || !PhysicsHack.Alive(src.Entity.Data)) continue;
+                if (src?.Entity == null || !ReferenceEquals(src.Entity.Data.Scene, scene) || !GridPhysics.Alive(src.Entity.Data)) continue;
                 w.At = src.Entity.Data.GetWorldTransform().Position; w.Frac = src.AttitudeFraction;
             }
             Recount();
@@ -244,7 +244,7 @@ internal static class AeroSurfaceSaved
         if (ts >= due && System.Threading.Interlocked.CompareExchange(ref _seenDue, ts + System.Diagnostics.Stopwatch.Frequency, due) == due)
             lock (AeroThrustSettingsComponent.All)
                 foreach (var th in AeroThrustSettingsComponent.All)
-                    if (!th.Server && th.Changed && th.Entity != null && ReferenceEquals(th.Entity.Data.Scene, scene) && PhysicsHack.Alive(th.Entity.Data))
+                    if (!th.Server && th.Changed && th.Entity != null && ReferenceEquals(th.Entity.Data.Scene, scene) && GridPhysics.Alive(th.Entity.Data))
                     { th.SeenAt = th.Entity.Data.GetWorldTransform().Position; th.HasSeenAt = true; }
         if (_clientCount == 0) return;
         double now = ts / (double)System.Diagnostics.Stopwatch.Frequency;

@@ -70,7 +70,7 @@ public static partial class QuickLaunch
                 if ((se.TryGet<SeatComponent>() as ISeat)?.Pilot == ch) { seat = se; break; }
             grid = seat?.TryGet<CubeBlockComponent>()?.Grid?.Entity;
         }
-        bool alive = grid != null && PhysicsHack.Alive(grid.Data) && PhysicsHack.Alive(seat.Data);
+        bool alive = grid != null && GridPhysics.Alive(grid.Data) && GridPhysics.Alive(seat.Data);
         bool isStatic = alive && QuickLaunchMove.IsStatic(grid);
         bool joined = alive && !isStatic && session.Get<Keen.Game2.Simulation.GameSystems.Physicss.IFindConnectedEntities>()?.IsConnectedToStaticEntity(grid) == true;
         // where: the nearest server planet whose gravity it is in
@@ -79,7 +79,7 @@ public static partial class QuickLaunch
         if (alive)
         {
             pos = grid.Data.GetWorldTransform().Position;
-            atPlanet = PhysicsHack.GetGravityDirection(grid.Data).LengthSquared() > 0.01f && NearestPlanet(grid.Data.Scene, pos, out centre);
+            atPlanet = GridPhysics.GetGravityDirection(grid.Data).LengthSquared() > 0.01f && NearestPlanet(grid.Data.Scene, pos, out centre);
         }
         var v = QuickLaunchRules.Check(Creative, ch != null, creative, seat != null, alive, isStatic, joined, atPlanet);
         if (v != QuickLaunchRules.Verdict.Go) { Refuse(v, null, grid); return; }
@@ -162,7 +162,7 @@ public static partial class QuickLaunch
             foreach (var p in AeroWorldSettingsComponent.Planets)
             {
                 var e = p.Entity;
-                if (e == null || !ReferenceEquals(e.Data.Scene, scene) || !PhysicsHack.Alive(e.Data)) continue;   // (this scene's only)
+                if (e == null || !ReferenceEquals(e.Data.Scene, scene) || !GridPhysics.Alive(e.Data)) continue;   // (this scene's only)
                 var c = e.Data.GetWorldTransform().Position;
                 double d = (c - at).LengthSquared();
                 if (d < best) { best = d; centre = c; any = true; }

@@ -43,14 +43,14 @@ public partial class AeroGridComponent
         AeroCost.EnterSim();
         try
         {
-            PhysicsHack.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
+            GridPhysics.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
             aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
             // (the predicted loss-of-control warning's inputs: Loac.cs)
             aero.LoacHasTarget = aero.LastThrust.Aware && aero.LastThrust.HasTarget; aero.LoacTarget = aero.LastThrust.Target; aero.LoacReach = aero.LastThrust.Reach;
             if (PitchLog && aero.IsServerScene && aero.Data.Has<TargetControlData>() && aero._simFrameCount % 6 == 0)
             {
-                PhysicsHack.TryGetVelocity(aero.Data, out _, out var w2);
+                GridPhysics.TryGetVelocity(aero.Data, out _, out var w2);
                 var wl = WorldTransform.TransformDirectionInv(w2, wt); var r = aero.LastThrust;
                 Log.Default?.Info($"[AERO-PITCH] v={aero.LastSpeed:F0} M={(aero.HasResult ? aero.LastResult.Mach : 0):F2} w=({wl.X:F3},{wl.Y:F3},{wl.Z:F3}) err=({r.Error.X * 57.3f:F2},{r.Error.Y * 57.3f:F2},{r.Error.Z * 57.3f:F2})deg"
                     + $" aeroT=({aero.LastAeroTorque.X / 1000:F0},{aero.LastAeroTorque.Y / 1000:F0},{aero.LastAeroTorque.Z / 1000:F0})kNm gyro=({r.GyroTorque.X / 1000:F0},{r.GyroTorque.Y / 1000:F0},{r.GyroTorque.Z / 1000:F0})kNm"
@@ -137,7 +137,7 @@ public partial class AeroGridComponent
         //  of every piece broken off, every re-added grid and every client copy on its first frame: a grid's spin is physics)
 
         // ── Read physics state ──
-        PhysicsHack.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
+        GridPhysics.TryGetVelocity(aero.Data, out Vector3 linVel, out Vector3 angVel);
         // (torn-edge smoke waiting for its client grid: this server grid's pose, read here on its own thread - TearSmoke.Pairs)
         if (aero.IsServerScene && TearSmoke.Pending != 0) TearSmoke.ServerPose(aero.Entity, wt, linVel, angVel);
         if (aero.IsServerScene) DesignProbe.PublishPose(aero, wt);   // (the same for the design probe's pairing, while it is asked)
@@ -167,7 +167,7 @@ public partial class AeroGridComponent
         }
         else aero._quietFrames = 0;
         // (the mass and the inertia: one read of the same data - the inertia used below as before)
-        bool massRead = PhysicsHack.TryGetMassAndInertia(aero.Data, out float mass, out Vector3 com, out var invI, out var majorAxisRot);
+        bool massRead = GridPhysics.TryGetMassAndInertia(aero.Data, out float mass, out Vector3 com, out var invI, out var majorAxisRot);
 
         float density = 0f;
         if (aero.Data.TryGet<AirData>(out var air))
@@ -183,12 +183,12 @@ public partial class AeroGridComponent
 
         // ── Ground height (sync raycast, every 3-10 ticks) ──
         if (aero.IsServerScene)
-            PhysicsHack.InitGroundSystem(aero.Entity);   // (cheap when unchanged: the server session's physics)
+            GridPhysics.InitGroundSystem(aero.Entity);   // (cheap when unchanged: the server session's physics)
 
-        Vector3 gravity = PhysicsHack.GetGravityDirection(aero.Data);
+        Vector3 gravity = GridPhysics.GetGravityDirection(aero.Data);
         aero.InGravity = gravity.LengthSquared() > 1e-4f;
         aero.LastGravity = gravity.Length();
-        aero.GroundHeight = aero.IsServerScene ? PhysicsHack.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity) : -1f;   // (rays in the server's world only)
+        aero.GroundHeight = aero.IsServerScene ? GridPhysics.GetGroundDistance(aero.Ground, wt.Position, gravity, aero.Entity) : -1f;   // (rays in the server's world only)
         aero.GroundUpLocal = aero.InGravity ? -Vector3.Normalize(WorldTransform.TransformDirectionInv(gravity, wt)) : Vector3.Zero;
 
         // ── Cache physics state for draw job ──
@@ -303,7 +303,7 @@ public partial class AeroGridComponent
             aero.LastAeroTorque = torqueLocal - aero.LastSurfaceTorque;
             // Real physics path (VRage.Physics whitelisted since 2.4.0.77): writes through a
             // ref into component storage and uses the engine's own inertia math, instead of
-            // PhysicsHack's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
+            // GridPhysics's boxed read-modify-write with a hand-rolled I^-1 tensor rotation.
             long tap = AeroCost.Start();
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, torqueLocal, dt);
             AeroCost.Apply.Stop(tap);

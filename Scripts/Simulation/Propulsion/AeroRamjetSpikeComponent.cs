@@ -43,7 +43,7 @@ public partial class AeroRamjetSpikeComponent : Component, IInSceneListener
     [MustHave(typeof(AeroRamjetSpikeComponent))]
     private static void SpikeJob(AeroRamjetSpikeComponent c)
     {
-        if (!Enabled || !PhysicsHack.Alive(c.Data)) return;
+        if (!Enabled || !GridPhysics.Alive(c.Data)) return;
         c.Step();
     }
 
@@ -56,7 +56,7 @@ public partial class AeroRamjetSpikeComponent : Component, IInSceneListener
             _free = MathF.Max(0f, row.SpikeTravel); _hub = row.Hub;
         }
         FindSpike();
-        if (_spike == null || !PhysicsHack.Alive(_spike.Data)) { _childCount = -1; return; }
+        if (_spike == null || !GridPhysics.Alive(_spike.Data)) { _childCount = -1; return; }
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         float dt = _last == 0 ? 0f : Math.Clamp((float)((now - _last) / (double)System.Diagnostics.Stopwatch.Frequency), 0f, 0.1f);
         _last = now;

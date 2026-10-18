@@ -182,7 +182,7 @@ public partial class AeroGridComponent
             if (StructureEval.EntryLoads) L.EntryAccel = Keen.VRage.Core.WorldTransform.TransformDirectionInv(entryBrake, ewt);
         }
         snap.Up = GroundUpLocal;
-        snap.Weight = LastMass * PhysicsHack.GetGravityDirection(Data).Length() * PhysicsHack.GravityScale;   // (the real weight the wings carry: x the engine's GravityMultiplier)
+        snap.Weight = LastMass * GridPhysics.GetGravityDirection(Data).Length() * GridPhysics.GravityScale;   // (the real weight the wings carry: x the engine's GravityMultiplier)
         // (the predicted loss of control's: the commanded attitude, the ship's now, the actuators' reach)
         snap.HasTarget = LoacHasTarget; snap.Target = LoacTarget; snap.Orient = Data.GetWorldTransform().Orientation;
         bool sFresh = SurfaceReachFresh;   // (a reach measured in faster air is not the surfaces' now: 2026-10-17)

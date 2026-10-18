@@ -26,7 +26,7 @@ namespace AeroMod;
 /// The three members the engine genuinely does not expose live in <see cref="EngineOverrides"/>.
 /// Prefer <see cref="AeroPhysics"/> for applying aerodynamic forces.
 /// </summary>
-public static class PhysicsHack
+public static class GridPhysics
 {
     private static volatile bool _groundSystemInitialized;
     private static volatile IPhysics _physics;
@@ -448,7 +448,7 @@ public static class PhysicsHack
     }
 
 
-    /// <summary>The ground ray ignores the grid itself and what is attached to it (harness: aeroset PhysicsHack.GroundIgnoreSelf 0).</summary>
+    /// <summary>The ground ray ignores the grid itself and what is attached to it (harness: aeroset GridPhysics.GroundIgnoreSelf 0).</summary>
     public static bool GroundIgnoreSelf = true;
     /// <summary>Diagnostics (harness aeroget): ground rays cast, answered with a hit, answered with none; the last reading.</summary>
     public static int GroundCasts, GroundHits, GroundMisses;

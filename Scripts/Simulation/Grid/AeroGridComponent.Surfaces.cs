@@ -65,7 +65,7 @@ public partial class AeroGridComponent
         if (shouldLog)
         {
             // Log gyro capability
-            float gyroMaxTorque = PhysicsHack.TryGetGyroMaxTorque(Data);
+            float gyroMaxTorque = GridPhysics.TryGetGyroMaxTorque(Data);
             if (gyroMaxTorque > 0)
                 Log.Default?.Info($"[AERO-CS] STEP2 gyro MaxTorque={gyroMaxTorque:F0} N·m");
 

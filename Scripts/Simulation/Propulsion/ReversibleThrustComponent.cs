@@ -65,7 +65,7 @@ public partial class ReversibleThrustComponent : Component, IInSceneListener
 
     void Step()
     {
-        if (Entity == null || !PhysicsHack.Alive(Data) || !Data.TryGet<ThrustData>(out var td)) return;
+        if (Entity == null || !GridPhysics.Alive(Data) || !Data.TryGet<ThrustData>(out var td)) return;
         if (!_hasNatural)
         {
             var cb = Entity.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.CubeBlockComponent>();
@@ -84,7 +84,7 @@ public partial class ReversibleThrustComponent : Component, IInSceneListener
             var gwt = gd.GetWorldTransform();
             Vector3 v = gd.TryGet<Keen.VRage.Physics.Data.RigidBodyData>(out var rb) ? WorldTransform.TransformDirectionInv(rb.LinearVelocity, gwt) : Vector3.Zero;
             // (honest dampeners: the hold is against the gravity the body gets, x the engine's multiplier - HonestDampeners)
-            Vector3 g = WorldTransform.TransformDirectionInv(PhysicsHack.GetGravityDirection(gd), gwt) * (HonestHold.Enabled && AeroSwitch.Enabled ? PhysicsHack.GravityScale : 1f);
+            Vector3 g = WorldTransform.TransformDirectionInv(GridPhysics.GetGravityDirection(gd), gwt) * (HonestHold.Enabled && AeroSwitch.Enabled ? GridPhysics.GravityScale : 1f);
             float mass = gd.TryGet<Keen.VRage.Physics.Data.RigidBodyMassProperties>(out var mp) ? mp.Mass : 0f;
             float max = MathF.Max(td.MaxThrustPower, 0f);
             Demand = ReversibleThrust.Demand(input, damp, Vector3.Dot(v, axis), Vector3.Dot(g, axis), mass, max);

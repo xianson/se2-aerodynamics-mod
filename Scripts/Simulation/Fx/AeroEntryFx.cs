@@ -527,7 +527,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     {
         if (c.Flight == null && !AeroEntryFx.AnyFlow) return;   // (nothing flying anywhere: cheap)
         var grid = c.Entity;
-        if (grid == null || !PhysicsHack.Alive(c.Data)) return;
+        if (grid == null || !GridPhysics.Alive(c.Data)) return;
         var wt = c.Data.GetWorldTransform();
         var p = AeroEntryFx.FindFlow(wt.Position, c.FlowOf, wt.Orientation, grid, c.FlowCopy);   // (into its own copy: no record a frame)
         if (p != null) c.FlowOf = p.Aero;   // (one miss kept the remembered grid: it was cleared, and the next match was not sticky)
@@ -624,7 +624,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (AeroEntryFx.AllEffects && ++c.ScorchTick >= 30)
         {
             c.ScorchTick = 0;
-            if (c.FlowOf == null && AeroEntryFx.AnyFlow && PhysicsHack.Alive(c.Data))
+            if (c.FlowOf == null && AeroEntryFx.AnyFlow && GridPhysics.Alive(c.Data))
             {
                 var swt = c.Data.GetWorldTransform();
                 var sp = AeroEntryFx.FindFlow(swt.Position, null, swt.Orientation, c.Entity, c.FlowCopy);

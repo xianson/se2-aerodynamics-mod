@@ -44,7 +44,7 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
     private static void GearAnimJob(AeroGearAnimComponent c)
     {
         if (!Enabled) return;
-        if (!PhysicsHack.Alive(c.Data)) return;
+        if (!GridPhysics.Alive(c.Data)) return;
         if (!c._looked) { c._looked = true; c._variant = AeroGearVariants.Of(c.Entity); }
         var layout = c._variant?.Layout;
         if (layout == null || !layout.AnimatedParts) return;   // (a gear without its own model yet: nothing to move)
@@ -64,7 +64,7 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
         float fold = GearSequence.Fold(progress), doors = GearSequence.DoorsAt(progress, true);
         foreach (var p in c._parts)
         {
-            if (p.Entity == null || !PhysicsHack.Alive(p.Entity.Data)) { c._childCount = -1; continue; }
+            if (p.Entity == null || !GridPhysics.Alive(p.Entity.Data)) { c._childCount = -1; continue; }
             var rest = new GearPose(p.Rest.Position, p.Rest.Orientation);
             GearPose pose = p.Role switch
             {

@@ -128,7 +128,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
     /// supplied. Not lit (or the buffer not reached - RamjetFuelBridge's warning): the game's burn as it has it.</summary>
     void FuelTick()
     {
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (!_bufLooked) { _bufLooked = true; _buf = RamjetFuelBridge.BufferOf(Entity); }
         var b = _buf;
         if (b == null || Motor.Phase != SolidRocket.Phase.Lit) return;
@@ -160,7 +160,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
 
     void Tick()
     {
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (!_look.Done)
         {
             // (its row and parts - tried again every LookRetry.RetryTicks while they cannot be read: it was once, for good)
@@ -183,7 +183,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
             var grid = _cb.Grid?.Entity;
             if (!g.Same(in _geo) || !ReferenceEquals(grid, GridEntity)) { _geo = g; GridEntity = grid; AeroSolidSegmentComponent.Bump(); }
             PosLocal = CellCoords.BlockCentre(bb.Min, bb.Max);
-            _gridAero = _server && grid != null && PhysicsHack.Alive(grid.Data) ? grid.TryGet<AeroGridComponent>() : null;   // (again each look: the grid's component may come after the nozzle)
+            _gridAero = _server && grid != null && GridPhysics.Alive(grid.Data) ? grid.TryGet<AeroGridComponent>() : null;   // (again each look: the grid's component may come after the nozzle)
         }
         if (--_airIn <= 0) { _airIn = AirTicks; ReadAir(); }
         // the game's thrust on it now: its override x its rating x its class's efficiency (0 while switched off)

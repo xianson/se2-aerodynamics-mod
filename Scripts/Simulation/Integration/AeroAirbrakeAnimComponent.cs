@@ -37,7 +37,7 @@ public partial class AeroAirbrakeAnimComponent : Component, IInSceneListener
     [MustHave(typeof(AeroAirbrakeAnimComponent))]
     private static void AnimJob(AeroAirbrakeAnimComponent c)
     {
-        if (!Enabled || !PhysicsHack.Alive(c.Data)) return;
+        if (!Enabled || !GridPhysics.Alive(c.Data)) return;
         if (!c._hasKey)
         {
             var block = c.Entity?.TryGet<CubeBlockComponent>();
@@ -53,7 +53,7 @@ public partial class AeroAirbrakeAnimComponent : Component, IInSceneListener
         float a = Math.Clamp(opening, 0f, 90f) * MathF.PI / 180f;
         foreach (var l in c._leaves)
         {
-            if (l.Entity == null || !PhysicsHack.Alive(l.Entity.Data)) { c._childCount = -1; continue; }
+            if (l.Entity == null || !GridPhysics.Alive(l.Entity.Data)) { c._childCount = -1; continue; }
             var q = Quaternion.CreateFromAxisAngle(Vector3.UnitX, (l.Up ? -Sign : Sign) * a);
             l.Entity.Data.Set(new RelativeTransform(l.Rest.Position, Quaternion.Normalize(q * l.Rest.Orientation)));
         }

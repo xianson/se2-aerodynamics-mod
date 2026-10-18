@@ -106,7 +106,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
     /// left with a shaped maximum nobody tends - one that came back would be read as the game's rating (as RestoreJet).</summary>
     void Restore()
     {
-        if (!(Rated > 0f) || _gameZero || Written < 0f || Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (!(Rated > 0f) || _gameZero || Written < 0f || Entity == null || !GridPhysics.Alive(Data)) return;
         if (!Data.TryGet<ThrustData>(out var td) || td.MaxThrustPower == Rated) return;
         td.MaxThrustPower = Rated; Written = -1f;
         Data.Set(td);
@@ -135,7 +135,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
     /// and the buffer is supplied; the game's own zero (off, out of hydrogen, damaged) and aero off: its burn as the game has it.</summary>
     void FuelTick()
     {
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (!_bufLooked) { _bufLooked = true; _buf = RamjetFuelBridge.BufferOf(Entity); }
         var b = _buf;
         if (b == null) return;
@@ -153,7 +153,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
     WorldTransform OwnGridTransform(in ThrustData td, Entity top)
     {
         var own = new DEntityContext(Data.Scene, td.ParentGrid);
-        return PhysicsHack.Alive(own) ? own.GetWorldTransform() : top.Data.GetWorldTransform();
+        return GridPhysics.Alive(own) ? own.GetWorldTransform() : top.Data.GetWorldTransform();
     }
 
     int _skip;
@@ -171,7 +171,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
             _look.Done = _known;
             if (!_known) return;
         }
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (Governed(Kind) && _server) StepRotor();
         // ROTOR STRIKES (server: AeroRotorStrikeComponent - its own job probes, repairs and publishes; RotorStrike.cs): broken blades
         bool broken = _strike != null && _strike.Broken, brokeNow = broken != _wasBroken;

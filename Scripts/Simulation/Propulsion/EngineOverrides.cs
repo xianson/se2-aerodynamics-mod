@@ -7,7 +7,7 @@ namespace AeroMod;
 /// <summary>
 /// The engine write that needs reflection here: the protected Component.SetData&lt;T&gt;.
 ///
-/// Since SE2 2.4.0.77 whitelisted Keen.VRage.Physics.*, essentially all of the old PhysicsHack
+/// Since SE2 2.4.0.77 whitelisted Keen.VRage.Physics.*, essentially all of the old GridPhysics
 /// reflection became unnecessary -- component data is reached through the public generic
 /// DEntityContext API (TryGet/Set/Has/TryRemove/TryGetWritePtr) and the engine's own
 /// RigidBodyDataFunctions helpers. (The mod's other reflection is listed in

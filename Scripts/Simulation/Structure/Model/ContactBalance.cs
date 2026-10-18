@@ -19,7 +19,7 @@ namespace AeroMod;
 public static class ContactBalance
 {
     /// <summary>The gravity the physics applies (m/s2): the body's gravity after the game's hold (CustomGravity - GravitySum
-    /// less the dampeners' hold, ThrustComponent.ComputeThrust) x the session's GravityMultiplier (PhysicsHack.GravityScale).</summary>
+    /// less the dampeners' hold, ThrustComponent.ComputeThrust) x the session's GravityMultiplier (GridPhysics.GravityScale).</summary>
     public static Vector3 AppliedGravity(Vector3 heldGravity, float multiplier) => heldGravity * multiplier;
 
     /// <summary>The share of the cap at which the step's velocity counts as clamped (the engine clamps to it exactly).</summary>

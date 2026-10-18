@@ -9,14 +9,14 @@
 | `AeroCost.cs` | Where aero's time goes per second; the `[AERO-COST]` log line |
 | `AeroStats.cs` | The engine stat overlay's "Grid" and "All" sections |
 | `AeroGc.cs` | SustainedLowLatency GC while a big grid builds |
-| `PhysicsHack.cs` | Typed facade over the physics / entity data (velocity, mass, gravity, thrust override, ground probe) |
+| `GridPhysics.cs` | Typed facade over the physics / entity data (velocity, mass, gravity, thrust override, ground probe) |
 | `AeroPhysics.cs` | Applying force and torque to a rigid body (`IPhysics`) |
 
 ## Entry points
 - `AeroSettings.Poll` (the sim job, server; `AeroEntryFxComponent.EntryJob`, client); `AeroWorldSettingsComponent` (injected
   into server planets) loads and saves the world scope; `AeroApi` settings calls; the in-game menu (`Ui/SettingsTab.Mod.cs`).
   Offline: `Tests/SettingsTests`, `Tests/SettingsUiTests`.
-- `AeroPhysics.ApplyForceAndTorque` (the sim job, `ThrustTorque`); `PhysicsHack` reads everywhere a grid's physics is needed.
+- `AeroPhysics.ApplyForceAndTorque` (the sim job, `ThrustTorque`); `GridPhysics` reads everywhere a grid's physics is needed.
 - `AeroCost.*.Start/Stop` around every section; `AeroCost.MaybeLog` once a second when `AeroCost.Log` (`aerocost on`).
 
 ## Threading

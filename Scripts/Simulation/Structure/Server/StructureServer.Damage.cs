@@ -148,7 +148,7 @@ public partial class AeroGridComponent
     /// this grid already saw go. Every damage, dent and fracture call checks it first (a call on a dying block crashed).</summary>
     bool Gone(CubeBlockComponent b)
     {
-        if (b == null || b.Entity == null || !PhysicsHack.Alive(b.Entity.Data) || _goneBlocks.Contains(b)) return true;
+        if (b == null || b.Entity == null || !GridPhysics.Alive(b.Entity.Data) || _goneBlocks.Contains(b)) return true;
         // (split away to another grid since the evaluation - alive, but this grid's damage receiver no longer has its data:
         //  "Data not found", 2026-10-15)
         if (!ReferenceEquals(b.Grid?.Entity, Entity)) return true;

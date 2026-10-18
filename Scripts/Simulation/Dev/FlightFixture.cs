@@ -37,7 +37,7 @@ public static class FlightFixture
             sb.Append("inertiaRotation ").Append(string.Format(CI, "{0:R} {1:R} {2:R} {3:R}", r.X, r.Y, r.Z, r.W)).Append('\n');
         }
         // the gravity it is in (world m/s2: GravityEffectData.GravitySum) - the flight tests hover each ship in its own
-        sb.Append("gravity ").Append(V(PhysicsHack.GetGravityDirection(data))).Append('\n');
+        sb.Append("gravity ").Append(V(GridPhysics.GetGravityDirection(data))).Append('\n');
         if (data.TryGet<BoundingBoxData>(out var bb)) sb.Append("bounds ").Append(V(bb.BoundingBox.Size)).Append('\n');
         float maxTorque = data.TryGet<MaxTorqueData>(out var mt) ? mt.MaxTorque : 0f;
         float coef = 0f, damp = 0f;

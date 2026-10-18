@@ -33,8 +33,8 @@ public partial class AeroGridComponent
         if (!data.TryGet<ThrustStallData>(out var stall) || stall.GravityHoldRatio == float.MaxValue) return;
         if (StallFromLift && aero.HasResult)
         {
-            float g = PhysicsHack.GetGravityDirection(data).Length();
-            float weight = aero.LastMass * g * PhysicsHack.GravityScale;   // (the real weight: the engine's multiplier - the lift carries all of it)
+            float g = GridPhysics.GetGravityDirection(data).Length();
+            float weight = aero.LastMass * g * GridPhysics.GravityScale;   // (the real weight: the engine's multiplier - the lift carries all of it)
             if (weight > 0f && aero.LastResult.LiftMagnitude >= StallLiftShare * weight) { data.Set(new ThrustStallData { GravityHoldRatio = float.MaxValue }); return; }
         }
         // (honest dampeners - HonestDampeners: the thrust must hold the planet's weight x the engine's multiplier, so the game's
@@ -42,7 +42,7 @@ public partial class AeroGridComponent
         //  writes its own value again when it moves 0.01 off this one; this follows it, right after - scaled once: a value it left
         //  standing is this one's, never divided again. Only while the game's warning is shown - Hud.GameStallWarning, off by
         //  default: the game rewriting it every tick then, it replicates every tick)
-        float gm = PhysicsHack.GravityScale;
+        float gm = GridPhysics.GravityScale;
         if (!GameStallWarning.On || !HonestHold.Enabled || !AeroSwitch.Enabled || gm == 1f || !(gm > 0f) || stall.GravityHoldRatio == aero._stallScaled) return;
         aero._stallScaled = stall.GravityHoldRatio / gm;
         data.Set(new ThrustStallData { GravityHoldRatio = aero._stallScaled });

@@ -105,7 +105,7 @@ public static class ThrustTorque
         push = Vector3.Zero;
         var d = thruster?.Data;
         // (a thruster removed - the ship cut, a block ground off - is not alive: its data threw, 2026-10-10)
-        if (d == null || !PhysicsHack.Alive(d.Value) || !d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ThrustData>(out var td)) return -1f;
+        if (d == null || !GridPhysics.Alive(d.Value) || !d.Value.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ThrustData>(out var td)) return -1f;
         push = Base6Directions.GetVector(td.Direction);
         if (d.Value.Has<Keen.Game2.Simulation.WorldObjects.CubeBlocks.DisabledTag>()) return 0f;
         float m = td.MaxThrustPower;
@@ -121,7 +121,7 @@ public static class ThrustTorque
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_probeAt) { if (_probeAt.TryGetValue(aero, out var at) && now - at < System.Diagnostics.Stopwatch.Frequency / ProbeHz) return; _probeAt[aero] = now; }
-        Vector3 g = WorldTransform.TransformDirectionInv(PhysicsHack.GetGravityDirection(data), wt);
+        Vector3 g = WorldTransform.TransformDirectionInv(GridPhysics.GetGravityDirection(data), wt);
         float weight = invMass > 0f ? g.Length() / invMass : 0f;
         float raw = data.TryGet<ActiveThrustData>(out var atd) ? (atd.ComputedThrustPerFrame * 60f).Length() : 0f;
         string vs = data.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.VoluntaryThrustData>(out var vt) ? $"{vt.VoluntaryThrust.X:F3},{vt.VoluntaryThrust.Y:F3},{vt.VoluntaryThrust.Z:F3}" : "none";
@@ -497,7 +497,7 @@ public static class ThrustTorque
     {
         float turn = angVelWorld.Length();
         if (aero.LastSpeed >= RotorTrim.RestSpeed || turn >= RotorTrim.RestTurn) return false;
-        Vector3 a = PhysicsHack.GetAppliedGravity(data) + lawW * invMass;
+        Vector3 a = GridPhysics.GetAppliedGravity(data) + lawW * invMass;
         if (data.TryGet<ActiveThrustData>(out var atd)) a += WorldTransform.TransformDirection(atd.ComputedThrustPerFrame * 60f, wt) * invMass;
         return RotorTrim.Resting(aero.LastSpeed, turn, a.Length());
     }
@@ -558,7 +558,7 @@ public static class ThrustTorque
     {
         if (_classes == null) { try { _classes = DefinitionManager.Instance?.GetConfiguration<Keen.Game2.Simulation.GameSystems.Movement.ThrustClassesConfiguration>(); } catch { _classes = null; } }
         var d = thruster?.Data;
-        if (_classes == null || d == null || !PhysicsHack.Alive(d.Value) || !d.Value.TryGet<ThrustData>(out var td) || !_classes.ThrustClasses.TryGetValue(td.ThrustClass, out var cd)) return 1f;
+        if (_classes == null || d == null || !GridPhysics.Alive(d.Value) || !d.Value.TryGet<ThrustData>(out var td) || !_classes.ThrustClasses.TryGetValue(td.ThrustClass, out var cd)) return 1f;
         return Keen.Game2.Simulation.WorldObjects.CubeGrids.Movement.GridMovementCollectorComponent.GetThrustEfficiency(in cd, density, 0f);
     }
 
@@ -574,7 +574,7 @@ public static class ThrustTorque
         {
             has[i] = false;
             var e = thrusters[i].ThrusterEntity;
-            if (_classes == null || e == null || !PhysicsHack.Alive(e.Data)) continue;
+            if (_classes == null || e == null || !GridPhysics.Alive(e.Data)) continue;
             if (e.Data.TryGet<ThrustData>(out var td) && _classes.ThrustClasses.TryGetValue(td.ThrustClass, out var cd)) { cls[i] = cd; has[i] = true; }
         }
     }

@@ -31,7 +31,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Blocks/` | The mod's own blocks' components and terminals (3x3x1 control surfaces, hinge flaps, gear variants) | yes |
 | `Gear/`, `Integration/` | Retractable gear and airbrake (kinematics, server and client components, terminals); `Integration/` also holds the local dev harness files | yes |
 | `Api/` | `AeroApi` (what other mods call; partials by version area), its published copies (`ApiGridState`) and event ring (`SeqRing`), `OrbitalLink` (what aero calls in the Orbital mod) on the binding rule `CrossModLink`, `AtmosphereProbe` | yes (`SeqRing`, `CrossModLink` are engine-free) |
-| `Runtime/` | Settings (`AeroSettings`: the registry; `AeroSettings.Store`: API, text, files, the world save), switches and tuning (`AeroConfig`), profiling (`AeroCost`, `AeroStats`), GC mode, physics access (`PhysicsHack`, `AeroPhysics`) | yes |
+| `Runtime/` | Settings (`AeroSettings`: the registry; `AeroSettings.Store`: API, text, files, the world save), switches and tuning (`AeroConfig`), profiling (`AeroCost`, `AeroStats`), GC mode, physics access (`GridPhysics`, `AeroPhysics`) | yes |
 | `Ui/` | The Options screen's **Mods** tab (`SettingsTab`, `SettingsModel`, `AvaloniaReflect`: copies of the Orbital mod's; `SettingsTab.Mod.cs`: this mod's adapter) | Avalonia by reflection (`SettingsModel` is engine-free) |
 | `Dev/` | Test aids: flight-test autopilot, shape export for the bench, thrust fixtures | yes |
 | `Injection/` | Adds the mod's components to the game's prefabs at definition load (`EntityInjector`, `InjectAeroComponents`) | yes |
@@ -78,11 +78,11 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
 
 1. **Switch and harness gates.** `AeroSwitch.Enabled` off: nothing. Switched back on: `AeroSwitch.Generation` bumps and
    every grid `ForceFullRebuild`s.
-2. **Read the physics** (`PhysicsHack.TryGetVelocity`); the air velocity is velocity less the wind (`AeroWind.At`).
+2. **Read the physics** (`GridPhysics.TryGetVelocity`); the air velocity is velocity less the wind (`AeroWind.At`).
 3. **Quiet path.** A grid nobody flies, not thrusting, with no air past it and not turning (`IsQuiet`) does only those
    reads after `QuietAfter` steps, and the full step once every `QuietRefresh`.
 4. **Mass, inertia, density** (`AirData.Density` plus `AtmosphereProbe.WithTail` above the game's air edge). Server
-   only: `AtmosphereProbe.Tick`, `AeroSettings.Poll`, the ground ray (`PhysicsHack.GetGroundDistance`, a synchronous `IPhysics.CastRay` since 2026-10-15).
+   only: `AtmosphereProbe.Tick`, `AeroSettings.Poll`, the ground ray (`GridPhysics.GetGroundDistance`, a synchronous `IPhysics.CastRay` since 2026-10-15).
 5. **Thruster and gyro caches** rebuilt when dirty (`OffsetThrustJob.RebuildThrusterCache` / `RebuildGyroCache`).
 6. **Compute** (`TryCompute`, `Grid/AeroGridComponent.Compute.cs`) when due: every frame for piloted or fast (>= 80 m/s)
    grids, else every 2nd / 4th (`ComputeInterval`); once `AeroFrameBudget` is spent, due slow grids wait up to

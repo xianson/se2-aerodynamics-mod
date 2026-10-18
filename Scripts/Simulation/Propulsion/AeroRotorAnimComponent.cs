@@ -87,7 +87,7 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     [MustHave(typeof(AeroRotorAnimComponent))]
     private static void RotorAnimJob(AeroRotorAnimComponent c)
     {
-        if (!Enabled || !PhysicsHack.Alive(c.Data)) return;
+        if (!Enabled || !GridPhysics.Alive(c.Data)) return;
         c.Step();
     }
 
@@ -157,7 +157,7 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         Vector3 t0 = default, t1 = default, t2 = default; int nt = 0;
         foreach (var p in _parts)
         {
-            if (p.Entity == null || !PhysicsHack.Alive(p.Entity.Data)) { _childCount = -1; continue; }
+            if (p.Entity == null || !GridPhysics.Alive(p.Entity.Data)) { _childCount = -1; continue; }
             Vector3 pos; Quaternion rot; float alpha;
             switch (p.Role)
             {
@@ -276,7 +276,7 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         float blurA = _propNoFade || _broken ? 0f : RotorKinematics.BlurOpacity(rpm);   // (0 at rest: a parked prop shows no disc; none broken)
         foreach (var p in _parts)
         {
-            if (p.Entity == null || !PhysicsHack.Alive(p.Entity.Data)) { _childCount = -1; continue; }
+            if (p.Entity == null || !GridPhysics.Alive(p.Entity.Data)) { _childCount = -1; continue; }
             float alpha = 1f;
             if (p.Role != Role.Blur)
             {

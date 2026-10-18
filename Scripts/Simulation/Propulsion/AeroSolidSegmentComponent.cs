@@ -104,7 +104,7 @@ public partial class AeroSolidSegmentComponent : Component, IInSceneListener, ID
 
     void Tick()
     {
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         EnsureRow();
         if (!_known || _cb == null) return;
         if (--_geoIn <= 0)

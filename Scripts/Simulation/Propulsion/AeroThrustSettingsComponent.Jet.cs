@@ -51,7 +51,7 @@ public partial class AeroThrustSettingsComponent
     void JetTick()
     {
         if (_jetKind == 2) return;
-        if (Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (_jetKind == 0)
         {
             if (!Data.TryGet<ThrustData>(out var td0)) return;
@@ -85,7 +85,7 @@ public partial class AeroThrustSettingsComponent
                     // the inlet angle: its intake (its push - ThrustData.Direction, in its OWN grid's frame: a subgrid's
                     // thruster in its subgrid's) against the true airspeed (the wind out) in that frame
                     var own = new DEntityContext(Data.Scene, td.ParentGrid);
-                    var gwt = PhysicsHack.Alive(own) ? own.GetWorldTransform() : top.Data.GetWorldTransform();
+                    var gwt = GridPhysics.Alive(own) ? own.GetWorldTransform() : top.Data.GetWorldTransform();
                     Vector3 vLocal = WorldTransform.TransformDirectionInv(aero.LastAirVel, gwt);
                     Vector3 intake = Base6Directions.GetVector(td.Direction);
                     if (_jetRev != null && _jetRev.Side < 0) intake = -intake;   // (a reversible one's intake stays where it is built)
@@ -105,7 +105,7 @@ public partial class AeroThrustSettingsComponent
     /// left with a shaped maximum the curve no longer tends (a shaped value that comes back is read as the game's then).</summary>
     void RestoreJet()
     {
-        if (_jetKind != 1 || !Jet.Applied || !(Jet.Rated > 0f) || Entity == null || !PhysicsHack.Alive(Data)) return;
+        if (_jetKind != 1 || !Jet.Applied || !(Jet.Rated > 0f) || Entity == null || !GridPhysics.Alive(Data)) return;
         if (!Data.TryGet<ThrustData>(out var td) || td.MaxThrustPower == Jet.Rated) return;
         td.MaxThrustPower = Jet.Rated;
         Data.Set(td);

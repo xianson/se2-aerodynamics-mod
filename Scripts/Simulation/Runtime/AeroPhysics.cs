@@ -10,13 +10,13 @@ namespace AeroMod;
 /// Real physics access for aero force application.
 ///
 /// SE2 2.4.0.77 added typeof(IPhysics) to GameApp.SetupScripting's AllowedAssemblies, so
-/// Keen.VRage.Physics.* is now whitelisted for mod scripts. Before that, PhysicsHack had to
+/// Keen.VRage.Physics.* is now whitelisted for mod scripts. Before that, GridPhysics had to
 /// reach RigidBodyData through reflection, and the force path did a boxed
 /// read-modify-write of the velocity fields with hand-rolled inertia math.
 ///
 /// What this replaces, and why the old way was wrong:
 ///
-///   * It re-implemented the engine's angular math. PhysicsHack.ApplyDeltaVAndTorque (removed 2026-10-15) computed
+///   * It re-implemented the engine's angular math. GridPhysics.ApplyDeltaVAndTorque (removed 2026-10-15) computed
 ///     deltaOmega = R * (I^-1 * (R^-1 * tau)) * dt itself, mirroring the principal-axis
 ///     rotation by hand. The engine already ships that exact computation in
 ///     RigidBodyDataFunctions.ApplyAngularImpulseLocal; any divergence between the two was a
@@ -68,7 +68,7 @@ public static class AeroPhysics
                                            Vector3 worldForce, Vector3 localTorque,
                                            float dt = Dt)
     {
-        if (!PhysicsHack.IsFinite(worldForce) || !PhysicsHack.IsFinite(localTorque))
+        if (!GridPhysics.IsFinite(worldForce) || !GridPhysics.IsFinite(localTorque))
             return false;
         if (!IsDynamic(entity))
             return false;
