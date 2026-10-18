@@ -24,6 +24,7 @@ static class Program
         Speed();
         Say();
         Binding();
+        Presses();
         SourceScan();
         Console.WriteLine($"== {_pass} passed, {_fail} failed");
         return _fail == 0 ? 0 : 1;
@@ -158,6 +159,112 @@ static class Program
         Check(ch.Length == 27 && ch[0] == "Off" && ch[20] == "T" && ch[26] == "Z", "the key's choices: Off, A..Z (20: T) - one per value 0..26");
     }
 
+    // ── the key's presses (2026-10-18: the Orbital Mod's copy lifted ships nobody asked for - the SSTO 4 s after load, the
+    //    Tu-134 6 s after sitting down, four more ~1.2 s apart after ONE harness ask) - QuickLaunch.Tick's order, played
+    //    over key sequences at 60 Hz. F: a fake Stopwatch frequency (ticks a second). ──
+    const long F = 1_000_000;
+
+    /// <summary>One client tick's world: the binding's key, Ctrl, a screen taking the keyboard, seated, the device there.</summary>
+    struct In { public bool T, Ctrl, Screen, Seated, Device; }
+
+    /// <summary>QuickLaunch.Tick's steps on the rules (KeyEdge, Fresh, the 1 s spacing), and the server's take (Fresh on the
+    /// ask's stamp, serverLag ticks later). Returns the launches the server would serve; asks/dropped out.</summary>
+    sealed class Client
+    {
+        public readonly QuickLaunchRules.KeyEdge Edge = new QuickLaunchRules.KeyEdge();
+        public long DevAt, LastAsk = long.MinValue / 2, AskAt;   // (AskAt: the pending ask's stamp, 0: none)
+        public int Asks, Served, Dropped;
+        public void Tick(In i, long now)
+        {
+            long devAt = DevAt; DevAt = 0;
+            bool dev = QuickLaunchRules.Fresh(devAt, now, (long)(F * QuickLaunchRules.AskMaxAgeS));
+            bool pressed;
+            if (!i.Device) { Edge.Disarm(); pressed = false; }
+            else pressed = Edge.Step(i.T, i.T && QuickLaunchRules.ModifierHeld(1, i.Ctrl, false, false));
+            if (!dev && !pressed) return;
+            if (!dev && i.Screen) return;
+            if (now - LastAsk < F) return;
+            if (!i.Seated) return;
+            LastAsk = now; AskAt = now; Asks++;
+        }
+        public void Server(long now)
+        {
+            long at = AskAt; AskAt = 0;   // (TakeAsk: swapped out, taken at most once)
+            if (at == 0) return;
+            if (QuickLaunchRules.Fresh(at, now, (long)(F * QuickLaunchRules.AskMaxAgeS))) Served++; else Dropped++;
+        }
+    }
+
+    /// <summary>Plays seconds of 60 Hz ticks; key(t) gives each tick's state; serverEvery: the server's take every n ticks
+    /// (0: never, until the end + lagEnd s).</summary>
+    static Client Play(double seconds, Func<double, In> key, Client c = null, int serverEvery = 1, double lagEnd = 0, Action<Client, double> each = null)
+    {
+        c ??= new Client();
+        int n = (int)(seconds * 60);
+        for (int k = 0; k < n; k++)
+        {
+            double s = k / 60.0; long now = 1 + (long)(s * F);
+            each?.Invoke(c, s);
+            c.Tick(key(s), now);
+            if (serverEvery > 0 && k % serverEvery == 0) c.Server(now);
+        }
+        if (lagEnd > 0) c.Server(1 + (long)((seconds + lagEnd) * F));
+        return c;
+    }
+    static In Idle(double s) => new In { Seated = true, Device = true };
+    static In Press(double s, double from, double to, bool ctrl = true) => new In { T = s >= from && s < to, Ctrl = ctrl && s >= from - 0.05 && s < to + 0.05, Seated = true, Device = true };
+
+    static void Presses()
+    {
+        Console.WriteLine("[one launch per press]");
+        var c = Play(30, Idle);
+        Check(c.Asks == 0 && c.Served == 0, $"seated 30 s, nobody at the keyboard: no ask ({c.Asks})");
+        c = Play(5, s => Press(s, 1.0, 1.15));
+        Check(c.Asks == 1 && c.Served == 1, $"one Ctrl+T press: one launch ({c.Served})");
+        c = Play(8, s => Press(s, 1.0, 6.0));
+        Check(c.Asks == 1 && c.Served == 1, $"Ctrl+T held 5 s: one launch, never a repeat while held ({c.Served})");
+        c = Play(5, s => Press(s, 1.0, 1.2, ctrl: false));
+        Check(c.Asks == 0, "a bare T (the binding is Ctrl+T): nothing");
+        c = Play(5, s => new In { T = s >= 1 && s < 3, Ctrl = s >= 2 && s < 3, Seated = true, Device = true });
+        Check(c.Asks == 0, "T held, then Ctrl added: no press (the key went down without its modifier)");
+        c = Play(6, s => new In { T = s < 3 || (s >= 4 && s < 4.2), Ctrl = s < 3 || (s >= 3.95 && s < 4.25), Seated = true, Device = true });
+        Check(c.Asks == 1, $"Ctrl+T down from the first tick (held through a load, a stale device): no ask until it is let go and pressed again - then one ({c.Asks})");
+        c = Play(4, s => Press(s, 1.0, 1.1).T || Press(s, 1.3, 1.4).T ? Press(s, 0, 9) : Idle(s));
+        Check(c.Asks == 1, $"a double tap 0.3 s apart: one launch (one a second) ({c.Asks})");
+        c = Play(4, s => Press(s, 1.0, 1.1).T || Press(s, 2.5, 2.6).T ? Press(s, 0, 9) : Idle(s));
+        Check(c.Asks == 2, $"two presses 1.5 s apart: two ({c.Asks})");
+        c = Play(13, s => { double m = s % 1.2; return s >= 0.5 && m < 0.1 ? Press(s, 0, 99) : Idle(s); });
+        Check(c.Asks == 10, $"ten presses 1.2 s apart (the in-game run's spacing): ten asks - each one a real press ({c.Asks})");
+        c = Play(5, s => new In { T = (int)(s * 60) % 2 == 0, Ctrl = true, Seated = true, Device = true });
+        Check(c.Asks <= 5, $"a key flickering every tick for 5 s (noise): at most one a second ({c.Asks})");
+        c = Play(5, s => { var i = Press(s, 1.0, 3.0); i.Screen = s < 2.0; return i; });
+        Check(c.Asks == 0, "Ctrl+T while the chat or a terminal takes the keyboard: nothing - nor when the screen closes with it still held");
+        c = Play(5, s => { var i = Press(s, 1.0, 4.0); i.Seated = s >= 2.0; return i; });
+        Check(c.Asks == 0, "Ctrl+T pressed on foot, still held when you sit down: nothing");
+        c = Play(6, s => { var i = Press(s, 1.0, 4.0); i.Device = !(s >= 2.0 && s < 2.5); return i; });
+        Check(c.Asks == 1, $"the device lost and found while the key is held: the one press only, no second from the new device ({c.Asks})");
+
+        Console.WriteLine("[the harness's ask: one-shot]");
+        c = Play(5, Idle, each: (cl, s) => { if (Math.Abs(s - 1.0) < 1e-9) cl.DevAt = 1 + (long)(s * F); });
+        Check(c.Asks == 1 && c.Served == 1, $"AeroApi.RequestQuickLaunch once: one launch, the flag consumed ({c.Served})");
+        c = new Client { DevAt = 1 };   // (asked at 0; no client tick for 30 s - no ship's effects job near - then one, seated)
+        c.Tick(Idle(30), 1 + 30 * F); c.Server(1 + 30 * F);
+        Check(c.Asks == 0 && c.Served == 0, "a harness ask no client tick took in time: dropped - not served 30 s later to the ship you sit in");
+        c = Play(5, s => Press(s, 1.0, 1.1), serverEvery: 0, lagEnd: 3);
+        Check(c.Asks == 1 && c.Served == 0 && c.Dropped == 1, "an ask the server took 3 s late: dropped, never served late");
+        c = Play(5, s => Press(s, 4.85, 4.95), serverEvery: 0, lagEnd: 0.2);
+        Check(c.Served == 1, "an ask taken 0.35 s after it was made: served");
+        Check(!QuickLaunchRules.Fresh(0, 5, 10) && !QuickLaunchRules.Fresh(10, 5, 10) && QuickLaunchRules.Fresh(5, 15, 10) && !QuickLaunchRules.Fresh(5, 16, 10),
+              "Fresh: no stamp never; one from the future never; up to its age, not past it");
+
+        // (the edge before 2026-10-18 - its flag starting 'up': a key down at the first read was a press)
+        bool was = false; int old = 0;
+        for (int k = 0; k < 120; k++) { bool dn = true; if (dn && !was) old++; was = dn; }
+        var e = new QuickLaunchRules.KeyEdge(); int now0 = 0;
+        for (int k = 0; k < 120; k++) if (e.Step(true, true)) now0++;
+        Check(old == 1 && now0 == 0, $"  a key down from the first read: the old edge asked {old}, KeyEdge {now0}");
+    }
+
     static string Root()
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);
@@ -195,7 +302,13 @@ static class Program
         string cl = Src("Launch", "QuickLaunch.cs");
         Check(cl.Contains("TopScreenNeedsInput(session)") && cl.Contains("LocalPilot("), "the key: seated only, never while typing");
         Check(Regex.IsMatch(cl, @"public static int Key = 20;") && Regex.IsMatch(cl, @"public static int Modifier = 1;"), "the default binding is Ctrl+T (Key 20 = T, Modifier 1 = Ctrl)");
-        Check(Regex.IsMatch(Body(cl, "internal sealed class Ask"), @"\{ public [^;]*IdentityId Who; public bool HasWho; \}"), "the ask carries only who asks (no client entity reaches the server)");
+        Check(Regex.IsMatch(Body(cl, "internal sealed class Ask"), @"\{ public [^;]*IdentityId Who; public bool HasWho; public long At; \}"), "the ask carries only who asks and when (no client entity reaches the server)");
+        string tick = Body(cl, "static void Tick(");
+        Check(tick.Contains("QuickLaunchRules.Fresh(devAt,") && tick.Contains("Interlocked.Exchange(ref _devAsk, 0)"), "the harness's ask: taken once, only while fresh");
+        Check(cl.Contains("return _edge.Step(down, held);") && !cl.Contains("_wasDown"), "the key: the rules' KeyEdge (no hand-rolled edge flag)");
+        Check(Regex.Matches(cl, @"_edge\.Disarm\(\)").Count >= 4, "  disarmed when off, without a device, on a lost device and on a world reset");
+        Check(Regex.IsMatch(Body(cl, "internal static void ClientTick("), @"CompareExchange\(ref _busy, 1, 0\) != 0\) return;"), "one job at a time at the key (the time claim alone let two in)");
+        Check(Body(srv, "internal static void ServerStep(").Contains("QuickLaunchRules.Fresh(ask.At,"), "the server: an ask taken once (TakeAsk) and only while fresh");
         string fx = Src("Fx", "AeroEntryFx.cs");
         Check(fx.Contains("QuickLaunch.ClientTick(c.Entity)") && fx.Contains("QuickLaunch.TurnTarget(c.Entity)"), "the client effects job runs the key and the target turn");
         string api = Src("Api", "AeroApi.cs");

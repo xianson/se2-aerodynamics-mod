@@ -19,8 +19,9 @@ namespace AeroMod;
 /// stations, near a planet. The Orbital Mod, when loaded, moves it (OrbitalApi.TryQuickMove: its safe move and space border);
 /// else aero does (QuickLaunchMove). The answer comes back as a toast (PendingSay: written by the server, said here).
 ///
-/// Client side, this file: the key - seated, not while typing (a screen that takes the keyboard), one ask a second - and the
-/// answer. The ask carries only who asks (the local player's identity: the server finds its character, the seat it pilots
+/// Client side, this file: the key - one ask per press (QuickLaunchRules.KeyEdge: up to down, never while held, never a down
+/// not seen up first), seated, not while typing (a screen that takes the keyboard), one ask a second, an ask good for 1 s -
+/// and the answer. The ask carries only who asks (the local player's identity: the server finds its character, the seat it pilots
 /// and that seat's grid itself - no client entity is read on the server, no server entity here). After a move aero made
 /// itself, the cockpit's target attitude (TargetControlData, the client grid's) turns with the ship (TurnTarget), or the
 /// gyros would swing it back; the Orbital Mod turns its own moves' targets.
@@ -48,20 +49,24 @@ public static partial class QuickLaunch
     public static int Asks, Launches, Refusals;
 
     /// <summary>A pending ask: who asks (the client's local player identity; HasWho false - not known: the server takes the
-    /// only character if there is one). Swapped whole (Interlocked): the server takes it at most once.</summary>
-    internal sealed class Ask { public Keen.Game2.Simulation.GameSystems.Ownership.IdentityId Who; public bool HasWho; }
+    /// only character if there is one). Swapped whole (Interlocked): the server takes it at most once. At: when it was made
+    /// (Stopwatch ticks) - the server drops one older than QuickLaunchRules.AskMaxAgeS.</summary>
+    internal sealed class Ask { public Keen.Game2.Simulation.GameSystems.Ownership.IdentityId Who; public bool HasWho; public long At; }
     static Ask _ask;
-    static int _devAsk;
+    static long _devAsk;
     /// <summary>The server's step: something asked (a read, no lock: QuickLaunch.Server.cs takes it).</summary>
     internal static bool Asked => Volatile.Read(ref _ask) != null;
     internal static Ask TakeAsk() => Interlocked.Exchange(ref _ask, null);
 
-    /// <summary>The harness's ask (AeroApi.RequestQuickLaunch): the next client tick asks as the key does, its checks skipped.</summary>
-    internal static void DevAsk() => Volatile.Write(ref _devAsk, 1);
+    /// <summary>The harness's ask (AeroApi.RequestQuickLaunch): the next client tick asks as the key does, its checks skipped -
+    /// once, and only within QuickLaunchRules.AskMaxAgeS (2026-10-18: a flag no client tick took - no client grid's effects
+    /// job running, on foot away from ships - would have stayed set and launched the next ship you sat in).</summary>
+    internal static void DevAsk() => Interlocked.Exchange(ref _devAsk, Math.Max(1L, System.Diagnostics.Stopwatch.GetTimestamp()));
 
     static long _nextFrame, _lastAsk = long.MinValue / 2, _deviceAt;
+    static int _busy;
     static IInputDevice _keyboard;
-    static bool _wasDown;
+    static readonly QuickLaunchRules.KeyEdge _edge = new QuickLaunchRules.KeyEdge();
     static DigitalInput[] _keys;
     static System.Reflection.MethodInfo _topInput;
     static Type _sharedType;
@@ -76,19 +81,32 @@ public static partial class QuickLaunch
     };
 
     /// <summary>Client, the effects jobs (AeroEntryFxComponent.EntryJob, every client grid's): one job a frame claims the
-    /// tick. Cheap when nothing is pressed: one key state read.</summary>
+    /// tick, and only one runs it at a time (_busy, 2026-10-18: the time claim alone let a second job in while a slow first
+    /// one - a toast, the screen lookup - was still at the key: one press read twice). Cheap when nothing is pressed: one key
+    /// state read.</summary>
     internal static void ClientTick(Entity anyGrid)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         long due = Interlocked.Read(ref _nextFrame);
         if (now < due || Interlocked.CompareExchange(ref _nextFrame, now + f / 250, due) != due) return;
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) return;
+        try { Tick(anyGrid, now, f); }
+        finally { Volatile.Write(ref _busy, 0); }
+    }
+
+    static void Tick(Entity anyGrid, long now, long f)
+    {
         var session = anyGrid?.GetSession();
         var say = PendingSay;
         if (say != null) { PendingSay = null; Status = say; Toast(session, say); }
-        bool dev = Interlocked.Exchange(ref _devAsk, 0) != 0;
-        if (!dev && !BindingPressed(now, f)) return;
+        long devAt = Interlocked.Exchange(ref _devAsk, 0);
+        bool dev = QuickLaunchRules.Fresh(devAt, now, (long)(f * QuickLaunchRules.AskMaxAgeS));
+        if (devAt != 0 && !dev) Status = "harness ask dropped: no client tick took it within 1 s";
+        // (the key read every tick, a harness ask or not: its press is its own edge, never one left over for later)
+        bool pressed = BindingPressed(now, f);
+        if (!dev && !pressed) return;
         if (!dev && TopScreenNeedsInput(session)) return;   // (not while typing: a dialog, a terminal, the chat, a menu)
-        if (now - _lastAsk < f) return;   // (one ask a second: a held key or a double tap moves the ship once)
+        if (now - _lastAsk < f) return;   // (one ask a second: a double tap moves the ship once)
         if (!LocalPilot(session, out var who, out bool hasWho))
         {
             // (on foot: the key is any other letter - nothing said; the harness hears why)
@@ -96,19 +114,21 @@ public static partial class QuickLaunch
             return;
         }
         _lastAsk = now;
-        Volatile.Write(ref _ask, new Ask { Who = who, HasWho = hasWho });
+        Volatile.Write(ref _ask, new Ask { Who = who, HasWho = hasWho, At = now });
         Interlocked.Increment(ref Asks);
-        Status = "asked";
+        Status = dev ? "asked (harness)" : "asked";
     }
 
-    /// <summary>The binding went down this frame: its key pressed (not held from before), its modifier held.</summary>
+    /// <summary>The binding went down this read: its key pressed (seen up before - QuickLaunchRules.KeyEdge), its modifier
+    /// held. Off, no device, a device just found or lost: no press, and the next one needs the key seen up first.</summary>
     static bool BindingPressed(long now, long f)
     {
         int k = Key;
         var keys = Keys();
-        if (k < 1 || k > keys.Length) { _wasDown = false; return false; }
+        if (k < 1 || k > keys.Length) { _edge.Disarm(); return false; }
         if (_keyboard == null)
         {
+            _edge.Disarm();
             if (now < _deviceAt) return false;
             _deviceAt = now + 2 * f;
             try
@@ -119,20 +139,18 @@ public static partial class QuickLaunch
                         if (dev.Class.GenericClasses.Contains(GenericDeviceClass.Keyboard)) { _keyboard = dev; break; }
             }
             catch { _keyboard = null; }
-            if (_keyboard == null) return false;
+            return false;   // (a device just found: its reads arm the edge from the next tick)
         }
-        bool down, ctrl, shift, alt;
+        bool down, held = false;
         try
         {
             down = _keyboard.GetDigitalState(keys[k - 1]);
-            if (!down || _wasDown) { _wasDown = down; return false; }
-            ctrl = _keyboard.GetDigitalState(KeyboardInputs.Control);
-            shift = _keyboard.GetDigitalState(KeyboardInputs.Shift);
-            alt = _keyboard.GetDigitalState(KeyboardInputs.Alt);
+            if (down)
+                held = QuickLaunchRules.ModifierHeld(Modifier, _keyboard.GetDigitalState(KeyboardInputs.Control),
+                    _keyboard.GetDigitalState(KeyboardInputs.Shift), _keyboard.GetDigitalState(KeyboardInputs.Alt));
         }
-        catch { _keyboard = null; _wasDown = false; return false; }   // (the device went: looked up again in 2 s)
-        _wasDown = true;
-        return QuickLaunchRules.ModifierHeld(Modifier, ctrl, shift, alt);
+        catch { _keyboard = null; _edge.Disarm(); return false; }   // (the device went: looked up again in 2 s)
+        return _edge.Step(down, held);
     }
 
     /// <summary>A screen takes the keyboard (SharedUIComponent.TryGetTopScreenNeedingInput, public, by reflection - the type
@@ -221,7 +239,8 @@ public static partial class QuickLaunch
     /// <summary>A world gone (the last settings carrier left): the last world's ask, answer and turn dropped.</summary>
     internal static void ResetWorld()
     {
-        Volatile.Write(ref _ask, null); Volatile.Write(ref _turn, null); Volatile.Write(ref _devAsk, 0);
+        Volatile.Write(ref _ask, null); Volatile.Write(ref _turn, null); Interlocked.Exchange(ref _devAsk, 0);
         PendingSay = null; Status = "-"; _seatGrid = null;
+        _edge.Disarm(); _lastAsk = long.MinValue / 2;   // (the next world's first press needs the key seen up there)
     }
 }

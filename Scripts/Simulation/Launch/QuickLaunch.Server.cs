@@ -39,6 +39,15 @@ public static partial class QuickLaunch
     {
         var ask = TakeAsk();
         if (ask == null) return;
+        // (taken once, and only while fresh - 2026-10-18: an ask no carrier job took in time is dropped, never served later
+        //  to whatever ship the player sits in by then)
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!QuickLaunchRules.Fresh(ask.At, now, (long)(System.Diagnostics.Stopwatch.Frequency * QuickLaunchRules.AskMaxAgeS)))
+        {
+            Log.Default?.Info($"[AERO] quicklaunch: an ask {(now - ask.At) / (double)System.Diagnostics.Stopwatch.Frequency:F1} s old dropped (good for {QuickLaunchRules.AskMaxAgeS:F0} s)");
+            Status = "dropped: the ask waited too long";
+            return;
+        }
         var session = carrier?.Entity?.GetSession();
         if (session == null) return;
         try { Serve(session, ask); }

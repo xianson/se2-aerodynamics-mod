@@ -132,6 +132,34 @@ public static class QuickLaunchRules
         return modifier switch { 1 => "Ctrl+" + k, 2 => "Shift+" + k, 3 => "Alt+" + k, _ => k };
     }
 
+    // ── the key's press and the asks (QuickLaunch.cs; here so Tests/QuickLaunchTests can play key sequences) ──
+    // (2026-10-18, the in-game run of the Orbital Mod's copy: ships lifted with nobody asking. One ask per press, taken once,
+    //  never late: a key down from before - held while sitting down, a stale device state after a load or a lost device - is
+    //  not a press; an ask or a harness ask nobody took in time is dropped, never served later to whatever ship you sit in.)
+
+    /// <summary>The binding's press: true on the one read where its key goes from up to down with its modifier held - never
+    /// while it stays down, never for a down not seen up first (a new edge, Disarm: a load, a lost device). The key going
+    /// down without its modifier uses the press up (adding Ctrl to a held T is no press).</summary>
+    public sealed class KeyEdge
+    {
+        bool _armed;   // (the key was read up since the last down or disarm - false at first: a key down at load asks nothing)
+        public bool Step(bool down, bool modifierHeld)
+        {
+            if (!down) { _armed = true; return false; }
+            if (!_armed) return false;
+            _armed = false;
+            return modifierHeld;
+        }
+        /// <summary>The next press needs the key read up first (a world load, a device looked up again).</summary>
+        public void Disarm() => _armed = false;
+    }
+
+    /// <summary>s: the longest an ask (the key's, or the harness's AeroApi.RequestQuickLaunch) may wait to be taken.</summary>
+    public const double AskMaxAgeS = 1.0;
+
+    /// <summary>An ask stamped at (ticks; 0: none) is still good at now: not from the future, at most maxAge old.</summary>
+    public static bool Fresh(long at, long now, long maxAge) => at != 0 && now >= at && now - at <= maxAge;
+
     /// <summary>QuickLaunch.Key's labels: "Off", then the letters A..Z.</summary>
     public static string[] KeyChoices()
     {
