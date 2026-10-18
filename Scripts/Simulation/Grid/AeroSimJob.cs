@@ -257,7 +257,7 @@ public partial class AeroGridComponent
         if (AeroCost.Log) AeroCost.Compute.Stop(tco);
         AeroEntryFx.Flow(aero, wt, airVel, density, linVel);
         AeroEntryFx.Server(aero, wt, airVel, density, AeroPhysics.Dt);
-        if (aero.IsServerScene) aero.TickWingStrain(AeroPhysics.Dt);   // (under TestForces too: the forces at the test airflow strain the wings - damage only with Structure.WingStrain on)   // (wing strain: WingStrainServer.cs)
+        if (aero.IsServerScene) aero.TickWingStrain(AeroPhysics.Dt);   // (under TestForces too: the forces at the test airflow strain the wings - the API reports it, no damage)   // (wing strain: WingStrainServer.cs)
 
         if (AeroLog.Detail && aero._simFrameCount <= 5 && aero.LastSpeed > 1f)
         {

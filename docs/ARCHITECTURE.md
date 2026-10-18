@@ -196,7 +196,8 @@ thin walls, most governing members), `CompressionFatigueShare` (0.2) for a stock
 settings too (`Structure.Crack*`, `Jagged*`, `CrushUtil`, `CrumpleDepth`, `HingeToCompression`, `TearAnchors`,
 `TearPeelFirst`).
 
-Wing root strain (`WingStrainServer.cs`, `Structure.WingStrain`) is a separate, older path, off by default.
+Wing root strain (`WingStrainServer.cs`) is measured for the API only (`TryGetWingStrain`); its older wear / break path
+and the `Structure.WingStrain` setting went 2026-10-17.
 
 ## 7. Server and client: what crosses
 

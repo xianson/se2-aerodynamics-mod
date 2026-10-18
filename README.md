@@ -85,7 +85,6 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   | `Structure.Loads`, `Structure.Damage` | on | | `Hud.Mach` | off |
   | `Structure.Fatigue`, `.Tear`, `.Bends`, `.SplitBlocks` | on | | `Feel.Creaks`, `Feel.Shake` | on |
   | `Heat.Damage` | on | | | |
-  | `Structure.WingStrain` (older wing-root path) | off | | | |
   | `Perf.FrameBudgetMs` / `Perf.Workers` | 1 / 2 | | | |
 
 - **Multiplayer.** Single player and a host only: SE2 2.4 runs the server in-process, and the client effects pair with

@@ -374,7 +374,7 @@ A polled queue across every grid, with sequence numbers: keep the number you rea
 
 Events are what an evaluation **decided**; the game removes the blocks on the next simulation tick (one already gone is
 skipped there) - a failed cut's members over its crack instead, about 0.3 s (`FractureMath.CrackSeconds`: the pulled side
-first, the hinge last; the events come with the evaluation that decided it). Wing-root breaks (`Structure.WingStrain`) are not in the queue yet.
+first, the hinge last; the events come with the evaluation that decided it).
 
 ```csharp
 long _next = (long)_getSeq.Invoke(null, null);   // start from now
@@ -442,7 +442,6 @@ What the API does **not** expose yet, and why. Each would be a new member (never
 | Remote multiplayer clients | Nothing is replicated to clients (SE2 2.4's networking is a mock in one process). Every call answers on the simulation's machine only. |
 | Commands to aero blocks (deflect a control surface, deploy an airbrake) | The blocks' control path is still owned and changing (gear, airbrakes, control surfaces). Another mod can already add drag (`SetDrag`, `SetPlateDrag`). |
 | Gear and airbrake state beyond `GetAeroBlockState` | Owned by the gear / airbrake work in progress; to be published when it settles. |
-| Wing-root breaks in the event queue | `Structure.WingStrain` (off by default) breaks through its own path (`WingStrainServer`); `TryGetWingStrain` reports the strain. |
 | Dents and permanent bends | The game's deformation bones hold them; health (`GetStructureBlockState`) already has the unwritten fatigue in. |
 | Heat for grids nobody flies | The structure and hull heat are evaluated only for a flown grid (cost). A thermal mod that wants every grid needs aero to heat every grid - a setting, not an API. |
 | Stopping aero's own heat model under an external one | Aero's bucket still runs (cheap, and it computes the heat input). A switch to skip its temperature step would be a setting. |
@@ -518,8 +517,6 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Structure.BendMax` | world | float | 0.3 | 0..1 | Maximum bend · Structure and damage · advanced | The most any point (deformation bone) is bent in total, m. The game also clamps a bone by its armour: within 0.25 m of a 0.25 m block. |
 | `Structure.BendMaxBlocks` | world | int | 300 | 1..5000 | Largest bendable part · Structure and damage · advanced | The most blocks one bend moves; a bigger part past the joint is the ship's body, not a tip: not bent. |
 | `Structure.HingeToCompression` | world | float | 1 | 0..1 | Bends fold at the pushed side · Structure and damage · advanced | Where a permanent bend pivots, as a share of the way from the cut's centre (0) to its most pushed member's pushed edge (1: a plastic hinge on the crushed face, the pulled face opening). |
-| `Structure.WingStrain` | world | bool | false |  | Legacy wing strain · Structure and damage · hidden | Overloaded wings strain at the root, wear and break off (the game splits them off). Off by default: it destroys blocks. The strain is reported (`TryGetWingStrain`) either way. |
-| `Structure.WingStrength` | world | float | 25 | 0.1..100 | Legacy wing strength · Structure and damage · hidden | Wing strength, times this (25 by default: real ships' long wings hold ~6 g; at 1 the jetliner snapped in level flight). |
 | `Heat.Multiplier` | world | float | 1 | 0..10 | Re-entry heating · Re-entry heat · basic | The air's heating of the hull, times this. |
 | `Heat.Damage` | world | bool | true |  | Heat damage · Re-entry heat · basic | Hull blocks past their burn temperature lose health (heat weakens the structure either way). |
 | `Heat.Scorch` | world | bool | true |  | Scorch marks · Re-entry heat · basic | Heat leaves a few large burn marks on the hull where it got hot in a re-entry. Worked out on the server; Fx.ScorchVisible hides them on this PC. |

@@ -24,10 +24,9 @@ public static class StructureContactLoads
     /// (AeroSpeedUncap); 0 until read (no cap rule in the balance then). At it, the balance's part along the velocity is
     /// the clamp's, not a contact's (ContactBalance).</summary>
     public static float PhysicsSpeedCap;
-    // diagnostics
+    // diagnostics (harness aeroget: each by name)
     public static string Last = "-", LastHeld = "-";
     public static int Masked, Hull, Wheel, OrbitalWrites, OrbitalMoves, AtCapSteps;
-    public static string Counters => $"hull points {Hull}, wheel manifolds {Wheel}, masked steps {Masked} (Orbital's moves {OrbitalMoves}), steps with Orbital's velocity writes {OrbitalWrites}, at the speed cap {AtCapSteps} (cap {PhysicsSpeedCap:F0} m/s; {OrbitalLink.EditsStatus})";
 }
 
 /// <summary>

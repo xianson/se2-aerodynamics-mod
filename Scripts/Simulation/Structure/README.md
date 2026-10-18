@@ -36,7 +36,7 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 | `StructureServer.Dump.cs` | (harness) `.struct` / `.loads` dumps for the offline bench. |
 | `StructureContacts.cs` | Collisions and ground contact read from the physics as loads; gear touchdowns for the gear. `NoteKnownImpulse`: an impulse this mod put into the body that is no contact (a rotor's cyclic force, a strike's reaction) - taken off the balance at the next read, so the wheels / locked plates never carry it as well. |
 | `StructureTear.cs` | A large piece torn off stays tied by soft constraints - one spring per anchor over the failed section, let go in the crack's order (the hinge last) over `TearSeconds`. |
-| `WingStrainServer.cs` | Wing root strain (Lift/WingStrain) and its wear / breaks (`Structure.WingStrain`, off by default). |
+| `WingStrainServer.cs` | Wing root strain (Lift/WingStrain), for the API only (`TryGetWingStrain`; no damage). |
 
 ## Fx/ - what the player gets of it (client, except HeatScorch.Update)
 | File | What |
