@@ -79,6 +79,11 @@ public sealed class ChunkedTable
     /// <summary>Per chunk: its faces' centres, grid-local, in eighths of a metre (16 bits each: face centres sit on
     /// a 0.125 m lattice, within +-4 km).</summary>
     public readonly List<List<P16>> Occluders = new();
+    /// <summary>Occluders is the simulation thread's (its in-place edits of a LIVE table - Apply, DropEmptied, ClearPending,
+    /// IndexOf - take this lock); a client reader (the flight field's hull and tips, the fx group's
+    /// size) copies under it. 2026-10-18: the client's FlightField.ComputeTips enumerated a server grid's lists while a
+    /// split's local update rewrote them - "Collection was modified", a fatal crash of the game.</summary>
+    public readonly object OccLock = new();
     public readonly struct P16
     {
         public readonly short X, Y, Z;
@@ -243,7 +248,7 @@ public sealed class ChunkedTable
         i = _q.Count;
         _index[key] = i;
         _q.Add(null); _scale.Add(null); _raw.Add(null); _qRec.Add(null); _scaleRec.Add(null); _rawRec.Add(null);
-        Occluders.Add(new List<P16>());
+        lock (OccLock) Occluders.Add(new List<P16>());
         Bounds.Add((new Vector3(float.MaxValue), new Vector3(float.MinValue)));
         return i;
     }
@@ -479,8 +484,11 @@ public sealed class ChunkedTable
                 for (int k = 0; k < ForceTable.Stride; k++) e[k] += nw[sl * ForceTable.Stride + k] - old[sl * ForceTable.Stride + k];
             }
             SetShare(c, nw);
-            Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
-            foreach (var p in r.Occluders[d]) AddOccluder(c, p);
+            lock (OccLock)
+            {
+                Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue));
+                foreach (var p in r.Occluders[d]) AddOccluder(c, p);
+            }
             foreach (var kv in _index) if (kv.Value == c) { _shareCount[kv.Key] = BlockCount.TryGetValue(kv.Key, out int bc) ? bc : 0; break; }
         }
         return table;
@@ -547,7 +555,7 @@ public sealed class ChunkedTable
             removedShares?.Add((key, gone));
             if (n <= 0)
             {
-                if (busy) _pendingOccClear.Add(c); else { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
+                if (busy) _pendingOccClear.Add(c); else lock (OccLock) { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
                 dropped++;
             }
         }
@@ -557,7 +565,11 @@ public sealed class ChunkedTable
     /// <summary>The dropped chunks' faces stop hiding (call when no background update is running).</summary>
     public void ClearPending()
     {
-        foreach (int c in _pendingOccClear) { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
+        if (_pendingOccClear.Count == 0) return;
+        lock (OccLock)
+        {
+            foreach (int c in _pendingOccClear) { Occluders[c].Clear(); Bounds[c] = (new Vector3(float.MaxValue), new Vector3(float.MinValue)); }
+        }
         _pendingOccClear.Clear();
     }
 }

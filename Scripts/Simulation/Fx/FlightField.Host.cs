@@ -442,6 +442,8 @@ internal sealed partial class FlightField
     {
         var chunks = _server?.FxChunks;
         if (chunks == null) { _hullWhy = "the grid has no chunk table yet"; return null; }
+        lock (chunks.OccLock)   // (the simulation thread edits a live table's lists in place: ChunkedTable.OccLock)
+        {
         if (_hull != null && ReferenceEquals(_hullFor, chunks)) return _hull;
         // (two lists in turn, the one not _hull refilled; the hull hash goes with the old one - HullNormal knew a new hull
         //  by a new list, and a list comes round again)
@@ -450,6 +452,7 @@ internal sealed partial class FlightField
         if (pts.Count == 0) { _hullWhy = "no hull points"; return null; }
         _hull = pts; _hullFor = chunks; _hullWhy = null; _hashFor = null;
         return pts;
+        }
     }
     private object _hullFor;
     private readonly List<Vector3> _hullA = new List<Vector3>(), _hullB = new List<Vector3>();

@@ -183,6 +183,7 @@ internal sealed partial class FlightField
                 if (ch == null || me == null || !PhysicsHack.Alive(me.Data)) continue;
                 var wtM = me.Data.GetWorldTransform();
                 bool self = ReferenceEquals(m, _server);
+                lock (ch.OccLock)   // (that grid's lists are its simulation thread's, edited in place: ChunkedTable.OccLock)
                 foreach (var list in ch.Occluders)
                     foreach (var p16 in list)
                     {

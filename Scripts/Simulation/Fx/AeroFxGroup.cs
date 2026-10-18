@@ -19,7 +19,7 @@ public partial class AeroGridComponent
     static int HullSize(AeroGridComponent a)
     {
         var ch = a?.FxChunks; if (ch == null) return 0;
-        int n = 0; foreach (var l in ch.Occluders) n += l.Count;
+        int n = 0; lock (ch.OccLock) foreach (var l in ch.Occluders) n += l.Count;   // (ChunkedTable.OccLock)
         return n;
     }
 
