@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The solid rocket motors' game-free core (Propulsion/SolidRocket.cs, 2026-10-17; the CONVEYOR version): the stack search (the
+       chain the ports link), the game's link rule for the ports, sqrt(n) of the live tanks, the burn duty through the game's draw
+       (modelled: its all-or-nothing sink, its tanks giving in proportion), the ignition that cannot be stopped and its one-tick end,
+       the thrust law (flat with speed, +10 % in vacuum), the burn time, the saved keys; the thrust sharing with the nozzles out of
+       the thruster set (ThrustAllocator.GameShare); and the content gen_propulsor_defs.py wrote (the Solid Propellant resource, the
+       tanks, the ports at each size's own scale, the mount faces, the menu group). -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />
+    <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
+    <Compile Include="$(Sim)\Propulsion\LookRetry.cs" />
+    <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />
+    <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
+  </ItemGroup>
+</Project>

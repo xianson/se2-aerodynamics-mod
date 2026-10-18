@@ -130,6 +130,13 @@ static class DesignSnapshotTests
         check(MathF.Abs(pos - 500f) < 1e-2f && MathF.Abs(neg - 200f) < 1e-2f, $"thrust hold: (0,0,5) x 100 X = +500 about Y, (0,0,-5) x 40 X = -200 ({pos:F1}, {neg:F1})");
         sh.ThrustHold(Vector3.UnitY, new Vector3(0, 0, 5), out pos, out neg);
         check(pos < 1e-2f && MathF.Abs(neg - 400f) < 1e-2f, "thrust hold: about the centre of mass given");
+        // (a reversible thruster - ReversibleThrustComponent - holds and thrusts both ways)
+        h.ThrRev = new[] { false, true };
+        sh.ThrustHold(Vector3.UnitY, Vector3.Zero, out pos, out neg);
+        check(MathF.Abs(pos - 700f) < 1e-2f && MathF.Abs(neg - 200f) < 1e-2f, $"thrust hold: a reversible thruster counted both ways ({pos:F1}, {neg:F1})");
+        float back = h.ThrustAlong(new Vector3(-1, 0, 0), 0f, out var cb);
+        check(MathF.Abs(back - 40f) < 1e-3f && (cb - new Vector3(0, 0, -5)).Length() < 1e-4f && MathF.Abs(h.ThrustAlong(new Vector3(1, 0, 0), 0f, out _) - 140f) < 1e-3f,
+            $"thrust along: a reversible thruster's maximum either way ({back:F1} N back)");
 
         // ── gyros ──
         var g = Ship(out root, out sub);

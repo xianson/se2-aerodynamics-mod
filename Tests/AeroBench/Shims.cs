@@ -12,3 +12,9 @@ public static class AeroStats
     public static void SetLift(long us) { }
     public static void SetShadow(long us) { }
 }
+
+/// <summary>Test stand-in for Runtime/AeroConfig.cs (game side): the one constant Air/AtmosphereBridge.cs reads.</summary>
+public static class AeroConfig
+{
+    public const float MinDensity = 1e-6f;
+}

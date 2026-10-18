@@ -92,8 +92,17 @@ static class Program
         Check(AeroBlockSaveForm.Find(map, AeroBlockSaveForm.AirbrakeKey) == "aero-airbrake:1 12", "Find the airbrake key");
         Check(AeroBlockSaveForm.Find(map, AeroBlockSaveForm.GearKey) == null && AeroBlockSaveForm.Find<object>(null, AeroBlockSaveForm.GearKey) == null, "Find: none / null map");
         Check(AeroBlockSaveForm.Find(new Dictionary<string, object>(), AeroBlockSaveForm.ThrustKey) == null, "Find: an empty map (a new block, or one from an old save after the migration's insert)");
+        // ROTOR STRIKES (2026-10-17): the blades' health - whole blades carry no key; worn and broken round-trip bit-exact; clamped 0..1
+        Check(AeroBlockSaveForm.Blades(1f) == null && AeroBlockSaveForm.Blades(float.NaN) == null, "whole blades: no key");
+        foreach (float h in new[] { 0f, 1e-7f, 0.25f, 1f / 3f, 0.66f, 0.999f })
+            Check(AeroBlockSaveForm.TryReadBlades(AeroBlockSaveForm.Blades(h), out float h2) && Same(h2, h), $"blades round trip {h} -> {h2}");
+        Check(AeroBlockSaveForm.Blades(0f) == "aero-blades:1 0" && AeroBlockSaveForm.TryReadBlades("aero-blades:1 0", out float hb) && hb == 0f, "broken blades saved and loaded broken");
+        Check(AeroBlockSaveForm.TryReadBlades("aero-blades:1 -3", out float hn) && hn == 0f && AeroBlockSaveForm.TryReadBlades("aero-blades:1 7", out float hx) && hx == 1f, "blades clamped 0..1");
+        Check(!AeroBlockSaveForm.TryReadBlades(null, out float hz) && hz == 1f && !AeroBlockSaveForm.TryReadBlades("aero-blades:1 NaN", out hz) && !AeroBlockSaveForm.TryReadBlades(AeroBlockSaveForm.Thrust(0.25f), out hz), "blades: none / NaN / another tag refused (whole)");
+        Check(AeroBlockSaveForm.Find(new Dictionary<string, object> { [AeroBlockSaveForm.Blades(0.5f)] = null }, AeroBlockSaveForm.BladesKey) == "aero-blades:1 0.5", "Find the blades key");
         // tags do not prefix each other, nor the old lines' tags
-        string[] tags = { AeroBlockSaveForm.SurfaceKey, AeroBlockSaveForm.GearKey, AeroBlockSaveForm.AirbrakeKey, AeroBlockSaveForm.ThrustKey,
+        string[] tags = { AeroBlockSaveForm.SurfaceKey, AeroBlockSaveForm.GearKey, AeroBlockSaveForm.AirbrakeKey, AeroBlockSaveForm.ThrustKey, AeroBlockSaveForm.BladesKey,
+                          AeroBlockSaveForm.SolidNozzleKey,
                           AeroBlockSaveForm.LegacySurfaceTag, AeroBlockSaveForm.LegacyGearTag, AeroBlockSaveForm.LegacyBrakeTag, AeroBlockSaveForm.LegacyThrustTag };
         for (int i = 0; i < tags.Length; i++)
             for (int j = 0; j < tags.Length; j++)

@@ -317,7 +317,7 @@ static class Program
         foreach (var f in Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories))
         {
             string rel = Path.GetRelativePath(sim, f).Replace('\\', '/');
-            if (rel.StartsWith("Dev/") || Path.GetFileName(f).StartsWith("AeroSettings") || Path.GetFileName(f) == "AeroTestHarness.cs") continue;   // (the harness: dev overrides, never saved)
+            if (rel.StartsWith("Dev/") || Path.GetFileName(f).StartsWith("AeroSettings")) continue;
             files++;
             string src = Regex.Replace(File.ReadAllText(f), @"//.*", "");
             var lines = src.Split('\n');

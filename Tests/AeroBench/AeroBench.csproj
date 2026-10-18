@@ -15,6 +15,12 @@
     <Compile Include="$(Sim)\Components\IControlSurfaceSettings.cs" />
     <Compile Include="$(Sim)\Components\ControlSurfaceGeometry.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
+    <!-- the vanilla atmospheric thrusters' Mach curve (machwall) -->
+    <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />
+    <Compile Include="$(Sim)\Propulsion\JetCurve.cs" />
+    <!-- the game's density -> the mod's air (machwall at altitude: the speed of sound of that density) -->
+    <Compile Include="$(Sim)\Air\AtmosphereBridge.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
   </ItemGroup>
 </Project>

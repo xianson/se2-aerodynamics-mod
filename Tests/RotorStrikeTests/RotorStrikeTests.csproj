@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ROTOR STRIKES' game-free laws (Propulsion/RotorStrike.cs, 2026-10-17): the probes' coverage of the disc, the blade wear by speed
+       and material, the break, the struck character's and block's damage, the ship's impulse and the break's angular momentum, the
+       rotor's own cells, the repair rule, and a rotor skimming a hill flown tick by tick with the probe pattern. -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Propulsion\RotorStrike.cs" />
+    <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
+    <Compile Include="$(Sim)\Propulsion\PropulsorKinds.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />
+    <Compile Include="$(Sim)\Blocks\PropulsorBlocks.g.cs" />
+  </ItemGroup>
+</Project>

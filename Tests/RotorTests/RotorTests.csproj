@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The helicopter rotor's game-free core (Propulsion/RotorKinematics.cs): the governed rpm, collective, cyclic, coning,
+       the blur fades and the parts' poses. -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
+    <!-- the propulsor kinds' mechanics (who gets the cyclic, the reaction, the governor) and the reversible rotor's drawn pitch -->
+    <Compile Include="$(Sim)\Propulsion\PropulsorKinds.cs" />
+    <!-- (the kinds' curves - Speed, CurveOf - are ThrustProfiles') -->
+    <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />
+    <Compile Include="$(Sim)\Propulsion\TailRotor.cs" />
+    <!-- the controllability limiter's law and the generated propulsor table (thrust, power: gen_propulsor_defs.py) -->
+    <Compile Include="$(Sim)\Propulsion\RotorLimiter.cs" />
+    <Compile Include="$(Sim)\Blocks\PropulsorBlocks.g.cs" />
+  </ItemGroup>
+</Project>

@@ -545,6 +545,8 @@ static partial class Program
             fails += StallCheck(dataDir, atmo, new[] { "bluefighter", "pelican" });
             // the aero-aware attitude law on the F-6 (statically unstable in pitch): every case within its gyros settles
             if (Directory.GetFiles(dataDir, "3737149863.boxes", SearchOption.AllDirectories).Length > 0) fails += Attitude(dataDir, atmo, "bp/3737149863");
+            // the vanilla atmospherics' transonic pinch against the wave drag: the F-6 through Mach 1, a brick not (MachWall.cs)
+            fails += MachWall(dataDir, false);
             foreach (var name in new[] { "bluefighter", "pelican" })
             {
                 var path = Path.Combine(dataDir, name + ".boxes");
@@ -813,6 +815,8 @@ static partial class Program
                     Console.WriteLine($"   wing: area {w.PlanformArea,6:F1} m2  span {w.Span,5:F1} m  AR {w.AspectRatio,4:F1}  sweep {w.SweepAngle * 57.3f,5:F1} deg  CLmax {w.CLMax:F2}  normal {w.Normal}  centre {w.AeroCenter}");
             return 0;
         }
+        if (args.Length > 0 && args[0] == "machwall") { int mw = MachWall(dataDir, true); Console.WriteLine($"AeroBench: machwall {(mw == 0 ? "1/1 passed" : mw + " FAILED")}"); return mw == 0 ? 0 : 1; }
+        if (args.Length > 0 && args[0] == "machscan") return MachScan(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "roll") return RollResponse();
         if (args.Length > 0 && args[0] == "blend") return Blend(dataDir, atmo);
         if (args.Length > 0 && args[0] == "struct") return StructBench(dataDir, atmo, args.Skip(1).ToArray());

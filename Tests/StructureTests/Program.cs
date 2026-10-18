@@ -2127,6 +2127,169 @@ static class Program
         finally { StructureEval.ComponentLoadsAtBlocks = on0; }
     }
 
+
+    static string SimDirS([System.Runtime.CompilerServices.CallerFilePath] string here = "") => System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(here), "..", "..", "Scripts", "Simulation"));
+
+    /// <summary>LOADS THE STRUCTURE COULD NOT SEE (2026-10-17): (a) a ROTOR STRIKE's one-tick impulse, gathered per block and taken
+    /// once by the next snapshot (ImpulseWindow, PublishBlockImpulse) - the 4/s sampler sees every strike exactly once at its
+    /// honest peak (J over the collisions' crush time), where J / dt published as a latest value (two ticks) would be missed
+    /// most of the time; a blade grinding on loads by its mean; moments exact. (b) a hard strike at full rpm can damage the
+    /// mast a rotor stands on; a light touch cannot. (c) a SOLID ROCKET's thrust (out of the thruster cache) counted once - the
+    /// thrusters' shares of the game's thrust less the rocket's, plus the rocket at its block; off with ThrustLoads. (d) a
+    /// ROTOR's cyclic and reaction published at the hub keep the ship's total force and moment about the centre of mass.</summary>
+    static void ImpulseLoads()
+    {
+        const float Dt = 1f / 60f, Crush = 0.05f;   // (the sim step; StructureContactLoads.CrushSeconds - the server passes it, checked below)
+        const int Period = 15;                      // (StructureLoads.Rate 4/s: a snapshot every 15 ticks, its window 0.25 s)
+        float window = Period * Dt;
+        var J = new Vector3(0, 0, -6562f);          // (HelicopterRotor_150, rock, tip, full rpm: docs/PROPULSOR_SPECS.md)
+        var P = new Vector3(7.5f, 3f, 0f);
+        // (a) one strike at every phase of the sampler: seen by exactly one snapshot, at J / crush
+        int wrong = 0, naiveMissed = 0; float worstErr = 0f;
+        for (int at = 0; at < 2 * Period; at++)
+        {
+            var w = new ImpulseWindow(); int seen = 0; Vector3 got = Vector3.Zero; int naiveSeen = 0;
+            for (int tick = 0; tick < 6 * Period; tick++)
+            {
+                if (tick == at) w.Add(J, P, Vector3.Zero, tick);
+                if (tick % Period == Period - 1)
+                {
+                    if (w.Held(window, Crush, out var f, out var p, out var t)) { seen++; got = f; worstErr = MathF.Max(worstErr, (Vector3.Cross(p, f) + t - Vector3.Cross(P, J) / Crush).Length()); }
+                    w.Clear();
+                    // (the alternative: J / dt published for its tick, latest value - in a snapshot while at most 2 ticks old)
+                    if (tick - at >= 0 && tick - at <= 2) naiveSeen++;
+                }
+            }
+            if (seen != 1 || (got - J / Crush).Length() > 1e-2f * (J / Crush).Length()) wrong++;
+            if (naiveSeen == 0) naiveMissed++;
+        }
+        Console.WriteLine($"   impulse loads (a): a strike seen once at J / crush = {(J / Crush).Length() / 1000f:F0} kN at every phase of the 4/s sampler; J / dt for one tick would have been missed at {naiveMissed} of {2 * Period} phases");
+        Check(wrong == 0, $"impulse loads (a): every strike taken by exactly one snapshot at J / CrushSeconds ({wrong} of {2 * Period} phases wrong)");
+        Check(worstErr < 1f, $"impulse loads (a): the strike's moment kept (worst {worstErr:E2} N m)");
+        Check(naiveMissed > Period, $"impulse loads (a): a one-tick J / dt latest value is missed by the sampler at most phases ({naiveMissed} of {2 * Period}) - the reason for the window");
+        // two strikes in one tick add; two in different ticks are two hits (the peak, never their sum over the crush)
+        {
+            var w = new ImpulseWindow(); w.Add(J, P, Vector3.Zero, 3); w.Add(J, P, Vector3.Zero, 3);
+            w.Held(window, Crush, out var f2, out _, out _);
+            var v = new ImpulseWindow(); v.Add(J, P, Vector3.Zero, 3); v.Add(J, P, Vector3.Zero, 8);
+            v.Held(window, Crush, out var f3, out _, out _);
+            Check((f2 - 2f * J / Crush).Length() < 1f && (f3 - J / Crush).Length() < 1f, $"impulse loads (a): one tick's strikes add ({f2.Length():F0} N), two ticks' are two hits ({f3.Length():F0} N, not {(2f * J / Crush).Length():F0})");
+        }
+        // a blade grinding: every 5 ticks (a hit wins: J/crush > 3J/window) and every tick (the push kept up: 15J/window)
+        {
+            var w5 = new ImpulseWindow(); for (int k = 0; k < Period; k += 5) w5.Add(J, P, Vector3.Zero, k);
+            w5.Held(window, Crush, out var g5, out _, out _);
+            var w1 = new ImpulseWindow(); for (int k = 0; k < Period; k++) w1.Add(J, P, Vector3.Zero, k);
+            w1.Held(window, Crush, out var g1, out _, out _);
+            Check((g5 - J / Crush).Length() < 1f && (g1 - J * Period / window).Length() < 1f, $"impulse loads (a): grinding every 5 ticks loads its peak ({g5.Length():F0} N), every tick its mean ({g1.Length():F0} N = sum / window)");
+            // strikes all round the disc: the mean's moment about the origin exact
+            var wr = new ImpulseWindow(); Vector3 sumM = Vector3.Zero, sumJ = Vector3.Zero;
+            for (int k = 0; k < Period; k++)
+            {
+                float a = k * 0.7f; var pk = new Vector3(7.5f * MathF.Cos(a), 3f, 7.5f * MathF.Sin(a)); var jk = new Vector3(-MathF.Sin(a), 0f, MathF.Cos(a)) * 6562f;
+                wr.Add(jk, pk, Vector3.Zero, k); sumM += Vector3.Cross(pk, jk); sumJ += jk;
+            }
+            wr.Held(window, Crush, out var fr, out var pr, out var tr);
+            bool meanBranch = (sumJ / window).LengthSquared() > (wr.PeakJ / Crush).LengthSquared();
+            Vector3 wantF = meanBranch ? sumJ / window : wr.PeakJ / Crush, wantM = meanBranch ? sumM / window : wr.PeakM / Crush;
+            Check((fr - wantF).Length() < 1f && (Vector3.Cross(pr, fr) + tr - wantM).Length() < 1e-3f * wantM.Length() + 1f,
+                  $"impulse loads (a): a disc's strikes all round - the held force and its moment exact ({(meanBranch ? "mean" : "peak")}, {wantM.Length():F0} N m)");
+            // a break: the rotor's angular momentum as a torque over the crush
+            var wb = new ImpulseWindow(); var Lb = new Vector3(0, 147656f, 0); wb.Add(Vector3.Zero, P, Lb, 4);
+            Check(wb.Held(window, Crush, out var fb, out _, out var tb) && fb == Vector3.Zero && (tb - Lb / Crush).Length() < 1f, $"impulse loads (a): a break's angular momentum loads L / crush ({tb.Length() / 1e6f:F2} MN m)");
+            var e = new ImpulseWindow(); Check(!e.Held(window, Crush, out _, out _, out _), "impulse loads (a): an empty window loads nothing");
+        }
+
+        // (b) a hard strike damages the rotor's mast; a light touch does not. A fuselage (3 x 2 x 6 heavy blocks), a mast of two small
+        //     blocks on its top, the rotor (a 1.5 m block, rigid as the game's thruster) on the mast; the strike at the tip, 7.5 m out
+        {
+            float worstHard = 0f, worstSoft = 0f; bool broke = false, softBroke = false;
+            foreach (bool hard in new[] { true, false })
+            {
+                var sh = new TShip();
+                for (int z = 0; z < 6; z++) for (int x = 0; x < 3; x++) for (int y = 0; y < 2; y++) sh.Block(x, y, z, 400f);
+                int m1 = sh.Block(1, 2, 3, SmallMass), m2 = sh.Block(1, 3, 3, SmallMass);
+                int rotor = sh.Block(0, 4, 2, 600f, 3, 1, 3, StructMaterial.AtmosphericThruster);
+                sh.Build(heat: true);
+                var s = sh.S; sh.H.Pass(new Vector3(0, 0, -1));
+                s.Thruster = new bool[s.Count]; s.Thruster[rotor] = true;
+                var L = new StructureEval.Loads { AeroCom = s.Com, CellSize = 0.25f, CellOffset = 0.5f };
+                float v = hard ? 200f : 2f;   // (the blade's speed at the hit: J is linear in it - RotorStrike.StrikeImpulse)
+                var w = new ImpulseWindow();
+                var hub = s.Center[rotor]; var at = hub + new Vector3(7.5f, 0f, 0f);
+                w.Add(J * (v / 200f), at, Vector3.Zero, 0);
+                w.Held(window, Crush, out var f, out var p, out var t);
+                L.LoadBlock.Add(rotor); L.LoadF.Add(f); L.LoadP.Add(p); L.LoadT.Add(t); L.LoadEngine.Add(false);
+                for (int i = 0; i < s.Count; i++) s.Integrity[i] = 1f;
+                StructureEval.Apply(s, sh.H, L);
+                s.SolveFree(Vector3.Zero);
+                float u = s.MaxUtil;
+                var dmg = new List<(int block, float fraction, bool destroy)>(); var cuts = new List<StructureEval.CutFail>();
+                StructureEval.Damage(s, null, window, true, false, StructureEval.BreakUtil, StructureEval.WearPerSecond, 2, dmg, null, cuts);
+                bool any = dmg.Any(d => d.destroy || d.fraction > 0f) || cuts.Count > 0;
+                if (hard) { worstHard = u; broke = any; } else { worstSoft = u; softBroke = any; }
+            }
+            Console.WriteLine($"   impulse loads (b): the mast's worst utilisation - a full-rpm rock strike {worstHard:F2} (damage {broke}), a 2 m/s touch {worstSoft:F4} (damage {softBroke})");
+            Check(worstHard >= StructureEval.BreakUtil && broke, $"impulse loads (b): a hard strike at the tip damages the structure (utilisation {worstHard:F2})");
+            Check(worstSoft < 1f && !softBroke, $"impulse loads (b): a light touch does not (utilisation {worstSoft:F4})");
+        }
+
+        // (c) a lit solid rocket beside two thrusters: the thrusters' shares are the game's thrust LESS the rocket's (ThrustTorque:
+        //     gameF -= solidF), the rocket's whole thrust (base + steering: ThrustNow) at its own block - counted once
+        {
+            var sh = new TShip();
+            for (int z = 0; z < 4; z++) for (int x = 0; x < 2; x++) sh.Block(x, 0, z, 400f);
+            int t1 = sh.Block(0, -1, 0, 300f, 1, 1, 1, StructMaterial.AtmosphericThruster), t2 = sh.Block(1, -1, 3, 300f, 1, 1, 1, StructMaterial.AtmosphericThruster);
+            int noz = sh.Block(0, 1, 1, 300f, 1, 1, 1, StructMaterial.AtmosphericThruster);
+            sh.Build(heat: true);
+            var s = sh.S; sh.H.Pass(new Vector3(0, 0, -1));
+            var up = Vector3.UnitY; float rocketBase = 40000f, steer = -6000f, thrusters = 100000f;
+            float rocketNow = rocketBase + steer;          // (ThrustNow: its override as steered - the game's thrust on it)
+            float gameF = thrusters + rocketNow;           // (the game's thrust holds both)
+            float shared = gameF - rocketNow;              // (ThrustTorque: gameF -= solidF - the thrusters' shares)
+            var L = new StructureEval.Loads { AeroCom = s.Com, CellSize = 0.25f, CellOffset = 0.5f };
+            L.ThrBlock.Add(t1); L.ThrF.Add(up * shared * 0.5f); L.ThrF0.Add(up * shared * 0.5f);
+            L.ThrBlock.Add(t2); L.ThrF.Add(up * shared * 0.5f); L.ThrF0.Add(up * shared * 0.5f);
+            L.LoadBlock.Add(noz); L.LoadF.Add(up * rocketNow); L.LoadP.Add(s.Center[noz]); L.LoadT.Add(Vector3.Zero); L.LoadEngine.Add(true);
+            StructureEval.Apply(s, sh.H, L);
+            Vector3 F = Vector3.Zero; for (int i = 0; i < s.Count; i++) F += s.ExtForce[i];
+            Check(MathF.Abs(F.Y - gameF) < 1f, $"impulse loads (c): the ship carries the game's whole thrust once - thrusters {thrusters / 1000f:F0} kN + rocket {rocketNow / 1000f:F0} kN (base + steering) = {F.Y / 1000f:F1} kN of {gameF / 1000f:F1}");
+            bool tl = StructureEval.ThrustLoads; StructureEval.ThrustLoads = false;
+            try { StructureEval.Apply(s, sh.H, L); F = Vector3.Zero; for (int i = 0; i < s.Count; i++) F += s.ExtForce[i]; Check(F.Length() < 1f, $"impulse loads (c): the rocket's thrust is an engine's - off with ThrustLoads ({F.Length():F1} N)"); }
+            finally { StructureEval.ThrustLoads = tl; }
+        }
+
+        // (d) a rotor's cyclic and reaction: applied to the body at the centre of mass as (force, torque about com); published at
+        //     the hub with torque = given - (hub - com) x force + reaction (RotorCyclic.PublishLoads) - the ship's moment the same
+        {
+            var sh = new TShip();
+            for (int z = 0; z < 4; z++) for (int x = 0; x < 2; x++) sh.Block(x, 0, z, 400f);
+            int rotor = sh.Block(0, 1, 1, 600f, 2, 1, 2, StructMaterial.AtmosphericThruster);
+            sh.Build(heat: true);
+            var s = sh.S; sh.H.Pass(new Vector3(0, 0, -1));
+            var com = s.Com; var hub = s.Center[rotor] + Vector3.UnitY * 0.4f;
+            var force = new Vector3(1200f, 0f, -300f); var given = new Vector3(-2500f, 0f, 9000f); var reaction = new Vector3(0f, 4000f, 0f);
+            var L = new StructureEval.Loads { AeroCom = com, CellSize = 0.25f, CellOffset = 0.5f };
+            L.LoadBlock.Add(rotor); L.LoadF.Add(force); L.LoadP.Add(hub); L.LoadT.Add(given + reaction - Vector3.Cross(hub - com, force)); L.LoadEngine.Add(true);
+            StructureEval.Apply(s, sh.H, L);
+            Vector3 F = Vector3.Zero, M = Vector3.Zero;
+            for (int i = 0; i < s.Count; i++) { F += s.ExtForce[i]; M += Vector3.Cross(s.Center[i] - com, s.ExtForce[i]) + s.ExtMoment[i]; }
+            Check((F - force).Length() < 1e-2f && (M - (given + reaction)).Length() < 1e-1f, $"impulse loads (d): a rotor's cyclic and reaction at its hub - the ship's force and moment as applied (moment off by {(M - (given + reaction)).Length():E2} N m)");
+        }
+
+        // the server's wiring (source): the window and the crush passed, impulses taken once, an engine block not rebuilt, the balance
+        {
+            string sim = SimDirS();
+            string bl = System.IO.File.ReadAllText(System.IO.Path.Combine(sim, "Structure", "Server", "StructureServer.BlockLoads.cs"));
+            string sv = System.IO.File.ReadAllText(System.IO.Path.Combine(sim, "Structure", "Server", "StructureServer.cs"));
+            string ct = System.IO.File.ReadAllText(System.IO.Path.Combine(sim, "Structure", "Server", "StructureContacts.cs"));
+            Check(sv.Contains("SnapBlockLoads(L, index, evalDt);") && bl.Contains("float crush = StructureContactLoads.CrushSeconds;") && bl.Contains("e.W.Held(window, crush,") && bl.Contains("_blockImpulses.Clear();"),
+                  "impulse loads: the snapshot takes the impulses over its own window and the collisions' crush time, once (cleared)");
+            Check(bl.Contains("block.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null"), "impulse loads: an engine with the game's ThrusterComponent published as one costs no rebuild");
+            Check(ct.Contains("Vector3 knownJ = TakeKnownImpulse();") && ct.Contains("x0 += knownJ / dt;"), "impulse loads: the contact balance takes the known impulses (cyclic, strikes) off - not read as the wheels' or plates'");
+        }
+    }
+
     static int Main()
     {
         Classes();
@@ -2135,7 +2298,7 @@ static class Program
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
         TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates(); RigidThrusters();
-        BalanceUnderEdits(); EntryBraking(); ComponentLoads();
+        BalanceUnderEdits(); EntryBraking(); ComponentLoads(); ImpulseLoads();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
         return _fails == 0 ? 0 : 1;

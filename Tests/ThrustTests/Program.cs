@@ -11,7 +11,7 @@ using AeroMod;
 //     ship with its centre of mass off its thrusters' centre. Pass/fail on settle time, overshoot, altitude, cross-axis
 //     upset; and ON may never be worse than OFF.
 // Run: dotnet run -c Release [-- verbose]. Exit 0 = all pass.
-static class Program
+static partial class Program
 {
     static int _fails, _checks;
     static bool _verbose;
@@ -728,6 +728,339 @@ static class Program
         Check(couple.Length() < 1f, $"cell centre: mirrored thrusters make no couple ({couple.Length() / 1000f:F0} kN m)");
     }
 
+    /// <summary>REVERSIBLE THRUSTERS (Propulsion/ReversibleThrust.cs, ReversibleThrustComponent, 2026-10-17): thrust either way,
+    /// in the game's movement and in the attitude law. A 60 Hz rigid body flown as in the game: each reversible thruster's game
+    /// side from ReversibleThrust.Step (its ThrustData.Direction), the game's thrust per axis on the maxima booked by side (the
+    /// pilot's input x the side's maximum, else the dampeners: gravity hold + -m v x 60, clamped), shared onto the thrusters
+    /// (ThrustAllocator.GameShare with the sides), and - steered, or a rate pilot on a grid with reversible thrusters or main
+    /// rotors - ThrustAllocator.Solve with the reversible ones both ways; torque applied, the net force change applied only
+    /// with attitudePriority above 0 (ThrustTorque.Apply).</summary>
+    sealed class RevShip
+    {
+        public float Mass = 5000f; public Vector3 I = new Vector3(20000f, 40000f, 30000f);
+        public readonly List<Vector3> Pos = new(), Dir = new(); public readonly List<float> Cap = new(); public readonly List<bool> Rev = new();
+        public Vector3 Reaction;           // a main rotor's reaction torque (N m, local)
+        public bool Damp = true, Gravity = true, Solve = true;
+        public Vector3 Input, WCmd;        // the pilot's movement input (-1..1 per axis) and turn rate (rad/s)
+        public Vector3 V, W; public float Heading; public int Flips; public float LastPrio; public Vector3 LastTorque, LastNetErr;
+        public float[] F, F0; ReversibleThrust.State[] _st;
+        public int Add(Vector3 pos, Vector3 dir, float cap, bool rev) { Pos.Add(pos); Dir.Add(dir); Cap.Add(cap); Rev.Add(rev); return Pos.Count - 1; }
+        // ── a MAIN ROTOR (Rotor >= 0: that thruster): its reaction from its thrust each step (RotorKinematics.ReactionTorque, the
+        //    game's share f0 - as ThrustTorque), the controllability limiter (RotorLimiter.Targets / Step every step, the cap
+        //    written into its maximum every third step beyond 0.5 % of it - AeroPropulsorComponent), the GYROS (reach per axis:
+        //    the aero-aware split - the thrusters asked for what the gyros cannot give, the gyros the rest up to their reach) ──
+        public int Rotor = -1; public float RotorR, Rho = 1f; public bool Limit = true; public Vector3 Gyro;
+        // ── CONTROL SURFACES (2026-10-17, "any source of torque counts"): a rudder's yaw reach either way = RudderPerQ x q
+        //    (N m per Pa; q from Airspeed - the forward flight it is trimmed in, m/s), given FIRST (the aware law: the surfaces
+        //    first, gyros and thrusters the rest - ThrustTorque.AwareNeed) and counted by the limiter x SurfaceShare (the
+        //    attitude law's planning share, ThrustTorque.SurfaceReachShare). SlowAt: the time (s) the airspeed drops to 0 ──
+        public float RudderPerQ, Airspeed, SlowAt = -1f; public const float SurfaceShare = 0.75f; public float SurfacesSeen;
+        public float CapNow = float.PositiveInfinity, Written = -1f, Authority, Budget, ReactionQ, MaxHeading, MinCapSeen = float.MaxValue;
+        public readonly List<float> Writes = new(); public readonly List<float> WriteTimes = new();
+        public int PushFlips; int _push = 1; public float Time;
+        /// <summary>At this time (s) multiply a thruster's maximum (index, factor): a tail losing its authority mid-flight.</summary>
+        public readonly List<(float t, int i, float k)> Events = new();
+        public void Fly(float seconds)
+        {
+            int n = Pos.Count; const float dt = 1f / 60f, g = 9.81f;
+            var arms = new Vector3[n]; var dirs = Dir.ToArray(); var caps = Cap.ToArray(); var rev = Rev.ToArray(); var side = new float[n];
+            F ??= new float[n]; F0 ??= new float[n]; var prev = new float[n]; var y = new float[n]; var capDir = new float[6];
+            _st ??= Enumerable.Range(0, n).Select(_ => new ReversibleThrust.State { Sign = 1 }).ToArray();
+            float armSq = 0f; for (int i = 0; i < n; i++) { arms[i] = Vector3.Cross(Pos[i], dirs[i]); armSq += Pos[i].LengthSquared(); }
+            Vector3 grav = Gravity ? new Vector3(0f, -g, 0f) : Vector3.Zero;
+            bool warm = false;
+            float rotorMax = Rotor >= 0 ? caps[Rotor] : 0f;
+            if (Rotor >= 0 && Written >= 0f) caps[Rotor] = Written;
+            var rIdx = new[] { Rotor }; var rR = new[] { RotorR }; var rRpm = new[] { 1f }; var rRated = new[] { rotorMax };
+            float[] lAuth = new float[1], lBud = new float[1], lTgt = new float[1];
+            int tail = Rev.IndexOf(true);
+            for (int step = 0; step < (int)(seconds / dt); step++)
+            {
+                foreach (var e in Events) if (Time < e.t && Time + dt >= e.t) { caps[e.i] *= e.k; Cap[e.i] *= e.k; }
+                Time += dt;
+                if (SlowAt >= 0f && Time >= SlowAt) Airspeed = 0f;
+                Vector3 surf = new Vector3(0f, RudderPerQ * 0.5f * Rho * Airspeed * Airspeed, 0f);   // (the rudder's reach either way, yaw)
+                // the limiter (ThrustTorque.Apply -> RotorCyclic.Limit) and the propulsor's write of the cap (every third step)
+                if (Rotor >= 0 && Limit)
+                {
+                    RotorLimiter.Targets(1, rIdx, rR, rRpm, rRated, arms, dirs, caps, rev, n, Gyro, surf * SurfaceShare, surf * SurfaceShare, Rho, lAuth, lBud, lTgt);
+                    SurfacesSeen = RotorLimiter.SurfaceAuthority(dirs[Rotor], surf * SurfaceShare, surf * SurfaceShare);
+                    Authority = lAuth[0]; Budget = lBud[0];
+                    CapNow = RotorLimiter.Step(CapNow, lTgt[0], dt);
+                    if (step % 3 == 0)
+                    {
+                        float want = MathF.Min(rotorMax, CapNow);
+                        if (Written < 0f || MathF.Abs(want - Written) > 0.005f * rotorMax) { Written = want; caps[Rotor] = want; Writes.Add(want); WriteTimes.Add(Time); }
+                    }
+                }
+                // the reversible thrusters' game sides (the component, before the game's thrust)
+                for (int i = 0; i < n; i++)
+                {
+                    if (!rev[i]) { side[i] = 1f; continue; }
+                    float input = Vector3.Dot(Input, dirs[i]);
+                    float dem = ReversibleThrust.Demand(input, Damp, Vector3.Dot(V, dirs[i]), Vector3.Dot(grav, dirs[i]), Mass, caps[i]);
+                    if (ReversibleThrust.Step(ref _st[i], dem, caps[i], MathF.Abs(input) > ReversibleThrust.InputDeadband, dt)) Flips++;
+                    side[i] = _st[i].Sign;
+                }
+                // the game: maxima booked by side, its thrust per axis
+                Array.Clear(capDir, 0, 6);
+                for (int i = 0; i < n; i++) capDir[ThrustAllocator.DirIndex(dirs[i] * side[i])] += caps[i];
+                Vector3 gameF = Vector3.Zero;
+                for (int ax = 0; ax < 3; ax++)
+                {
+                    float cp = capDir[2 * ax], cn = capDir[2 * ax + 1];
+                    float u = ax == 0 ? Input.X : ax == 1 ? Input.Y : Input.Z;
+                    float va = ax == 0 ? V.X : ax == 1 ? V.Y : V.Z, ga = ax == 0 ? grav.X : ax == 1 ? grav.Y : grav.Z;
+                    float hold = Damp ? -Mass * ga : 0f;
+                    float want = MathF.Abs(u) > 1e-3f ? hold * (MathF.Sign(u) == -MathF.Sign(hold) ? 1f - MathF.Abs(u) : 1f) + u * (u > 0f ? cp : cn)
+                                                       : (Damp ? hold - Mass * va * 60f : 0f);
+                    float fa = Math.Clamp(want, -cn, cp);
+                    if (ax == 0) gameF.X = fa; else if (ax == 1) gameF.Y = fa; else gameF.Z = fa;
+                }
+                Vector3 torque0 = ThrustAllocator.GameShare(gameF, arms, dirs, caps, capDir, F0, n, side);
+                if (Rotor >= 0) { ReactionQ = RotorKinematics.ReactionTorque(F0[Rotor], RotorR, 1f, Rho); Reaction = dirs[Rotor] * ReactionQ; }
+                Vector3 torque = torque0 + Reaction;
+                Vector3 total = gameF, extra = Vector3.Zero; LastPrio = 0f;
+                if (Solve)
+                {
+                    Vector3 tau = I * (WCmd - W) / 0.3f - Reaction;   // (ThrustTorque's rate branch: ResponseTime 0.3 s)
+                    Vector3 sur = Vector3.Clamp(tau, -surf, surf); tau -= sur;   // (the surfaces first, the rest to gyros and thrusters)
+                    Vector3 thrTau = tau - Vector3.Clamp(tau, -Gyro, Gyro);   // (with gyros: the thrusters what they cannot give)
+                    if (!warm) { Array.Copy(F0, F, n); warm = true; }
+                    ThrustAllocator.Solve(thrTau, gameF, arms, dirs, caps, F0, F, prev, y, armSq, n, 60, out LastPrio, rev);
+                    Vector3 thr = Vector3.Zero; total = Vector3.Zero;
+                    for (int i = 0; i < n; i++) { thr += arms[i] * F[i]; total += dirs[i] * F[i]; }
+                    torque = Reaction + thr + Vector3.Clamp(tau - thr, -Gyro, Gyro) + sur;
+                    if (LastPrio > 0f) extra = total - gameF;
+                    if (tail >= 0) { int s2 = ReversibleThrust.Side(_push, F[tail], caps[tail]); if (s2 != _push) PushFlips++; _push = s2; }
+                }
+                else Array.Copy(F0, F, n);
+                LastTorque = torque; LastNetErr = total - gameF;
+                V += ((gameF + extra) / Mass + grav) * dt;
+                W += torque / I * dt;
+                Heading += W.Y * dt;
+                MaxHeading = MathF.Max(MaxHeading, MathF.Abs(Heading));
+                if (Rotor >= 0 && float.IsFinite(CapNow)) MinCapSeen = MathF.Min(MinCapSeen, CapNow);
+            }
+        }
+    }
+
+    /// <summary>THE ROTOR BALANCE IN FLIGHT (2026-10-17: the rotors by disc area, the reaction calibrated to a real helicopter's
+    /// tail share, the 85 kN Reversible Rotor, the controllability limiter): helicopters flown at 60 Hz with the real allocator,
+    /// the limiter's law and the propulsor's cap write (RevShip). Thrust at rho 0.89 (the user's save: the maxima x 0.89).</summary>
+    static void HeliLimiterChecks()
+    {
+        const float rho = 0.89f, rotor15 = 600000f * rho, rotor25 = 1667000f * rho, tailCap = 85000f * rho;
+        RevShip Heli(float rotorMax, float R, float mass, Vector3 inertia, params (Vector3 pos, bool rev)[] tails)
+        {
+            var s = new RevShip { Mass = mass, I = inertia, Rho = rho, RotorR = R };
+            s.Rotor = s.Add(Vector3.Zero, Vector3.UnitY, rotorMax, false);       // the main rotor's lift at the centre of mass
+            foreach (var t in tails) s.Add(t.pos, Vector3.UnitX, tailCap, t.rev); // tails pushing along X (both ways when reversible)
+            s.Input = new Vector3(0f, 1f, 0f);                                    // full collective
+            return s;
+        }
+        var I15 = new Vector3(8e5f, 8e5f, 1.5e5f); const float m15 = 40000f;      // a 1.5 m-rotor helicopter: 40 t (65 % of its rotor)
+        var I25 = new Vector3(6e6f, 6e6f, 1.2e6f); const float m25 = 110000f;     // a 2.5 m-rotor helicopter: 110 t
+        string Pct(RevShip s, float max) => $"{s.F0[s.Rotor] / max * 100f:F0} % of its maximum";
+
+        // 1. a 1.5 m rotor at full collective, one Reversible Rotor at its tip radius. The reported spin: the raw momentum torque
+        //    (ReactionScale 1) and no limiter - the tail saturates and the ship spins away. Now: the cap keeps the reaction within
+        //    Margin of the authority - and with the 85 kN Reversible Rotor (x 7.5 m x 0.8 = 510 kN m against 450 at rated) the
+        //    rotor is not capped at all: its full maximum
+        {
+            float keep = RotorKinematics.ReactionScale;
+            RotorKinematics.ReactionScale = 1f;
+            var raw = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 7.5f), true)); raw.Limit = false; raw.Fly(10f);
+            RotorKinematics.ReactionScale = keep;
+            Check(raw.MaxHeading > 30f * Deg, $"heli 1.5 m, raw momentum torque, no limiter: spins ({raw.MaxHeading / Deg:F0} deg in 10 s) - the reported yaw spin");
+            var s = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 7.5f), true)); s.Fly(10f);
+            Check(s.MaxHeading < 3f * Deg && s.V.Y > 1f, $"heli 1.5 m + one Reversible Rotor at 7.5 m, full collective: heading within {s.MaxHeading / Deg:F2} deg, climbing {s.V.Y:F1} m/s");
+            Check(s.ReactionQ <= RotorLimiter.Margin * s.Authority * 1.01f && s.F0[s.Rotor] >= 0.999f * rotor15,
+                $"  the limiter: thrust {s.F0[s.Rotor] / 1e3f:F0} kN ({Pct(s, rotor15)}), reaction {s.ReactionQ / 1e3f:F0} kN m of authority {s.Authority / 1e3f:F0} (x {RotorLimiter.Margin})");
+            Check(s.PushFlips <= 1 && s.Flips <= 1, $"  no tail chatter: push flips {s.PushFlips} (the first: from its +1 start to the side it holds), game-side flips {s.Flips}");
+            var off = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 7.5f), true)); off.Limit = false; off.Input = Vector3.Zero; off.Fly(5f);
+            Check(off.MaxHeading < 1f * Deg, $"  hover without the limiter holds too ({off.MaxHeading / Deg:F2} deg) - the cap only bites above it");
+        }
+        // 2. the Reversible Rotor removed: gyros only - the cap keeps the reaction within them; nothing at all - no lift, no NaN
+        {
+            var g = Heli(rotor15, 7.5f, m15, I15); g.Gyro = new Vector3(1e5f); g.Fly(10f);
+            Check(g.MaxHeading < 3f * Deg && g.ReactionQ <= RotorLimiter.Margin * 1e5f * 1.01f,
+                $"heli 1.5 m, no tail, 100 kN m gyros: heading within {g.MaxHeading / Deg:F2} deg; thrust capped to {g.F0[g.Rotor] / 1e3f:F0} kN ({Pct(g, rotor15)}), reaction {g.ReactionQ / 1e3f:F0} kN m (it cannot lift its {m15 * 9.81f / 1e3f:F0} kN: v {g.V.Y:F1} m/s)");
+            var z = Heli(rotor15, 7.5f, m15, I15); z.Fly(10f);
+            bool finite = float.IsFinite(z.Heading) && float.IsFinite(z.V.Y) && float.IsFinite(z.W.Y) && z.F0.All(float.IsFinite);
+            Check(finite && z.F0[z.Rotor] == 0f && z.MaxHeading < 10f * Deg,
+                $"heli 1.5 m, no tail, no gyros: no lift ({z.F0[z.Rotor]:F0} N), finite; only the idle blades' drag turns it ({z.ReactionQ:F0} N m: {z.MaxHeading / Deg:F1} deg in 10 s, falling)");
+            var w = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 7.5f), false)); w.Fly(5f);   // a ONE-WAY side thruster the wrong way round
+            Check(w.F0[w.Rotor] == 0f, $"  a one-way side thruster pushing the wrong way counts nothing ({w.F0[w.Rotor]:F0} N)");
+            var r = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, -7.5f), false)); r.Fly(10f);   // ... the right way round (ahead, pushing +X)
+            Check(r.MaxHeading < 3f * Deg && r.F0[r.Rotor] > 0.5f * rotor15, $"  a one-way side thruster the right way round is anti-torque ({Pct(r, rotor15)}, heading {r.MaxHeading / Deg:F2} deg)");
+        }
+        // 3. the 2.5 m rotor: two Reversible Rotors share the load. At its tip radius (12.5 m) they hold 82 % of its rated
+        //    reaction (x 0.8) - capped to ~87 % of its thrust, heading held; at 1.8 x its radius (22.5 m) it reaches its rating
+        {
+            var near = Heli(rotor25, 12.5f, m25, I25, (new Vector3(-1f, 0f, 12.5f), true), (new Vector3(1f, 0f, 12.5f), true)); near.Fly(10f);
+            float nearPct = near.F0[near.Rotor] / rotor25;
+            Check(near.MaxHeading < 3f * Deg && MathF.Abs(near.F[1] - near.F[2]) < 0.02f * tailCap && nearPct > 0.85f && nearPct < 0.89f,
+                $"heli 2.5 m + two Reversible Rotors at 12.5 m: heading within {near.MaxHeading / Deg:F2} deg, they share ({near.F[1] / 1e3f:F1} / {near.F[2] / 1e3f:F1} kN); capped to {Pct(near, rotor25)} (v {near.V.Y:F1} m/s)");
+            var far = Heli(rotor25, 12.5f, m25, I25, (new Vector3(-1f, 0f, 22.5f), true), (new Vector3(1f, 0f, 22.5f), true)); far.Fly(10f);
+            Check(far.MaxHeading < 3f * Deg && far.F0[far.Rotor] >= 0.999f * rotor25 && far.V.Y > 1f && MathF.Abs(far.F[1] - far.F[2]) < 0.02f * tailCap,
+                $"heli 2.5 m + two Reversible Rotors at 22.5 m: rated thrust ({Pct(far, rotor25)}), heading within {far.MaxHeading / Deg:F2} deg, shared {far.F[1] / 1e3f:F1} / {far.F[2] / 1e3f:F1} kN");
+        }
+        // 4. smooth: the cap written a few times and then left alone; when the tail loses half its authority mid-climb (thin air,
+        //    damage) the cap falls without overshoot or chatter, and rises back the same way - heading held throughout
+        {
+            var s = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 7.5f), true));
+            s.Events.Add((3f, 1, 0.5f)); s.Events.Add((6f, 1, 2f));
+            s.Fly(12f);
+            int rev = 0; for (int k = 2; k < s.Writes.Count; k++) if (MathF.Sign(s.Writes[k] - s.Writes[k - 1]) != MathF.Sign(s.Writes[k - 1] - s.Writes[k - 2])) rev++;
+            int steady = s.WriteTimes.Count(t => t > 1f && t < 3f) + s.WriteTimes.Count(t => t > 10f);   // (the rise after 6 s: RiseSeconds 0.6, within 0.5 % by ~2.5 s)
+            float maxStep = 0f; for (int k = 1; k < s.Writes.Count; k++) maxStep = MathF.Max(maxStep, MathF.Abs(s.Writes[k] - s.Writes[k - 1]) / rotor15);
+            Check(rev <= 1 && steady == 0 && maxStep < 0.12f && s.MaxHeading < 3f * Deg && s.PushFlips <= 1,
+                $"limiter smooth: {s.Writes.Count} writes, {rev} turn(s) of direction, none in steady flight ({steady}), largest step {maxStep * 100f:F1} % of the maximum; lowest cap {s.MinCapSeen / rotor15 * 100f:F0} %; heading within {s.MaxHeading / Deg:F2} deg; push flips {s.PushFlips}");
+        }
+        // 6. ANY SOURCE OF TORQUE COUNTS (2026-10-17): a helicopter on gyros alone (100 kN m) with a rudder - at hover the rudder
+        //    has no air (q 0): the cap is the gyros'; in forward flight (60 m/s, q 1.6 kPa) its yaw reach (250 kN m) counts x the
+        //    planning share - a higher cap, heading held; the air lost (slowed to a hover mid-flight) - the cap falls back
+        {
+            const float v = 60f; float rudder = 2.5e5f / (0.5f * rho * v * v);
+            var hover = Heli(rotor15, 7.5f, m15, I15); hover.Gyro = new Vector3(1e5f); hover.RudderPerQ = rudder; hover.Fly(10f);
+            var fwd = Heli(rotor15, 7.5f, m15, I15); fwd.Gyro = new Vector3(1e5f); fwd.RudderPerQ = rudder; fwd.Airspeed = v; fwd.Fly(10f);
+            Check(hover.SurfacesSeen == 0f && fwd.SurfacesSeen > 0f && fwd.CapNow > 1.5f * hover.CapNow && fwd.MaxHeading < 3f * Deg && hover.MaxHeading < 3f * Deg
+                  && fwd.ReactionQ <= RotorLimiter.Margin * fwd.Authority * 1.01f,
+                $"rudder counts: hover cap {hover.CapNow / 1e3f:F0} kN ({Pct(hover, rotor15)}; surfaces {hover.SurfacesSeen / 1e3f:F0} kN m) < forward flight at {v} m/s cap {fwd.CapNow / 1e3f:F0} kN ({Pct(fwd, rotor15)}; authority {fwd.Authority / 1e3f:F0} kN m of which surfaces {fwd.SurfacesSeen / 1e3f:F0}); heading within {hover.MaxHeading / Deg:F2} / {fwd.MaxHeading / Deg:F2} deg");
+            var slow = Heli(rotor15, 7.5f, m15, I15); slow.Gyro = new Vector3(1e5f); slow.RudderPerQ = rudder; slow.Airspeed = v; slow.SlowAt = 5f; slow.Fly(10f);
+            // (coming down, the written maximum may stand up to the write tolerance - 0.5 % of the rotor's maximum - above the cap: reaction x ~1.02)
+            Check(MathF.Abs(slow.CapNow - hover.CapNow) < 0.01f * hover.CapNow && slow.MaxHeading < 3f * Deg && slow.ReactionQ <= RotorLimiter.Margin * slow.Authority * 1.03f,
+                $"  the air lost (slowed to a hover at 5 s): the cap back to the gyros' {slow.CapNow / 1e3f:F0} kN, heading within {slow.MaxHeading / Deg:F2} deg");
+        }
+        // 5. a well-balanced helicopter is left alone at full thrust: a Reversible Rotor at 1.25 x the radius and 150 kN m of gyros
+        {
+            var s = Heli(rotor15, 7.5f, m15, I15, (new Vector3(0f, 0f, 9.375f), true)); s.Gyro = new Vector3(1.5e5f); s.Fly(10f);
+            Check(s.F0[s.Rotor] >= 0.999f * rotor15 && s.Writes.Count == 1 && s.MaxHeading < 1f * Deg,
+                $"well balanced (tail at 9.4 m + gyros): full thrust {Pct(s, rotor15)}, the cap written once ({s.Writes.Count}) above the maximum; heading within {s.MaxHeading / Deg:F2} deg");
+        }
+    }
+
+    static void ReversibleChecks()
+    {
+        const float rotorCap = 100000f, cap = 25000f;
+        float Q = RotorKinematics.ReactionTorque(5000f * 9.81f, 2.5f, 1f, 1f);
+        RevShip Heli(bool rev = true)
+        {
+            var s = new RevShip { Reaction = new Vector3(0f, Q, 0f) };
+            s.Add(Vector3.Zero, Vector3.UnitY, rotorCap, false);              // the main rotor's lift at the centre of mass
+            s.Add(new Vector3(0f, 0f, 6f), Vector3.UnitX, cap, rev);          // a reversible thruster 6 m aft, pushing along X
+            return s;
+        }
+        // 1. an ORDINARY reversible thruster (no rotor) translates both ways - the game's own thrust, its side turned round
+        foreach (float u in new[] { 1f, -1f })
+        {
+            var s = new RevShip { Solve = false };
+            s.Add(Vector3.Zero, Vector3.UnitY, rotorCap, false);
+            s.Add(Vector3.Zero, Vector3.UnitX, cap, true);
+            s.Input = new Vector3(u, 0f, 0f); s.Fly(1f);
+            Check(MathF.Sign(s.V.X) == MathF.Sign(u) && MathF.Abs(MathF.Abs(s.F0[1]) - cap) < 1f && MathF.Sign(s.F0[1]) == MathF.Sign(u),
+                $"reversible: strafe {u:+0;-0} - {s.F0[1]:F0} N, v {s.V.X:F2} m/s (flips {s.Flips})");
+            // forward / back on another axis (Z): the same
+            var z = new RevShip { Solve = false, Gravity = false };
+            z.Add(new Vector3(0f, 0f, 0f), -Vector3.UnitZ, cap, true);
+            z.Input = new Vector3(0f, 0f, -u); z.Fly(1f);
+            Check(MathF.Sign(z.V.Z) == -MathF.Sign(u) && MathF.Abs(MathF.Abs(z.F0[0]) - cap) < 1f, $"reversible: forward/back {(u > 0 ? "forward" : "back")} - v {z.V.Z:F2} m/s");
+        }
+        // ... and the dampeners stop a drift from either side with it
+        foreach (float v0 in new[] { 2f, -2f })
+        {
+            var s = new RevShip { Solve = false };
+            s.Add(Vector3.Zero, Vector3.UnitY, rotorCap, false); s.Add(Vector3.Zero, Vector3.UnitX, cap, true);
+            s.V = new Vector3(v0, 0f, 0f); s.Fly(2f);
+            Check(MathF.Abs(s.V.X) < 0.02f && s.Flips <= 1, $"reversible: dampeners stop {v0:+0;-0} m/s (v {s.V.X:F3}, flips {s.Flips})");
+        }
+        // 2. heading hold, no gyros, against the main rotor's reaction (a rate pilot, no input)
+        {
+            var s = Heli(); s.Fly(20f);
+            Check(MathF.Abs(s.Heading) < 1f * Deg && MathF.Abs(s.W.Y) < 1e-3f, $"reversible: no gyros, hover - heading held against the rotor's {Q:F0} N m ({s.Heading / Deg:F2} deg in 20 s; side drift {s.V.X:F2} m/s)");
+            Check(s.F[1] * 6f < 0f && MathF.Abs(s.F[1] * 6f + Q) < 0.05f * Q && s.LastPrio > 0f, $"reversible: its push {s.F[1]:F0} N x 6 m answers it, a real side force (applied: priority {s.LastPrio:F3})");
+            var off = Heli(false); off.Fly(20f);
+            Check(MathF.Abs(off.Heading) > 30f * Deg, $"one-way in its place: the helicopter yaws away ({off.Heading / Deg:F0} deg)");
+        }
+        // 3. yaw both ways
+        foreach (float u in new[] { 1f, -1f })
+        {
+            var s = Heli(); s.WCmd = new Vector3(0f, 0.5f * u, 0f); s.Fly(4f);
+            Check(MathF.Sign(s.Heading) == MathF.Sign(u) && MathF.Abs(s.W.Y - 0.5f * u) < 0.1f, $"reversible: yaw {u:+0;-0} - {s.W.Y:F3} rad/s (asked {0.5f * u:F2})");
+        }
+        // 4. pitch / roll when mounted at an arm on those axes
+        foreach (float u in new[] { 1f, -1f })
+        {
+            var p = new RevShip { Gravity = false }; p.Add(new Vector3(0f, 6f, 0f), Vector3.UnitZ, cap, true);   // arm (6, 0, 0): pitch
+            p.WCmd = new Vector3(0.3f * u, 0f, 0f); p.Fly(2f);
+            Check(MathF.Sign(p.W.X) == MathF.Sign(u) && MathF.Abs(p.W.X - 0.3f * u) < 0.06f, $"reversible: pitch {u:+0;-0} - {p.W.X:F3} rad/s");
+            var r = Heli(); r.Add(new Vector3(6f, 0f, 0f), Vector3.UnitY, cap, true);   // arm (0, 0, 6): roll, its lift change taken back by the main rotor
+            r.WCmd = new Vector3(0f, 0f, 0.3f * u); r.Fly(2f);
+            Check(MathF.Sign(r.W.Z) == MathF.Sign(u) && MathF.Abs(r.W.Z - 0.3f * u) < 0.06f && MathF.Abs(r.V.Y) < 0.05f, $"reversible: roll {u:+0;-0} - {r.W.Z:F3} rad/s, height kept (v {r.V.Y:F3} m/s)");
+        }
+        // 5. zero arm: no torque from it (it keeps the game's share)
+        {
+            var s = Heli(); s.Pos[1] = new Vector3(6f, 0f, 0f);   // on its own axis through the centre of mass
+            s.WCmd = new Vector3(0f, 0.5f, 0f); s.Fly(1f);
+            Check(MathF.Abs(s.F[1] - s.F0[1]) < 1f, $"reversible: zero arm - its force stays the game's ({s.F[1]:F0} / {s.F0[1]:F0} N)");
+            // ... strafing while the law steers: it still gives the game's thrust (translation), no torque
+            var t = Heli(); t.Pos[1] = new Vector3(6f, 0f, 0f); t.Input = new Vector3(-1f, 0f, 0f); t.WCmd = new Vector3(0f, 0.5f, 0f); t.Fly(1f);
+            Check(MathF.Abs(t.F[1] + cap) < 1f && MathF.Abs(t.F0[1] + cap) < 1f && t.V.X < -4f, $"reversible: zero arm, strafing while steered - the game's {t.F0[1]:F0} N kept ({t.F[1]:F0} N, v {t.V.X:F2} m/s)");
+        }
+        // 6. net force kept when the one-way thrusters can take it back
+        {
+            var s = Heli(); s.Add(Vector3.Zero, Vector3.UnitX, 20000f, false); s.Add(Vector3.Zero, -Vector3.UnitX, 20000f, false);
+            s.Fly(5f);
+            Check(MathF.Abs(s.Heading) < 1f * Deg && s.LastNetErr.Length() < 1f && s.LastPrio == 0f && MathF.Abs(s.V.X) < 0.01f,
+                $"reversible: with one-way side thrusters - heading held, net force kept (err {s.LastNetErr.Length():F2} N, drift {s.V.X:F3} m/s)");
+        }
+        // 7. two reversible thrusters share the load: fore / aft opposite and equal; side by side equal halves
+        {
+            var one = Heli(); one.Fly(5f);
+            var fa = Heli(); fa.Add(new Vector3(0f, 0f, -6f), Vector3.UnitX, cap, true); fa.Fly(5f);
+            Check(MathF.Abs(fa.F[1] + fa.F[2]) < 0.02f * MathF.Abs(one.F[1]) && MathF.Abs(fa.F[1] - 0.5f * one.F[1]) < 0.05f * MathF.Abs(one.F[1]) && MathF.Abs(fa.Heading) < 1f * Deg,
+                $"reversible: fore and aft share it ({fa.F[1]:F0} / {fa.F[2]:F0} N, one alone {one.F[1]:F0})");
+            var sb = Heli(); sb.Add(new Vector3(0f, 0f, 6f), Vector3.UnitX, cap, true); sb.Fly(5f);
+            Check(MathF.Abs(sb.F[1] - sb.F[2]) < 0.02f * MathF.Abs(one.F[1]) && MathF.Abs(sb.F[1] - 0.5f * one.F[1]) < 0.05f * MathF.Abs(one.F[1]),
+                $"reversible: side by side share it ({sb.F[1]:F0} + {sb.F[2]:F0} N)");
+        }
+        // 8. clamped at its maximum both ways
+        {
+            var s = Heli(); s.WCmd = new Vector3(0f, 5f, 0f); s.Fly(0.5f);
+            Check(s.F[1] <= cap + 1e-3f && s.F[1] > 0.95f * cap, $"reversible: clamped at its maximum ({s.F[1]:F0} N)");
+            s = Heli(); s.WCmd = new Vector3(0f, -5f, 0f); s.Fly(0.5f);
+            Check(s.F[1] >= -cap - 1e-3f && s.F[1] < -0.95f * cap, $"reversible: clamped at its maximum the other way ({s.F[1]:F0} N)");
+        }
+        // 9. a thruster WITHOUT the component: exactly as before (rev all false / null: bit-identical solve and share)
+        {
+            int n = 5; var rnd = new Random(7);
+            var arms = new Vector3[n]; var dirs = new Vector3[n]; var caps = new float[n];
+            for (int i = 0; i < n; i++) { var p = new Vector3((float)rnd.NextDouble() * 8 - 4, (float)rnd.NextDouble() * 8 - 4, (float)rnd.NextDouble() * 8 - 4); dirs[i] = i % 2 == 0 ? Vector3.UnitX : -Vector3.UnitY; arms[i] = Vector3.Cross(p, dirs[i]); caps[i] = 1000f + 500f * i; }
+            var capDir = new float[6]; for (int i = 0; i < n; i++) capDir[ThrustAllocator.DirIndex(dirs[i])] += caps[i];
+            var gf = new Vector3(800f, -1500f, 0f);
+            float[] a0 = new float[n], b0 = new float[n];
+            var ta = ThrustAllocator.GameShare(gf, arms, dirs, caps, capDir, a0, n);
+            var tb = ThrustAllocator.GameShare(gf, arms, dirs, caps, capDir, b0, n, new float[] { 1, 1, 1, 1, 1 });
+            float[] fa = (float[])a0.Clone(), fb = (float[])b0.Clone();
+            ThrustAllocator.Solve(new Vector3(300f, -200f, 900f), gf, arms, dirs, caps, a0, fa, new float[n], new float[n], 40f, n, 60, out float pa);
+            ThrustAllocator.Solve(new Vector3(300f, -200f, 900f), gf, arms, dirs, caps, b0, fb, new float[n], new float[n], 40f, n, 60, out float pb, new bool[n]);
+            Check(ta == tb && a0.SequenceEqual(b0) && fa.SequenceEqual(fb) && pa == pb, "reversible: a thruster without it - the share and solve exactly as before");
+        }
+        // 10. its push side (what a block draws): the sign of its force past SideShare of its maximum, else as it was
+        Check(ReversibleThrust.Side(1, -0.01f * cap, cap) == 1 && ReversibleThrust.Side(1, -0.05f * cap, cap) == -1 && ReversibleThrust.Side(-1, 0f, cap) == -1,
+            "reversible: its push side follows its force, with hysteresis through zero");
+        // 11. contact jitter never turns its game side; the pilot's reversals one turn each
+        {
+            var st = new ReversibleThrust.State { Sign = 1 };
+            for (int k = 0; k < 300; k++) ReversibleThrust.Step(ref st, ReversibleThrust.Demand(0f, true, k % 2 == 0 ? 0.01f : -0.01f, 0f, 5000f, cap), cap, false, 1f / 60f);
+            Check(st.Flips == 0, $"reversible: contact jitter never turns it ({st.Flips})");
+            var st2 = new ReversibleThrust.State { Sign = 1 }; int turns = 0;
+            for (int k = 0; k < 60; k++) { float u = (k / 10) % 2 == 0 ? 1f : -1f; if (ReversibleThrust.Step(ref st2, ReversibleThrust.Demand(u, true, 0f, 0f, 5000f, cap), cap, true, 1f / 60f)) turns++; }
+            Check(turns == 5, $"reversible: six pilot reversals - five turns ({turns})");
+        }
+    }
+
     static int Main(string[] args)
     {
         _verbose = args.Contains("verbose");
@@ -747,6 +1080,14 @@ static class Program
         AllocatorChecks();
         ControlAuditChecks();
         CellCentreChecks();
+        ReversibleChecks();
+        HeliLimiterChecks();
+        Console.WriteLine("1b. the vanilla atmospherics' Mach curve and the power ladder");
+        JetChecks();
+        InletChecks();
+        PowerLadderChecks();
+        PropulsorMachChecks();
+        RamjetChecks();
         Console.WriteLine("2. flight (60 Hz, the game's target gyros + the mod's thruster steering)");
         FlightChecks();
         Console.WriteLine("3. real ships (Tests/data/*.flight, dumped from the game)");

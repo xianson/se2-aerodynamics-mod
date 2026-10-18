@@ -2,5 +2,21 @@
   <ItemGroup>
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
     <Compile Include="$(Sim)\Core\CellCoords.cs" />
+    <!-- reversible thrusters' side law and the propulsor kinds -->
+    <Compile Include="$(Sim)\Propulsion\ReversibleThrust.cs" />
+    <Compile Include="$(Sim)\Propulsion\PropulsorKinds.cs" />
+    <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
+    <Compile Include="$(Sim)\Propulsion\RotorLimiter.cs" />
+    <!-- the vanilla atmospherics' Mach curve, the thrust profiles and the generated propulsor table (the power ladder) -->
+    <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />
+    <Compile Include="$(Sim)\Propulsion\JetCurve.cs" />
+    <!-- the inlet-angle factor (jet tolerant, ramjet unstart) -->
+    <Compile Include="$(Sim)\Propulsion\InletAngle.cs" />
+    <!-- the ramjet's law: thrust (Mach curve x density x inlet), the hydrogen burn's duty, the spike schedule -->
+    <Compile Include="$(Sim)\Propulsion\RamjetLaw.cs" />
+    <!-- (its burn window: the duty cycle shared with the solid rocket nozzles) -->
+    <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
+    <Compile Include="$(Sim)\Blocks\PropulsorBlocks.g.cs" />
   </ItemGroup>
 </Project>

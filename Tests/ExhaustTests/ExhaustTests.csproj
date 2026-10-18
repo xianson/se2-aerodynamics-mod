@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The ramjets' and solid rocket nozzles' EXHAUST (2026-10-17): the literal game-free law (Fx/ExhaustLaw.cs) - plume length vs thrust,
+       the ramjet's Mach gate, its shock diamonds vs Mach, the unstart pop / sputter / drop-out and relight, the vacuum balloon and the
+       smoke thinning, the burnout sputter, the smoke's lifetime / particle cap, no garbage per step and its cost per engine - and the
+       content gen_propulsor_defs.py wrote (gen_exhaust: every effect, emitter and light present and resolvable inside the mod, no
+       reference to a vanilla definition, the vanilla stamps, the authored numbers the code reads, the table's blocks and exhausts). -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Fx\ExhaustLaw.cs" />
+    <Compile Include="$(Sim)\Blocks\ExhaustBlocks.g.cs" />
+    <Compile Include="$(Sim)\Blocks\ExhaustBlocks.cs" />
+  </ItemGroup>
+</Project>

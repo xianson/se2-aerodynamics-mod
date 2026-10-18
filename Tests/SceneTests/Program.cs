@@ -36,6 +36,10 @@ static class Program
         ["AeroSurfaceSettingsComponent.All"] = (false, "the control surfaces' SERVER prefabs only (AeroBlockGuids.SurfaceServerPrefabs)"),
         ["AeroGearComponent.All"] = (false, "the gears' SERVER prefabs only (AeroBlockGuids.GearServerPrefabs)"),
         ["AeroAirbrakeComponent.All"] = (false, "the airbrakes' SERVER prefabs only (AeroBlockGuids.AirbrakeServerPrefabs)"),
+        ["AeroPropulsorComponent.All"] = (true, "the propulsors' server AND client prefabs (PropulsorBlocks.ServerPrefabs / ClientPrefabs; its _server flag)"),
+        ["AeroSolidSegmentComponent.All"] = (false, "the solid rocket segments' SERVER prefabs only (SolidRocketBlocks.SegmentServerPrefabs)"),
+        ["AeroRotorStrikeComponent.All"] = (false, "the striking propulsors' SERVER prefabs only (PropulsorBlocks.StrikeServerPrefabs: rotor strikes - the client reads the published blades)"),
+        ["AeroSolidNozzleComponent.All"] = (true, "the solid rocket nozzles' server AND client prefabs (SolidRocketBlocks.Nozzle*Prefabs; its _server flag; its loops read only its own fields)"),
     };
 
     static string Root()
@@ -63,7 +67,7 @@ static class Program
         string sim = Path.Combine(Root(), "Scripts", "Simulation");
         // (the dev harness copies are local and never committed: left out)
         var files = Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.EndsWith("AeroTestHarness.cs") && !f.EndsWith("AeroSpeedSpike.cs")).OrderBy(f => f).ToList();
+            .Where(f => !f.EndsWith("AeroSpeedSpike.cs")).OrderBy(f => f).ToList();
         var trees = files.ToDictionary(f => f, f => CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot());
         string Rel(string f) => Path.GetRelativePath(sim, f).Replace('\\', '/');
 
