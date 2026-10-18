@@ -8,7 +8,7 @@ over `BlockInfo` / `AeroContext` (no SE2 types) except the factory, which reads 
 | `IAeroBlockComponent.cs`, `ComponentForceResult.cs`, `BlockInfo.cs`, `IFaceOverride.cs` | The component contract, its result, a block's placement, and components that replace (not add to) the drag on their faces |
 | `AeroComponentRegistry.cs` | A grid's components: `EvaluateAll` (force and torque), face-override subtraction |
 | `BlockComponentFactory.cs`, `DefaultMappings.cs` | Which block gets which component (by definition GUID; vanilla atmospheric thrusters get an `AirIntake`); `IsSelfModelled` keeps such blocks out of the surface |
-| `AeroBlockGuids.cs` | The mod's block and prefab GUIDs (must match the "Aerodynamics Mod Blocks" definitions) |
+| `AeroBlockGuids.cs` | The mod's block and prefab GUIDs (must match the definitions in `Assets/Aero/` - the former "Aerodynamics Mod Blocks") |
 | `ControlSurface.cs`, `ControlSurfaceGeometry.cs`, `IControlSurfaceSettings.cs`, `LocalAeroConditions.cs` | Deflectable surfaces (1x1, 3x3x1): thin-airfoil lift with stall and Mach, what they sit in, their terminal settings, the local air at a block |
 | `Airbrake.cs`, `GearDrag.cs` | The airbrakes' and retractable gears' drag (state from the gear / airbrake components) |
 | `AirIntake.cs`, `AtmosphericScoop.cs` | Ram intake drag and mass flow, the scoop |

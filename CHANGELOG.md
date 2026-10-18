@@ -9,6 +9,21 @@ A big cleanup of the scripts (feature folders, no behaviour change of its own), 
 structural failure, drag on debris, AeroApi versions 7 and 8 and about 35 bug fixes, several of which change how ships
 fly.
 
+### One mod: the blocks are in the Aerodynamics Mod (2026-10-17)
+
+- The companion mod **Aerodynamics Mod Blocks** is folded in: its block definitions, models and textures (control
+  surfaces 1x1 and 3x3x1, retractable gear, airbrakes 1x1 and 3x3x3, the propulsors - turboprops, ducted fans, rotors,
+  ramjets, solid rockets - the scoop, the build-menu groups) and its game-wide overrides (`PhysicsSessionConfiguration`,
+  `ThrustClassesConfiguration`, the four hydrogen thrusters) are now this mod's `Assets/Aero/` and `Assets/System/`.
+  Every definition and asset keeps its GUID, so ships keep their blocks. (The `CharacterPhysics` override both mods had
+  is kept once.)
+- **Existing worlds:** a world that lists "Aerodynamics Mod Blocks" does not load once that mod's folder is gone (the
+  game refuses a world whose local mod it cannot find), and should not load both (the same content twice). Untick
+  "Aerodynamics Mod Blocks" in the world's mod list (Load -> the world -> Mods) before loading it, or use
+  `tools/blocks_merge/phase_b.sh worlds` - [`docs/BLOCKS_MERGE.md`](docs/BLOCKS_MERGE.md).
+- For modders: the block GUIDs are unchanged; a mod that listed "Aerodynamics Mod Blocks" as a dependency now needs only
+  the Aerodynamics Mod.
+
 ### New features
 
 - **Settings in game.** Pause menu -> Settings -> **Mods**: one tab shared with the Orbital Mod, this mod's section
