@@ -54,8 +54,9 @@ public static partial class AeroApi
         FsLoadFactor = 39, FsStallState = 40, FsStallMargin = 41, FsStallLiftShare = 42, FsStallG = 43, FsLoacState = 44,
         FsLoacRatio = 45, FsMaxUtil = 46, FsMaxSkinK = 47, FsHeatShare = 48, FsMaxWingStrain = 49, FsSteerCap = 50,
         FsControlValid = 51, FsControlDemand = 52, FsAware = 55, FsGyroTorque = 56, FsThrusterTorque = 59, FsReach = 62,
-        FsNeed = 65, FsDelivered = 68, FsSurfacesCommanded = 71, FsSurfacesSaturated = 72, FsApplied = 73, FsEntryStrength = 74;
-    internal const int FlightStateLength = 75;
+        FsNeed = 65, FsDelivered = 68, FsSurfacesCommanded = 71, FsSurfacesSaturated = 72, FsApplied = 73, FsEntryStrength = 74,
+        FsGyroSaturation = 75, FsGyroTorqueShare = 76;
+    internal const int FlightStateLength = 77;
 
     static readonly string[] FlightNames =
     {
@@ -70,6 +71,7 @@ public static partial class AeroApi
         "GyroTorqueX", "GyroTorqueY", "GyroTorqueZ", "ThrusterTorqueX", "ThrusterTorqueY", "ThrusterTorqueZ",
         "ReachX", "ReachY", "ReachZ", "NeedX", "NeedY", "NeedZ", "DeliveredX", "DeliveredY", "DeliveredZ",
         "SurfacesCommanded", "SurfacesSaturated", "AeroApplied", "EntryStrength",
+        "GyroSaturation", "GyroTorqueShare",
     };
 
     /// <summary>(version 7) The flight state's value names, in index order (a new array each call: call it once). The

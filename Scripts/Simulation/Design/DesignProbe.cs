@@ -125,7 +125,8 @@ internal static class DesignProbe
         aero.RefreshFxGroup();   // (the joint search, here on the server grid's own thread - it ran from the caller's)
         var s = new DesignSnapshot { At = now, Pos = wt.Position, Orient = wt.Orientation, Group = aero.FxGroup };
         s.HasMass = GridPhysics.TryGetMassProperties(aero.Data, out s.Mass, out s.Com);
-        s.GyroMax = GridPhysics.TryGetGyroMaxTorque(aero.Data);
+        // (the gyros' budget as scaled - Gyros.TorqueScale - but not as saturated this second: a design figure, GyroBalance)
+        { float gm = GridPhysics.TryGetGyroMaxTorque(aero.Data); s.GyroMax = gm > 0f ? GyroBalance.Unfaded(gm, aero.GyroFade) : gm; }
         var cache = aero._thrusterCache;
         int n = cache.Count;
         if (n > 0)

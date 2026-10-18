@@ -4,6 +4,7 @@
        store as SettingsTests compiles them, over its Stubs.cs. Program.cs is the Orbital mod's (synced). No Avalonia, no game. -->
   <ItemGroup>
     <Compile Include="$(Sim)\Runtime\AeroSettings.cs" />
+    <Compile Include="$(Sim)\Propulsion\GyroBalance.cs" />
     <Compile Include="$(Sim)\Runtime\AeroSettings.Store.cs" />
     <Compile Include="$(Sim)\Launch\QuickLaunchRules.cs" />
     <Compile Include="$(Sim)\Core\IGridAccessor.cs" />

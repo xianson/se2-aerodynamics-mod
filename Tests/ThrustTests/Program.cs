@@ -1253,6 +1253,8 @@ static partial class Program
         PowerLadderChecks();
         PropulsorMachChecks();
         RamjetChecks();
+        Console.WriteLine("1c. the gyro rebalance (scale, saturation)");
+        GyroBalanceChecks();
         Console.WriteLine("2. flight (60 Hz, the game's target gyros + the mod's thruster steering)");
         FlightChecks();
         Console.WriteLine("3. real ships (Tests/data/*.flight, dumped from the game)");

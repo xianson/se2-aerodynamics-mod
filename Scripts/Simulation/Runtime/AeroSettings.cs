@@ -105,6 +105,9 @@ public static partial class AeroSettings
         B("Aero.ThrustTorque", "world", false, () => ThrustTorque.Enabled, v => ThrustTorque.Enabled = v,
             "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the game's own thrust, untouched.")
             .Ui("Off-centre thrust turns ships", GFlight, Basic);
+        F("Gyros.TorqueScale", "world", 0.05, 1, false, () => GyroBalance.TorqueScale, v => GyroBalance.TorqueScale = (float)v,
+            "Every gyroscope's torque, times this (1: vanilla). The game's own gyros made weaker, so the air, the control surfaces and off-centre thrust matter: a lopsided ship or a stall is no longer held straight by gyros alone.")
+            .Ui("Gyro strength", GFlight, Basic, "×", 0.05);
         B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
             "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.")
             .Ui("Wind", GFlight, Basic);
@@ -129,6 +132,12 @@ public static partial class AeroSettings
         B("Physics.HonestDampeners", "world", false, () => HonestHold.Enabled, v => HonestHold.Enabled = v,
             "Dampeners hold a ship up with real thrust against the gravity it really feels (the world's gravity multiplier included), and super dampeners brake with the thrusters' real thrust. A ship then needs thrust for its full weight to hover, and what holds it up is not there to climb with. Off: the game's own dampeners (they cancel twice the gravity with one weight of thrust).")
             .Ui("Honest dampeners", GFlight, Advanced);
+        B("Gyros.Saturation", "world", false, () => GyroBalance.Saturation, v => GyroBalance.Saturation = v,
+            "Gyroscopes store the spin they give: holding a steady turn or a steady push fills them and their torque fades (to a quarter, smoothly); a light load lets them recover. Off: gyros never tire.")
+            .Ui("Gyro saturation", GFlight, Advanced);
+        F("Gyros.SaturationSeconds", "world", 2, 120, false, () => GyroBalance.SaturationSeconds, v => GyroBalance.SaturationSeconds = (float)v,
+            "Gyro saturation: seconds of full gyro torque in one direction before they are full (they start fading at half).")
+            .Ui("Gyro momentum capacity", GFlight, Advanced, "s", 1);
 
         // ── structure and damage ──
         B("Structure.Loads", "world", false, () => StructureLoads.Enabled, v => StructureLoads.Enabled = v,

@@ -21,6 +21,9 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Flight controls through real parts:** control surfaces move with your steering. Gyros, thrusters, surfaces and
   rotors fly the ship together, aware of the air. Thrust acts where each thruster sits, and nothing turns the ship by
   magic.
+- **Gyros that don't cheat the air:** gyros give a quarter of their vanilla torque by default (`Gyros.TorqueScale`), so
+  lopsided thrust, the air and your control surfaces matter; they still trim and steady the ship and lead at low speed.
+  Held hard in one direction they saturate and fade, and recover when eased off (`Gyros.Saturation`).
 - **Honest dampeners:** the game's dampeners delete gravity for free (a ship that falls with them off floats and
   climbs with them on). Here they hold the ship up with real thrust against the gravity it really feels (2x the planet's
   pull in vanilla), so **a ship needs thrust for twice its planet weight to hover**, and super dampeners brake with real

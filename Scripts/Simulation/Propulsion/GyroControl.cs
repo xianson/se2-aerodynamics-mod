@@ -21,7 +21,8 @@ namespace AeroMod;
 ///  - Given: the mod's law's gyro torque, held to what the game's gyros can give (Reach: its own budget - the smaller of
 ///    MaximumTorqueLimiterCoefficient x mass^2 and MaxTorque x TorqueDampenerPowerMultiplier, x the pilot's per-axis
 ///    multiplier, the grid's bounds weighting - the game's ComputeTorqueTarget's numbers at full error).
-/// The gyros' MaxTorque is never written (it is replicated, and at 0 the cockpit hides the aim reticle).
+/// The grid's MaxTorqueData is never written (it is replicated, the game adds and subtracts into it, and at 0 the cockpit
+/// hides the aim reticle); the gyros' own maxima are scaled at the source instead (GyroBalance, AeroGridComponent.Gyros.cs).
 /// </summary>
 public static class GyroControl
 {
@@ -102,6 +103,18 @@ public static class GyroControl
         Vector3 v = new Vector3(num) * perAxis;
         Vector3 w = Weights(in bb);
         return Vector3.Lerp(v * w, v, MathHelper.Saturate((w.Min() - 0.1f) / 0.15f));
+    }
+
+    /// <summary>The target law's full torque (N m) for gyros summing maxTorque (N m) on this grid: ComputeTorqueTarget's
+    /// min(MaximumTorqueLimiterCoefficient x mass^2, MaxTorque x TorqueDampenerPowerMultiplier) - GyroBalance's store size.
+    /// 0: not readable.</summary>
+    public static float Budget(DEntityContext data, float maxTorque)
+    {
+        if (!(maxTorque > 0f) || !data.TryGet<MovementData>(out var md) || !data.TryGet<RigidBodyMassProperties>(out var mass)) return 0f;
+        var rot = md.Definition.Value.TargetGyroRotation;
+        float m = mass.InvMass > 0f ? 1f / mass.InvMass : 0f;
+        float b = MathF.Min(rot.MaximumTorqueLimiterCoefficient * m * m, maxTorque * rot.TorqueDampenerPowerMultiplier);
+        return float.IsFinite(b) && b > 0f ? b : 0f;
     }
 
     /// <summary>The game's ComputeGridBoundsWeights (gamma 1.5): 1 on a cube, less about a long grid's short axes.</summary>
