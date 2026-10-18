@@ -141,6 +141,7 @@ static partial class Program
             Console.WriteLine($"allocation cost, 7 surfaces: mean {mean:F1} us, p99 {times[(int)(reps * 0.99)]:F1} us, p99.9 {times[(int)(reps * 0.999)]:F1} us, worst {worst:F1} us per grid per tick, {bytes / (double)reps:F0} B allocated per tick");
         }
         SectionTests(r);
+        RegistryTests(r);
         Console.WriteLine($"ControlSurfaceTests: {_checks - _fails}/{_checks} passed ({reversed} of 4000 placements had the air over the trailing edge)");
         return _fails == 0 ? 0 : 1;
     }

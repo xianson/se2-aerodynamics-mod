@@ -29,6 +29,8 @@ static partial class Program
                 case "wing": { L.WingF.Add(V(p, 1)); var cells = new List<Vector3I>(); for (int i = 4; i + 2 < p.Length; i += 3) cells.Add(new Vector3I(int.Parse(p[i]), int.Parse(p[i + 1]), int.Parse(p[i + 2]))); L.WingCells.Add(cells); break; }
                 case "thr": L.ThrBlock.Add(int.Parse(p[1])); L.ThrF.Add(V(p, 2)); break;
                 case "gyro": L.GyroBlock.Add(int.Parse(p[1])); break;
+                case "comp": L.CompF.Add(V(p, 1)); L.CompP.Add(V(p, 4)); L.CompT.Add(V(p, 7)); L.CompAt.Add(V(p, 10)); break;   // (2026-10-17: a block component's air at its block)
+                case "load": L.LoadBlock.Add(int.Parse(p[1])); L.LoadF.Add(V(p, 2)); L.LoadP.Add(V(p, 5)); L.LoadT.Add(V(p, 8)); L.LoadEngine.Add(p[11] == "1"); break;   // (an extra block load)
             }
         }
         return L;

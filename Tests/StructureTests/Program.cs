@@ -1989,6 +1989,144 @@ static class Program
         finally { ShipStructure.RigidThrusters = rig0; }
     }
 
+    /// <summary>COMPONENT LOADS AT THEIR BLOCKS (StructureEval.ComponentLoadsAtBlocks, 2026-10-17, the user: "yes do it" - each
+    /// block component's air on its own block, like the wings'). (a) a wing - six 0.5 m blocks off a fuselage - with a
+    /// control surface hung at the trailing edge of its 5th block, deflected: 20 kN of lift on the surface, the wing's own
+    /// lift over its cells, the hull's drag. (b) an airbrake hung on a pylon under the fuselage, fully open: 30 kN of drag.
+    /// Before, the surface's lift and the airbrake's drag were spread over the windward faces; now each loads its own
+    /// mount - the hinge joint, the pylon joint. Either way the ship's total force and moment are the same (to float
+    /// tolerance); a component whose block is not in the structure falls back to the spread (counted); an extra block load
+    /// (PublishBlockLoad) adds to the total at its block.</summary>
+    static void ComponentLoads()
+    {
+        bool on0 = StructureEval.ComponentLoadsAtBlocks;
+        try
+        {
+            var travel = new Vector3(0, 0, -1);   // (the ship flies along -z: the air comes from -z)
+            (Vector3 F, Vector3 M) Totals(ShipStructure s)
+            {
+                Vector3 F = Vector3.Zero, M = Vector3.Zero;
+                for (int i = 0; i < s.Count; i++) { F += s.ExtForce[i]; M += Vector3.Cross(s.Center[i] - s.Com, s.ExtForce[i]) + s.ExtMoment[i]; }
+                return (F, M);
+            }
+            float JointUtil(ShipStructure s, int a, int b)
+            {
+                float u = 0f;
+                for (int k = 0; k < s.ContactCount; k++) { s.ContactBlocks(k, out int x, out int y); if ((x == a && y == b) || (x == b && y == a)) u = MathF.Max(u, s.ContactUtil[k]); }
+                return u;
+            }
+            (float ratio, float u0, float u1, Vector3 F, Vector3 M, Vector3 F0, Vector3 M0) Run(TShip sh, StructureEval.Loads L, int a, int b)
+            {
+                var s = sh.S;
+                StructureEval.ComponentLoadsAtBlocks = false;
+                StructureEval.Apply(s, sh.H, L); var (f0, m0) = Totals(s);
+                s.SolveFree(Vector3.Zero); float u0 = JointUtil(s, a, b);
+                StructureEval.ComponentLoadsAtBlocks = true;
+                StructureEval.Apply(s, sh.H, L); var (f1, m1) = Totals(s);
+                s.SolveFree(Vector3.Zero); float u1 = JointUtil(s, a, b);
+                return (u1 / MathF.Max(u0, 1e-12f), u0, u1, f1, m1, f0, m0);
+            }
+            bool Same(Vector3 x, Vector3 y, float scale) => (x - y).Length() <= 1e-5f * scale + 1e-3f;
+
+            // (a) the fuselage (2 x 2 x 6 blocks, heavy), the wing along +x off its last row (y = 0, z = 5, one block chord);
+            //     the control surface at the wing's trailing edge (z = 6, behind its 5th block) - the hinge's plane cuts
+            //     nothing else (a plane through the fuselage too gives the surface's side's load to the member nearest each
+            //     block on the lighter side - the slices' rule, ShipStructure.Sections - not to the hinge alone)
+            {
+                var sh = new TShip();
+                for (int z = 0; z < 6; z++) for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) sh.Block(x, y, z, 400f);
+                var wing = new int[7];
+                for (int x = 2; x <= 7; x++) wing[x - 1] = sh.Block(x, 0, 5, SmallMass);
+                int flap = sh.Block(6, 0, 6, SmallMass);   // (behind wing[5], x = 6)
+                sh.Build(heat: true);
+                var s = sh.S; sh.H.Pass(travel);
+                var L = new StructureEval.Loads { AeroCom = s.Com, AirVel = travel * 100f, CellSize = 0.25f, CellOffset = 0.5f };
+                // the wing's lift over its cells (the cells' centres: offset 0.5)
+                var cells = new List<Vector3I>(); for (int x = 4; x <= 15; x++) for (int z = 10; z <= 11; z++) cells.Add(new Vector3I(x, 0, z));
+                var wingF = new Vector3(0, 8000f, 400f);
+                L.WingCells.Add(cells); L.WingF.Add(wingF);
+                Vector3 wingM = Vector3.Zero; foreach (var c in cells) wingM += Vector3.Cross(new Vector3((c.X + 0.5f) * 0.25f, (c.Y + 0.5f) * 0.25f, (c.Z + 0.5f) * 0.25f) - s.Com, wingF / cells.Count);
+                // the surface's lift and drag at its centre of pressure (a quarter chord into it), a small hinge moment of its own
+                var flapF = new Vector3(0, 20000f, 900f); var flapP = s.Center[flap] + new Vector3(0, 0, -0.125f); var flapT = new Vector3(-150f, 0, 0);
+                L.CompF.Add(flapF); L.CompP.Add(flapP); L.CompT.Add(flapT); L.CompAt.Add(s.Center[flap]);
+                var hullF = new Vector3(0, 0, 1500f);
+                L.AeroF = hullF + wingF + flapF;
+                L.AeroT = wingM + Vector3.Cross(flapP - s.Com, flapF) + flapT;
+                int placed0 = StructureEval.CompPlaced;
+                var r = Run(sh, L, flap, wing[5]);
+                float scale = L.AeroF.Length() * 3f;
+                Console.WriteLine($"   component loads (a): the control surface's hinge joint utilisation {r.u0:F3} spread -> {r.u1:F3} at its block (x{r.ratio:F1}); totals differ {(r.F - r.F0).Length():E2} N, {(r.M - r.M0).Length():E2} N m");
+                Check(Same(r.F, r.F0, scale) && Same(r.M, r.M0, scale), $"component loads (a): the total force and moment unchanged (force {r.F.Length():F3} vs {r.F0.Length():F3} N, moment {r.M.Length():F3} vs {r.M0.Length():F3} N m)");
+                Check(Same(r.F, L.AeroF, scale), $"component loads (a): the blocks carry the air's whole force ({r.F.Length():F1} of {L.AeroF.Length():F1} N)");
+                Check(r.ratio > 3f, $"component loads (a): the control surface's hinge joint carries its lift - utilisation x{r.ratio:F1} over the spread");
+                Check(StructureEval.CompPlaced > placed0, "component loads (a): the surface was put on its block");
+                // its block is not in the structure (a point in no block): the spread takes it, counted, totals the same
+                int missed0 = StructureEval.CompMissed;
+                L.CompAt[0] = new Vector3(50f, 50f, 50f);
+                var r2 = Run(sh, L, flap, wing[5]);
+                Check(StructureEval.CompMissed > missed0 && MathF.Abs(r2.ratio - 1f) < 1e-4f && Same(r2.F, r2.F0, scale) && Same(r2.M, r2.M0, scale), $"component loads (a): a component off the structure falls back to the spread (missed {StructureEval.CompMissed - missed0}, utilisation x{r2.ratio:F3})");
+                L.CompAt[0] = s.Center[flap];
+                // an extra block load (PublishBlockLoad): on top of the air, at its block
+                var extra = new Vector3(0, 0, -5000f);
+                L.LoadBlock.Add(flap); L.LoadF.Add(extra); L.LoadP.Add(s.Center[flap]); L.LoadT.Add(Vector3.Zero); L.LoadEngine.Add(false);
+                StructureEval.Apply(s, sh.H, L); var (fe, _) = Totals(s);
+                Check(Same(fe, L.AeroF + extra, scale), $"component loads (a): an extra block load adds to the total ({fe.Z:F1} N along z, want {(L.AeroF + extra).Z:F1})");
+                L.LoadEngine[0] = true; StructureEval.ThrustLoads = false;
+                try { StructureEval.Apply(s, sh.H, L); var (fn, _) = Totals(s); Check(Same(fn, L.AeroF, scale), "component loads (a): an engine's extra load is off with Structure.ThrustLoads"); }
+                finally { StructureEval.ThrustLoads = true; }
+            }
+
+            // (b) the airbrake (one 0.5 m block) on a pylon under a 1.5 x 1.5 m fuselage's 4th row, fully open: 30 kN of drag
+            {
+                var sh = new TShip();
+                for (int z = 0; z < 6; z++) for (int x = 0; x < 3; x++) for (int y = 0; y < 3; y++) sh.Block(x, y, z, 400f);
+                int pylon = sh.Block(1, -1, 3, SmallMass);
+                int brake = sh.Block(1, -2, 3, SmallMass);
+                sh.Build(heat: true);
+                var s = sh.S; sh.H.Pass(travel);
+                var L = new StructureEval.Loads { AeroCom = s.Com, AirVel = travel * 100f, CellSize = 0.25f, CellOffset = 0.5f };
+                var brakeF = new Vector3(0, 0, 30000f); var brakeP = s.Center[brake];
+                L.CompF.Add(brakeF); L.CompP.Add(brakeP); L.CompT.Add(Vector3.Zero); L.CompAt.Add(brakeP);
+                var hullF = new Vector3(0, 0, 2000f);
+                L.AeroF = hullF + brakeF; L.AeroT = Vector3.Cross(brakeP - s.Com, brakeF);
+                var r = Run(sh, L, pylon, brake);
+                float scale = L.AeroF.Length() * 3f;
+                Console.WriteLine($"   component loads (b): the airbrake's pylon joint utilisation {r.u0:F3} spread -> {r.u1:F3} at its block (x{r.ratio:F1}); totals differ {(r.F - r.F0).Length():E2} N, {(r.M - r.M0).Length():E2} N m");
+                Check(Same(r.F, r.F0, scale) && Same(r.M, r.M0, scale), $"component loads (b): the total force and moment unchanged (differ {(r.F - r.F0).Length():E2} N, {(r.M - r.M0).Length():E2} N m)");
+                Check(r.ratio > 2f, $"component loads (b): the airbrake's mount joint carries its drag - utilisation x{r.ratio:F1} over the spread");
+            }
+        // (c) the world's drag / lift multipliers (AeroTuning): each component scaled as a part of the total
+        //     (AeroTuning.ScalePart) - the scaled parts add up to the scaled total, force and moment
+        {
+            float dm0 = AeroTuning.DragMultiplier, lm0 = AeroTuning.LiftMultiplier;
+            try
+            {
+                var rnd = new Random(17); float worstF = 0f, worstM = 0f;
+                Vector3 R(float k) => new Vector3((float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() - 0.5f) * k;
+                for (int trial = 0; trial < 200; trial++)
+                {
+                    AeroTuning.DragMultiplier = 0.2f + 2f * (float)rnd.NextDouble(); AeroTuning.LiftMultiplier = 0.2f + 2f * (float)rnd.NextDouble();
+                    var com = R(4f); var vel = trial % 10 == 0 ? Vector3.Zero : R(400f);
+                    int nc = 1 + rnd.Next(6);
+                    var f = new Vector3[nc]; var p = new Vector3[nc]; var m = new Vector3[nc];
+                    Vector3 F = Vector3.Zero, T = Vector3.Zero;
+                    for (int i = 0; i < nc; i++) { f[i] = R(40000f); p[i] = R(20f); m[i] = R(5000f); F += f[i]; T += Vector3.Cross(p[i] - com, f[i]) + m[i]; }
+                    float tk = AeroTuning.TorqueScale(F, vel);
+                    var Fs = F; var Ts = T; AeroTuning.Scale(ref Fs, ref Ts, vel);
+                    Vector3 sf = Vector3.Zero, sm = Vector3.Zero;
+                    for (int i = 0; i < nc; i++) { var fi = f[i]; var mi = m[i]; AeroTuning.ScalePart(ref fi, ref mi, p[i], com, tk, vel); sf += fi; sm += Vector3.Cross(p[i] - com, fi) + mi; }
+                    worstF = MathF.Max(worstF, (sf - Fs).Length() / MathF.Max(Fs.Length(), 1f));
+                    worstM = MathF.Max(worstM, (sm - Ts).Length() / MathF.Max(Ts.Length(), 1f));
+                }
+                Console.WriteLine($"   component loads (c): the multipliers on the parts vs the total - worst relative difference force {worstF:E1}, moment {worstM:E1} (200 random sets)");
+                Check(worstF < 1e-5f && worstM < 1e-5f, $"component loads (c): the scaled components add up to the scaled total (force {worstF:E1}, moment {worstM:E1} relative)");
+            }
+            finally { AeroTuning.DragMultiplier = dm0; AeroTuning.LiftMultiplier = lm0; }
+        }
+        }
+        finally { StructureEval.ComponentLoadsAtBlocks = on0; }
+    }
+
     static int Main()
     {
         Classes();
@@ -1997,7 +2135,7 @@ static class Program
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
         TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates(); RigidThrusters();
-        BalanceUnderEdits(); EntryBraking();
+        BalanceUnderEdits(); EntryBraking(); ComponentLoads();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
         return _fails == 0 ? 0 : 1;

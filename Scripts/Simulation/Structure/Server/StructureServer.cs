@@ -192,6 +192,7 @@ public partial class AeroGridComponent
         var wings = _model?.Wings; var wf = _model?.LastWingForces;
         if (wings != null && wf != null && wf.Count == wings.Count)
             for (int i = 0; i < wings.Count; i++) { if (wings[i].Cells == null) continue; L.WingCells.Add(wings[i].Cells); L.WingF.Add((wf[i].LiftForce + wf[i].InducedDrag) * _model.WingRemaining(i)); }
+        SnapComponentLoads(L, airVelLocal);   // (each block component's air and drag patch, for its own block: StructureServer.BlockLoads)
         var blocks = build?.Blocks ?? _stBlocks;
         var index = build != null ? IndexOf(build.Blocks) : _stIndexOf;
         if (index != null)
@@ -208,6 +209,7 @@ public partial class AeroGridComponent
             }
             foreach (var g in _gyroCache) if (g.GyroEntity != null && index.TryGetValue(g.GyroEntity, out int gi)) L.GyroBlock.Add(gi);
         }
+        SnapBlockLoads(L, index);   // (the extra block loads published this tick: PublishBlockLoad)
         // the blocks' health: every IntegrityEvery s (and after a rebuild) - a pass over every block, the costliest part
         // of the snapshot; between, the last
         _stIntegAge += evalDt;

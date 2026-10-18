@@ -75,8 +75,11 @@ public class AeroComponentRegistry
         Vector3 totalForce = Vector3.Zero;
         Vector3 totalTorque = Vector3.Zero;
 
+        ResultCount = 0;
         float speed = ctx.Speed;
         if (speed < 0.01f) return (totalForce, totalTorque);
+        int nc = _components.Count;
+        if (ResultForce.Length < nc) { int cap = Math.Max(nc, 2 * ResultForce.Length); ResultForce = new Vector3[cap]; ResultPoint = new Vector3[cap]; ResultMoment = new Vector3[cap]; ResultAt = new Vector3[cap]; }
 
         Vector3 vHat = ctx.Velocity / speed;
         float q = (float)ctx.Atmosphere.GetDynamicPressure(speed);
@@ -92,18 +95,35 @@ public class AeroComponentRegistry
             var result = comp.Compute(local);
 
             // Face override: subtract estimated Newtonian force on owned faces
+            Vector3 f0 = totalForce, t0 = totalTorque;
             if (comp is IFaceOverride faceOverride)
             {
                 SubtractFaceForces(ctx, faceOverride.OwnedCells, vHat, q, cdBluff, streamlining,
                     ref totalForce, ref totalTorque);
             }
+            Vector3 df = totalForce - f0, dt = totalTorque - t0;
 
             totalForce += result.Force;
             totalTorque += result.TorqueAbout(ctx.CenterOfMass);
+
+            // (this component's whole share - its own force, and the hull pressure on its faces taken off - for the structure,
+            //  ResultForce; the moment about its point: its direct torque and the faces' about it. The totals above unchanged)
+            var p = result.ApplicationPoint;
+            ResultForce[i] = result.Force + df; ResultPoint[i] = p; ResultAt[i] = comp.Position;
+            ResultMoment[i] = result.DirectTorque + dt + Vector3.Cross(ctx.CenterOfMass - p, df);
         }
+        ResultCount = nc;
 
         return (totalForce, totalTorque);
     }
+
+    /// <summary>EACH COMPONENT'S AIR, the last EvaluateAll's (2026-10-17, the structure puts it on the component's own block -
+    /// StructureEval.ComponentLoadsAtBlocks): per component in list order [0, ResultCount) - its force (N; with the hull
+    /// pressure on its own faces it takes off), the point it acts at (m), its moment about that point (N m), and its block's
+    /// centre (its Position: the structure finds the block by it). Grid-local; their sum is EvaluateAll's total. 0 when it
+    /// returned early. Simulation thread; the arrays grow with the list, never per tick.</summary>
+    internal int ResultCount;
+    internal Vector3[] ResultForce = Array.Empty<Vector3>(), ResultPoint = Array.Empty<Vector3>(), ResultMoment = Array.Empty<Vector3>(), ResultAt = Array.Empty<Vector3>();
 
     /// <summary>
     /// Subtract estimated Newtonian Cp force on owned cells' surface faces.

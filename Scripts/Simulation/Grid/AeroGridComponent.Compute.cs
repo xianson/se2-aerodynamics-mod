@@ -247,7 +247,7 @@ public partial class AeroGridComponent
                 LastResult.DynamicPressure);
         }
         // ── Other mods' drag (AeroApi.SetDrag): airframe air - in the result, not the control surfaces' torque ──
-        LastPatchForce = LastPatchTorque = Vector3.Zero;
+        LastPatchForce = LastPatchTorque = Vector3.Zero; PatchLoadCount = 0;
         List<DragPatch> patches = _dragPatches;
         if (patches.Count > 0)
         {

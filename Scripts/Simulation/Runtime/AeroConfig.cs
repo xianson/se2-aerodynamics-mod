@@ -36,6 +36,38 @@ public static class AeroTuning
         force = drag * dm + lift * lm;
         torque *= d + l > 1e-6f ? (d * dm + l * lm) / (d + l) : dm;
     }
+
+    /// <summary>Scale's factor on the torque for this (unscaled) force - its drag and lift parts' weights (2026-10-17: the
+    /// structure scales each block component's moment by the total's, StructureServer.BlockLoads).</summary>
+    internal static float TorqueScale(Vector3 force, Vector3 velocityLocal)
+    {
+        float dm = DragMultiplier, lm = LiftMultiplier;
+        float v2 = velocityLocal.LengthSquared();
+        if (v2 < 1e-6f) return dm;
+        var t = velocityLocal / MathF.Sqrt(v2);
+        Vector3 drag = Vector3.Dot(force, t) * t, lift = force - drag;
+        float d = drag.Length(), l = lift.Length();
+        return d + l > 1e-6f ? (d * dm + l * lm) / (d + l) : dm;
+    }
+
+    /// <summary>Scale on a PART of a total (a block component's force at its point, its moment about that point - the
+    /// structure's, 2026-10-17), so the scaled parts add up to the scaled total: the force's drag part times DragMultiplier,
+    /// its lift part times LiftMultiplier (linear in the force); its moment about the centre of mass com times the TOTAL's
+    /// torque factor torqueScale (TorqueScale of the total force), written back about the point.</summary>
+    internal static void ScalePart(ref Vector3 force, ref Vector3 moment, Vector3 point, Vector3 com, float torqueScale, Vector3 velocityLocal)
+    {
+        float dm = DragMultiplier, lm = LiftMultiplier;
+        var mc = Vector3.Cross(point - com, force) + moment;
+        float v2 = velocityLocal.LengthSquared();
+        if (v2 < 1e-6f) force *= dm;
+        else
+        {
+            var t = velocityLocal / MathF.Sqrt(v2);
+            Vector3 drag = Vector3.Dot(force, t) * t;
+            force = drag * dm + (force - drag) * lm;
+        }
+        moment = mc * torqueScale - Vector3.Cross(point - com, force);
+    }
 }
 
 /// <summary>

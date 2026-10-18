@@ -191,6 +191,9 @@ public static partial class AeroSettings
         B("Structure.GyroLoads", "world", false, () => StructureEval.GyroLoads, v => StructureEval.GyroLoads = v,
             "Gyroscopes' torque loads the structure (their mounts, and the turn through the ship). Off: gyros never strain a ship.")
             .Ui("Gyro loads", GStructure, Advanced);
+        B("Structure.ComponentLoads", "world", false, () => StructureEval.ComponentLoadsAtBlocks, v => StructureEval.ComponentLoadsAtBlocks = v,
+            "Each block component's air loads its own block: a control surface's lift its hinge, an open airbrake's drag its mount, a gear leg's, an intake's or scoop's drag, another mod's drag patch at its point - taken off the rest of the air, which is spread over the windward faces. The ship's total load is unchanged; only where it acts. Off: the components' air spread over the windward faces with the hull's (before 2026-10-17).")
+            .Ui("Component loads at their blocks", GStructure, Advanced);
         B("Structure.Contacts", "world", false, () => StructureContactLoads.Enabled, v => StructureContactLoads.Enabled = v,
             "Collisions and touchdowns load the structure (the contact's push, from the ship's change of momentum). Off: only flight loads it.")
             .Ui("Impact and landing loads", GStructure, Advanced);
