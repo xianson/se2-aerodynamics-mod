@@ -68,7 +68,7 @@ public partial class AeroGridComponent
         private const int GlideEnd = 2400;          // 40 s
         private const float PitchRate = 0.1f;
         // The aircraft's own axes, grid-local (a grid's -Z is not its nose: the Jetliner's is +X, and the rig flew it
-        // sideways): the nose along the largest wing's chord, away from its aero centre (behind the CoM on a stable
+        // sideways): the nose along the largest wing's chord, away from its mid chord (behind the CoM on a stable
         // aircraft); up along its normal, as it sits; pitch-up rotation about nose x up. Without wings: -Z, +Y.
         private static Vector3 _noseL = new Vector3(0f, 0f, -1f), _upL = new Vector3(0f, 1f, 0f);
         private static Vector3 PitchAxisL => Vector3.Cross(_noseL, _upL);       // rad/s per unit of stick (0.5 stick: ~3 deg/s)
@@ -273,7 +273,7 @@ public partial class AeroGridComponent
             var wl = aero._model?.Wings;
             if (wl != null)
                 foreach (var w in wl)
-                    Log.Default?.Info($"[FLIGHT] {w} normal={w.Normal} span axis={w.SpanAxis} aero centre - CoM={w.AeroCenter - com} (CoM {com})");
+                    Log.Default?.Info($"[FLIGHT] {w} normal={w.Normal} span axis={w.SpanAxis} centroid - CoM={w.Centroid - com} (CoM {com})");
             Log.Default?.Info($"[FLIGHT] SETUP raise={raise:F0}m entry={EntrySpeed:F0}m/s mass={mass:F0}kg " +
                               $"groundBefore={ground:F0}");
         }
@@ -289,7 +289,10 @@ public partial class AeroGridComponent
             Vector3 up = Vector3.Normalize(w.Normal);
             if (Vector3.Dot(up, WorldTransform.TransformDirectionInv(worldUp, wt)) < 0f) up = -up;
             Vector3 chord = Vector3.Normalize(Vector3.Cross(w.SpanAxis, up));
-            if (Vector3.Dot(w.AeroCenter - com, chord) > 0f) chord = -chord;
+            // (the nose: away from the largest wing's mid chord - a main wing sits aft of the centre of mass. It read the
+            //  quarter chord from the low end of the grid axis, which the lift model then also used whatever the flight
+            //  direction; the model now takes the leading edge from the air - 2026-10-18, fix a-wing-edge)
+            if (Vector3.Dot(w.Centroid - com, chord) > 0f) chord = -chord;
             _noseL = chord; _upL = up;
             Log.Default?.Info($"[FLIGHT] axes: nose {_noseL} up {_upL} (from the largest wing)");
         }

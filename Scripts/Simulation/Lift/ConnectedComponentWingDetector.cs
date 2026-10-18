@@ -113,7 +113,7 @@ public partial class ConnectedComponentWingDetector : IWingDetector
         public readonly List<Vector3I> Component = new();
         public readonly Dictionary<int, List<Vector3I>> BySpan = new();
         public readonly Stack<List<Vector3I>> SpanLists = new();
-        public readonly Dictionary<int, int> ChordExtent = new(), LeBySpan = new();
+        public readonly Dictionary<int, int> ChordExtent = new(), LeBySpan = new(), TeBySpan = new();
         public readonly List<int> ChordValues = new();
         public readonly Dictionary<(int, int), int> ColumnThickness = new();
         // (ColumnMode's)
@@ -132,7 +132,7 @@ public partial class ConnectedComponentWingDetector : IWingDetector
         {
             MinX.Clear(); MaxX.Clear(); MinY.Clear(); MaxY.Clear(); MinZ.Clear(); MaxZ.Clear();
             foreach (var e in Exposed) e.Clear();
-            Visited.Clear(); Queue.Clear(); Component.Clear(); ChordExtent.Clear(); LeBySpan.Clear(); ChordValues.Clear(); ColumnThickness.Clear();
+            Visited.Clear(); Queue.Clear(); Component.Clear(); ChordExtent.Clear(); LeBySpan.Clear(); TeBySpan.Clear(); ChordValues.Clear(); ColumnThickness.Clear();
             ClearSpans();
         }
         public void ClearSpans() { foreach (var l in BySpan.Values) { l.Clear(); SpanLists.Push(l); } BySpan.Clear(); }

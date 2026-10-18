@@ -18,7 +18,7 @@ static partial class Program
                 var cells = new List<Vector3I>();
                 for (int x = x0; x < x0 + 10; x++) for (int z = 0; z < 4; z++) cells.Add(new Vector3I(x, 0, z));
                 var c = new Vector3((x0 + 4.5f) * 0.25f, 0f, 0.375f);
-                return new LiftingSurface(Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ, 2.5f, 2.5f, 0.1f, 0f, c, c, 40, cells);
+                return new LiftingSurface(Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ, 2.5f, 2.5f, 0.1f, 0f, 0f, c, 0f, 40, cells);
             }
             var det = new ConnectedComponentWingDetector();
             var merge = typeof(ConnectedComponentWingDetector).GetMethod("MergeCoplanarWings", BindingFlags.NonPublic | BindingFlags.Instance);

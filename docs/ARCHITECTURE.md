@@ -114,7 +114,8 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
 - **The model.** Below `AeroConfig.MinDensity` or `MinSpeed`: no forces. Else an `AeroContext` (local velocity, spin,
   `AtmosphereBridge.GetState(density)`, centre of mass, ground height, up) goes to `LiftingSurfaceModel.Compute`: the
   hull from the force table (a lookup per frame; the face loop in `DampedShadowedDragModel.Compute.cs` only before
-  the table exists) plus the wings (`CompressibleWingModel`).
+  the table exists) plus the wings (`CompressibleWingModel`: each wing's leading edge is the one facing the air, per
+  tick - `Lift/README.md`, "Which edge leads").
 - **Control surfaces.** `UpdateControlSurfaceInputs` mixes the pilot's rotation into surface inputs; while the aero-aware
   law flies (`LastControlTorqueValid`, server) `AllocateSurfaces` gives them its torque demand instead.
   `PublishFlapAngles` publishes deflections for the client flap models. `HingeSurfaces` drives vanilla hinges

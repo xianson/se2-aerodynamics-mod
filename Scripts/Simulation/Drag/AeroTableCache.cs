@@ -14,7 +14,7 @@ namespace AeroMod;
 public static class AeroTableCache
 {
     /// <summary>Bump on any change to how a table, its chunks or its wings are built.</summary>
-    public const int Version = 20;   // (20: 2026-10-17 the sleek hull's wall lowered to 1.12x (ForceTable.WavePeakNeedle, the Mach wall made reachable), runtime only, tables unchanged; 19: 2026-10-17 the sleek hull's Mach wall - ForceTable.HullWave / BlendHold, runtime only, tables unchanged; 18: 2026-10-15 audit fixes - coplanar wings merged by their own spans (A3); a pooled builder forgets the last grid's flow-through faces (A4); the chunks carry the ship's own skin friction, saved (A5); local updates occlude as the full build and keep its pressure recovery per chunk, saved (A6); table workers restore their thread's priority - tables unchanged (A9); every solid of a grid is hull, not only the largest (A20); 17: an engine box spans its cells centred (lo-0.5 .. hi+0.5) x 0.25 m, not lo .. hi+1 - one cell less on each + side; 16: intakes reach IntakeReach past the engine block - its cowling; transonic onset by streamlining (runtime only); 15: engines flow-through in game - their boxes in the key; 14: 14: the overlay pass returns the cells' own normals - tables unchanged; 13: the overlay builds the face arrays itself - tables unchanged; 12: the drag overlay pass sits in the model's source - tables unchanged; 11: ColumnMode span axis from mirror pairs; 10: low-aspect plates are wings - ConnectedComponentWingDetector.LowAspectRatio; 9: the model switches in the key; 8: the L/D flight model on by default - square law, pressure recovery, Reynolds skin - 2026-10-11; 7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
+    public const int Version = 21;   // (21: 2026-10-18 fix a-wing-edge - a wing is saved orientation-free (both edges' sweeps, the quarter chord's offset from the centroid; the leading edge is the flow's, per tick), the wing record changed; 20: 2026-10-17 the sleek hull's wall lowered to 1.12x (ForceTable.WavePeakNeedle, the Mach wall made reachable), runtime only, tables unchanged; 19: 2026-10-17 the sleek hull's Mach wall - ForceTable.HullWave / BlendHold, runtime only, tables unchanged; 18: 2026-10-15 audit fixes - coplanar wings merged by their own spans (A3); a pooled builder forgets the last grid's flow-through faces (A4); the chunks carry the ship's own skin friction, saved (A5); local updates occlude as the full build and keep its pressure recovery per chunk, saved (A6); table workers restore their thread's priority - tables unchanged (A9); every solid of a grid is hull, not only the largest (A20); 17: an engine box spans its cells centred (lo-0.5 .. hi+0.5) x 0.25 m, not lo .. hi+1 - one cell less on each + side; 16: intakes reach IntakeReach past the engine block - its cowling; transonic onset by streamlining (runtime only); 15: engines flow-through in game - their boxes in the key; 14: 14: the overlay pass returns the cells' own normals - tables unchanged; 13: the overlay builds the face arrays itself - tables unchanged; 12: the drag overlay pass sits in the model's source - tables unchanged; 11: ColumnMode span axis from mirror pairs; 10: low-aspect plates are wings - ConnectedComponentWingDetector.LowAspectRatio; 9: the model switches in the key; 8: the L/D flight model on by default - square law, pressure recovery, Reynolds skin - 2026-10-11; 7: smoothed faces carry their share of the slope - SmoothSurfaceProvider - 2026-10-10)   // (2: skin friction's sign fixed; 3: grazing faces no longer self-shadowed; 4: built about the grid's own centre of mass, not (0,0,0); 5: a pooled builder no longer sums a previous grid's faces in; 6: nor keeps them for a grid with as many faces - tables saved before are rebuilt)
     public static bool Enabled = true;
     /// <summary>The folder's cap: past it, the least recently used files go.</summary>
     public static long MaxBytes = 256L << 20;
@@ -151,8 +151,8 @@ public static class AeroTableCache
     static void WriteWing(BinaryWriter w, LiftingSurface s)
     {
         WriteV(w, s.Normal); WriteV(w, s.SpanAxis); WriteV(w, s.ChordAxis);
-        w.Write(s.PlanformArea); w.Write(s.Span); w.Write(s.ThicknessRatio); w.Write(s.SweepAngle);
-        WriteV(w, s.Centroid); WriteV(w, s.AeroCenter); w.Write(s.FaceCount);
+        w.Write(s.PlanformArea); w.Write(s.Span); w.Write(s.ThicknessRatio); w.Write(s.SweepLo); w.Write(s.SweepHi);
+        WriteV(w, s.Centroid); w.Write(s.AcOffset); w.Write(s.FaceCount);
         w.Write(s.Cells.Count);
         foreach (var c in s.Cells) { w.Write(c.X); w.Write(c.Y); w.Write(c.Z); }
     }
@@ -160,12 +160,12 @@ public static class AeroTableCache
     static LiftingSurface ReadWing(BinaryReader r)
     {
         var n = ReadV(r); var sa = ReadV(r); var ca = ReadV(r);
-        float area = r.ReadSingle(), span = r.ReadSingle(), tc = r.ReadSingle(), sweep = r.ReadSingle();
-        var cen = ReadV(r); var ac = ReadV(r); int fc = r.ReadInt32();
+        float area = r.ReadSingle(), span = r.ReadSingle(), tc = r.ReadSingle(), sweepLo = r.ReadSingle(), sweepHi = r.ReadSingle();
+        var cen = ReadV(r); float acOffset = r.ReadSingle(); int fc = r.ReadInt32();
         int nc = r.ReadInt32();
         if (nc < 0 || nc > 1 << 24) throw new InvalidDataException("wing cells");
         var cells = new List<Vector3I>(nc);
         for (int i = 0; i < nc; i++) cells.Add(new Vector3I(r.ReadInt32(), r.ReadInt32(), r.ReadInt32()));
-        return new LiftingSurface(n, sa, ca, area, span, tc, sweep, cen, ac, fc, cells);
+        return new LiftingSurface(n, sa, ca, area, span, tc, sweepLo, sweepHi, cen, acOffset, fc, cells);
     }
 }

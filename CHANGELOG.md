@@ -27,6 +27,14 @@ The first Workshop release. In plain words, what you get:
   at 0.5 g; the game's 1.5 g), one at 1.5x sinks at 0.5 g with dampeners on (the game's: hovers, climbs at 0.5 g), and the
   world's super dampeners no longer brake at 2-5x the thrusters' real thrust (from 100 m/s at 5 m/s2: 1000 m, the boost's
   379 m). Off: the game's own. (Tests/ThrustTests `HonestDampChecks`.)
+- **Wings lead with the edge facing the air** (2026-10-18, fix a-wing-edge). A wing's leading edge was decided by the
+  direction the ship was built along, not the one it flies: a ship flying toward the grid's + axis along its chord (the
+  jetliner, nose +X) had its wing lift at 3/4 chord from its real leading edge, its transonic tuck forward instead of aft,
+  and its sweep measured from the trailing edge. Now each wing takes its leading edge from the air every tick. AeroBench,
+  jetliner at 4 deg: main wing lift point +2.6 m forward at Mach 0.5; Mach 0.5 -> 1.2 it now moves 2.0 m aft (it moved
+  2.0 m forward); main wing lift -7 % at Mach 0.5 (its real, more swept leading edge). Ships built nose toward the grid's
+  - axis (the Pelican, the F-6) keep their lift points; their wing lift moves 1-4 % (a merged wing's sweep is now the
+  same whichever way the ship is built). Saved force tables rebuild once (cache version 21).
 
 Good to know:
 

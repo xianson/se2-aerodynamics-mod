@@ -33,7 +33,7 @@ static class Program
         var centroid = Vector3.Zero;
         foreach (var c in cells) centroid += new Vector3(c.X + off, c.Y + off, c.Z + off) * h;
         centroid /= cells.Count;
-        return new LiftingSurface(V(normalI), V(spanAxis), V(chordI), spanM * chordM, spanM, thickCells * h / chordM, 0f, centroid, centroid - V(chordI) * (0.25f * chordM), cells.Count, cells);
+        return new LiftingSurface(V(normalI), V(spanAxis), V(chordI), spanM * chordM, spanM, thickCells * h / chordM, 0f, 0f, centroid, 0.25f * chordM, cells.Count, cells);
     }
 
     /// <summary>Strain of a wing under a wing loading (Pa): the worse side, on whatever capacity its sides were finished.</summary>
@@ -184,7 +184,7 @@ static class Program
         Check(Near(WingStrain.Wear(0.2f), 0.1f), "wear: 0.2 strain-seconds over the limit take 10% health");
         Check(WingStrain.Wear(0f) == 0f && WingStrain.Wear(-1f) == 0f, "wear: none at or under the limit");
         Check(WingStrain.Breaks(1.5f) && !WingStrain.Breaks(1.49f), "break threshold 1.5");
-        var empty = new LiftingSurface(Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ, 1, 1, 0.1f, 0, Vector3.Zero, Vector3.Zero, 0, new List<Vector3I>());
+        var empty = new LiftingSurface(Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ, 1, 1, 0.1f, 0, 0, Vector3.Zero, 0f, 0, new List<Vector3I>());
         Check(WingStrain.Analyze(empty, 0.5f, 0.25f, Vector3.Zero) == null, "a wing without cells: no root");
         Check(WingStrain.Strain(1000f, null) == 0f, "no side: no strain");
     }

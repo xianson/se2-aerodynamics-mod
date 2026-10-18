@@ -27,9 +27,15 @@ public readonly struct WingForceResult
     /// <summary>Interference reduction factor (1.0 = solo wing).</summary>
     public readonly float Efficiency;
 
+    /// <summary>Which chord edge led this tick (2026-10-18, fix a-wing-edge): +1 the high end of the wing's ChordAxis
+    /// (it moved toward +ChordAxis), -1 the low end, between: blended (near-spanwise flow - CompressibleWingModel.LeadBlend);
+    /// 0 also when not computed.</summary>
+    public readonly float Lead;
+
     public WingForceResult(Vector3 liftForce, Vector3 inducedDrag, Vector3 applicationPoint,
-        float cl, float cdi, float alphaEffective, float efficiency)
+        float cl, float cdi, float alphaEffective, float efficiency, float lead = 0f)
     {
+        Lead = lead;
         LiftForce = liftForce;
         InducedDrag = inducedDrag;
         ApplicationPoint = applicationPoint;

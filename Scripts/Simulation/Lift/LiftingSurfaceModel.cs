@@ -242,7 +242,7 @@ public class LiftingSurfaceModel : IAeroDragModel
             var liftF = wf.LiftForce; var cdiF = wf.InducedDrag;
             if (landing > 0f && ctx.GroundHeight >= 0f)
             {
-                float hW = ctx.GroundHeight + (ctx.GroundUpLocal.LengthSquared() > 0.5f ? Vector3.Dot(wing.AeroCenter, ctx.GroundUpLocal) : 0f);
+                float hW = ctx.GroundHeight + (ctx.GroundUpLocal.LengthSquared() > 0.5f ? Vector3.Dot(wing.AeroCenterFor(wf.Lead), ctx.GroundUpLocal) : 0f);   // (this tick's quarter chord: the leading edge is the air's, 2026-10-18)
                 float phiW = GroundEffect.Phi(hW, wing.Span);
                 if (phiW < 1f) { liftF *= GroundEffect.LiftBoost(phiW, landing); cdiF *= MathF.Pow(phiW, landing); }
             }

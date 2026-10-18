@@ -29,6 +29,27 @@ public class CompressibleWingModel : IWingLiftModel
     private float[] _alphaEff = Array.Empty<float>();
     private float[] _efficiency = Array.Empty<float>();
     private float[] _oswaldMod = Array.Empty<float>();
+    private float[] _leads = Array.Empty<float>(), _sweepLE = Array.Empty<float>();
+
+    /// <summary>THE LEADING EDGE BY THE AIR (2026-10-18, fix a-wing-edge): a wing's chord axis is a positive grid axis -
+    /// the detector cannot know which way the ship flies, and the low end always led: a ship flying toward +ChordAxis got
+    /// its lift at 3/4 chord from its real leading edge, its Mach tuck FORWARD (destabilising) and its sweep from the
+    /// trailing edge. Now per wing per tick the lead is the chordwise component of the wing's motion through the air
+    /// (+1 toward +ChordAxis: the high end leads; -1: the low end): the aerodynamic centre a quarter chord from THAT edge,
+    /// that edge's sweep for M_perp and the lift slope, the camber read from that end, the AoA and Mach CoP shifts
+    /// downstream. Near-spanwise flow (pure sideslip, a flat fall, a hover) does not flip it hard: within LeadBlend of the
+    /// wing's speed the lead goes linearly through 0 - the force point slides through the mid chord, no jitter, no state
+    /// (a flat plate's centre of pressure IS its mid chord broadside on).</summary>
+    public static float LeadBlend = 0.1f;
+
+    /// <summary>The lead (-1..1) of wing w moving at v (local m/s) through the air: see LeadBlend.</summary>
+    internal static float LeadOf(in LiftingSurface w, Vector3 v)
+    {
+        float along = Vector3.Dot(v, w.ChordAxis);
+        float band = LeadBlend * v.Length();
+        if (band <= 1e-6f) return along > 0f ? 1f : along < 0f ? -1f : 0f;
+        return Math.Clamp(along / band, -1f, 1f);
+    }
     private float[] _arSys = Array.Empty<float>(); private int[] _sys = Array.Empty<int>(); private double _sysSig = double.NaN;
 
     /// <summary>WING SYSTEMS (2026-10-10, AeroBench polar): the detector hands over a wing in pieces - a Tu-134's main wing
@@ -173,6 +194,8 @@ public class CompressibleWingModel : IWingLiftModel
         _alphaEff = new float[n];
         _efficiency = new float[n];
         _oswaldMod = new float[n];
+        _leads = new float[n];
+        _sweepLE = new float[n];
         // Influence is n*n, allocated separately
     }
 
@@ -235,13 +258,14 @@ public class CompressibleWingModel : IWingLiftModel
     float[] _groundPhi = Array.Empty<float>();
 
     /// <summary>The wing's ground factor (McCormick): phi = (16 h/b)^2 / (1 + (16 h/b)^2), floored at 0.1 - h its own height
-    /// above the ground (the grid's, plus its aerodynamic centre's offset along 'up'), b its span; 1 far from the ground or
-    /// unknown. (Without the 16 it halved induced drag a whole span up; it now fades smoothly - ~1 % left at h = b.)</summary>
-    static float GroundPhi(in AeroContext ctx, in LiftingSurface w)
+    /// above the ground (the grid's, plus its aerodynamic centre's offset along 'up' - ac: this tick's), b its span; 1 far
+    /// from the ground or unknown. (Without the 16 it halved induced drag a whole span up; it now fades smoothly - ~1 %
+    /// left at h = b.)</summary>
+    static float GroundPhi(in AeroContext ctx, in LiftingSurface w, Vector3 ac)
     {
         if (!GroundEffect || ctx.GroundHeight < 0f || w.Span <= 0.1f) return 1f;
         float h = ctx.GroundHeight;
-        if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(w.AeroCenter, ctx.GroundUpLocal);
+        if (ctx.GroundUpLocal.LengthSquared() > 0.5f) h += Vector3.Dot(ac, ctx.GroundUpLocal);
         h = MathF.Max(0.05f, h);
         float x = 16f * h / w.Span;
         if (x > 60f) return 1f;   // (phi within 0.03 % of 1)
@@ -273,7 +297,11 @@ public class CompressibleWingModel : IWingLiftModel
         for (int i = 0; i < n; i++)
         {
             ref readonly var w = ref wings[i];
-            var v = ctx.VelocityAtPoint(w.AeroCenter);
+            // (the leading edge from the air at the mid chord, then the air at that edge's quarter chord: LeadBlend)
+            float lead = LeadOf(w, ctx.VelocityAtPoint(w.Centroid));
+            _leads[i] = lead;
+            _sweepLE[i] = w.SweepFor(lead);
+            var v = ctx.VelocityAtPoint(w.AeroCenterFor(lead));
             float speed = v.Length();
             _localSpeeds[i] = speed;
             if (speed < MinSpeed)
@@ -294,21 +322,23 @@ public class CompressibleWingModel : IWingLiftModel
             if (GeometricCamber && i < _camber.Length)
             {
                 // (the leading end is the one moving ahead: the chord line's rise toward it is the incidence)
-                // (moving toward +ChordAxis: its leading edge is the high end)
-                float along = Vector3.Dot(vInPlane, w.ChordAxis);
-                _alphas[i] -= along >= 0 ? _slope[i] : _camber[i];   // (_camber: alpha_L0 leading at the low end, _slope: at the high end)
+                // (moving toward +ChordAxis - lead +1: its leading edge is the high end; blended through near-spanwise
+                //  flow as the force point - it flipped hard at along = 0 before, 2026-10-18)
+                float hiShare = 0.5f + 0.5f * lead;
+                _alphas[i] -= _camber[i] + (_slope[i] - _camber[i]) * hiShare;   // (_camber: alpha_L0 leading at the low end, _slope: at the high end)
             }
 
             // Runtime CLAlpha from Mach regime
             float mach = speedOfSound > 0 ? speed / speedOfSound : 0;
-            float machPerp = mach * MathF.Cos(w.SweepAngle);
+            float sweepLE = _sweepLE[i];   // (the leading edge's, by the air: LeadBlend)
+            float machPerp = mach * MathF.Cos(sweepLE);
             _machPerps[i] = machPerp;
             // (ground effect: near the ground the wing sees less downwash - as if its aspect ratio were AR / phi -
             //  so its lift slope rises; phi from its own height over its span, capped at 4x)
-            float phiG = GroundPhi(ctx, w);
+            float phiG = GroundPhi(ctx, w, w.AeroCenterFor(lead));
             _groundPhi[i] = phiG;
             float arI = _arSys[i];
-            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), w.SweepAngle,
+            _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), sweepLE,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
             // Runtime stall angle, floored at 3 degrees
@@ -476,20 +506,25 @@ public class CompressibleWingModel : IWingLiftModel
             // of free thrust on the Jetliner, hidden by a drag floor)
             var inducedDrag = -vHat * dragMag;
 
+            // (downstream: toward the trailing edge of this tick's flow - LeadBlend; it was always +ChordAxis, forward
+            //  for a ship flying toward +ChordAxis; scaled by the lead, so it fades to the mid chord in near-spanwise flow)
+            float lead = _leads[i];
+            Vector3 downstream = w.ChordAxis * -lead;
+
             // ── Center of pressure shift with AoA ──
             float absAlphaFrac = absAlpha / (MathF.PI * 0.5f);
             float cpBlend = absAlphaFrac * absAlphaFrac;
-            Vector3 cpShiftAoA = w.ChordAxis * (w.MeanChord * 0.25f * cpBlend);
+            Vector3 cpShiftAoA = downstream * (w.MeanChord * 0.25f * cpBlend);
 
             // ── Mach tuck: CoP shifts aft at transonic (uses machPerp for sweep) ──
             float machTuck = MachTuckFactor(_machPerps[i]);
-            Vector3 cpShiftMach = w.ChordAxis * (w.MeanChord * machTuck);
+            Vector3 cpShiftMach = downstream * (w.MeanChord * machTuck);
 
-            Vector3 applicationPoint = w.AeroCenter + cpShiftAoA + cpShiftMach;
+            Vector3 applicationPoint = w.AeroCenterFor(lead) + cpShiftAoA + cpShiftMach;
 
             _resultsList[i] = new WingForceResult(
                 liftForce, inducedDrag, applicationPoint,
-                cl, cdi, alpha, _efficiency[i]);
+                cl, cdi, alpha, _efficiency[i], lead);
         }
 
         // Throttled wing diagnostics (~1/sec)
@@ -501,11 +536,11 @@ public class CompressibleWingModel : IWingLiftModel
             {
                 ref readonly var w = ref wings[i];
                 var wf = _resultsList[i];
-                float sweepDeg = w.SweepAngle * 180f / MathF.PI;
+                float sweepDeg = _sweepLE[i] * 180f / MathF.PI;   // (the leading edge's, by the air)
                 float alphaDeg = _alphas[i] * 180f / MathF.PI;
                 float tuck = MachTuckFactor(_machPerps[i]);
                 Log.Default?.Info(
-                    $"[AERO-WING] W{i} M={mach:F2} Mperp={_machPerps[i]:F2} sweep={sweepDeg:F1}° " +
+                    $"[AERO-WING] W{i} M={mach:F2} Mperp={_machPerps[i]:F2} sweep={sweepDeg:F1}° lead={_leads[i]:F2} " +
                     $"AoA={alphaDeg:F1}° CL={wf.CL:F3} CLa={_clAlphas[i]:F3} " +
                     $"L={wf.LiftForce.Length():F0}N Di={wf.InducedDrag.Length():F0}N " +
                     $"AR={w.AspectRatio:F1} S={w.PlanformArea:F1}m² span={w.Span:F1}m " +

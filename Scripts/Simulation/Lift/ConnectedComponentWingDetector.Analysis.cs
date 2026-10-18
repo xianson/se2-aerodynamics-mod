@@ -380,17 +380,17 @@ public partial class ConnectedComponentWingDetector
         }
         centroid /= wingCells.Count;
 
-        // Sweep
-        float sweepAngle = ComputeSweep(wingCells, axis1, axis2, blockSize, _s.LeBySpan);
+        // Sweep: both chord edges' - which one leads is the flow's, per tick (2026-10-18, fix a-wing-edge: the low end
+        // always led - a ship flying toward +chord had its sweep from the trailing edge)
+        ComputeSweep(wingCells, axis1, axis2, blockSize, _s.LeBySpan, _s.TeBySpan, out float sweepLo, out float sweepHi);
 
-        // Aero center: quarter-chord from leading edge
+        // Aero center: a quarter chord from the centroid, toward whichever edge leads (LiftingSurface.AeroCenterFor)
         var normalF = new Vector3(normal.X, normal.Y, normal.Z);
-        var aeroCenter = centroid - chordVec * (0.25f * meanChord);
 
         return new LiftingSurface(
             normalF, spanVec, chordVec,
-            planformArea, span, tc, sweepAngle,
-            centroid, aeroCenter, wingCells.Count,
+            planformArea, span, tc, sweepLo, sweepHi,
+            centroid, 0.25f * meanChord, wingCells.Count,
             new List<Vector3I>(wingCells));   // (the component list is reused: the wing keeps a copy)
     }
 
@@ -424,22 +424,32 @@ public partial class ConnectedComponentWingDetector
     private static int ProjectOnAxis(Vector3I cell, Vector3I axis)
         => cell.X * axis.X + cell.Y * axis.Y + cell.Z * axis.Z;
 
-    private static float ComputeSweep(List<Vector3I> cells, Vector3I spanAxis, Vector3I chordAxis, float blockSize, Dictionary<int, int> leBySpan)
+    /// <summary>Each chord edge's sweep (rad, unsigned): per span station the lowest (lo) and the highest (hi) chord
+    /// coordinate, a least-squares line through each along the span.</summary>
+    private static void ComputeSweep(List<Vector3I> cells, Vector3I spanAxis, Vector3I chordAxis, float blockSize,
+        Dictionary<int, int> leBySpan, Dictionary<int, int> teBySpan, out float sweepLo, out float sweepHi)
     {
-        leBySpan.Clear();
+        leBySpan.Clear(); teBySpan.Clear();
         foreach (var cell in cells)
         {
             int s = ProjectOnAxis(cell, spanAxis);
             int c = ProjectOnAxis(cell, chordAxis);
             if (!leBySpan.TryGetValue(s, out var minC) || c < minC)
                 leBySpan[s] = c;
+            if (!teBySpan.TryGetValue(s, out var maxC) || c > maxC)
+                teBySpan[s] = c;
         }
+        sweepLo = EdgeSweep(leBySpan);
+        sweepHi = EdgeSweep(teBySpan);
+    }
 
-        if (leBySpan.Count < 2) return 0;
+    private static float EdgeSweep(Dictionary<int, int> edgeBySpan)
+    {
+        if (edgeBySpan.Count < 2) return 0;
 
         double sumS = 0, sumC = 0, sumSS = 0, sumSC = 0;
         int n = 0;
-        foreach (var (s, c) in leBySpan)
+        foreach (var (s, c) in edgeBySpan)
         {
             sumS += s; sumC += c;
             sumSS += (double)s * s; sumSC += (double)s * c;
