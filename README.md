@@ -45,8 +45,6 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 ## Install
 
 - **Steam Workshop:** [subscribe](https://steamcommunity.com/sharedfiles/filedetails/?id=3822388536). Subscribe, then add the mod to your world's mod list.
-- **Coming from "Aerodynamics Mod Blocks":** that companion mod is now part of this one. Remove it from the world's mod
-  list before loading. Ships keep their blocks ([`docs/BLOCKS_MERGE.md`](docs/BLOCKS_MERGE.md)).
 
 ## Documentation (wiki)
 
