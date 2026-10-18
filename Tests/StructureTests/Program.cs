@@ -24,6 +24,8 @@ using AeroMod;
 //     anchor drained every tick reads no load from its own thrust, a warp switch no impulse, a ship resting on the ground
 //     under a spinning planet's fictitious writes its weight, a ship thrusting at the speed cap nothing along its travel;
 //     the jump test is not fooled by a written velocity.
+// 12b. the balance at the engine's gravity (2026-10-18): the held gravity x the GravityMultiplier - parked on gear at 2 reads
+//     its real weight (2 m g), a dampened park or hover and a free fall read no support, a partial hold the rest.
 // 13. a railed re-entry's braking (StructureEval.EntryLoads): m x the deceleration on the windward faces, no net moment;
 //     the free body decelerates at it, the nose carries it.
 // 14. the neck fails whole (StructureEval.DamageBySection, 2026-10-15): a wing on a narrow neck under a growing lift - the
@@ -723,6 +725,66 @@ static class Program
         var side = new Func<Vector3, Vector3>(_ => new Vector3(0, 0, 50f));
         var t = RunBalance(60, m, new Vector3(cap, 0, 0), new Vector3(1e6f, 0, 0), Vector3.Zero, cap, side, (k, v) => Vector3.Zero);
         Check(MathF.Abs(t.meanSup.X) < 1e-3f * 1e6f * dt && MathF.Abs(t.meanSup.Z / 50f - 1f) < 0.02f, $"balance: at the speed cap the clamp reads no load ({t.meanSup.X:F2} N s along; the side contact {t.meanSup.Z:F2} of 50 N s; before: {t.oldErr:F0} N s)");
+    }
+
+    /// <summary>
+    /// THE BALANCE AT THE ENGINE'S GRAVITY (2026-10-18). The game's tick, as the engine runs it: ThrustComponent.ComputeThrust -
+    /// with dampeners, the gravity hold (-m GravitySum, clamped to that side's maximum) taken off the body's CustomGravity IN
+    /// PLACE (no thrust: ActiveThrustData leaves it out); the read (StructureContacts: its gravity paired to the next read); the
+    /// physics step - the held gravity x the session's GravityMultiplier (Havok; vanilla 2), the ground. Returns the mean
+    /// support (N, up) with the gravity as the server now reads it (PhysicsHack.GetAppliedGravity: ContactBalance.AppliedGravity
+    /// of the held gravity) and as it read before (the planet's GravitySum), and the true mean contact force.
+    /// </summary>
+    static (float now, float before, float truth) RunGravity(float m, float gm, bool damp, float holdMax, bool ground, int ticks = 300)
+    {
+        const float dt = 1f / 60f; var gs = new Vector3(0f, -9.81f, 0f);
+        Vector3 v = Vector3.Zero, pv = default, pg = default, pgs = default; bool have = false;
+        float now = 0f, before = 0f, truth = 0f; int n = 0; Vector3 lastC = Vector3.Zero;
+        for (int k = 0; k < ticks; k++)
+        {
+            // ComputeThrust: the hold (up to holdMax N) off the gravity in place; no other thrust (no input, at rest)
+            Vector3 held = gs;
+            if (damp) held += new Vector3(0f, MathF.Min(m * 9.81f, holdMax) / m, 0f);
+            // the read
+            if (have)
+            {
+                now += ContactBalance.Support(m, v, pv, Vector3.Zero, Vector3.Zero, Vector3.Zero, pg, Vector3.Zero, dt, 0f).Y / dt;
+                before += ContactBalance.Support(m, v, pv, Vector3.Zero, Vector3.Zero, Vector3.Zero, pgs, Vector3.Zero, dt, 0f).Y / dt;
+                truth += lastC.Y / dt; n++;
+            }
+            have = true; pv = v; pg = ContactBalance.AppliedGravity(held, gm); pgs = gs;
+            // the physics step: the held gravity x the multiplier, then the ground stops the fall
+            v += held * gm * dt;
+            lastC = ground && v.Y < 0f ? new Vector3(0f, -v.Y * m, 0f) : Vector3.Zero;
+            v += lastC / m;
+        }
+        return (now / n, before / n, truth / n);
+    }
+
+    static void GravityBalance()
+    {
+        const float m = 2e5f, gm = 2f; float w = m * 9.81f, real = w * gm;   // (the real weight: GravitySum x m x the multiplier)
+        // PARKED ON ITS GEAR, dampeners off: the support is the real weight (2 x m GravitySum) - it read half
+        var p = RunGravity(m, gm, false, 0f, true);
+        Check(MathF.Abs(p.now / real - 1f) < 1e-3f && MathF.Abs(p.truth / real - 1f) < 1e-3f, $"gravity: parked on gear at multiplier 2 reads its real weight ({p.now / 1e3f:F0} kN of {real / 1e3f:F0}; the contacts {p.truth / 1e3f:F0}; before: {p.before / 1e3f:F0} kN - the wheels scaled to half)");
+        Check(MathF.Abs(p.before / real - 0.5f) < 1e-3f, "gravity: (before, the planet's 1 g: half the weight)");
+        // PARKED, dampeners on with thrust to hold it: the hold cancels the gravity - nothing rests on the gear
+        var pd = RunGravity(m, gm, true, 2f * w, true);
+        Check(MathF.Abs(pd.now) < 1e-3f * w && MathF.Abs(pd.truth) < 1e-3f * w, $"gravity: parked with dampeners holding reads no support ({pd.now:F1} N; before: {pd.before / 1e3f:F0} kN phantom)");
+        // HOVERING on its dampeners: no support - it read a whole weight up
+        var h = RunGravity(m, gm, true, 2f * w, false);
+        Check(MathF.Abs(h.now) < 1e-3f * w, $"gravity: a dampened hover reads no support ({h.now:F1} N; before: {h.before / 1e3f:F0} kN phantom)");
+        Check(MathF.Abs(h.before / w - 1f) < 1e-3f, "gravity: (before: the hover read its 1 g weight as a support)");
+        // FREE FALL, dampeners off: no support - it read a whole weight pulling down
+        var f = RunGravity(m, gm, false, 0f, false, 60);
+        Check(MathF.Abs(f.now) < 1e-3f * w, $"gravity: a free fall at multiplier 2 reads no support ({f.now:F1} N; before: {f.before / 1e3f:F0} kN)");
+        Check(MathF.Abs(f.before / w + 1f) < 1e-3f, "gravity: (before: the fall read a weight pulling down)");
+        // PARKED, dampeners on but the thrusters hold only 0.6 of it: the gear carries the rest x the multiplier
+        var pp = RunGravity(m, gm, true, 0.6f * w, true);
+        Check(MathF.Abs(pp.now / (0.4f * real) - 1f) < 1e-3f && MathF.Abs(pp.truth / (0.4f * real) - 1f) < 1e-3f, $"gravity: a partial hold leaves the gear 0.4 x the real weight ({pp.now / 1e3f:F0} kN of {0.4f * real / 1e3f:F0}; before {pp.before / 1e3f:F0})");
+        // a world at multiplier 1, no hold: as before
+        var one = RunGravity(m, 1f, false, 0f, true);
+        Check(MathF.Abs(one.now / w - 1f) < 1e-3f && MathF.Abs(one.now - one.before) < 1e-3f * w, $"gravity: at multiplier 1 parked reads its weight as before ({one.now / 1e3f:F0} kN)");
     }
 
     static void EntryBraking()
@@ -2298,7 +2360,7 @@ static class Program
         Cantilever(); Balance(); Composite(); Whip(); GyroWholeShip();
         RealShapes(); SlabBuckling(); Mounts(); ManyPieces(); Bends(); Fatigue(); NeckFailure();
         TensionCompression(); BucklingFatigue(); Jagged(); CrackSeparates(); CutLetsGo(); CutAlwaysSeparates(); RigidThrusters();
-        BalanceUnderEdits(); EntryBraking(); ComponentLoads(); ImpulseLoads();
+        BalanceUnderEdits(); GravityBalance(); EntryBraking(); ComponentLoads(); ImpulseLoads();
         HeatBalance(); BluntVsSharp(); Cooling(); ScorchThresholds();
         Console.WriteLine($"StructureTests: {_checks - _fails} passed, {_fails} failed");
         return _fails == 0 ? 0 : 1;

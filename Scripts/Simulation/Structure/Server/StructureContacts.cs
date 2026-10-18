@@ -40,7 +40,7 @@ public static class StructureContactLoads
 ///  - the WHEELS (a wheel is a body of its own - a ship on its gear has no hull contact at all): each suspension block's
 ///    wheel entity's own ContactImpulseData (every point), on the suspension block;
 ///  - HOW MUCH comes from the physics' own balance each step (the velocity's change less the known forces: exactly the
-///    weight at rest), the contacts scaled to it - they say WHERE (the wheels' own list read 2.0x the weight);
+///    weight at rest), the contacts scaled to it - they say WHERE;
 ///  - what neither shows - LOCKED landing gear / magnetic plates are a fixed constraint, not a contact - as THE
 ///    REMAINDER: the velocity's change less every known force (gravity, the engines, the air, the contacts above), shared
 ///    over the locked plates.
@@ -234,7 +234,10 @@ public partial class AeroGridComponent
         // holds: the last read's extra force and gravity, the step's contacts, and this tick's thrust and air.
         Vector3 thrJ = Data.TryGet<Keen.Game2.Simulation.WorldObjects.Movement.ActiveThrustData>(out var at) ? WorldTransform.TransformDirection(at.ComputedThrustPerFrame, wt) : Vector3.Zero;
         Vector3 airJ = WorldTransform.TransformDirection(airLocal, wt) * dt;
-        Vector3 grav = PhysicsHack.GetGravityDirection(Data);
+        // (the gravity the body GOT this step - after the dampeners' hold, x the engine's multiplier: 2026-10-18, the planet's
+        //  GravitySum read a parked ship at half its weight at multiplier 2 - its wheels scaled down 2x - and a dampened hover
+        //  or a fall as a phantom support of a whole weight)
+        Vector3 grav = PhysicsHack.GetAppliedGravity(Data);
         bool had = _cHavePrev;
         // (the mass or the centre of mass changed - a block lost, cargo: the centre's velocity jumps with no force)
         if (had && (MathF.Abs(m - _cPrevMass) > 1e-4f * MathF.Max(m, 1f) || Vector3.DistanceSquared(LastCoM, _cPrevCoM) > 1e-4f)) had = false;
@@ -304,9 +307,9 @@ public partial class AeroGridComponent
             }
         }
         // HOW MUCH: what the physics says held it over the last step (all supports together - the velocity's change less the
-        // known impulses, paired as above); the contact lists say WHERE. Their sum is not the truth (the wheels' read 2.0x
-        // the weight at rest, the physics' own balance 1.000x), so the step's contacts are scaled to the support along
-        // them (0..ScaleMax). Contacts that mostly cancel (wedged, pinched) say nothing of the total: as read.
+        // known impulses, paired as above); the contact lists say WHERE. Their sum is not always the truth (the 1 N s floor,
+        // a hit's step), so the step's contacts are scaled to the support along them (0..ScaleMax; the wheels' 2.0x GravitySum
+        // x m at rest is the real weight at the multiplier 2 - the balance on the planet's 1 g halved them until 2026-10-18). Contacts that mostly cancel (wedged, pinched) say nothing of the total: as read.
         float scale = 1f; Vector3 sup = Vector3.Zero;
         if (had && m > 0f)
         {
@@ -382,7 +385,7 @@ public partial class AeroGridComponent
             L.ContactF.Add(f);
             total += f;
         }
-        if (_cAcc.Count > 0) StructureContactLoads.Last = $"{Entity?.DebugName}: {_cAcc.Count} contact cells, {total.Length() / 1000f:F1} kN as loaded; mean hull {_cHullJ.Length() / T / 1000f:F1} kN, wheels {_cWheelJ.Length() / T / 1000f:F1} kN, weight {LastMass * PhysicsHack.GetGravityDirection(Data).Length() / 1000f:F1} kN, the physics' support {(_cSupT > 0f ? _cSupJ.Length() / _cSupT : 0f) / 1000f:F1} kN, over {T:F2} s";
+        if (_cAcc.Count > 0) StructureContactLoads.Last = $"{Entity?.DebugName}: {_cAcc.Count} contact cells, {total.Length() / 1000f:F1} kN as loaded; mean hull {_cHullJ.Length() / T / 1000f:F1} kN, wheels {_cWheelJ.Length() / T / 1000f:F1} kN, weight {LastMass * PhysicsHack.GetGravityDirection(Data).Length() * PhysicsHack.GravityScale / 1000f:F1} kN, the physics' support {(_cSupT > 0f ? _cSupJ.Length() / _cSupT : 0f) / 1000f:F1} kN, over {T:F2} s";
         // the remainder onto the locked plates, equally (the larger of the window's mean and its peak step)
         if (_cResT > 0.05f)
         {
@@ -398,7 +401,7 @@ public partial class AeroGridComponent
                     L.ContactP.Add(new Vector3(cell.X, cell.Y, cell.Z) * 0.25f);
                     L.ContactF.Add(each);
                 }
-                StructureContactLoads.LastHeld = $"{Entity?.DebugName}: {locked} locked, holding {mean.Length() / 1000f:F1} kN (peak {_cResPeak.Length() / 1000f:F1}; weight {LastMass * PhysicsHack.GetGravityDirection(Data).Length() / 1000f:F1} kN)";
+                StructureContactLoads.LastHeld = $"{Entity?.DebugName}: {locked} locked, holding {mean.Length() / 1000f:F1} kN (peak {_cResPeak.Length() / 1000f:F1}; weight {LastMass * PhysicsHack.GetGravityDirection(Data).Length() * PhysicsHack.GravityScale / 1000f:F1} kN)";
             }
         }
         ClearContactWindow();

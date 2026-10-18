@@ -12,9 +12,16 @@ namespace AeroMod;
 ///     sup = m (v - v0 - written) - thrJ - airJ - (g0 m + x0) dt
 /// and, AT THE PHYSICS' SPEED CAP (the engine clamps |v| there: VelocityLimitProvider.LinearVelocityLimit), the part along
 /// the velocity is the clamp's, not a contact's - dropped.
+/// g0 is the gravity the body GOT (AppliedGravity: after the dampeners' hold, x the engine's GravityMultiplier - 2026-10-18:
+/// the planet's GravitySum read a parked ship's support at half its real weight at the vanilla multiplier 2, and a dampened
+/// hover - the hold cancels the gravity, no thrust - or a free fall as a phantom support of a whole weight).
 /// </summary>
 public static class ContactBalance
 {
+    /// <summary>The gravity the physics applies (m/s2): the body's gravity after the game's hold (CustomGravity - GravitySum
+    /// less the dampeners' hold, ThrustComponent.ComputeThrust) x the session's GravityMultiplier (PhysicsHack.GravityScale).</summary>
+    public static Vector3 AppliedGravity(Vector3 heldGravity, float multiplier) => heldGravity * multiplier;
+
     /// <summary>The share of the cap at which the step's velocity counts as clamped (the engine clamps to it exactly).</summary>
     public static float CapShare = 0.999f;
 

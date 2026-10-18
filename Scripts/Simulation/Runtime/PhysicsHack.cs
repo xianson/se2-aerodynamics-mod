@@ -351,6 +351,20 @@ public static class PhysicsHack
     }
 
     /// <summary>
+    /// THE GRAVITY THE BODY ACTUALLY GETS this step (world m/s2; 2026-10-18): the body's CustomGravity - GravitySum less the
+    /// dampeners' gravity hold, which ThrustComponent.ComputeThrust takes off it IN PLACE (the hold is never thrust:
+    /// ActiveThrustData leaves it out) - x the engine's GravityMultiplier (Havok scales the motion gravity by it; vanilla 2).
+    /// Read after the game's thrust (the same tick's hold): a dampened hover or a dampened parked ship gets ~0, a ship without
+    /// the hold 2 x GravitySum. No CustomGravity yet (its first tick): GravitySum x the multiplier. What a momentum balance
+    /// must subtract (ContactBalance) - GetGravityDirection is the planet's, for directions and the game's own hold.
+    /// </summary>
+    public static Vector3 GetAppliedGravity(DEntityContext data)
+    {
+        Vector3 g = SafeTryGet<CustomGravity>(data, out var cg) ? cg.Value : GetGravityDirection(data);
+        return ContactBalance.AppliedGravity(g, GravityScale);
+    }
+
+    /// <summary>
     /// Resolve IPhysics for the ground/forward probes. Session services are reachable via the
     /// public GameEntityExtensions helpers, so this no longer walks Scene.UserObject ->
     /// Session.EntitySerializer.TryResolveSessionService by reflection.
