@@ -26,9 +26,22 @@ namespace AeroMod;
 /// </summary>
 public static class GyroControl
 {
-    static bool _resolved; static MethodInfo _tryGet; static FieldInfo _computed;
+    static bool _resolved; static ImpulseReader _reader;
     /// <summary>Resolved and readable (the game's private ActiveGridGyroscopeData and its one field).</summary>
-    public static bool Ready { get { Resolve(); return _tryGet != null && _computed != null; } }
+    public static bool Ready { get { Resolve(); return _reader != null; } }
+
+    /// <summary>The game's private ActiveGridGyroscopeData read typed (2026-10-18: it was a MethodInfo.Invoke of TryGet - the
+    /// struct boxed as its out argument, the bool and the Vector3 result boxed, three objects a read, every tick per piloted
+    /// grid and every GyroBalance.Period ticks per grid with gyros): our own ImpulseReader&lt;G&gt; made generic on it once
+    /// (MakeGenericType, as AeroFlameComponent's EfficiencyReader), a direct TryGet&lt;G&gt; and Unsafe.As on its one Vector3
+    /// field (checked first: one instance field, ComputedGyroscopePerFrame, a Vector3 at offset 0 of a 12-byte struct).</summary>
+    abstract class ImpulseReader { public abstract Vector3 Read(DEntityContext data); public abstract bool Fits { get; } }
+    sealed class ImpulseReader<G> : ImpulseReader where G : unmanaged
+    {
+        public override bool Fits => System.Runtime.CompilerServices.Unsafe.SizeOf<G>() == System.Runtime.CompilerServices.Unsafe.SizeOf<Vector3>();
+        public override Vector3 Read(DEntityContext data)
+            => data.TryGet<G>(out var v) ? System.Runtime.CompilerServices.Unsafe.As<G, Vector3>(ref v) : Vector3.Zero;
+    }
 
     static void Resolve()
     {
@@ -37,29 +50,25 @@ public static class GyroControl
         try
         {
             var t = typeof(GridGyroscopesComponent).GetNestedType("ActiveGridGyroscopeData", BindingFlags.NonPublic);
-            _computed = t?.GetField("ComputedGyroscopePerFrame", BindingFlags.Public | BindingFlags.Instance);
-            if (t != null)
-                foreach (var m in typeof(DEntityContext).GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                    if (m.Name == "TryGet" && m.IsGenericMethodDefinition && m.GetParameters().Length == 1) { _tryGet = m.MakeGenericMethod(t); break; }
+            var fs = t?.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (t != null && t.IsValueType && fs != null && fs.Length == 1 && fs[0].Name == "ComputedGyroscopePerFrame" && fs[0].FieldType == typeof(Vector3))
+            {
+                var r = (ImpulseReader)Activator.CreateInstance(typeof(ImpulseReader<>).MakeGenericType(t));
+                _reader = r.Fits ? r : null;
+            }
         }
-        catch { _tryGet = null; _computed = null; }
-        if (AeroLog.Detail) Log.Default?.Info($"[AERO] GyroControl: game gyro impulse readable={_tryGet != null && _computed != null}");
+        catch { _reader = null; }
+        if (AeroLog.Detail) Log.Default?.Info($"[AERO] GyroControl: game gyro impulse readable={_reader != null}");
     }
 
-    [ThreadStatic] static object[] _args;
-    /// <summary>The angular impulse the game's gyros applied this frame (local; zero: none).</summary>
+    /// <summary>The angular impulse the game's gyros applied this frame (local; zero: none). No allocation.</summary>
     public static Vector3 GameImpulse(DEntityContext data)
     {
         Resolve();
-        if (_tryGet == null || _computed == null) return Vector3.Zero;
-        var a = _args ??= new object[1];
-        a[0] = null;
-        try
-        {
-            if (!(bool)_tryGet.Invoke(data, a) || a[0] == null) return Vector3.Zero;
-            return (Vector3)_computed.GetValue(a[0]);
-        }
-        catch { return Vector3.Zero; }
+        var r = _reader;
+        if (r == null) return Vector3.Zero;
+        Vector3 v = r.Read(data);
+        return v.IsValid() ? v : Vector3.Zero;
     }
 
     /// <summary>The angular velocity change (local) the game's ApplyAngularImpulseTarget made of that impulse: Δω for it,
