@@ -60,6 +60,11 @@ fly.
 
 ### Changed behaviour you will feel
 
+- **One thrust path (2026-10-17 legacy clean-up).** The old per-thruster path that ran with `Aero.ThrustTorque` off -
+  Mach-scaled thrust impulses, its own thruster overrides and a phantom attitude torque - is gone. `Aero.ThrustTorque`
+  off now leaves the game's own thrust untouched (applied at the centre of mass, the game's gyros and dampeners, no Mach
+  curve on the vanilla atmospherics); `GetThrusters` then reports effectiveness 1. A helicopter rotor's reaction torque
+  is always on (the never-used built-in anti-torque fallback, `RotorCyclic.YawArm` / `Reaction`, went with it).
 - **Block settings are saved with the block.** A control surface's axes, max deflection and trim, a gear's down / up and
   its **Airshock** switch (new: it was not saved before), an airbrake's max opening and a thruster's attitude share now
   live in each block's own saved data instead of lines matched to blocks by world position. They survive a grid that
@@ -199,6 +204,12 @@ fly.
 
 ### Internal
 
+- **Legacy clean-up (2026-10-17)**: `OffsetThrustJob.Execute` / `LegacyScale` and `OffsetThrustJob.Attitude.cs`, the SAS
+  / phantom torque and gyro hand-off in `AeroSimJob`, the old attitude test harness (`Integration/AeroTestHarness.cs`), the
+  thruster-override and grid-override helpers in `PhysicsHack`, the retired solid-rocket segment key reader
+  (`aero-solid:`), unused `CompressibleFlow` / `AtmosphereModel` relations, dead `FlightField` prototype knobs, and the
+  duplicate direction helpers (the engine's `Base6Directions.GetVector`). `OffsetThrustJob` keeps its name: it holds the
+  thruster and gyro caches.
 - **Feature folders.** `Integration/` and the flat folders split by feature: `Grid/`, `Runtime/`, `Api/`, `Air/`, `Dev/`,
   `Propulsion/`, `Fx/`, `Hud/`, `Blocks/`, `Structure/{Model,Server,Fx}`, `Design/`, `Debris/`, `Ui/` (each with a README).
   Big files split into partials by concern (`AeroGridComponent`, `StructureServer`, `FlightField`, `OffsetThrustJob`,

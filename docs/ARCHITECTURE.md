@@ -15,12 +15,12 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Shadow/` | Face visibility before a grid has its table (`PrecomputedShadowMap`) | no |
 | `Drag/` | The hull model (`DampedShadowedDragModel`), the per-direction force table (`ForceTable`, `ChunkedTable`), its disk cache (`AeroTableCache`), broken-off pieces (`OrphanChunks`) | no |
 | `Lift/` | Wing detection (`ConnectedComponentWingDetector`), the wing lift model (`CompressibleWingModel`), the whole-ship wrapper (`LiftingSurfaceModel`), the ship's stall (`LiftPeak`), wing root loads (`WingStrain`), ground effect | no |
-| `Atmosphere/` | The air model: layered atmosphere, isentropic / shock relations, the thin upper tail | no |
+| `Atmosphere/` | The air model: layered atmosphere, the wave-drag multiplier, the thin upper tail | no |
 | `Components/` | Block-level aero components (`IAeroBlockComponent`): control surfaces, airbrake and gear drag, intakes, scoops, rotors, other mods' drag patches; their registry and factory | mostly no (`BlockComponentFactory` reads blocks) |
 | `Debris/` | Drag on the game's loose fracture debris (not grids): the job (`AeroDebrisDrag`, client scene) and its engine-free step (`DebrisDragMath`, run by `Tests/DebrisTests`) | `AeroDebrisDrag.cs` only |
 | `Air/` | The game's air at a grid: density into a full state (`AtmosphereBridge`), wind (`AeroWind`) | yes |
 | `Grid/` | `AeroGridComponent` (one per grid) and its jobs, the rebuild scheduler, the background work queue, the frame budget | yes |
-| `Propulsion/` | Thrust torque and the aero-aware attitude law (`ThrustTorque`, `ThrustAllocator`, `GyroControl`), the older per-thruster path (`OffsetThrustJob`), thrust-vs-Mach profiles, flames, fuel mass | yes (`ThrustAllocator` is pure) |
+| `Propulsion/` | Thrust torque and the aero-aware attitude law (`ThrustTorque`, `ThrustAllocator`, `GyroControl`), the thruster / gyro caches (`OffsetThrustJob`, its name kept), thrust-vs-Mach profiles, flames, fuel mass | yes (`ThrustAllocator` is pure) |
 | `Structure/Model/` | The structure: joint network and solve (`ShipStructure`), one evaluation (`StructureEval`), fatigue, bends, materials, hull heat, tear maths | no |
 | `Structure/Server/` | The structure's game side: snapshot and background evaluation (`StructureServer*` partials of `AeroGridComponent`), contacts, tearing, wing strain, settings (`StructureLoads`) | yes |
 | `Structure/Fx/` | What the player gets of it: creaks and shake (`StructureFeel`), torn-edge smoke (`TearSmoke`), re-entry scorch (`HeatScorch`) | yes |
@@ -92,9 +92,10 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
    `AeroPhysics.ApplyForceAndTorque`. `LastAeroTorque` (airframe) and `LastSurfaceTorque` (block components) are kept
    apart for the attitude law. Both scenes apply the forces (the client copy predicts the same flight).
 9. **Structure** (server only): `TickStructure` with the applied force and torque (section 6).
-10. **Legacy attitude** only with `ThrustTorque.Enabled` off: `OffsetThrustJob.Execute` (Mach thrust profiles, per-thruster
-    overrides) and its phantom PD torque. The default path is the separate `AttitudeJob` (section 5).
-11. **Stats and dev hooks:** `AeroStats.CommitGrid`, `AeroTestHarness.Tick`, `AeroSpeedSpike.Tick`, `AeroFlightTest.Tick`.
+10. **Attitude** is not here: the separate `AttitudeJob` (section 5) is the only thrust path (the old per-thruster
+    `OffsetThrustJob.Execute` with its phantom PD torque was removed 2026-10-17). `Aero.ThrustTorque` off leaves the game's
+    own thrust untouched.
+11. **Stats and dev hooks:** `AeroStats.CommitGrid`, `AeroSpeedSpike.Tick`, `AeroFlightTest.Tick`.
 
 ### Inside TryCompute: shape to forces
 
@@ -143,7 +144,8 @@ controller's steering (`AeroGridComponent.UpdateSteerCap`) so the controller nev
   `AeroApi.SetFocusGrid`, or `TargetControlData`): `TickStructureCore` installs the last evaluation's results
   (`ApplyStructureDamage`, `ApplyBends`), takes a snapshot (`StructSnap`: applied air force / torque, wing forces, each
   block component's and drag patch's air for its own block (`SnapComponentLoads`, `Structure.ComponentLoads`), thruster
-  shares, extra block loads (`PublishBlockLoad`), gyro torque, contacts, block health, the Orbital mod's railed-entry
+  shares, extra block loads (`PublishBlockLoad`: rotors' cyclic and reaction, solid rockets' thrust) and one-tick
+  impulses taken once per window (`PublishBlockImpulse`: rotor strikes), gyro torque, contacts, block health, the Orbital mod's railed-entry
   state) and, after a block change
   and `RebuildCooldown`, the blocks themselves (`SnapshotBlocks`);
 - in the background (`AeroWork`, at most `StructureLoads.MaxInFlight` evaluations in all): `EvaluateStructure` -
@@ -255,8 +257,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   Other harness verbs: `aerocost on|off` (`AeroCost.Log`: the `[AERO-COST]` line once a second, `AeroCost.MaybeLog`),
   `aeroexport on` (`AeroExport`: block boxes for `Tests/AeroBench`), `flightdump` (`FlightFixture`, `tools/flightdump.sh`:
   `Tests/data/*.flight` for `Tests/ThrustTests`). Scripts: `Orbital Mod/tools/harness/*.sh`.
-- **AeroTestHarness** (`Integration/AeroTestHarness.cs`, a local dev file) - scripted in-game scenarios; it freezes grids
-  (`ShouldSkipGrid`) and ticks at the end of the sim step. `AeroFlightTest` (`Dev/`) is the scripted autopilot.
+- **AeroFlightTest** (`Dev/`) - the scripted autopilot. (The old `AeroTestHarness` - scripted attitude scenarios for the
+  phantom-torque path - was removed with that path, 2026-10-17.)
 - **AeroCost / AeroStats** - per-section time (`AeroCost.Sim`, `.Compute`, `.Apply`, ...: zero cost while
   `AeroCost.Log` is off), the engine stat overlay's "Grid" / "All" sections; `StructureLoads` counters for the structure.
 - **Offline tests** (`Tests/`, no game): `AeroBench` (shapes, table vs exact, cache, wings, structure `struct` / `fail` /
@@ -306,6 +308,7 @@ The engine type is always there, so a world saved with the mod still loads witho
 | Gear: down / up, Airshock | `AeroGearComponent` on the block, id `...b2` | `aero-gear:1 down airshock` (every gear) |
 | Airbrake: max opening | `AeroAirbrakeComponent` on the block, id `...b3` | `aero-airbrake:1 max` (every airbrake) |
 | Thruster: attitude fraction | `AeroThrustSettingsComponent` on the block, id `...b4` | `aero-thrust:1 f` (only off the default 0.5) |
+| Rotor / prop blades' health (rotor strikes, 2026-10-17) | `AeroRotorStrikeComponent` on the striking propulsors' server blocks, id `...b7` | `aero-blades:1 health` (only below 1: worn or broken - 0) |
 
 - **The blocks' keys** (since 2026-10-15; `Blocks/AeroBlockSave.cs`, the text in `Blocks/AeroBlockSaveForm.cs`, pure):
   each component is injected with a fixed component id and the builder (`InjectAeroComponents`); its `[Init]` reads the

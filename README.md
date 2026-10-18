@@ -20,8 +20,39 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   input; vanilla hinges carrying flaps can be flown the same way (`Control.HingeSurfaces`, off by default).
 - **Thrust torque and attitude.** Thrust acts at each thruster, not at the centre of mass: unbalanced thrust turns the
   ship. One aero-aware attitude law flies gyros, thrusters and surfaces toward the pilot's target, knowing the air's
-  torque - no phantom torque. Per-thruster attitude authority in the thruster's terminal; flames show each thruster's
-  share.
+  torque - no phantom torque. Flames show each thruster's share. (`Aero.ThrustTorque` off: the game's own thrust,
+  untouched.)
+- **Engines by speed.** Vanilla atmospheric thrusters lose thrust through the sound barrier (the Jet curve: 76 % at
+  Mach 1), then gain from ram pressure above their rating (180 % at Mach 1.7) and fade fast past it, gone by 2.8 -
+  applied to the game's own thrust, the game's air-density effect on top; hydrogen and ion stay flat. Air-breathers care where the air comes from: a jet keeps full thrust within
+  28 deg of straight-in air, stalls to 15 % by 65 deg and flames out with the air from behind (0 from 125 deg); a
+  ramjet unstarts past 10 deg and re-lights 1.5 s after the air is back within 6 deg; turboprops don't care. It
+  fades in from 20 to 60 m/s true airspeed, so hovering and taxiing are untouched (`InletAngle`). A sleek hull meets a sharp transonic drag peak at Mach 1 and slips through
+  to a supersonic cruise once past it; a brick stalls out subsonic. The mod's turboprops (the kings of thrust per kW up
+  to ~Mach 0.6), helicopter rotors and Reversible Rotor (85 kN) have their own curves, by true airspeed and the local
+  Mach. A main rotor's thrust is capped to what the ship can hold against its torque - reversible and
+  sideways thrusters, gyros and control surfaces all count (the surfaces only with air over them).
+- **Rotor strikes.** A turning helicopter rotor, Reversible Rotor or turboprop prop that hits something - terrain, another
+  ship, its own ship's blocks, a player - takes blade damage by its blade speed and what it hit (rock worst, then metal, a
+  person least): three full-speed rock strikes break the blades, a brush at low rpm only nicks them. Broken, it stops dead
+  with no thrust and only a stub left; weld the block back to full integrity to repair the blades. The struck block takes
+  real damage, a player in a turning disc dies (a barely turning one bruises) and is thrown, and the ship gets the strike's
+  real kick plus the stopped rotor's angular momentum - skimming a hill throws a helicopter. Sparks and a crunch.
+  (docs/PROPULSOR_SPECS.md "Rotor strikes".)
+- **Ramjets** (4 sizes, the "Ramjets" group). Hydrogen-burning air-breathers for the supersonic band: no static thrust
+  (boost them past Mach 0.5), 100 % of their rating at Mach 2.5-3.5 (1.5 x the vanilla atmospheric of their kit), gone
+  past Mach 6 and in vacuum, and they unstart off the airflow. They draw hydrogen through conveyors like a hydrogen
+  thruster, at 1/3 of a hydrogen thruster's hydrogen per kN, and only for the thrust they give (none below Mach 0.5).
+  The inlet spike slides aft from Mach 1.6 to 3.2. (docs/PROPULSOR_SPECS.md "Ramjets".)
+- **Solid rocket motors** (4 sizes, the "Solid Rockets" group). Stack segments of one size on a nozzle's top face. Set its
+  power level BEFORE ignition with the nozzle's thrust override (50-100 %; unset = 100 %), then Ignite it from its terminal
+  or a toolbar: it burns at that level (full = 2 x the vanilla hydrogen thruster of its size, +10 % in vacuum) until the
+  stack is empty - about 8 s per segment at 100 %, longer at lower power (the same total impulse), no shutdown. Your
+  thrusters, dampeners and flight controller never fire an unlit motor; once lit, the flight controller may vary it
+  between 50 and 100 % to turn the ship (strap-on boosters steer by throttling differentially). Segments are tanks of a
+  real "Solid Propellant" resource the nozzle draws through their own conveyor ports, which link only to solid rocket
+  blocks of the same size, never to your conveyor network; they get lighter as they burn and are never refilled.
+  (docs/PROPULSOR_SPECS.md "Solid rocket motor".)
 - **Warnings.** A stall warning from the whole ship's lift curve and a predicted loss-of-attitude-control (LOAC)
   warning - shown by the Orbital mod's flight HUD. The game's thrust-overload warning is silenced while the wings carry
   the weight. Mach can be appended to the speedometer (`Hud.Mach`, off by default).

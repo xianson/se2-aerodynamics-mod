@@ -111,10 +111,10 @@ SE2 gives only a density: the atmosphere generators (planets, stations) write it
 
 | Member | What it gives |
 |---|---|
-| `int GetThrustProfiles(List<string> names)` | The profile names: Rocket, Propeller, Turbofan, Turbojet, Ramjet, Scramjet, HelicopterRotor. |
+| `int GetThrustProfiles(List<string> names)` | The profile names: Rocket, Propeller (piston engine, fixed-pitch prop), Turboprop (the Turboprop blocks' curve), DuctedFan (the fans' airspeed fade, by Mach at sea level), Jet (the vanilla atmospheric thrusters' curve: the transonic pinch, 76 % at Mach 1, then the ram rise above the rating - 180 % at Mach 1.7 - gone at 2.8), Turbofan, Turbojet, Ramjet (the Ramjet blocks' curve: nothing below Mach 0.5, 100 % at 2.5-3.5, gone past 6), Scramjet, HelicopterRotor. |
 | `float ThrustEffectiveness(string profile, float mach)` | Thrust relative to the static (Mach 0) rating: 0 outside the operating envelope, above 1 where ram pressure helps (a turbojet at Mach 2.5 gives 1.25). `-1` for an unknown profile. Pure. |
 | `bool TryGetThrustProfile(string profile, out float minMach, out float maxMach)` | A profile's operating envelope. |
-| `int GetThrusters(Entity grid, List<Entity> thrusters, List<string> profiles, List<float> effectiveness)` | The grid's thrusters as aero sees them: the block entity, its profile (atmospheric thrusters are Turbofan; hydrogen and ion are Rocket, flat), and its effectiveness now (the profile at the grid's Mach and the air's angle into the intake; Mach 0 at rest) as applied: the profiles apply only on the legacy thrust path (`Aero.ThrustTorque` off) - with it on (the default) the game's thrust is used as it is and every effectiveness is 1. |
+| `int GetThrusters(Entity grid, List<Entity> thrusters, List<string> profiles, List<float> effectiveness)` | The grid's thrusters as aero sees them: the block entity, its profile (vanilla atmospheric thrusters are Jet; hydrogen and ion are Rocket, flat; the mod's propulsor blocks their own - Turboprop, HelicopterRotor, Ramjet (hydrogen thrusters underneath), or DuctedFan for the fans; each sampled by Mach for axial flight at sea level, the blocks themselves following their true airspeed), and its effectiveness now, as applied: with `Aero.ThrustTorque` on (the default) a vanilla atmospheric thruster's Jet factor at the grid's Mach (above 1 in the supersonic ram rise: up to 1.8 at Mach 1.7) x its inlet-angle factor in flight (full within 28 deg of straight-in air, 0.15 by 65 deg, 0 with the air from behind past 125 deg; faded in from 20 to 60 m/s true airspeed) - its game maximum is shaped by both, the game's air-density efficiency on top - and 1 for the rest (a propulsor block's own curve is already in its maximum - a ramjet's with its density factor and its own inlet unstart; turboprops, fans and rotors have no inlet factor); with `Aero.ThrustTorque` off the game's own thrust is untouched: 1 for every thruster. `GetThrustAlong` / the design probe assume straight-in air. |
 
 ### Change counters
 
@@ -182,9 +182,9 @@ Freshness (2026-10-15): the ship's mass, centre of mass, gyros, thrusters and jo
 |---|---|---|
 | `bool TryDesign(Entity grid, Vector3 travelLocal, float mach, out Vector3 copLocal, out Vector3 forceLocal, out Vector3 torqueLocal, out float stabilityA, out float stabilityB, out float streamlining)` | 4 | The whole ship (hull and wings) travelling along `travelLocal` at this Mach in sea-level air: its centre of pressure (grid-local: the force's line nearest the centre of mass), force (N) and torque (N·m, about the centre of mass), static stability about the two axes across the flow (positive: the air turns it back; per radian, over q × area × size) and its streamlining. `false`: no aero, or the table is not built yet (asked for: try again shortly). |
 | `float GetTopSpeed(Entity grid, Vector3 dirLocal)` | 4 | Sea-level top speed along `dirLocal` (m/s): forward thrust (each thruster's profile at the Mach, where one applies - the legacy thrust path only; by default the game's thrust as it is) against drag. NaN no aero or table; 0 too little thrust; +∞ past 3 km/s. |
-| `float GetThrustAlong(Entity grid, Vector3 dirLocal, float mach, out Vector3 centreLocal)` | 4 | Thrust along `dirLocal` at sea level and this Mach (N), and where it acts on average. |
+| `float GetThrustAlong(Entity grid, Vector3 dirLocal, float mach, out Vector3 centreLocal)` | 4 | Thrust along `dirLocal` at sea level and this Mach (N), and where it acts on average: a vanilla atmospheric thruster's rating x its Jet curve at that Mach, a propulsor block's rating x its kind's curve at that Mach (for axial flight: Turboprop, DuctedFan, HelicopterRotor, Ramjet - not its live maximum, which carries its airspeed, rpm and torque cap now), hydrogen and ion flat. |
 | `bool TryGetCenterOfMass(Entity grid, out Vector3 comLocal)` | 4 | The ship's centre of mass (grid-local; subgrids included). |
-| `float GetWavePeak(float streamlining)` | 4 | The transonic drag peak (× subsonic) a streamlining gives. Pure. |
+| `float GetWavePeak(float streamlining)` | 4 | The transonic drag peak (× subsonic) a streamlining gives: 3.2 for a brick down to 1.12 for a sleek hull (2026-10-17: a sharp peak at Mach 1, falling fast past it - `ForceTable.HullWave`; 1.45 until the Mach wall was made reachable the same day). Pure. |
 | `float GetTopSpeedAt(Entity grid, Vector3 dirLocal, float throttle)` | 5 | As `GetTopSpeed` at throttle 0..1 (cruise). |
 | `float GetControlRatio(Entity grid, Vector3 dirLocal, float speed)` | 5 | How well the ship holds its attitude along `dirLocal` at `speed` (m/s, sea level): the gyros' and thrusters' torque over the air's torque at a 5° upset. Over 1: it can. NaN: no aero or table. |
 | `float GetMass(Entity grid)` | 5 | The ship's mass (kg, subgrids included); 0 unknown. |
@@ -285,7 +285,7 @@ Frames: *local* = the grid's frame; the travel is the direction the grid moves *
 | 0 | `Age` | s | Since the tick it was taken (filled at your read). A quiet grid at rest publishes only every 30 ticks. |
 | 1 | `Airspeed` | m/s | Through the air (the wind in). |
 | 2 | `GroundSpeed` | m/s | Its physics speed. |
-| 3 | `Mach` | | The aero model's (0 before its first result). |
+| 3 | `Mach` | | The airspeed over the local speed of sound, every step (the aero model's speed of sound; the value the Jet curve and the propulsors use). |
 | 4 | `Density` | kg/m³ | The air aero flew it in (the game's, or the upper tail). |
 | 5 | `DynamicPressure` | Pa | q of the model's last result. |
 | 6-8 | `TravelX/Y/Z` | unit, local | Into the air; zero under 0.1 m/s. |
@@ -469,7 +469,7 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Aero.Enabled` | world | bool | true |  | Aerodynamics · Flight model · basic | The whole aero simulation. On again: every grid rebuilds. |
 | `Aero.DragMultiplier` | world | float | 1 | 0..10 | Drag strength · Flight model · basic | The force along the motion, times this. |
 | `Aero.LiftMultiplier` | world | float | 1 | 0..10 | Lift strength · Flight model · basic | The force across the motion (wings, control surfaces, the hull's own lift), times this. Torque is scaled by both, weighted by the drag and lift magnitudes. |
-| `Aero.ThrustTorque` | world | bool | true |  | Off-centre thrust turns ships · Flight model · basic | Thrusters off the centre of mass turn the ship. Off: the older phantom attitude hold. |
+| `Aero.ThrustTorque` | world | bool | true |  | Off-centre thrust turns ships · Flight model · basic | Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the game's own thrust, untouched. |
 | `Weather.Wind` | world | bool | true |  | Wind · Flight model · basic | The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push. |
 | `Control.HingeSurfaces` | world | int | 0 | 0..1 | Hinge control surfaces · Flight model · basic | Vanilla hinges carrying flaps as control surfaces, driven from the pilot's input. 0 none, 1 every hinge on a piloted grid. |
 | `Control.HingeMaxDeflection` | world | float | 20 | 1..60 | Hinge flap travel · Flight model · advanced | Hinge control surfaces: degrees at full command. |
