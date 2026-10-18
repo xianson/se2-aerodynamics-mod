@@ -1,5 +1,7 @@
 # Aerodynamics Mod for Space Engineers 2
 
+> *"The real barrier wasn't in the sky, but in our knowledge and experience of supersonic flight."* - Chuck Yeager
+
 Real aerodynamics for Space Engineers 2. Every ship flies by its own shape: a sleek hull slips through the air, a brick
 fights it, wings give lift and stall, the sound barrier pushes back, and re-entry heats the hull until it glows. The
 air also loads the ship's structure, so pulling too hard can bend, crack and tear it apart. There's nothing to set up
