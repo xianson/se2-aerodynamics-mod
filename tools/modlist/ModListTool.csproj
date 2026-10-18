@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- modlist: read / edit a world save's mod list (modlist.vrb) with the game's own serializer (see Program.cs) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SE2Dir>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</SE2Dir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="VRage.Library"><HintPath>$(SE2Dir)\VRage.Library.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="VRage.Core"><HintPath>$(SE2Dir)\VRage.Core.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="VRage.Core.Game"><HintPath>$(SE2Dir)\VRage.Core.Game.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Game2.Simulation"><HintPath>$(SE2Dir)\Game2.Simulation.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

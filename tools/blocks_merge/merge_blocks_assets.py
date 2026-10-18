@@ -7,7 +7,7 @@
 # definitions); one that differs is listed. Safe to run again (copies only what is missing).
 import os, shutil, sys
 
-HERE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+HERE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod Blocks"
 # both mods had these: the Aero mod's copy wins (the same CharacterPhysics override - MaxVelocity 1000 - with its own
 # asset id; Assets.meta / System.meta are the folders' own metas)
