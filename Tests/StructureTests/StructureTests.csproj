@@ -8,5 +8,7 @@
     <Compile Include="$(Sim)\Surface\SurfaceFace.cs" />
     <Compile Include="$(Sim)\Surface\SmoothSurfaceProvider*.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
+    <!-- (AeroTuning: the world's multipliers on a block component's load, ComponentLoads - AeroPhysics.Dt shimmed) -->
+    <Compile Include="$(Sim)\Runtime\AeroConfig.cs" />
   </ItemGroup>
 </Project>

@@ -148,7 +148,8 @@ public partial class AeroGridComponent
 
     /// <summary>A thruster block: its entity has the game's ThrusterComponent - the test the thruster cache (and so the thrust
     /// loads, OffsetThrustJob.RebuildThrusterCache) finds thrusters by: atmospheric, hydrogen, ion and the mods' engines.</summary>
-    static bool IsThrusterBlock(CubeBlockComponent b) => b?.Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null;
+    /// (Or a block published as an engine - PublishBlockLoad isEngine, 2026-10-17: a mod engine without the game's component.)
+    static bool IsThrusterBlock(CubeBlockComponent b) => b?.Entity?.TryGet<Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterComponent>() != null || IsLoadEngine(b?.Entity);
 
     /// <summary>A block's DestructionThreshold (its definition's; per definition, cached; 0 if unreadable).</summary>
     static float DestructionThreshold(CubeBlockComponent b)

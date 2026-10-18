@@ -94,8 +94,8 @@ public static class StructureEval
         /// (its centre: st.BlockAt finds the block). Grid-local.</summary>
         public readonly List<Vector3> CompF = new(), CompP = new(), CompT = new(), CompAt = new();
         /// <summary>EXTRA BLOCK LOADS (2026-10-17, AeroGridComponent.PublishBlockLoad): forces on the ship the structure sees
-        /// nowhere else (not in AeroF, not the thrusters'): on block LoadBlock, force (N) at point (m) with a moment about it
-        /// (N m); LoadEngine: an engine's (its thrust - off with ThrustLoads). Grid-local.</summary>
+        /// nowhere else (not in AeroF, not the thrusters'): on block LoadBlock (-1: the block at the point), force (N) at point
+        /// (m) with a moment about it (N m); LoadEngine: an engine's (its thrust - off with ThrustLoads). Grid-local.</summary>
         public readonly List<int> LoadBlock = new();
         public readonly List<Vector3> LoadF = new(), LoadP = new(), LoadT = new();
         public readonly List<bool> LoadEngine = new();
@@ -265,7 +265,9 @@ public static class StructureEval
         // extra block loads (PublishBlockLoad: forces nothing else here carries - a rotor's cyclic, a mod engine's thrust)
         for (int k = 0; k < L.LoadBlock.Count; k++)
         {
-            int b = L.LoadBlock[k]; if (b < 0 || b >= n || (L.LoadEngine[k] && !ThrustLoads)) continue;
+            if (L.LoadEngine[k] && !ThrustLoads) continue;
+            int b = L.LoadBlock[k]; if (b < 0) b = st.BlockAt(L.LoadP[k]);   // (a block not in the structure's index yet: by its point)
+            if (b < 0 || b >= n) continue;
             var f = L.LoadF[k];
             st.ExtForce[b] += f; st.ExtMoment[b] += Vector3.Cross(L.LoadP[k] - st.Center[b], f) + L.LoadT[k];
         }

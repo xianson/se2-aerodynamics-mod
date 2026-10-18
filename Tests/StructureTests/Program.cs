@@ -2095,6 +2095,34 @@ static class Program
                 Check(Same(r.F, r.F0, scale) && Same(r.M, r.M0, scale), $"component loads (b): the total force and moment unchanged (differ {(r.F - r.F0).Length():E2} N, {(r.M - r.M0).Length():E2} N m)");
                 Check(r.ratio > 2f, $"component loads (b): the airbrake's mount joint carries its drag - utilisation x{r.ratio:F1} over the spread");
             }
+        // (c) the world's drag / lift multipliers (AeroTuning): each component scaled as a part of the total
+        //     (AeroTuning.ScalePart) - the scaled parts add up to the scaled total, force and moment
+        {
+            float dm0 = AeroTuning.DragMultiplier, lm0 = AeroTuning.LiftMultiplier;
+            try
+            {
+                var rnd = new Random(17); float worstF = 0f, worstM = 0f;
+                Vector3 R(float k) => new Vector3((float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() - 0.5f) * k;
+                for (int trial = 0; trial < 200; trial++)
+                {
+                    AeroTuning.DragMultiplier = 0.2f + 2f * (float)rnd.NextDouble(); AeroTuning.LiftMultiplier = 0.2f + 2f * (float)rnd.NextDouble();
+                    var com = R(4f); var vel = trial % 10 == 0 ? Vector3.Zero : R(400f);
+                    int nc = 1 + rnd.Next(6);
+                    var f = new Vector3[nc]; var p = new Vector3[nc]; var m = new Vector3[nc];
+                    Vector3 F = Vector3.Zero, T = Vector3.Zero;
+                    for (int i = 0; i < nc; i++) { f[i] = R(40000f); p[i] = R(20f); m[i] = R(5000f); F += f[i]; T += Vector3.Cross(p[i] - com, f[i]) + m[i]; }
+                    float tk = AeroTuning.TorqueScale(F, vel);
+                    var Fs = F; var Ts = T; AeroTuning.Scale(ref Fs, ref Ts, vel);
+                    Vector3 sf = Vector3.Zero, sm = Vector3.Zero;
+                    for (int i = 0; i < nc; i++) { var fi = f[i]; var mi = m[i]; AeroTuning.ScalePart(ref fi, ref mi, p[i], com, tk, vel); sf += fi; sm += Vector3.Cross(p[i] - com, fi) + mi; }
+                    worstF = MathF.Max(worstF, (sf - Fs).Length() / MathF.Max(Fs.Length(), 1f));
+                    worstM = MathF.Max(worstM, (sm - Ts).Length() / MathF.Max(Ts.Length(), 1f));
+                }
+                Console.WriteLine($"   component loads (c): the multipliers on the parts vs the total - worst relative difference force {worstF:E1}, moment {worstM:E1} (200 random sets)");
+                Check(worstF < 1e-5f && worstM < 1e-5f, $"component loads (c): the scaled components add up to the scaled total (force {worstF:E1}, moment {worstM:E1} relative)");
+            }
+            finally { AeroTuning.DragMultiplier = dm0; AeroTuning.LiftMultiplier = lm0; }
+        }
         }
         finally { StructureEval.ComponentLoadsAtBlocks = on0; }
     }

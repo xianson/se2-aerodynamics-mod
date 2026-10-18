@@ -35,6 +35,8 @@ public partial class AeroGridComponent
             }
             for (int k = 0; k < L.ThrBlock.Count; k++) sb.Append("thr ").Append(L.ThrBlock[k]).Append(' ').Append(V(L.ThrF[k])).Append('\n');
             foreach (int b in L.GyroBlock) sb.Append("gyro ").Append(b).Append('\n');
+            for (int k = 0; k < L.CompF.Count; k++) sb.Append("comp ").Append(V(L.CompF[k])).Append(' ').Append(V(L.CompP[k])).Append(' ').Append(V(L.CompT[k])).Append(' ').Append(V(L.CompAt[k])).Append('\n');
+            for (int k = 0; k < L.LoadBlock.Count; k++) sb.Append("load ").Append(L.LoadBlock[k]).Append(' ').Append(V(L.LoadF[k])).Append(' ').Append(V(L.LoadP[k])).Append(' ').Append(V(L.LoadT[k])).Append(L.LoadEngine[k] ? " 1" : " 0").Append('\n');
             string path = DumpPath(".loads");
             System.IO.File.WriteAllText(path, sb.ToString());
             StructureLoads.LastDump = path;
