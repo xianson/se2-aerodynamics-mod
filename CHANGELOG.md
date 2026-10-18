@@ -12,7 +12,8 @@ The first Workshop release. In plain words, what you get:
 - **Aircraft parts** in the G menu (Aerodynamics): hinged control surfaces, retractable landing gear in four wheel sizes,
   clamshell airbrakes (open with the parking brake), turboprops, ducted fans, helicopter main rotors with cyclic
   steering, reversible rotors, ramjets in four sizes, and solid rocket motors you stack from segments.
-- **Engines by speed.** Atmospheric thrusters lose thrust through Mach 1 and gain from ram air above it; jets flame out
+- **Engines by speed.** Atmospheric thrusters lapse a little up to Mach 0.85, then gain from ram air (about 2x their
+  rating at Mach 1.6) and fade fast past Mach 1.7; jets flame out
   with the air from the side or behind; ramjets only work supersonic.
 - **A structure that can break.** Air, thrust and impact loads run through the ship you fly; overloaded parts wear,
   fatigue, bend, crack across and tear off, with sound, shake and smoke. Rotor blades break on what they hit; weld the
@@ -47,6 +48,20 @@ The first Workshop release. In plain words, what you get:
   on to Mach 1.7 on that thrust; drag at wing CL 0.5, Mach 1.5 x1.79; the Tu-134 at Mach 0.79 x1.25; subsonic below
   each wing's critical Mach unchanged. Both switch off for the A/B (`CompressibleWingModel.WingWaveDrag`,
   `SupersonicLiftDrag`). Saved force tables rebuild once (cache version 22; the tables themselves are unchanged).
+- **Mach 1 retuned: no engine pinch, block wings read as thinner** (2026-10-18, the user: "1 and 2"). With the wings'
+  own wave drag the sound barrier had become an endgame wall (the F-6 needed T/W 3.4 at sea level). Two levers:
+  (1) the atmospheric thrusters' Mach curve has **no transonic pinch** any more (it dipped to 76 % at Mach 1: a real
+  afterburning engine doesn't, its thrust rises with ram from the high subsonic on) - the ram rise now starts there:
+  85 % at Mach 0.85, 108 % at Mach 1 (`ThrustProfiles.JetMach1`), 148 % at 1.2, 194 % at 1.45, **198 % at Mach 1.6**
+  (`JetRamPeak`; was 180 % at 1.7), then the same fall as before from Mach 1.8 (the ramjet still takes over at Mach
+  1.98); (2) **block wings' wave drag takes 0.4 of their thickness ratio** (`CompressibleWingModel.BlockWingThicknessScale`):
+  block wings are 12-19 % thick where a real fighter's are 4-6 %, so they now pay the wave drag of the 5-8 % wing a
+  builder means - a thicker or straighter wing still pays more (thin swept vs thick straight: 7.8x less at Mach 1.2,
+  7.3x at Mach 2). The supersonic drag due to lift is unchanged. AeroBench, the F-6: T/W to break Mach 1 at sea level
+  3.36 -> **1.55** (0.8 kg/m3: 1.99 -> 0.92; 0.4 kg/m3: 2.53 -> **1.17**), then on to Mach 1.44 on that thrust (1.73
+  before); its drag at Mach 1 1.92x -> 1.26x its subsonic drag; still ~2x what a real F-16 needs (SE ships are about
+  twice as draggy per ton). A brick of the same frontal area stalls at Mach 0.45 on that thrust. The Tu-134 at Mach
+  0.79: 886 -> 707 kN (its wings' wave drag now starts past its cruise Mach). Below Mach 0.75 nothing changes.
 
 Good to know:
 

@@ -107,8 +107,8 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   ship. One aero-aware attitude law flies gyros, thrusters and surfaces toward the pilot's target, knowing the air's
   torque - no phantom torque. Flames show each thruster's share. (`Aero.ThrustTorque` off: the game's own thrust,
   untouched.)
-- **Engines by speed.** Vanilla atmospheric thrusters lose thrust through the sound barrier (the Jet curve: 76 % at
-  Mach 1), then gain from ram pressure above their rating (180 % at Mach 1.7) and fade fast past it, gone by 2.8 -
+- **Engines by speed.** Vanilla atmospheric thrusters lapse to 85 % by Mach 0.85 (the Jet curve), then gain from ram
+  pressure above their rating (108 % at Mach 1, 198 % at Mach 1.6) and fade fast past Mach 1.7, gone by 2.8 -
   applied to the game's own thrust, the game's air-density effect on top; hydrogen and ion stay flat. Air-breathers care where the air comes from: a jet keeps full thrust within
   28 deg of straight-in air, stalls to 15 % by 65 deg and flames out with the air from behind (0 from 125 deg); a
   ramjet unstarts past 10 deg and re-lights 1.5 s after the air is back within 6 deg; turboprops don't care. It

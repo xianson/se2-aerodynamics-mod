@@ -51,6 +51,18 @@ leads") and its CL:
   cell across it: 0.3-0.5 on most block wings (the F-6's 0.28-0.42, its own 0.12-0.19; the jetliner's main wing 0.19,
   its own 0.07). `ThicknessRatio` still sets `CLMax`, and a wing given by hand (no cells: the bench's) takes it; a
   detected wing never measured (no live surface at its detection) gets no wave drag of its own.
+- **Block wings read as thinner** (2026-10-18, the user: "1 and 2" - soften the pinch, scale the block wings' wave
+  drag): the theory takes `BlockWingThicknessScale` (0.4) x that t/c. Block wings are 12-19 % thick (a cell's depth over
+  a few cells of chord) where a real fighter's are 4-6 %; at their own t/c they hit the full transonic wall of a thick
+  1940s section (the F-6: drag at Mach 1 1.92x its subsonic, T/W 3.36 to break Mach 1 at sea level). x 0.4 reads the
+  F-6's wings as 0.05-0.075. A scale on the t/c rather than on the drag or on `WaveK`: the whole theory stays one
+  consistent, thinner wing (Korn's onset, Lock's rise, the cap and Ackeret from the same t/c), monotonic in t/c, and the
+  Ackeret ratio between two wings (~ (t/c)^2) is unchanged - a drag scale would have left a thick straight wing's onset
+  at Mach ~0.72 and cut a thin wing's (realistic) drag alike; a smaller `WaveK` leaves the onset and Lock's rise alone.
+  Thin swept (0.05, 45 deg) vs thick straight (0.15, 0 deg), CDw on the scale (own t/c): Mach 0.9 0 vs 0.031 (0 vs
+  0.137), 1.2 0.0037 vs 0.029 - 7.8x (0.017 vs 0.169 - 9.9x), 2 0.0015 vs 0.011 - 7.3x (0.0094 vs 0.069 - 7.3x).
+  The no-double-count checks below run at the wings' own t/c (scale 1): the guard is calibrated on the real section's
+  theory; on the scale it subtracts the same hull rise from a smaller theory - it adds less, never more.
 
 **No double count.** A wing's leading-edge, trailing-edge and tip faces are HULL faces (only its skins are left out,
 `ExcludeWingFaces`), and the hull's speed-of-sound law charges them: the bluff Cp subsonic, the Newtonian one (CpMax)
@@ -98,7 +110,8 @@ it (smoothstep in the free-stream Mach over the same band) - linear theory keeps
 AR 3 wing at 3 deg, Mach 1.5: CDi 0.0083 (CL^2/CLa) where the old formula gave 0.0028; a 60-degree wing at Mach 1.5
 (M_perp 0.75) 0.0053, between its 0.0026 and 0.0080.
 
-What it does to a ship (AeroBench `machwall`, the F-6: straight wings, own t/c 0.12-0.19): T/W to break Mach 1 at sea
+What it does to a ship (AeroBench `machwall`, the F-6: straight wings, own t/c 0.12-0.19; at the wings' own t/c, before
+the block-wing scale and the Jet curve's retune of the same day - below): T/W to break Mach 1 at sea
 level 1.94 -> 3.36, at 0.8 kg/m3 1.15 -> 1.99, at 0.4 kg/m3 1.46 -> 2.53, its bottleneck still Mach 1.01 and on that
 thrust on to Mach 1.73; its drag at wing CL 0.5 and Mach 1.5 1382 -> 2472 kN (wing drag 162 -> 1252 kN: CDi 0.018 ->
 0.077, wave 0 -> 0.108); at Mach 0.6 unchanged. The Tu-134 at Mach 0.79: 706 -> 886 kN (its t/c 0.16 wings past their
@@ -106,6 +119,15 @@ Korn M_crit ~0.6). The machwall gate keeps the 2026-10-17 goals on the hull's wa
 whole model against its own (3.6 / 2.7). `Tests/AeroBench` `wingwave` (in the gate): Korn exactly, Lock's slope 0.1
 at M_dd; thin swept under thick straight at Mach 0.9 / 1.2 / 2; supersonic CDi over the subsonic formula, ~CL^2/CLa;
 no jumps; no double count on the blocky and stepped bench wings at Mach 2; finite everywhere; mirrored wings the same.
+
+**Mach 1 retuned (2026-10-18, the user: "1 and 2").** With the block-wing scale (x 0.4) and the Jet curve's pinch gone
+(`ThrustProfiles.JetMach1` 1.08 at Mach 1, the ram rise to 1.98 at Mach 1.6 - Propulsion/README.md), the F-6
+(`machwall`, the whole model; 12b97e7 -> now): T/W to break Mach 1 at sea level 3.36 -> 1.55, 0.8 kg/m3 1.99 -> 0.92,
+0.4 kg/m3 2.53 -> 1.17; bottleneck Mach 1.01 -> 1.02; on that thrust on to Mach 1.73 -> 1.44. Its drag over its
+subsonic drag area: Mach 0.8 1.12 -> 1.01, 0.9 1.69 -> 1.17, 1.0 1.92 -> 1.26, 1.2 1.86 -> 1.17, 1.5 1.56 -> 1.09,
+2.0 1.64 -> 1.51, 3.0 3.58 -> 3.58 (the wings' terms off: 1.00 / 1.06 / 1.12 / 1.03 / 1.00 / 1.51 / 3.58). On today's
+curve the scale sweeps T/W 2.38 (x 1) / 1.77 (x 0.6) / 1.55 (x 0.4) / 1.47 (x 0.3) / 1.37 (no wing terms). The Tu-134
+at Mach 0.79: 886 -> 707 kN (its wings at 0.4 x 0.16 now diverge past its cruise Mach).
 
 ## Entry points
 `AeroGridComponent` makes one `LiftingSurfaceModel` per grid (`OnAddedToScene`) and calls `Compute`, `DetectWings`,

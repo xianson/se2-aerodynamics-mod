@@ -32,7 +32,7 @@ public static class JetCurve
     public const int Period = 3;
 
     /// <summary>The highest factor written (x the rating): the supersonic RAM RISE (2026-10-17, the Mach wall made reachable)
-    /// takes the curve above its rating past ~Mach 1.2 - ThrustProfiles.JetRamPeak at its top. The game's power draw is its
+    /// takes the curve above its rating past ~Mach 0.97 (no transonic pinch since 2026-10-18) - ThrustProfiles.JetRamPeak at its top. The game's power draw is its
     /// definition's, flat (ThrusterComponent: ResourcesRequiredToThrust), so the rise is more thrust per kW, as a real jet's
     /// ram pressure gives; the propulsors write above their ratings too (AeroPropulsorComponent: density up to x1.25).</summary>
     public const float MaxFactor = 2f;

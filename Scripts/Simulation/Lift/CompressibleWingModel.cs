@@ -282,6 +282,19 @@ public class CompressibleWingModel : IWingLiftModel
     /// edge (smoothed to a ramp, a sleek hull holding its recovery) is charged almost nothing until Mach 1.6 (the theory
     /// added), less from there, none by Mach 3. False: none (the A/B).</summary>
     public static bool WingWaveDrag = true;
+    /// <summary>THE BLOCK WINGS' WAVE-DRAG THICKNESS (2026-10-18, the user: '1 and 2' - soften the pinch, scale the block
+    /// wings' wave drag): the wave drag takes a wing's t/c x this - its OWN t/c (WaveThickness) read as that of the real wing
+    /// a builder means. Block wings are 12-19 % thick (a cell's depth over a few cells of chord: the F-6's 0.12-0.19) where a
+    /// real fighter's are 4-6 %; charged at their own t/c they hit the full transonic wall of a thick 1940s section (the F-6's
+    /// drag at Mach 1 1.92x its subsonic, T/W 3.4 to break Mach 1 at sea level). x 0.4: the F-6's wings read as 0.05-0.075,
+    /// a real fighter's to a thick-ish modern one. Why a scale on the t/c, not on the drag or on WaveK: the whole theory stays
+    /// one consistent (thinner) wing - Korn's onset, Lock's rise, the transonic cap and Ackeret all from the same t/c - and the
+    /// ordering is kept exactly: monotonic in t/c, and the supersonic (Ackeret, ~ (t/c)^2) ratio between two wings unchanged
+    /// (thin swept vs thick straight at Mach 2: 7.3x before and after - AeroBench wingwave). A thick straight block wing still
+    /// diverges first (Korn: M_dd falls with t/c) and pays most; a drag scale would have kept its onset at Mach ~0.72 and
+    /// scaled a thin wing's (already realistic) drag by the same factor; a smaller WaveK leaves Lock's rise and the onset
+    /// untouched. 1: the real wing of that t/c (the A/B).</summary>
+    public static float BlockWingThicknessScale = 0.4f;
     public static float KornKappa = 0.87f, WaveK = 16f / 3f, WaveGammaPlus1 = 2.4f, EdgeBluffKept = 0.4f;
     /// <summary>Where linear theory stops near Mn = 1 (the cap's beta): transonic similarity - Ackeret holds while
     /// beta^2 >> ((gamma + 1) tau)^(2/3), tau the normal section's t/c (tc / cos L) - so beta_cap = ((gamma + 1) tau)^(1/3)
@@ -361,12 +374,12 @@ public class CompressibleWingModel : IWingLiftModel
         _hullCdBluff = cdBluff; _hullCpMax = cpMax; _hullT = blend; _hullWave = wave;
     }
 
-    /// <summary>The thickness ratio a wing's wave drag takes: its own (LiftingSurface.OwnThickness); a wing given by hand
+    /// <summary>The thickness ratio a wing's wave drag takes, x BlockWingThicknessScale: its own (LiftingSurface.OwnThickness); a wing given by hand
     /// (no cells: the bench's) the detector's ThicknessRatio; a detected wing never measured (no live surface at its
     /// detection - a cached small grid's incremental update) 0 - no wave drag of its own rather than one from the detector's
     /// 0.3-0.5 with no guard (its edges are still the hull's).</summary>
     internal static float WaveThickness(in LiftingSurface w) =>
-        w.OwnThickness > 0f ? w.OwnThickness : w.Cells == null || w.Cells.Count == 0 ? w.ThicknessRatio : 0f;
+        BlockWingThicknessScale * (w.OwnThickness > 0f ? w.OwnThickness : w.Cells == null || w.Cells.Count == 0 ? w.ThicknessRatio : 0f);
 
     /// <summary>What the hull charges on a wing's edge faces over their subsonic level this tick (drag area, m2; x q a
     /// force), the edge leading by lead (blended as the force point, LeadBlend).</summary>

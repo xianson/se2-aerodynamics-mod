@@ -826,6 +826,7 @@ static partial class Program
         if (args.Length > 0 && args[0] == "wingwave") { int ww = WingWaveChecks(); Console.WriteLine($"AeroBench: wingwave {(ww == 0 ? "1/1 passed" : ww + " FAILED")}"); return ww == 0 ? 0 : 1; }
         if (args.Length > 0 && args[0] == "wingwavelist") return WingWaveList(dataDir);
         if (args.Length > 0 && args[0] == "wingprobe") return WingProbe(dataDir, args.Skip(1).ToArray());
+        if (args.Length > 0 && args[0] == "machtune") return MachTune(dataDir, args.Skip(1).Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).DefaultIfEmpty(1f).ToArray());
         if (args.Length > 0 && args[0] == "machwall") { int mw = MachWall(dataDir, true); Console.WriteLine($"AeroBench: machwall {(mw == 0 ? "1/1 passed" : mw + " FAILED")}"); return mw == 0 ? 0 : 1; }
         if (args.Length > 0 && args[0] == "machscan") return MachScan(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "roll") return RollResponse();

@@ -23,6 +23,15 @@ using AeroMod;
 // own goals (T/W <= 3.6 at sea level, <= 2.7 at 0.4 kg/m3; the bottleneck still the transonic band, then on to a
 // supersonic cruise). The "below Mach 0.75" check compares the hull laws (the wing terms on in both); the Tu-134's drag
 // at Mach 0.79 with and without the wing terms is printed (verbose).
+// MACH 1 RETUNED (2026-10-18, the user: '1 and 2' - soften the pinch, scale the block wings' wave drag): the whole model
+// is the one checked now. The Jet curve has no pinch (ThrustProfiles.JetMach1 1.08: the ram rise from ~Mach 0.97, to
+// JetRamPeak 1.98 at Mach 1.6) and the block wings' wave drag takes 0.4 of their t/c
+// (CompressibleWingModel.BlockWingThicknessScale). Goals: the F-6 breaks Mach 1 at static T/W 1.35-1.65 at sea level
+// (aimed at ~1.5: ~2x a real F-16's ~0.75 - an SE ship is about twice as draggy per ton) and <= 1.3 at 0.4 kg/m3; the
+// bottleneck in the transonic band; on that thrust on to a supersonic cruise (>= Mach 1.4; past the crossing nothing asks
+// more); on T/W 1.5 at 0.4 kg/m3 it goes supersonic (>= 1.4); the wing terms still cost (whole model above the hull
+// wall's, real-t/c wings above both). The hull-only goals of 2026-10-17 (T/W <= 2.5 / 1.5 on the 0.76 pinch) are retired:
+// they tuned the pinch, which is gone - the hull wall's figures stay in the table.
 static partial class Program
 {
     const float SeaRho = 1.225f, HighRho = 0.4f, FullRho = 0.8f;
@@ -47,6 +56,22 @@ static partial class Program
     static readonly ThrustProfile JetBefore = new("JetBefore", new (double, double)[]
         { (0.00, 1.00), (0.60, 0.95), (0.85, 0.85), (0.95, 0.65), (1.00, 0.55), (1.10, 0.60), (1.30, 0.80), (1.60, 0.90), (2.00, 0.60), (2.40, 0.25), (2.80, 0.00) },
         maxOperatingMach: 2.8);
+
+    /// <summary>The Jet curve of 12b97e7 (2026-10-17 evening .. 2026-10-18: the 0.76 pinch at Mach 1, the ram rise to 1.80 at
+    /// Mach 1.7) - the table's "12b97e7" column, with the block wings' wave drag at their own t/c (scale 1).</summary>
+    static readonly ThrustProfile JetPinched = new("JetPinched", new (double, double)[]
+        { (0.00, 1.00), (0.60, 0.95), (0.85, 0.85), (0.95, 0.80), (1.00, 0.76), (1.10, 0.95), (1.20, 1.12), (1.30, 1.30), (1.40, 1.48),
+          (1.50, 1.65), (1.60, 1.77), (1.70, 1.80), (1.80, 1.55), (1.90, 1.20), (2.00, 0.82), (2.20, 0.45), (2.40, 0.25), (2.80, 0.00) },
+        maxOperatingMach: 2.8);
+
+    /// <summary>The block wings' wave drag at this share of their own t/c (CompressibleWingModel.BlockWingThicknessScale; 1:
+    /// their own, as 12b97e7) until the returned action runs.</summary>
+    static Action RealWingThickness(float scale = 1f)
+    {
+        float a = CompressibleWingModel.BlockWingThicknessScale;
+        CompressibleWingModel.BlockWingThicknessScale = scale;
+        return () => CompressibleWingModel.BlockWingThicknessScale = a;
+    }
 
     /// <summary>The drag along the travel (N) at a Mach in air of this density, as DesignProbe.ForcesAt: the table and the wings.</summary>
     static float WallDrag(Ship ship, ForceTable table, Vector3 travel, float mach, float rho = SeaRho)
@@ -198,8 +223,10 @@ static partial class Program
         float bst = btable.StreamliningAlong(-Vector3.UnitZ, -1f);
 
         var now = WallMeasure(fighter, ftable, travel, w, brick, btable, ThrustProfiles.Jet);
-        WallFigures before, hull;
-        { var restore = WallBeforeFix(); before = WallMeasure(fighter, ftable, travel, w, brick, btable, JetBefore); restore(); }
+        WallFigures before, hull, pinched;
+        { var restore = WallBeforeFix(); var rw = WingTermsOff(); before = WallMeasure(fighter, ftable, travel, w, brick, btable, JetBefore); rw(); restore(); }
+        // 12b97e7: the 0.76 pinch and the block wings' wave drag at their own t/c
+        { var restore = RealWingThickness(); pinched = WallMeasure(fighter, ftable, travel, w, brick, btable, JetPinched); restore(); }
         // the hull's wall alone (the wings' own wave drag and supersonic drag due to lift off - fda38c9's wing model): the
         // 2026-10-17 calibration's goals are the hull law's, and stay checked on it
         { var restore = WingTermsOff(); hull = WallMeasure(fighter, ftable, travel, w, brick, btable, ThrustProfiles.Jet); restore(); }
@@ -228,37 +255,39 @@ static partial class Program
         float worstSub = 0f; for (int i = 0; i < old.Count; i++) worstSub = MathF.Max(worstSub, MathF.Abs(after[i] - old[i]) / MathF.Max(1e-3f, MathF.Abs(old[i])));
 
         bool InBand(float m) => m >= 0.9f && m <= 1.06f;
-        // the hull's wall (the wings' own terms off): the 2026-10-17 goals, unchanged
-        bool altOk = hull.HighTw <= 1.5f && InBand(hull.HighAt) && hull.HighTop >= 1.4f && hull.Top15High >= 1.4f;
-        bool seaOk = hull.SeaTw <= 2.5f && InBand(hull.SeaAt) && hull.SeaTop >= 1.4f && hull.Post <= hull.SeaTw && st > 0.8f;
+        // THE WHOLE MODEL (2026-10-18, the user: '1 and 2' - no pinch, the block wings' wave drag at 0.4 of their t/c): the
+        // F-6 through Mach 1 at T/W 1.35-1.65 at sea level, <= 1.3 at 0.4 kg/m3, the bottleneck the transonic band, on the
+        // crossing thrust on to >= Mach 1.4 (past the crossing nothing asks more), on T/W 1.5 at 0.4 kg/m3 supersonic; the
+        // wing terms still cost something (above the hull wall's), and the real-t/c wings (12b97e7's wave drag) more
+        bool altOk = now.HighTw <= 1.3f && InBand(now.HighAt) && now.HighTop >= 1.4f && now.Top15High >= 1.4f;
+        bool seaOk = now.SeaTw >= 1.35f && now.SeaTw <= 1.65f && InBand(now.SeaAt) && now.SeaTop >= 1.4f && now.Post <= now.SeaTw && st > 0.8f;
         bool bOk = now.BrickStall <= 0.85f && now.BrickStallHigh <= 0.85f && bst < 0.2f && hull.BrickStall <= 0.85f;
         bool sOk = worstSub < 1e-4f;
-        // THE WHOLE MODEL (2026-10-18, fix a-wing-wave): the F-6's wings are straight and, by their own columns, t/c
-        // 0.12-0.19 - with their own wave drag (CompressibleWingModel.WingWaveDrag) Mach 1 costs more: its goals move from
-        // T/W 2.5 / 1.5 to 3.6 / 2.7 (measured 3.36 / 2.53); the rest kept - the bottleneck in the transonic band, on the
-        // crossing thrust on to a supersonic cruise (>= 1.4), past the crossing nothing asks more
-        bool wingOk = now.SeaTw <= 3.6f && now.HighTw <= 2.7f && InBand(now.SeaAt) && InBand(now.HighAt) && now.SeaTop >= 1.4f && now.HighTop >= 1.4f
-            && now.Post <= now.SeaTw && now.SeaTw > hull.SeaTw;
+        float realTw; { var rw = RealWingThickness(); realTw = NeededThrust(fighter, ftable, travel, ThrustProfiles.Jet, 1.05f, SeaRho, out _) / w; rw(); }
+        bool wingOk = now.SeaTw > hull.SeaTw && realTw > now.SeaTw * 1.2f;
         if (!altOk) fails++; if (!seaOk) fails++; if (!bOk) fails++; if (!sOk) fails++; if (!wingOk) fails++;
-        Console.WriteLine($"   {(altOk ? "ok  " : "FAIL")} machwall (the hull's wall - wing wave drag off): F-6 ({mass / 1000f:F1} t, streamlining {st:F2}, frontal {fa:F1} m2) at 0.4 kg/m3 (a = {WallAir(HighRho).SpeedOfSound:F0} m/s, atmospheric thrust x{AtmoEfficiency(HighRho):F2}) breaks Mach 1 in level flight at static T/W {hull.HighTw:F2} (<= 1.5; bottleneck M{hull.HighAt:F2}), then on to Mach {hull.HighTop:F2}; on T/W 1.5 there: Mach {hull.Top15High:F2}");
-        Console.WriteLine($"   {(seaOk ? "ok  " : "FAIL")} machwall (the hull's wall - wing wave drag off): at sea level it breaks Mach 1 at T/W {hull.SeaTw:F2} (<= 2.5; bottleneck M{hull.SeaAt:F2}; pinch {ThrustProfiles.JetPinch:F2}, ram peak {ThrustProfiles.JetRamPeak:F2}), then on to Mach {hull.SeaTop:F2} (past the crossing up to 1.4 it asks T/W {hull.Post:F2} at most, at M{hull.PostAt:F2})");
-        Console.WriteLine($"   {(wingOk ? "ok  " : "FAIL")} machwall (the whole model - the wings' own wave drag on): the F-6 breaks Mach 1 at T/W {now.SeaTw:F2} at sea level (<= 3.6; bottleneck M{now.SeaAt:F2}, then on to Mach {now.SeaTop:F2}; past the crossing it asks T/W {now.Post:F2} at most, at M{now.PostAt:F2}), {now.HighTw:F2} at 0.4 kg/m3 (<= 2.7; bottleneck M{now.HighAt:F2}, then on to Mach {now.HighTop:F2})");
+        Console.WriteLine($"   {(altOk ? "ok  " : "FAIL")} machwall: F-6 ({mass / 1000f:F1} t, streamlining {st:F2}, frontal {fa:F1} m2) at 0.4 kg/m3 (a = {WallAir(HighRho).SpeedOfSound:F0} m/s, atmospheric thrust x{AtmoEfficiency(HighRho):F2}) breaks Mach 1 in level flight at static T/W {now.HighTw:F2} (<= 1.3; bottleneck M{now.HighAt:F2}), then on to Mach {now.HighTop:F2}; on T/W 1.5 there: Mach {now.Top15High:F2} (>= 1.4)");
+        Console.WriteLine($"   {(seaOk ? "ok  " : "FAIL")} machwall: at sea level it breaks Mach 1 at T/W {now.SeaTw:F2} (1.35-1.65; bottleneck M{now.SeaAt:F2}; Jet {ThrustProfiles.JetMach1:F2} at Mach 1, ram peak {ThrustProfiles.JetRamPeak:F2} at M{ThrustProfiles.JetRamPeakMach:F2}), then on to Mach {now.SeaTop:F2} (past the crossing up to 1.4 it asks T/W {now.Post:F2} at most, at M{now.PostAt:F2})");
+        Console.WriteLine($"   {(wingOk ? "ok  " : "FAIL")} machwall: the wings' own terms still cost - T/W {now.SeaTw:F2} with them (block wings' wave drag at x{CompressibleWingModel.BlockWingThicknessScale:F2} their t/c), {hull.SeaTw:F2} without, {realTw:F2} at their own t/c (> 1.2x)");
         Console.WriteLine($"   {(bOk ? "ok  " : "FAIL")} machwall: a brick of the same frontal area ({side * 0.25f:F2} m square, 4:1, streamlining {bst:F2}) on the F-6's crossing thrust stalls at Mach {now.BrickStall:F2} at sea level, {now.BrickStallHigh:F2} at 0.4 kg/m3 ({hull.BrickStall:F2} on the hull wall's)");
         Console.WriteLine($"   {(sOk ? "ok  " : "FAIL")} machwall: below Mach 0.75 the drag is the old law's (F-6, brick{(tu != null ? ", Tu-134 to Mach 0.79" : "")}, at 1.225 and 0.4 kg/m3, the law at every streamlining: worst {worstSub * 100f:F4}%)");
         if (verbose || !(altOk && seaOk && bOk && wingOk))
         {
-            Console.WriteLine("      the F-6 (static sea-level T/W)              10-17  hull wall  now (+ wing wave drag)");
-            void Row(string what, float a, float h, float b, string fmt = "F2") => Console.WriteLine($"      {what,-44}{a.ToString(fmt),7}  {h.ToString(fmt),8}  {b.ToString(fmt),8}");
-            Row("T/W to break Mach 1, sea level", before.SeaTw, hull.SeaTw, now.SeaTw);
-            Row("  its bottleneck Mach", before.SeaAt, hull.SeaAt, now.SeaAt);
-            Row("  top level-flight Mach on it", before.SeaTop, hull.SeaTop, now.SeaTop);
-            Row("T/W to break Mach 1, 0.8 kg/m3", before.FullTw, hull.FullTw, now.FullTw);
-            Row("T/W to break Mach 1, 0.4 kg/m3", before.HighTw, hull.HighTw, now.HighTw);
-            Row("  its bottleneck Mach", before.HighAt, hull.HighAt, now.HighAt);
-            Row("  top level-flight Mach on it", before.HighTop, hull.HighTop, now.HighTop);
-            Row("top Mach on T/W 1.5 at 0.4 kg/m3", before.Top15High, hull.Top15High, now.Top15High);
-            Row("top Mach on T/W 2.5 at sea level", before.Top25Sea, hull.Top25Sea, now.Top25Sea);
-            Row("brick stall Mach (sea-level crossing thrust)", before.BrickStall, hull.BrickStall, now.BrickStall);
+            Console.WriteLine("      the F-6 (static sea-level T/W)          10-17 am  12b97e7  hull wall  now");
+            Console.WriteLine("        (10-17 am: the 0.55 pinch, the 1.45x hull wall, no wing wave drag; 12b97e7: the 0.76 pinch, the wing wave");
+            Console.WriteLine("         drag at the wings' own t/c; hull wall: today's curve, the wing terms off; now: today's curve and wings)");
+            void Row(string what, float a, float p, float h, float b, string fmt = "F2") => Console.WriteLine($"      {what,-44}{a.ToString(fmt),6}  {p.ToString(fmt),7}  {h.ToString(fmt),8}  {b.ToString(fmt),6}");
+            Row("T/W to break Mach 1, sea level", before.SeaTw, pinched.SeaTw, hull.SeaTw, now.SeaTw);
+            Row("  its bottleneck Mach", before.SeaAt, pinched.SeaAt, hull.SeaAt, now.SeaAt);
+            Row("  top level-flight Mach on it", before.SeaTop, pinched.SeaTop, hull.SeaTop, now.SeaTop);
+            Row("T/W to break Mach 1, 0.8 kg/m3", before.FullTw, pinched.FullTw, hull.FullTw, now.FullTw);
+            Row("T/W to break Mach 1, 0.4 kg/m3", before.HighTw, pinched.HighTw, hull.HighTw, now.HighTw);
+            Row("  its bottleneck Mach", before.HighAt, pinched.HighAt, hull.HighAt, now.HighAt);
+            Row("  top level-flight Mach on it", before.HighTop, pinched.HighTop, hull.HighTop, now.HighTop);
+            Row("top Mach on T/W 1.5 at 0.4 kg/m3", before.Top15High, pinched.Top15High, hull.Top15High, now.Top15High);
+            Row("top Mach on T/W 2.5 at sea level", before.Top25Sea, pinched.Top25Sea, hull.Top25Sea, now.Top25Sea);
+            Row("brick stall Mach (sea-level crossing thrust)", before.BrickStall, pinched.BrickStall, hull.BrickStall, now.BrickStall);
+            Row("brick stall Mach, 0.4 kg/m3", before.BrickStallHigh, pinched.BrickStallHigh, hull.BrickStallHigh, now.BrickStallHigh);
             if (tu != null)
             {
                 // (the subsonic calibration the wing terms DO move: the Tu-134's straight-ish t/c 0.16 wing at Mach 0.79)
@@ -268,29 +297,64 @@ static partial class Program
         }
         if (verbose)
         {
-            Console.WriteLine("      the pinch depth (the Jet curve at Mach 1) against the F-6's static T/W to break Mach 1 (to 1.05):");
-            Console.WriteLine("      pinch   sea level 1.225   0.4 kg/m3");
-            foreach (double p in new[] { 0.55, 0.65, ThrustProfiles.JetPinch, 0.85, 1.00 })
+            Console.WriteLine("      the Jet curve at Mach 1 (JetMach1) against the F-6's static T/W to break Mach 1 (to 1.05):");
+            Console.WriteLine("      Mach 1  sea level 1.225   0.4 kg/m3");
+            foreach (double p in new[] { 0.76, 0.90, 1.00, ThrustProfiles.JetMach1, 1.15 })
             {
-                var c = ThrustProfiles.JetWithPinch(p);
+                var c = ThrustProfiles.JetWithMach1(p);
                 float a = NeededThrust(fighter, ftable, travel, c, 1.05f, SeaRho, out float am), b = NeededThrust(fighter, ftable, travel, c, 1.05f, HighRho, out float bm);
                 Console.WriteLine($"      {p,5:F2}   {a / w,10:F2} (M{am:F2})   {b / w,6:F2} (M{bm:F2})");
             }
             float flat = NeededThrust(fighter, ftable, travel, null, 1.05f, SeaRho, out float fm);
             Console.WriteLine($"      no curve at all (flat 1): T/W {flat / w:F2} (M{fm:F2}) at sea level");
+            Console.WriteLine("      the block wings' wave-drag thickness (BlockWingThicknessScale) against the same (today's curve):");
+            foreach (float sc in new[] { 1f, 0.6f, 0.5f, CompressibleWingModel.BlockWingThicknessScale, 0.3f, 0f })
+            {
+                var rw = RealWingThickness(sc);
+                float a = NeededThrust(fighter, ftable, travel, ThrustProfiles.Jet, 1.05f, SeaRho, out float am), b = NeededThrust(fighter, ftable, travel, ThrustProfiles.Jet, 1.05f, HighRho, out float bm);
+                float top = WallTop(fighter, ftable, travel, a * 1.001f, ThrustProfiles.Jet, SeaRho);
+                rw();
+                Console.WriteLine($"      x{sc,4:F2}   {a / w,10:F2} (M{am:F2})   {b / w,6:F2} (M{bm:F2})   then on to Mach {top:F2}");
+            }
             float q06 = 0.5f * SeaRho * MathF.Pow(0.6f * (float)WallAir(SeaRho).SpeedOfSound, 2f), cda = WallDrag(fighter, ftable, travel, 0.6f) / q06;
             float t0 = now.SeaTw * w;
             float qb06 = 0.5f * SeaRho * MathF.Pow(0.6f * (float)WallAir(SeaRho).SpeedOfSound, 2f), bcda = WallDrag(brick, btable, -Vector3.UnitZ, 0.6f) / qb06;
             var mlist = new[] { 0.6f, 0.8f, 0.85f, 0.9f, 0.95f, 1.0f, 1.05f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.6f, 1.7f, 1.8f, 1.9f, 2.0f, 2.2f, 2.4f, 3.0f };
-            var hullD = new Dictionary<float, float>();
+            var hullD = new Dictionary<float, float>(); var realD = new Dictionary<float, float>();
             { var rw = WingTermsOff(); foreach (float m in mlist) hullD[m] = WallDrag(fighter, ftable, travel, m); rw(); }
-            Console.WriteLine($"      Mach   Jet   before  F-6 drag kN (x subsonic area {cda:F1} m2)  wing terms off   thrust kN (sea crossing)   brick drag kN (x {bcda:F1} m2)");
+            { var rw = RealWingThickness(); foreach (float m in mlist) realD[m] = WallDrag(fighter, ftable, travel, m); rw(); }
+            Console.WriteLine($"      Mach   Jet  12b97e7  F-6 drag kN (x subsonic area {cda:F1} m2)  wing terms off   wings' own t/c   thrust kN (sea crossing)   brick drag kN (x {bcda:F1} m2)");
             foreach (float m in mlist)
             {
                 float d = WallDrag(fighter, ftable, travel, m), q = 0.5f * SeaRho * MathF.Pow(m * (float)WallAir(SeaRho).SpeedOfSound, 2f), bd = WallDrag(brick, btable, -Vector3.UnitZ, m);
-                Console.WriteLine($"      {m,4:F2}  {JetCurve.Factor(m),5:F2}  {Cur(JetBefore, m),5:F2}  {d / 1e3f,11:F0} ({d / q / cda,4:F2}x)  {hullD[m] / 1e3f,9:F0} ({hullD[m] / q / cda,4:F2}x)  {t0 * JetCurve.Factor(m) / 1e3f,18:F0}  {bd / 1e3f,13:F0} ({bd / q / bcda,4:F2}x)");
+                Console.WriteLine($"      {m,4:F2}  {JetCurve.Factor(m),5:F2}  {Cur(JetPinched, m),5:F2}  {d / 1e3f,11:F0} ({d / q / cda,4:F2}x)  {hullD[m] / 1e3f,9:F0} ({hullD[m] / q / cda,4:F2}x)  {realD[m] / 1e3f,9:F0} ({realD[m] / q / cda,4:F2}x)  {t0 * JetCurve.Factor(m) / 1e3f,18:F0}  {bd / 1e3f,13:F0} ({bd / q / bcda,4:F2}x)");
             }
         }
         return fails;
+    }
+
+    /// <summary>By hand (dotnet run -- machtune [scale ...]): the F-6's drag (kN, nose first, sea level, whole model) by Mach
+    /// for each CompressibleWingModel.BlockWingThicknessScale - the numbers the Jet curve and the scale are tuned on (with
+    /// the wing terms off as the first column, and the F-6's weight).</summary>
+    static int MachTune(string dataDir, float[] scales)
+    {
+        var path = Directory.GetFiles(dataDir, "3737149863.boxes", SearchOption.AllDirectories).FirstOrDefault();
+        if (path == null) { Console.WriteLine("   machtune: no F-6 fixture"); return 1; }
+        float w = FixtureMass(path) * 9.81f;
+        BlockSize = 0.5f;
+        var f = Build("F-6 Diamondback", LoadBoxes(path));
+        var ft = ((DampedShadowedDragModel)f.Model.InnerModel).BuildForceTable(f.Grid, f.Surface, f.Manifold, f.Com, 8);
+        Vector3 travel = -Vector3.UnitZ;
+        float keep = CompressibleWingModel.BlockWingThicknessScale;
+        Console.WriteLine($"   machtune: F-6 weight {w / 1e3f:F1} kN; drag kN at sea level by Mach - wing terms off, then per thickness scale {string.Join(" ", scales)}");
+        for (float m = 0.5f; m <= 3.0001f; m += 0.025f)
+        {
+            var rw = WingTermsOff(); float h = WallDrag(f, ft, travel, m); rw();
+            var sb = new System.Text.StringBuilder($"   {m:F3} {h / 1e3f:F1}");
+            foreach (float sc in scales) { CompressibleWingModel.BlockWingThicknessScale = sc; sb.Append($" {WallDrag(f, ft, travel, m) / 1e3f:F1}"); }
+            Console.WriteLine(sb.ToString());
+        }
+        CompressibleWingModel.BlockWingThicknessScale = keep;
+        return 0;
     }
 }

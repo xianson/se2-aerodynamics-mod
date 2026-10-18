@@ -8,6 +8,12 @@ using AeroMod;
 // wing's edge faces) and SupersonicLiftDrag (toward CL^2/CLa as the suction goes). Checks: Korn exactly; a thin swept wing
 // under a thick straight one; supersonic CDi over the subsonic formula; no jumps across the blend bands; no double count on
 // bench wings with real hull edges (a blocky square edge, a stepped/sloped one); finite everywhere; a mirrored wing the same.
+// THE BLOCK WINGS' SCALE (2026-10-18, the user: '1 and 2' - soften the pinch, scale the block wings' wave drag): the wave
+// drag takes CompressibleWingModel.BlockWingThicknessScale (0.4) x a wing's t/c. The thin-vs-thick check runs on it (the
+// block wings as flown) and asks a margin: the thick straight wing at least 3x the thin swept one supersonic (7.8x / 7.3x
+// at Mach 1.2 / 2 - 9.9x / 7.3x at their own t/c); the no-double-count checks run at the wings' own t/c (scale 1): the
+// guard is calibrated against the theory of the real section, and the scaled theory on a stepped bench wing sits below the
+// hull's own edge rise at Mach 2 - nothing to add, so nothing to check there.
 //   dotnet run -c Release -- wingwave           (the gate's checks alone)
 //   dotnet run -c Release -- wingwaveprobe      (the double-count measurement: hull edge charge vs theory on bench wings,
 //                                                and the F-6's drag at CL 0.5, Mach 1.5 with the wing terms off / on)
@@ -188,14 +194,17 @@ static partial class Program
 
         // (b) a thin swept wing has less wave drag than a thick straight one
         {
+            // (on the block wings' scale - as flown; a margin: the thick straight at least 3x the thin swept, 2026-10-18)
             var thin = HandWing(0.05f, 45f); var thick = HandWing(0.15f, 0f);
             bool ok = true; var sb = new System.Text.StringBuilder();
             foreach (float m in new[] { 0.9f, 1.2f, 2f })
             {
                 float a = Run(thin, m, 0f).CDw, b = Run(thick, m, 0f).CDw;
-                ok &= a < b && b > 0f; sb.Append($" M{m}: {a:F4} vs {b:F4};");
+                var rs = RealWingThickness(); float a1 = Run(thin, m, 0f).CDw, b1 = Run(thick, m, 0f).CDw; rs();
+                ok &= a < b && b > 0f && b >= 3f * a;
+                sb.Append($" M{m}: {a:F4} vs {b:F4} ({(a > 0f ? (b / a).ToString("F1") + "x" : "none on the thin")}; own t/c {a1:F4} vs {b1:F4}, {(a1 > 0f ? (b1 / a1).ToString("F1") + "x" : "none on the thin")});");
             }
-            Check(ok, $"wing wave: thin swept (t/c 0.05, 45 deg) under thick straight (t/c 0.15, 0 deg) -{sb}");
+            Check(ok, $"wing wave: thin swept (t/c 0.05, 45 deg) under thick straight (t/c 0.15, 0 deg) by >= 3x, at x{CompressibleWingModel.BlockWingThicknessScale:F2} their t/c -{sb}");
         }
 
         // (c) supersonic drag due to lift over CL^2/(pi e AR) at the same CL; ~CL^2/CLa with a supersonic leading edge
@@ -265,9 +274,11 @@ static partial class Program
                 $"wing wave/lift drag continuous (no step above 3x its neighbours by more than 1e-4 / 5e-4): theory over Mach 0.3-3.5 per 0.0005 (t/c 0.03-0.2, sweep 0-55, CL 0/0.5) worst {worst:E1}, largest step {maxStep:F5}; the model at 4 deg per 0.001 {worstW:E1}; with hull edges per 0.002 {worstH:E1}");
         }
 
-        // (e) no double count: bench wings with real hull edges at Mach 2
+        // (e) no double count: bench wings with real hull edges at Mach 2 (at their own t/c: the guard against the real
+        //     section's theory - 2026-10-18, the block wings' scale above)
         {
             float bs = BlockSize; BlockSize = 0.5f;
+            var realTc = RealWingThickness();
             try
             {
                 var blocky = BenchShip("benchwing", BenchWing(24, 60, BenchShapes[1].thick));
@@ -289,7 +300,7 @@ static partial class Program
                 Check(ratio > 0.85f && ratio < 1.3f && hs + ws > hs0 + ws0,
                     $"wing wave, no double count: stepped bench wing (t/c {CompressibleWingModel.WaveThickness(stepped.Model.Wings[0]):F3}) at Mach 2: hull edges {hs:F4} + wing {ws:F4} = {hs + ws:F4} against its subsonic edge drag + skins + theory = {expect:F4} ({ratio:F2}x; before {hs0 + ws0:F4})");
             }
-            finally { BlockSize = bs; }
+            finally { BlockSize = bs; realTc(); }
         }
 
         // (f) finite everywhere, a mirrored wing the same
