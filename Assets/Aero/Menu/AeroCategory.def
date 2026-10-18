@@ -7,8 +7,8 @@
   "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.CategoryDefinitionObjectBuilder",
   "$Value": {
     "Guid": "ae200001-ae00-0000-0001-000000000001",
-    "Name": "AerodynamicsCategoryName",
-    "Tooltip": "AerodynamicsCategoryTooltip",
+    "Name": "Aerodynamics",
+    "Tooltip": "Aircraft parts: control surfaces, airbrakes, landing gear and propulsion",
     "Order": 50
   }
 }

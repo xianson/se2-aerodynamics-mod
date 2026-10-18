@@ -7,8 +7,8 @@
   "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.SubcategoryDefinitionObjectBuilder",
   "$Value": {
     "Guid": "ae200001-ae00-0000-0002-000000000001",
-    "Name": "AeroPartsSubcategoryName",
-    "Tooltip": "AeroPartsSubcategoryTooltip",
+    "Name": "Aircraft Parts",
+    "Tooltip": "Control surfaces, airbrakes, landing gear, propellers, rotors, ramjets and solid rockets",
     "Order": 0,
     "Categories": [
       {
