@@ -30,7 +30,7 @@ public partial class AeroGridComponent
         var data = aero.Data;
         if (!data.TryGet<ThrustStallData>(out var stall) || stall.GravityHoldRatio == float.MaxValue) return;
         float g = PhysicsHack.GetGravityDirection(data).Length();
-        float weight = aero.LastMass * g;
+        float weight = aero.LastMass * g * PhysicsHack.GravityScale;   // (the real weight: the engine's multiplier - the lift carries all of it)
         if (!(weight > 0f) || aero.LastResult.LiftMagnitude < StallLiftShare * weight) return;
         data.Set(new ThrustStallData { GravityHoldRatio = float.MaxValue });
     }

@@ -741,6 +741,14 @@ static partial class Program
         public readonly List<Vector3> Pos = new(), Dir = new(); public readonly List<float> Cap = new(); public readonly List<bool> Rev = new();
         public Vector3 Reaction;           // a main rotor's reaction torque (N m, local)
         public bool Damp = true, Gravity = true, Solve = true;
+        // ── the world's PhysicsSessionConfiguration.GravityMultiplier (the engine scales the gravity it applies - CustomGravity -
+        //    by it; vanilla 2) and the game's GRAVITY HOLD as the game does it (ThrustComponent.ComputeThrust): with dampeners the
+        //    hold (-m g along each axis, clamped to that side's maximum) is not applied as thrust - it is taken off the grid's
+        //    CustomGravity IN PLACE (up to all of it) BEFORE the engine scales that, and only the rest of the game's thrust is
+        //    applied as force. So a dampened hover cancels gm x m g of real gravity with m g of booked thrust, while without
+        //    dampeners the thrust must beat gm x m g (the helicopter that hovered at 0.49 of its rotor could not take off with
+        //    them off, gm 2). Ground: a floor at Height 0 (the ship starts parked on it). At gm 1 every step is as before. ──
+        public float GravityMultiplier = 1f; public bool Ground; public float Height, MaxHeight;
         public Vector3 Input, WCmd;        // the pilot's movement input (-1..1 per axis) and turn rate (rad/s)
         public Vector3 V, W; public float Heading; public int Flips; public float LastPrio; public Vector3 LastTorque, LastNetErr;
         public float[] F, F0; ReversibleThrust.State[] _st;
@@ -805,7 +813,7 @@ static partial class Program
                 // the game: maxima booked by side, its thrust per axis
                 Array.Clear(capDir, 0, 6);
                 for (int i = 0; i < n; i++) capDir[ThrustAllocator.DirIndex(dirs[i] * side[i])] += caps[i];
-                Vector3 gameF = Vector3.Zero;
+                Vector3 gameF = Vector3.Zero, cancel = Vector3.Zero;
                 for (int ax = 0; ax < 3; ax++)
                 {
                     float cp = capDir[2 * ax], cn = capDir[2 * ax + 1];
@@ -816,6 +824,13 @@ static partial class Program
                                                        : (Damp ? hold - Mass * va * 60f : 0f);
                     float fa = Math.Clamp(want, -cn, cp);
                     if (ax == 0) gameF.X = fa; else if (ax == 1) gameF.Y = fa; else gameF.Z = fa;
+                    // (the hold the game takes off the gravity in place: the hold as the input left it, clamped to the side's
+                    //  maximum, as an acceleration, at most the gravity on that axis - ThrustComponent: thrustDirections.Clamp,
+                    //  Vector3.ClampMagnitude(vector7, gravity))
+                    float held = Damp ? (MathF.Abs(u) > 1e-3f && hold != 0f && MathF.Sign(u) == -MathF.Sign(hold) ? hold * (1f - MathF.Min(MathF.Abs(u), 1f)) : hold) : 0f;
+                    float ca = 0f;
+                    if (held != 0f && ga != 0f && MathF.Sign(held) == -MathF.Sign(ga)) ca = MathF.Sign(held) * MathF.Min(MathF.Abs(Math.Clamp(held, -cn, cp)) / Mass, MathF.Abs(ga));
+                    if (ax == 0) cancel.X = ca; else if (ax == 1) cancel.Y = ca; else cancel.Z = ca;
                 }
                 Vector3 torque0 = ThrustAllocator.GameShare(gameF, arms, dirs, caps, capDir, F0, n, side);
                 if (Rotor >= 0) { ReactionQ = RotorKinematics.ReactionTorque(F0[Rotor], RotorR, 1f, Rho); Reaction = dirs[Rotor] * ReactionQ; }
@@ -836,7 +851,11 @@ static partial class Program
                 }
                 else Array.Copy(F0, F, n);
                 LastTorque = torque; LastNetErr = total - gameF;
-                V += ((gameF + extra) / Mass + grav) * dt;
+                // (the force applied: the game's thrust less the part that went into the gravity; the gravity applied: what the
+                //  hold left of it, x the multiplier - at gm 1 exactly gameF / m + grav, as before)
+                if (GravityMultiplier == 1f) V += ((gameF + extra) / Mass + grav) * dt;   // (bit for bit as before)
+                else V += ((gameF - cancel * Mass + extra) / Mass + (grav + cancel) * GravityMultiplier) * dt;
+                if (Ground) { Height += V.Y * dt; if (Height <= 0f) { Height = 0f; if (V.Y < 0f) V.Y = 0f; } MaxHeight = MathF.Max(MaxHeight, Height); }
                 W += torque / I * dt;
                 Heading += W.Y * dt;
                 MaxHeading = MathF.Max(MaxHeading, MathF.Abs(Heading));
@@ -939,6 +958,48 @@ static partial class Program
             Check(s.F0[s.Rotor] >= 0.999f * rotor15 && s.Writes.Count == 1 && s.MaxHeading < 1f * Deg,
                 $"well balanced (tail at 9.4 m + gyros): full thrust {Pct(s, rotor15)}, the cap written once ({s.Writes.Count}) above the maximum; heading within {s.MaxHeading / Deg:F2} deg");
         }
+    }
+
+    /// <summary>DAMPENERS OFF (2026-10-18, the user: "if i fly with a helicopter and damps are off, i cant take off. if i fly damps on i
+    /// can fly regularly"). The 1.5 m rotor (534 kN at rho 0.89) with one Reversible Rotor at 7.5 m, as heavy as the user's: it
+    /// hovered at 0.49 of its rotor with dampeners on. Parked on the ground, piloted, Up held (Movement.Y = 1), the game's thrust
+    /// rule (RevShip: the dampeners' gravity hold taken off the gravity in place, the engine's GravityMultiplier on what is left).
+    /// THE CAUSE is the game's: the world's GravityMultiplier (vanilla 2, and the mod's PhysicsSessionConfiguration override has
+    /// carried 2 since 2026-10-09) doubles the gravity the engine applies, and the dampeners' hold cancels all of it for one g of
+    /// booked thrust - dampeners off, the rotor must beat twice the weight it hovered with. No mod path keys the rotor, the
+    /// limiter or the solve off the dampeners (ReversibleThrust.Demand does, as the game does - its side only).</summary>
+    static void HeliDampChecks()
+    {
+        const float rho = 0.89f, rotor = 600000f * rho, tailCap = 85000f * rho, hoverLoad = 0.49f;
+        float mass = hoverLoad * rotor / 9.81f;
+        RevShip Heli(bool damp, float gm, float up = 1f, bool ground = true, float h0 = 0f)
+        {
+            var s = new RevShip { Mass = mass, I = new Vector3(8e5f, 8e5f, 1.5e5f), Rho = rho, RotorR = 7.5f, Damp = damp, GravityMultiplier = gm, Ground = ground, Height = h0 };
+            s.Rotor = s.Add(Vector3.Zero, Vector3.UnitY, rotor, false);
+            s.Add(new Vector3(0f, 0f, 7.5f), Vector3.UnitX, tailCap, true);
+            s.Input = new Vector3(0f, up, 0f);
+            return s;
+        }
+        // 1. dampeners ON: the take-off is the same whatever the multiplier (the hold hides it) - as flown now
+        var on2 = Heli(true, 2f); on2.Fly(6f);
+        var on1 = Heli(true, 1f); on1.Fly(6f);
+        Check(on2.MaxHeight > 20f && MathF.Abs(on2.MaxHeight - on1.MaxHeight) < 1e-3f * on1.MaxHeight + 0.01f && on2.MaxHeading < 3f * Deg,
+            $"heli dampeners on, Up held: takes off - {on2.MaxHeight:F0} m in 6 s at GravityMultiplier 2, {on1.MaxHeight:F0} m at 1 (the hold cancels the scaled gravity), heading within {on2.MaxHeading / Deg:F2} deg");
+        // 2. dampeners OFF at GravityMultiplier 2 (the user's world): the reported bug - the rotor at its full maximum against
+        //    twice its hover weight: it barely leaves the ground (here 2 % of the weight to spare; a little less rotor - a slower rpm, a
+        //    thinner air, a heavier load - and none)
+        var off2 = Heli(false, 2f); off2.Fly(6f);
+        Check(off2.MaxHeight < 0.05f * on2.MaxHeight && off2.F0[off2.Rotor] >= 0.999f * rotor,
+            $"heli dampeners off, GravityMultiplier 2: the rotor at its full {off2.F0[off2.Rotor] / 1e3f:F0} kN against {2f * mass * 9.81f / 1e3f:F0} kN of real weight - {off2.MaxHeight:F1} m in 6 s (dampeners on: {on2.MaxHeight:F0} m) - the reported can't-take-off, the game's rule");
+        // 3. dampeners OFF at GravityMultiplier 1 (the fix: the mod's override back to 1, as it shipped until 2026-10-09): it climbs as with them on
+        var off1 = Heli(false, 1f); off1.Fly(6f);
+        Check(MathF.Abs(off1.MaxHeight - on1.MaxHeight) < 0.01f * on1.MaxHeight && off1.MaxHeading < 3f * Deg && off1.Flips <= 1,
+            $"heli dampeners off, GravityMultiplier 1: takes off as with them on - {off1.MaxHeight:F0} m in 6 s (on: {on1.MaxHeight:F0}), heading within {off1.MaxHeading / Deg:F2} deg, tail game-side flips {off1.Flips}");
+        // 4. no input: dampeners on hover in place at either multiplier; off, it falls at the multiplier's gravity (the game's)
+        var hov = Heli(true, 2f, 0f, false, 50f); hov.Fly(5f);
+        var fall = Heli(false, 2f, 0f, false, 50f); fall.Fly(1f);
+        Check(MathF.Abs(hov.V.Y) < 0.01f && MathF.Abs(fall.V.Y + 2f * 9.81f * fall.Time) < 0.05f,
+            $"no input: dampeners on hold height at GravityMultiplier 2 (v {hov.V.Y:F3} m/s); off, a {fall.Time:F2} s fall reaches {fall.V.Y:F2} m/s (2 g: the engine's multiplier)");
     }
 
     static void ReversibleChecks()
@@ -1082,6 +1143,7 @@ static partial class Program
         CellCentreChecks();
         ReversibleChecks();
         HeliLimiterChecks();
+        HeliDampChecks();
         Console.WriteLine("1b. the vanilla atmospherics' Mach curve and the power ladder");
         JetChecks();
         InletChecks();
