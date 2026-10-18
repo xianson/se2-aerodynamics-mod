@@ -374,7 +374,9 @@ static partial class Program
             if (chunks.Bounds[c] != c2.Bounds[c]) same = false;
         }
         for (int i = 0; same && i < wings.Count; i++)
-            same = wings[i].Cells.SequenceEqual(w2[i].Cells) && wings[i].Normal == w2[i].Normal && wings[i].PlanformArea == w2[i].PlanformArea && wings[i].CLAlpha == w2[i].CLAlpha;
+            same = wings[i].Cells.SequenceEqual(w2[i].Cells) && wings[i].Normal == w2[i].Normal && wings[i].PlanformArea == w2[i].PlanformArea && wings[i].CLAlpha == w2[i].CLAlpha
+                && wings[i].EdgeLo == w2[i].EdgeLo && wings[i].EdgeHi == w2[i].EdgeHi && wings[i].OwnThickness == w2[i].OwnThickness   // (the wave drag's edge faces, 2026-10-18)
+                && (wings[i].OwnThickness > 0f || wings[i].Cells.Count == 0);
         note += same ? $", identical ({chunks.ChunkCount} chunks, {wings.Count} wings)" : $", DIFFERENT (force/torque diff {worst})";
         try { System.IO.File.Delete(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AeroMod", "tables", key + ".bin")); } catch { }
         return same;
@@ -543,6 +545,8 @@ static partial class Program
             int fails = known + TorqueChecks(atmo, false) + BugChecks(atmo);
             // the leading edge by the air: a wing mirrored lifts the same, a quarter chord behind its own leading edge (WingEdge.cs)
             fails += WingEdgeChecks(atmo);
+            // the wings' own wave drag and supersonic drag due to lift: Korn, thin under thick, no jumps, no double count (WingWave.cs)
+            fails += WingWaveChecks();
             // the stall warning's whole-ship lift peak against a fine sweep (Lift/LiftPeak)
             fails += StallCheck(dataDir, atmo, new[] { "bluefighter", "pelican" });
             // the aero-aware attitude law on the F-6 (statically unstable in pitch): every case within its gyros settles
@@ -818,6 +822,9 @@ static partial class Program
             return 0;
         }
         if (args.Length > 0 && args[0] == "wingedge") { int we = WingEdgeChecks(atmo); Console.WriteLine($"AeroBench: wingedge {(we == 0 ? "1/1 passed" : we + " FAILED")}"); return we == 0 ? 0 : 1; }
+        if (args.Length > 0 && args[0] == "wingwaveprobe") return WingWaveProbe(dataDir);
+        if (args.Length > 0 && args[0] == "wingwave") { int ww = WingWaveChecks(); Console.WriteLine($"AeroBench: wingwave {(ww == 0 ? "1/1 passed" : ww + " FAILED")}"); return ww == 0 ? 0 : 1; }
+        if (args.Length > 0 && args[0] == "wingwavelist") return WingWaveList(dataDir);
         if (args.Length > 0 && args[0] == "wingprobe") return WingProbe(dataDir, args.Skip(1).ToArray());
         if (args.Length > 0 && args[0] == "machwall") { int mw = MachWall(dataDir, true); Console.WriteLine($"AeroBench: machwall {(mw == 0 ? "1/1 passed" : mw + " FAILED")}"); return mw == 0 ? 0 : 1; }
         if (args.Length > 0 && args[0] == "machscan") return MachScan(dataDir, args.Skip(1).ToArray());

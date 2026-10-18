@@ -115,7 +115,10 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
   `AtmosphereBridge.GetState(density)`, centre of mass, ground height, up) goes to `LiftingSurfaceModel.Compute`: the
   hull from the force table (a lookup per frame; the face loop in `DampedShadowedDragModel.Compute.cs` only before
   the table exists) plus the wings (`CompressibleWingModel`: each wing's leading edge is the one facing the air, per
-  tick - `Lift/README.md`, "Which edge leads").
+  tick - `Lift/README.md`, "Which edge leads"; each wing's own wave drag from its thickness and that edge's sweep, less
+  what the hull already charges on its edge faces - `LiftingSurfaceModel.HandHullEdges` hands the hull's blend over -
+  and its drag due to lift toward CL^2/CLa as the leading-edge suction goes supersonic: "Wave drag", "Supersonic drag
+  due to lift").
 - **Control surfaces.** `UpdateControlSurfaceInputs` mixes the pilot's rotation into surface inputs; while the aero-aware
   law flies (`LastControlTorqueValid`, server) `AllocateSurfaces` gives them its torque demand instead.
   `PublishFlapAngles` publishes deflections for the client flap models. `HingeSurfaces` drives vanilla hinges

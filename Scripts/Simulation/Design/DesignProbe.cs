@@ -201,7 +201,7 @@ internal static class DesignProbe
             CompressibleWingModel wm;
             lock (_wingModels) { if (!_wingModels.TryGetValue(aero, out wm)) { wm = new CompressibleWingModel(); if (InScene(aero)) _wingModels[aero] = wm; } }
             List<WingForceResult> wf;
-            lock (wm) wf = wm.ComputeWingForces(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(wings), ctx);
+            lock (wm) { model.HandHullEdges(wm, ctx, table); wf = wm.ComputeWingForces(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(wings), ctx); }   // (the wave-drag guard as in flight, 2026-10-18)
             if (wf != null)
                 foreach (var w in wf)
                 {

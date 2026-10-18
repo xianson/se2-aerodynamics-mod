@@ -65,6 +65,21 @@ public readonly struct LiftingSurface
     /// <summary>Grid cells belonging to this wing. Used for shadow wake decay.</summary>
     public readonly List<Vector3I> Cells;
 
+    // ─── Edge faces (2026-10-18, fix a-wing-wave: the wave drag's double-count guard) ─────
+
+    /// <summary>The Newtonian frontal area (m2) of the wing's edge faces with the low end of ChordAxis leading (moving toward
+    /// -ChordAxis) and with the high end leading: sum of area x cos^3 over the windward faces of its columns that are not
+    /// skins (leading and trailing edges, steps, tips - HULL faces: the face model charges them CdBluff x this subsonic,
+    /// CpMax x this at its Newtonian end), cos = the face's smoothed normal . the chord direction the air comes from.
+    /// Measured from the real surface at detection (ConnectedComponentWingDetector.MeasureEdges); 0: not measured.</summary>
+    public readonly float EdgeLo, EdgeHi;
+
+    /// <summary>The wing's OWN thickness ratio: its columns' mean depth between its two skins over its span rows' mean chord
+    /// extent (ThicknessRatio is the merged pieces' area-weighted one, each piece's from every occupied cell across it -
+    /// 0.3-0.5 on most block wings). 0: not measured (CompressibleWingModel.WaveThickness: a wing given by hand takes
+    /// ThicknessRatio, a detected one no wave drag of its own).</summary>
+    public readonly float OwnThickness;
+
     // ─── Precomputed aero coefficients ─────────────────────────────
 
     /// <summary>Lift curve slope (per radian) from Helmbold equation with sweep correction.</summary>
@@ -83,8 +98,9 @@ public readonly struct LiftingSurface
         Vector3 normal, Vector3 spanAxis, Vector3 chordAxis,
         float planformArea, float span, float thicknessRatio, float sweepLo, float sweepHi,
         Vector3 centroid, float acOffset, int faceCount,
-        List<Vector3I>? cells = null)
+        List<Vector3I>? cells = null, float edgeLo = 0f, float edgeHi = 0f, float ownThickness = 0f)
     {
+        EdgeLo = edgeLo; EdgeHi = edgeHi; OwnThickness = ownThickness;
         Normal = normal;
         SpanAxis = spanAxis;
         ChordAxis = chordAxis;
@@ -119,6 +135,11 @@ public readonly struct LiftingSurface
         OswaldE = 1.78f * (1f - 0.045f * MathF.Pow(ar, 0.68f)) - 0.64f;
         OswaldE = MathF.Max(0.5f, MathF.Min(0.95f, OswaldE));
     }
+
+    /// <summary>This wing with its edge faces measured (EdgeLo, EdgeHi, OwnThickness).</summary>
+    public LiftingSurface WithEdges(float edgeLo, float edgeHi, float ownThickness) =>
+        new LiftingSurface(Normal, SpanAxis, ChordAxis, PlanformArea, Span, ThicknessRatio, SweepLo, SweepHi, Centroid, AcOffset, FaceCount, Cells,
+            edgeLo, edgeHi, ownThickness);
 
     /// <summary>The quarter-chord point (grid-local m) for a flow with this lead (+1 the high end of ChordAxis leads,
     /// -1 the low end; between: blended through the mid chord - see CompressibleWingModel.LeadBlend).</summary>

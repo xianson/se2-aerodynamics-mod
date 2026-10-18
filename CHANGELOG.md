@@ -35,6 +35,18 @@ The first Workshop release. In plain words, what you get:
   2.0 m forward); main wing lift -7 % at Mach 0.5 (its real, more swept leading edge). Ships built nose toward the grid's
   - axis (the Pelican, the F-6) keep their lift points; their wing lift moves 1-4 % (a merged wing's sweep is now the
   same whichever way the ship is built). Saved force tables rebuild once (cache version 21).
+- **Wings have wave drag, and supersonic lift costs what it should** (2026-10-18, fix a-wing-wave). Wings had no wave
+  drag of their own - only the hull's, by its streamlining - and their drag due to lift assumed full leading-edge
+  suction at every speed, so a thick straight wing crossed Mach 1 as cheaply as a thin swept one and supersonic lift came
+  about 3x too cheap. Now each wing's drag rises past its drag-divergence Mach (Korn: lower for a thick wing, higher for
+  a swept one or at less lift), peaks near Mach 1 and falls supersonic (Lock, then Ackeret on the Mach across its leading
+  edge); what the hull already charges on the wing's edge faces comes off (a square-edged wing's edges already pay more
+  than the theory: nothing added; a stepped one's almost nothing until Mach 1.6: the theory added). Its drag due to lift
+  goes from CL^2/(pi e AR) to CL x alpha as the leading-edge suction is lost through the transonic band. AeroBench, the
+  F-6 (straight wings, t/c 0.12-0.19): T/W to break Mach 1 at sea level 1.94 -> 3.36 (0.4 kg/m3: 1.46 -> 2.53), still
+  on to Mach 1.7 on that thrust; drag at wing CL 0.5, Mach 1.5 x1.79; the Tu-134 at Mach 0.79 x1.25; subsonic below
+  each wing's critical Mach unchanged. Both switch off for the A/B (`CompressibleWingModel.WingWaveDrag`,
+  `SupersonicLiftDrag`). Saved force tables rebuild once (cache version 22; the tables themselves are unchanged).
 
 Good to know:
 
