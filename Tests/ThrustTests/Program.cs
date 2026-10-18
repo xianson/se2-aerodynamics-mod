@@ -749,6 +749,12 @@ static partial class Program
         //    dampeners the thrust must beat gm x m g (the helicopter that hovered at 0.49 of its rotor could not take off with
         //    them off, gm 2). Ground: a floor at Height 0 (the ship starts parked on it). At gm 1 every step is as before. ──
         public float GravityMultiplier = 1f; public bool Ground; public float Height, MaxHeight;
+        // ── HONEST DAMPENERS (Physics.HonestDampeners, HonestHold / HonestDampeners.cs): after the game's step above, the hold re-made
+        //    as real thrust against the multiplied gravity within the side maxima (HonestHold.Thrust), the gravity the physics gets
+        //    written so its x multiplier + the game's impulse give exactly that (HonestHold.Gravity), the thrust change shared onto
+        //    the thrusters with the game's (ThrustTorque: + HonestDelta), the reversible thrusters' side demand against the
+        //    multiplied gravity (ReversibleThrustComponent). LastHonest: the honest thrust of the last step (N) ──
+        public bool Honest; public Vector3 LastHonest;
         public Vector3 Input, WCmd;        // the pilot's movement input (-1..1 per axis) and turn rate (rad/s)
         public Vector3 V, W; public float Heading; public int Flips; public float LastPrio; public Vector3 LastTorque, LastNetErr;
         public float[] F, F0; ReversibleThrust.State[] _st;
@@ -806,7 +812,7 @@ static partial class Program
                 {
                     if (!rev[i]) { side[i] = 1f; continue; }
                     float input = Vector3.Dot(Input, dirs[i]);
-                    float dem = ReversibleThrust.Demand(input, Damp, Vector3.Dot(V, dirs[i]), Vector3.Dot(grav, dirs[i]), Mass, caps[i]);
+                    float dem = ReversibleThrust.Demand(input, Damp, Vector3.Dot(V, dirs[i]), Vector3.Dot(grav, dirs[i]) * (Honest ? GravityMultiplier : 1f), Mass, caps[i]);
                     if (ReversibleThrust.Step(ref _st[i], dem, caps[i], MathF.Abs(input) > ReversibleThrust.InputDeadband, dt)) Flips++;
                     side[i] = _st[i].Sign;
                 }
@@ -832,6 +838,17 @@ static partial class Program
                     if (held != 0f && ga != 0f && MathF.Sign(held) == -MathF.Sign(ga)) ca = MathF.Sign(held) * MathF.Min(MathF.Abs(Math.Clamp(held, -cn, cp)) / Mass, MathF.Abs(ga));
                     if (ax == 0) cancel.X = ca; else if (ax == 1) cancel.Y = ca; else cancel.Z = ca;
                 }
+                // (honest: the game's impulse is gameF - the hold it put into the gravity; the honest thrust replaces the booked command
+                //  the thrusters share, and the gravity the physics applies is written as HonestDampeners.Step writes CustomGravity)
+                Vector3 applied = gameF - cancel * Mass, honestGrav = grav;
+                if (Honest && Damp && cancel != Vector3.Zero && GravityMultiplier != 1f)   // (HonestDampeners.Step: only where the game held, not at 1)
+                {
+                    Vector3 hh = HonestHold.GameHold(grav, Mass, Input);
+                    Vector3 th = HonestHold.Thrust(hh, GravityMultiplier, applied, new Vector3(capDir[0], capDir[2], capDir[4]), new Vector3(capDir[1], capDir[3], capDir[5]));
+                    honestGrav = HonestHold.Gravity(grav, th - applied, Mass, GravityMultiplier) - grav;   // (vs the planet's: the physics x it)
+                    gameF = th;
+                }
+                LastHonest = gameF;
                 Vector3 torque0 = ThrustAllocator.GameShare(gameF, arms, dirs, caps, capDir, F0, n, side);
                 if (Rotor >= 0) { ReactionQ = RotorKinematics.ReactionTorque(F0[Rotor], RotorR, 1f, Rho); Reaction = dirs[Rotor] * ReactionQ; }
                 Vector3 torque = torque0 + Reaction;
@@ -854,6 +871,7 @@ static partial class Program
                 // (the force applied: the game's thrust less the part that went into the gravity; the gravity applied: what the
                 //  hold left of it, x the multiplier - at gm 1 exactly gameF / m + grav, as before)
                 if (GravityMultiplier == 1f) V += ((gameF + extra) / Mass + grav) * dt;   // (bit for bit as before)
+                else if (Honest && Damp && cancel != Vector3.Zero) V += ((applied + extra) / Mass + (grav + honestGrav) * GravityMultiplier) * dt;
                 else V += ((gameF - cancel * Mass + extra) / Mass + (grav + cancel) * GravityMultiplier) * dt;
                 if (Ground) { Height += V.Y * dt; if (Height <= 0f) { Height = 0f; if (V.Y < 0f) V.Y = 0f; } MaxHeight = MathF.Max(MaxHeight, Height); }
                 W += torque / I * dt;
@@ -1002,6 +1020,89 @@ static partial class Program
             $"no input: dampeners on hold height at GravityMultiplier 2 (v {hov.V.Y:F3} m/s); off, a {fall.Time:F2} s fall reaches {fall.V.Y:F2} m/s (2 g: the engine's multiplier)");
     }
 
+    /// <summary>HONEST DAMPENERS (2026-10-18, the user: "make it honest, thats fcking ridiculous" - HonestHold / HonestDampeners.cs):
+    /// the gravity hold as real thrust against the gravity the body gets (GravityMultiplier 2), within the thrusters' maxima.
+    /// RevShip flies the game's rule and, Honest, the mod's correction after it. 1. the user's helicopter (the 534 kN rotor, a
+    /// Reversible Rotor tail) at 1.5x and 2.5x its planet weight; 2. one thruster at the centre of mass, the numbers; 3. super
+    /// dampeners: the game's braking multiplier (ComputeMaxThrusts) with the grid's flag as HonestHold.SuperDampeners sets it.</summary>
+    static void HonestDampChecks()
+    {
+        const float rho = 0.89f, rotor = 600000f * rho, tailCap = 85000f * rho, g = 9.81f;
+        RevShip Heli(float ratio, bool damp, bool honest, float up, bool ground, float h0)
+        {
+            var s = new RevShip { Mass = rotor / (ratio * g), I = new Vector3(8e5f, 8e5f, 1.5e5f), Rho = rho, RotorR = 7.5f, Damp = damp, GravityMultiplier = 2f, Ground = ground, Height = h0, Honest = honest };
+            s.Rotor = s.Add(Vector3.Zero, Vector3.UnitY, rotor, false);
+            s.Add(new Vector3(0f, 0f, 7.5f), Vector3.UnitX, tailCap, true);
+            s.Input = new Vector3(0f, up, 0f);
+            return s;
+        }
+        // 1a. thrust 1.5x the planet's weight, parked, Up held 6 s: the game's dampeners lift it (weightless, 0.5 g to climb with),
+        //     off it stays down (1.5 against 2 weights); honest it stays down either way - the thrust is short of the real weight
+        var v15on = Heli(1.5f, true, false, 1f, true, 0f); v15on.Fly(6f);
+        var v15off = Heli(1.5f, false, false, 1f, true, 0f); v15off.Fly(6f);
+        var h15on = Heli(1.5f, true, true, 1f, true, 0f); h15on.Fly(6f);
+        var h15off = Heli(1.5f, false, true, 1f, true, 0f); h15off.Fly(6f);
+        Check(v15on.MaxHeight > 50f && v15off.MaxHeight < 0.01f, $"honest heli 1.5x, vanilla (setting off): dampeners on climbs {v15on.MaxHeight:F0} m in 6 s, off {v15off.MaxHeight:F2} m");
+        Check(h15on.MaxHeight < 0.01f && h15off.MaxHeight < 0.01f, $"honest heli 1.5x, honest: Up held, dampeners on {h15on.MaxHeight:F2} m, off {h15off.MaxHeight:F2} m - it cannot lift twice the weight");
+        // 1b. airborne at 50 m, no input, 1 s: the game's dampeners hover it; honest they give all the rotor has and it sinks at (2 - 1.5) g
+        var v15h = Heli(1.5f, true, false, 0f, false, 50f); v15h.Fly(1f);
+        var h15h = Heli(1.5f, true, true, 0f, false, 50f); h15h.Fly(1f);
+        Check(MathF.Abs(v15h.V.Y) < 0.01f, $"honest heli 1.5x, vanilla: dampeners hover it (v {v15h.V.Y:F3} m/s)");
+        Check(MathF.Abs(h15h.V.Y + 0.5f * g * h15h.Time) < 0.15f && h15h.F0[h15h.Rotor] >= 0.99f * rotor,
+            $"honest heli 1.5x, honest: dampeners at the rotor's full {h15h.F0[h15h.Rotor] / 1e3f:F0} kN, it sinks to {h15h.V.Y:F2} m/s in {h15h.Time:F2} s ((2 - 1.5) g: {-0.5f * g * h15h.Time:F2})");
+        // 1c. thrust 2.5x: honest hovers on the dampeners at 2/2.5 = 80 % of its rotor, and climbs with the rest (0.5 g; the game's 1.5 g)
+        var h25h = Heli(2.5f, true, true, 0f, false, 50f); h25h.Fly(5f);
+        Check(MathF.Abs(h25h.V.Y) < 0.01f && MathF.Abs(h25h.F0[h25h.Rotor] / rotor - 0.8f) < 0.01f && h25h.MaxHeading < 3f * Deg,
+            $"honest heli 2.5x: hovers (v {h25h.V.Y:F3} m/s) at {h25h.F0[h25h.Rotor] / rotor * 100f:F1} % of its rotor, heading within {h25h.MaxHeading / Deg:F2} deg");
+        var h25c = Heli(2.5f, true, true, 1f, true, 0f); h25c.Fly(6f);
+        var v25c = Heli(2.5f, true, false, 1f, true, 0f); v25c.Fly(6f);
+        Check(h25c.MaxHeight > 20f && h25c.MaxHeight < 0.45f * v25c.MaxHeight,
+            $"honest heli 2.5x, Up held 6 s: climbs {h25c.MaxHeight:F0} m (the game's dampeners: {v25c.MaxHeight:F0} m)");
+
+        // 2. one thruster at the centre of mass (no tail, no rotor law): the numbers
+        RevShip One(float ratio, bool honest, float up, float gm = 2f)
+        {
+            var s = new RevShip { Mass = 10000f, GravityMultiplier = gm, Honest = honest, Solve = false, Height = 100f };
+            s.Add(Vector3.Zero, Vector3.UnitY, ratio * 10000f * g, false);
+            s.Input = new Vector3(0f, up, 0f);
+            return s;
+        }
+        var o25 = One(2.5f, true, 0f); o25.Fly(3f);
+        Check(MathF.Abs(o25.V.Y) < 1e-3f && MathF.Abs(o25.LastHonest.Y - 2f * 10000f * g) < 1f, $"honest one thruster 2.5x: hovers (v {o25.V.Y:F4}) on {o25.LastHonest.Y / 1e3f:F1} kN = 2 weights");
+        var o25u = One(2.5f, true, 1f); o25u.Fly(2f);
+        var v25u = One(2.5f, false, 1f); v25u.Fly(2f);
+        Check(MathF.Abs(o25u.V.Y - 0.5f * g * 2f) < 0.02f * 0.5f * g * 2f && MathF.Abs(v25u.V.Y - 1.5f * g * 2f) < 0.02f * 1.5f * g * 2f,
+            $"honest one thruster 2.5x, Up held 2 s: {o25u.V.Y:F2} m/s (0.5 g: {0.5f * g * 2f:F2}); the game's {v25u.V.Y:F2} (1.5 g: {1.5f * g * 2f:F2})");
+        var o15 = One(1.5f, true, 0f); o15.Fly(1f);
+        Check(MathF.Abs(o15.V.Y + 0.5f * g) < 0.15f && MathF.Abs(o15.LastHonest.Y - 1.5f * 10000f * g) < 1f, $"honest one thruster 1.5x: sinks at {-o15.V.Y:F2} m/s after 1 s (0.5 g) on its full {o15.LastHonest.Y / 1e3f:F1} kN");
+        var o1 = One(2.5f, true, 1f, 1f); o1.Fly(2f);
+        var v1 = One(2.5f, false, 1f, 1f); v1.Fly(2f);
+        Check(o1.V == v1.V, $"honest at GravityMultiplier 1: the game's step as it is ({o1.V.Y:F3} vs {v1.V.Y:F3} m/s)");
+        var pd = One(1.5f, true, -0.5f); pd.Fly(1f);
+        var pdv = One(1.5f, false, -0.5f); pdv.Fly(1f);
+        // (Down at half: the game's rule halves the hold - half the real weight held either way, here no down thrusters: 1 g down)
+        Check(MathF.Abs(pd.V.Y - pdv.V.Y) < 0.01f && MathF.Abs(pd.V.Y + g * pd.Time) < 0.2f, $"honest one thruster 1.5x, Down half: half the real weight held, as the game's ({pd.V.Y:F2} vs {pdv.V.Y:F2} m/s)");
+
+        // 3. SUPER DAMPENERS: in space, dampeners braking from 100 m/s, 5 m/s2 of thrust. The game's law: inertia dampening
+        //    (ComputeInertiaDampening, the grid MovementDefinition: 1.75 / 65 / 0.01), clamped to the braking maximum - x
+        //    Remap(|v| / the speed limit, 2..5) with MovementData.SuperDampeners (ComputeMaxThrusts; UseDampenersWorldOption true)
+        float Stop(bool honest, float limit)
+        {
+            bool sd = HonestHold.SuperDampeners(true, honest);
+            float m = 10000f, cap = 5f * m, v = 100f, x = 0f; const float dt = 1f / 60f;
+            for (int i = 0; i < 60 * 120 && v > 0f; i++)
+            {
+                float d = v > 0.01f ? m * 1e-4f * 65f * (v + 1.75f) * (v + 1.75f) / 2f * 60f : m * v * 60f;
+                float mult = sd ? 2f + 3f * MathF.Min(v / limit, 1f) : 1f;
+                v = MathF.Max(0f, v - MathF.Min(d, cap * mult) / m * dt);
+                x += v * dt;
+            }
+            return x;
+        }
+        float hs = Stop(true, 300f), vs = Stop(false, 300f);
+        Check(MathF.Abs(hs - 1000f) < 30f && vs < 0.5f * hs, $"super dampeners: honest stops from 100 m/s in {hs:F0} m (v^2 / 2a: 1000), the world option's {vs:F0} m");
+    }
+
     static void ReversibleChecks()
     {
         const float rotorCap = 100000f, cap = 25000f;
@@ -1144,6 +1245,7 @@ static partial class Program
         ReversibleChecks();
         HeliLimiterChecks();
         HeliDampChecks();
+        HonestDampChecks();
         Console.WriteLine("1b. the vanilla atmospherics' Mach curve and the power ladder");
         JetChecks();
         InletChecks();

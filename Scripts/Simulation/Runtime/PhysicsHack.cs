@@ -357,6 +357,8 @@ public static class PhysicsHack
     /// Read after the game's thrust (the same tick's hold): a dampened hover or a dampened parked ship gets ~0, a ship without
     /// the hold 2 x GravitySum. No CustomGravity yet (its first tick): GravitySum x the multiplier. What a momentum balance
     /// must subtract (ContactBalance) - GetGravityDirection is the planet's, for directions and the game's own hold.
+    /// Honest dampeners (HonestDampeners.Step, earlier in the same sim job) write CustomGravity first: then it holds the full
+    /// gravity less the honest hold's share (gravity x multiplier + the thrust the game did not apply), which this returns as is.
     /// </summary>
     public static Vector3 GetAppliedGravity(DEntityContext data)
     {

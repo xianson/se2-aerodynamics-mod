@@ -29,6 +29,12 @@ helicopter rotors, ramjets and solid rocket motors (G menu, category **Aerodynam
 - **Flight controls through real parts.** Control surfaces deflect with your steering; the mod's attitude control flies
   your gyros, thrusters and surfaces together, knowing what the air is doing. Thrust acts where each thruster is, so an
   unbalanced ship turns.
+- **Honest dampeners.** The game's dampeners hold a ship up with one weight of thrust against gravity the world doubles
+  (its gravity multiplier, 2 in vanilla), so a ship that falls with dampeners off floats with them on, and still climbs
+  with almost all its thrust. Here the dampeners hold with real thrust against the gravity the ship really feels: **a ship
+  needs thrust for its full (doubled) weight to hover**, one short of it sinks slowly with dampeners on, and the thrust that
+  holds it up is not there to climb with. The world's "super dampeners" option brakes with the thrusters' real thrust too
+  (no 2-5x braking). `Physics.HonestDampeners` off (Flight model, Advanced) gives the game's own dampeners back.
 - **Engines that care about speed.** Atmospheric thrusters lose thrust through the sound barrier and gain from ram air
   above it; jets flame out with the air coming from the side or behind. Turboprops are strong and slow, ramjets need
   supersonic speed, solid rockets burn to the end once lit, helicopter rotors lift and steer with the cyclic.
@@ -161,6 +167,7 @@ What changed: [`CHANGELOG.md`](CHANGELOG.md).
   | `Aero.Enabled` | on | | `Fx.Effects` (all aero effects) | on |
   | `Aero.DragMultiplier` / `LiftMultiplier` | 1 / 1 | | `Hud.StallWarning`, `Hud.Loac` | on |
   | `Aero.ThrustTorque` | on | | `Hud.GameStallWarning` (the game's own) | off |
+  | `Physics.HonestDampeners` | on | | | |
   | `Structure.Loads`, `Structure.Damage` | on | | `Hud.Mach` | off |
   | `Structure.Fatigue`, `.Tear`, `.Bends`, `.SplitBlocks` | on | | `Feel.Creaks`, `Feel.Shake` | on |
   | `Heat.Damage` | on | | | |

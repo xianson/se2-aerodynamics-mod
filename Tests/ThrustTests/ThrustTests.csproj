@@ -4,6 +4,8 @@
     <Compile Include="$(Sim)\Core\CellCoords.cs" />
     <!-- reversible thrusters' side law and the propulsor kinds -->
     <Compile Include="$(Sim)\Propulsion\ReversibleThrust.cs" />
+    <!-- the honest dampeners' law (the gravity hold as real thrust against the multiplied gravity) -->
+    <Compile Include="$(Sim)\Propulsion\HonestHold.cs" />
     <Compile Include="$(Sim)\Propulsion\PropulsorKinds.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorLimiter.cs" />

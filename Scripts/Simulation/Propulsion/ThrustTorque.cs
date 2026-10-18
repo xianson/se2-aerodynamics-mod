@@ -194,7 +194,9 @@ public static class ThrustTorque
         bool anyRev = aero._rcsAnyRev && ReversibleThrust.Enabled;
 
         // ── 1. The game's thrust this frame (grid-local, N), as the game shares it: by direction, by capacity ──
-        Vector3 gameF = GameThrust(data, aero.IsServerScene);
+        // (+ the honest dampeners' hold beyond the game's booked one - HonestDampeners: real thrust, shared onto the thrusters with
+        //  the rest; zero when the game's own hold stands)
+        Vector3 gameF = GameThrust(data, aero.IsServerScene) + aero.HonestDelta;
         if (solid && aero.IsServerScene) gameF -= solidF;   // (the client's GameThrust leaves the overrides out already)
         // At rest - nothing pushing, not moving, not turning, no pilot steering: nothing to do (a parked ship cost
         // as much as a flying one, every frame)
