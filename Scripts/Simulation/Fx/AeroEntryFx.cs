@@ -481,7 +481,25 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     internal AeroGridComponent FlowOf;
     /// <summary>The flight job's copy of its grid's flow, written in place each frame (FindFlow's into; read by this job only -
     /// the flight field and the scorch read it within the frame and keep nothing of it).</summary>
-    internal readonly AeroEntryFx.FlowPub FlowCopy = new();
+    internal AeroEntryFx.FlowPub FlowCopy = new();
+    /// <summary>The grid this component's state belongs to (CheckOwner).</summary>
+    private Keen.VRage.DCS.Components.Entity _boundTo;
+
+    /// <summary>WHOSE STATE (2026-10-18, a client crash after a grid split: two grids' jobs ran one FlightField at once -
+    /// "Collection was modified" in FlightField.ComputeTips). A component that finds itself on another entity than the one
+    /// its state was made for (a split-off grid's copy) drops that state WITHOUT destroying it - it is the other grid's - and
+    /// starts its own: the flight field, the render parent, the matched flow and its copy, the scorch stamps.</summary>
+    internal void CheckOwner()
+    {
+        var e = Entity;
+        if (ReferenceEquals(_boundTo, e) && (Flight == null || ReferenceEquals(Flight.Client, e))) return;
+        if (_boundTo != null || (Flight != null && !ReferenceEquals(Flight.Client, e)))
+        {
+            // (FlightActive untouched: the field is still counted once - by the grid that owns it; ours counts when made)
+            Flight = null; RenderParent = null; FlowOf = null; FlowCopy = new(); ScorchStamped = null; ScorchVersion = -1; LostSince = 0;
+        }
+        _boundTo = e;
+    }
     internal long LinesAt;   // (its diagnostics lines next made: FlightJob)
     internal long LostSince;   // (dropped after 1 s lost, and 60 frames: not 60 frames - half a second at 120 fps, two at 30)   // (the server grid matched last frame: kept while in reach)
 
@@ -587,6 +605,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
     {
         if (c.NoRender) return;
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
+        c.CheckOwner();
         if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
         AeroSettings.Poll();   // (the settings files, every ~2 s)
         if (SettingsTab.Claim()) SettingsTab.Ticked(c.Entity.GetSession());   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one job per 250 ms)
