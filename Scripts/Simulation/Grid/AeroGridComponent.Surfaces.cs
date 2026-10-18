@@ -378,7 +378,7 @@ public partial class AeroGridComponent
         ControlSurfaceGeometry.Measure(_components.Components, _gridAccessor);
         for (int i = 0; i < _components.Components.Count; i++)
             if (_components.Components[i] is ControlSurface cs && cs.Surroundings is SurfaceSurroundings g)
-                Log.Default?.Info($"[AERO] surface at {cs.BlockPosition}: +chord edge {g.Describe(0)}; -chord edge {g.Describe(1)}");
+                if (AeroLog.Detail) Log.Default?.Info($"[AERO] surface at {cs.BlockPosition}: +chord edge {g.Describe(0)}; -chord edge {g.Describe(1)}");
     }
 
     /// <summary>The cockpit's orientation in the grid (TargetControlData), this step: the frame of the surfaces' axis toggles.</summary>

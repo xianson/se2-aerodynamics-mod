@@ -71,11 +71,6 @@ public static class StructureContactLoads
 {
     public static bool Enabled = true;   // Structure/Server/StructureContacts.cs
 }
-public static class WingStructure
-{
-    public static bool Enabled = false;   // Structure/Server/WingStrainServer.cs
-    public static float Strength = 25f;   // Structure/Server/WingStrainServer.cs
-}
 public static class HeatScorch
 {
     public static bool Enabled = true;   // Structure/Fx/HeatScorch.cs

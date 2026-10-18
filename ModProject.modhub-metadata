@@ -17,11 +17,12 @@
     "Version": "0.0",
     "BaseMetadata": null,
     "Name": "Aerodynamics Mod",
-    "Summary": "Mod description",
+    "Summary": "Real aerodynamics: every ship flies by its shape - drag, lift, stall, Mach, re-entry heat - and the air loads its structure until it bends or tears. Adds control surfaces, gear, airbrakes, props, rotors, ramjets, solid rockets. Needs -loadScripts.",
     "Tags": [
       "UGCModTypeTag",
       "ModTagOther",
-      "ModTagSkybox"
+      "ModTagBlock",
+      "ModTagParticles"
     ],
     "ProjectFile": "Aerodynamics Mod.vrgproj"
   }

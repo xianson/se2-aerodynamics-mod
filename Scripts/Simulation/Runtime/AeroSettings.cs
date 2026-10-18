@@ -251,13 +251,7 @@ public static partial class AeroSettings
         F("Structure.HingeToCompression", "world", 0, 1, false, () => StructureBend.HingeToCompression, v => StructureBend.HingeToCompression = (float)v,
             "Where a permanent bend pivots: 1 about the section's most pushed edge (a plastic hinge on the crushed face, the pulled face opening), 0 about the section's centre, or between.")
             .Ui("Bends fold at the pushed side", GStructure, Advanced, "", 0.05);
-        // (the legacy wing-root model, superseded by Structure.Damage: files and API only)
-        B("Structure.WingStrain", "world", false, () => WingStructure.Enabled, v => WingStructure.Enabled = v,
-            "Overloaded wings (too many g, too fast) strain at the root, wear, and break off. Off by default: it destroys blocks.")
-            .Ui("Legacy wing strain", GStructure, Hidden);
-        F("Structure.WingStrength", "world", 0.1, 100, false, () => WingStructure.Strength, v => WingStructure.Strength = (float)v,
-            "Wing strength, times this (25 by default: real ships' long wings hold ~6 g; at 1 a light-armour wing 4 blocks long snaps at 40 kPa wing loading; heavy armour 4x).")
-            .Ui("Legacy wing strength", GStructure, Hidden, "×", 0.5);
+        // (Structure.WingStrain / Structure.WingStrength, the legacy wing-root wear, went 2026-10-17: old files still load)
 
         // ── re-entry heat ──
         F("Heat.Multiplier", "world", 0, 10, false, () => HullHeat.HeatMultiplier, v => HullHeat.HeatMultiplier = (float)v,

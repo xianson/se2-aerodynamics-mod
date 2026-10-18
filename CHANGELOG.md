@@ -3,6 +3,32 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## 1.0.0 - first public release (for players)
+
+The first Workshop release. In plain words, what you get:
+
+- **Ships fly by their shape.** Drag, lift, stall, the sound barrier and supersonic flight come from the hull you built;
+  wings are found from your blocks. Wind and ground effect count, and damage changes how a ship flies at once.
+- **Aircraft parts** in the G menu (Aerodynamics): hinged control surfaces, retractable landing gear in four wheel sizes,
+  clamshell airbrakes (open with the parking brake), turboprops, ducted fans, helicopter main rotors with cyclic
+  steering, reversible rotors, ramjets in four sizes, and solid rocket motors you stack from segments.
+- **Engines by speed.** Atmospheric thrusters lose thrust through Mach 1 and gain from ram air above it; jets flame out
+  with the air from the side or behind; ramjets only work supersonic.
+- **A structure that can break.** Air, thrust and impact loads run through the ship you fly; overloaded parts wear,
+  fatigue, bend, crack across and tear off, with sound, shake and smoke. Rotor blades break on what they hit; weld the
+  block to repair them.
+- **Re-entry.** Plasma, vapour and wingtip trails, hull heating with heat damage and scorch marks.
+- **Warnings** for stall and coming loss of control (on the Orbital Mod's HUD), and an optional Mach readout.
+- **Settings menu** under pause menu > Settings > Mods, plus text files for hosts.
+
+Good to know:
+
+- Add **`-loadScripts`** to the game's Steam launch options, or the mod's scripts never run.
+- The first time a world loads, every ship builds its drag table once; very large ships take up to about a minute and
+  fly roughly until it is done. After that the table is cached on disk.
+- Single player and hosting only for now; English only.
+- Your game log stays quiet: the mod writes its startup summary, settings, warnings, failures and structure breaks only.
+
 ## Unreleased (2026-10-15 cleanup)
 
 A big cleanup of the scripts (feature folders, no behaviour change of its own), plus an in-game settings menu, organic
@@ -210,6 +236,11 @@ fly.
   (`aero-solid:`), unused `CompressibleFlow` / `AtmosphereModel` relations, dead `FlightField` prototype knobs, and the
   duplicate direction helpers (the engine's `Base6Directions.GetVector`). `OffsetThrustJob` keeps its name: it holds the
   thruster and gyro caches.
+- **Release prep (2026-10-17)**: the legacy wing-root wear / breaks and their settings `Structure.WingStrain` /
+  `Structure.WingStrength` removed (off by default, superseded by `Structure.Damage`; old settings files still load, the
+  API's wing strain is still measured); `StructureContactLoads.Counters` removed (unused). Quiet logs: the per-grid /
+  per-build diagnostic lines are behind `AeroLog.Detail` (on only with the harness's dev flag) - one 50-minute session
+  had written ~2000 aero lines, 750 of them a grid entering the scene.
 - **Feature folders.** `Integration/` and the flat folders split by feature: `Grid/`, `Runtime/`, `Api/`, `Air/`, `Dev/`,
   `Propulsion/`, `Fx/`, `Hud/`, `Blocks/`, `Structure/{Model,Server,Fx}`, `Design/`, `Debris/`, `Ui/` (each with a README).
   Big files split into partials by concern (`AeroGridComponent`, `StructureServer`, `FlightField`, `OffsetThrustJob`,

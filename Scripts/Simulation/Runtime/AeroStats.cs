@@ -195,7 +195,7 @@ public static class AeroStats
         long now = Stopwatch.GetTimestamp();
         if (_lastLogTimestamp == 0) _lastLogTimestamp = now;
         float elapsedSec = (float)((now - _lastLogTimestamp) * TicksToUs / 1_000_000.0);
-        if (elapsedSec >= 10f)
+        if (elapsedSec >= 10f && AeroLog.Detail)   // (a line every 10 s for the whole session: detail only)
         {
             _lastLogTimestamp = now;
             Log.Default?.Info(
