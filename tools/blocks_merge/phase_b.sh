@@ -86,7 +86,8 @@ start_world() {
     launch
     for i in $(seq 1 150); do
         L=$(LOGF 2>/dev/null)
-        [ -n "$L" ] && [ "$L" != "$old" ] && grep -aq 'beacon Root Entity\|Loading Failed' "$L" 2>/dev/null && break
+        # (a world whose start is far from any planet logs no "beacon Root Entity": the Orbital system's build then)
+        [ -n "$L" ] && [ "$L" != "$old" ] && grep -aq 'beacon Root Entity\|\[ORBIT\] system built\|Loading Failed' "$L" 2>/dev/null && break
         L=""; sleep 1
     done
     [ -n "$L" ] || { record "'$w' loaded within 150 s" "no new log with a loaded world"; return 1; }
