@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 8;   // (8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 9;   // (9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -622,6 +622,15 @@ public static partial class AeroApi
     /// <summary>(version 8) A world setting changed since the world was last saved: it is saved with the world on its next
     /// save (a screen's "saved with this world on the next save" hint).</summary>
     public static bool AreWorldSettingsUnsaved() => AeroSettings.WorldUnsaved;
+
+    // ── quick launch (version 9) ──
+
+    /// <summary>(version 9) Ask for the local player's QUICK LAUNCH as its key does (Ctrl+T seated, creative only:
+    /// Launch/QuickLaunch.cs) - the key's own checks (the binding, not while typing) skipped, the server's all kept: the
+    /// world's switch, creative, the server's own seat, a dynamic ship free of stations, near a planet. The next client
+    /// frame asks; the answer is the player's toast (and QuickLaunch.Status). One ask a second (a second within it is
+    /// dropped). Client, any thread; no lock. The Orbital Mod's DevHarness key "quicklaunch" calls it.</summary>
+    public static void RequestQuickLaunch() => QuickLaunch.DevAsk();
 
     // ── telling aero what it cannot see ──
 

@@ -35,7 +35,7 @@ static class Program
     static int _fails, _checks;
     static void Check(bool ok, string what) { _checks++; if (!ok) { _fails++; Console.WriteLine("FAIL " + what); } else if (Environment.GetEnvironmentVariable("VERBOSE") != null) Console.WriteLine("ok   " + what); }
 
-    static readonly string[] Groups = { "Flight model", "Structure and damage", "Re-entry heat", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality" };
+    static readonly string[] Groups = { "Flight model", "Structure and damage", "Re-entry heat", "Quick launch", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality", "Controls" };
 
     static string Root()
     {

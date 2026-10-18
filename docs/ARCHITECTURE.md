@@ -27,6 +27,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 | `Design/` | `DesignProbe`: the whole ship's air force at any attitude and Mach (stability, top speed, the stall / LOAC lookups) | yes |
 | `Fx/` | The published flight state (`AeroEntryFx`) and the client flight effects (`FlightField`: plasma, vapour, tip trails) | yes |
 | `Hud/` | Stall warning, loss-of-attitude-control warning, the game's thrust-overload warning, Mach in the speedometer | yes |
+| `Launch/` | Creative quick launch (Ctrl+T seated; 2026-10-18, from the Orbital mod): the key and answer (`QuickLaunch`), the server's teleport-phase step (`QuickLaunch.Server`), aero's own Havok-safe move when the Orbital mod is absent (`QuickLaunchMove`), the decisions (`QuickLaunchRules`) | yes (`QuickLaunchRules` is pure) |
 | `Blocks/` | The mod's own blocks' components and terminals (3x3x1 control surfaces, hinge flaps, gear variants) | yes |
 | `Gear/`, `Integration/` | Retractable gear and airbrake (kinematics, server and client components, terminals); `Integration/` also holds the local dev harness files | yes |
 | `Api/` | `AeroApi` (what other mods call; partials by version area), its published copies (`ApiGridState`) and event ring (`SeqRing`), `OrbitalLink` (what aero calls in the Orbital mod) on the binding rule `CrossModLink`, `AtmosphereProbe` | yes (`SeqRing`, `CrossModLink` are engine-free) |
@@ -37,7 +38,7 @@ Companions: `docs/API.md` (the public API other mods call), `docs/REFLECTION_AND
 
 The engine-free folders (`Core` minus `Se2GridAccessor`, `Surface`, `Shadow`, `Drag`, `Lift`, `Atmosphere`,
 `Structure/Model`, parts of `Components`, `Propulsion/ThrustAllocator.cs`, `Debris/DebrisDragMath.cs`, `Api/SeqRing.cs`,
-`Api/CrossModLink.cs`, `Ui/SettingsModel.cs` and the settings registry) are compiled as-is by the offline test
+`Api/CrossModLink.cs`, `Launch/QuickLaunchRules.cs`, `Ui/SettingsModel.cs` and the settings registry) are compiled as-is by the offline test
 projects in `Tests/`; keep game types out of them.
 
 ## 2. How the mod gets into the game
@@ -214,6 +215,7 @@ client copy in the same process finds its server copy **by pose** (position, ori
 | Structure utilisation (the server `AeroGridComponent`) | `StructureFeel.Tick` | `DesignProbe.ServerAero` (the poses `DesignProbe.PublishPose` keeps while asked) |
 | Design figures (`DesignSnapshot`: pose, mass, gyros, thrusters, joints; the overlay's block boxes) | `DesignProbe` (`AeroApi` design members, the overlay) | `DesignProbe.ServerAero`; published by `DesignProbe.PublishDesign` while asked |
 | Dev summaries of the server blocks, the panel probe's nearest settings (`ServerDevReads`) | harness `aeroget ...Summary`, `AeroPanelProbe` | none (asked, answered on the next server step) |
+| Quick launch's answer (`QuickLaunch.PendingSay`) and, after aero's own move, the cockpit target's turn (`QuickLaunch.NoteTurn`) | `QuickLaunch.ClientTick` (the toast), `QuickLaunch.TurnTarget` (the seated client grid's own effects job) | none: the CLIENT asks with only its player identity (`QuickLaunch.Ask`); the server finds its character, seat and grid itself |
 
 What the **game** replicates for us: block damage, splits and deformation (written through the game's own systems),
 and `ThrustStallData` (`AeroStallJob` writes it on the server). Settings: world scope saved with the world
@@ -238,6 +240,7 @@ lookup site.
 | `OrbitalApi.TryGetEntryState2` (fallback `TryGetEntryState`) via `OrbitalLink.TryGetEntryState2` | a railed re-entry's true air velocity, density, temperature and braking: hull heat and entry loads (`TickStructureCore`) |
 | `OrbitalApi.TryGetEntryState` via `AeroEntryFx.EntryStateAt` (→ `OrbitalLink.TryGetEntryState`) | the scorch's "is re-entering" test (`HeatScorch.Update`) |
 | `OrbitalApi.TryGetGridEdits` via `OrbitalLink.TryGetGridEdits` | velocity changes Orbital wrote into a grid, taken off the contact balance (`StructureContacts`) |
+| `OrbitalApi.TryQuickMove` via `OrbitalLink.TryQuickMove` | quick launch's move when the Orbital mod is loaded (its safe move path, its space border): aero never teleports a grid behind its back; with no Orbital mod, `QuickLaunchMove` |
 
 The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelocityLimit`, read by `SpeedUncapJob` into
 `StructureContactLoads.PhysicsSpeedCap`): at the cap, a velocity change along the motion is the clamp's, not a contact.
@@ -248,6 +251,7 @@ The **speed cap** is the physics world's own (`IVelocityLimitProvider.LinearVelo
 `SetFocusGrid`), its railed entry (`RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`, `PredictHullForces`,
 `RequestForceTable`, `TryGetAtmosphereAt`), its frame shifts (`NoteMoved`), the seated ship's failure toast
 (`GetStructureEventSequence`, `ReadStructureEvents`: `StructureAlerts`), and its harness (`GetFxConsistency`). The
+Its DevHarness key `quicklaunch` calls `RequestQuickLaunch`. The
 stall and LOAC warnings are computed here and drawn by the Orbital mod's HUD; aero's own HUD pieces are the game's
 thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optional Mach readout (`MachHud`).
 

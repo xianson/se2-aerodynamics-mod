@@ -3,6 +3,29 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## 1.0.1 - creative quick launch
+
+- **Quick launch (creative only)** - moved here from the Orbital Mod (its 1.0.1 had it; the user, 2026-10-18: "ctrl+T
+  should be in aero creative"). Seated in a cockpit, `Ctrl` + `T` lifts the ship and everything joined to it to 1 km over
+  the ground (aero's ground ray; no ground found within 2 km: 1 km up from where it is), never lower than it is, never
+  closer to the ground than its own radius + 100 m; turns it level about itself on the cockpit's heading; and sends it
+  along the nose at its cruise speed (its top speed at 3/4 throttle, 150 m/s without one; at most 0.99 x the physics'
+  speed cap). Refused with a toast in survival, on foot, on a station or a ship docked / locked to one, away from a planet.
+  Settings: world `QuickLaunch.Creative` (on), `QuickLaunch.AltitudeM` (1000), `QuickLaunch.SpeedMps` (0: cruise) in a new
+  "Quick launch" group; client `QuickLaunch.Key` (T) / `QuickLaunch.Modifier` (Ctrl) in a new "Controls" group.
+  - Server-checked from its own state (`Launch/QuickLaunch.Server.cs`, the teleport phase on the planets' settings carrier):
+    the client sends only its player identity; the server finds its character, creative (`GameModeSessionComponent.IsCreative`),
+    the seat that character pilots and that seat's grid.
+  - The move: with the Orbital Mod loaded, the Orbital Mod's (`OrbitalApi.TryQuickMove`, new in its 1.0.1: its safe move
+    path, refused on rails, clamped under its planet's space border); without it aero's own (`Launch/QuickLaunchMove.cs`:
+    the game's fast-travel way - the teleport phase, the joined set together, nothing static moved, world areas released,
+    contacts masked) and the cockpit's target attitude turned with the ship on the client.
+  - `AeroApi` version 9: `RequestQuickLaunch` (the Orbital Mod's harness key `quicklaunch`).
+  - Offline: `Tests/QuickLaunchTests` (decisions, placement over 2000 random places, the level turn over 500 random ships,
+    speed, lines, binding, a scan of the engine side); settings stubs and groups (`SettingsTests`), the registry class
+    (`SceneTests`).
+  - Not tested in game yet: the key, creative on a live session, both moves (aero's own and the Orbital Mod's for aero).
+
 ## 1.0.0 - first public release (for players)
 
 The first Workshop release. In plain words, what you get:

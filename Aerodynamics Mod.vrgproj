@@ -6,7 +6,7 @@
   "$Type": "VRage:Keen.VRage.Core.Project.VRageProjectData",
   "$Value": {
     "Name": "Aerodynamics Mod",
-    "Version": "1.0.0",
+    "Version": "1.0.1",
     "Type": "Mod",
     "ProjectID": {
       "Guid": "de164d94-7a67-4832-81e4-34c06c6a65f1",

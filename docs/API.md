@@ -429,9 +429,28 @@ change them. Build the screen from `GetSettings` (its order is the screen's orde
 | `int ResetSettingsGroup(string scope, string group, out string why)` | 8 | Every setting of a group (scope `world`, `client`, or `null` for either) back to its default, through `SetSetting`'s rules. Returns how many changed; `why`: the first refusal, or no such group. |
 | `bool AreWorldSettingsUnsaved()` | 8 | A world setting changed since the world was last saved: it is written into the save on the world's next save (nothing is written at once). |
 
-The settings' groups, in screen order: world - Flight model, Structure and damage, Re-entry heat, Performance (host);
-client - HUD, Feel and audio, Visual effects, Effects quality. The table under [Settings](#settings) lists each setting's
-label, group and tier.
+The settings' groups, in screen order: world - Flight model, Structure and damage, Re-entry heat, Quick launch,
+Performance (host); client - HUD, Feel and audio, Visual effects, Effects quality, Controls. The table under
+[Settings](#settings) lists each setting's label, group and tier.
+
+## Version 9
+
+Every earlier member is unchanged. New (2026-10-18): **creative quick launch** moved here from the Orbital Mod (its 1.0.1
+had it; it now only moves the ship for aero, `OrbitalApi.TryQuickMove`).
+
+| Member | Since | What it does |
+|---|---|---|
+| `void RequestQuickLaunch()` | 9 | Asks for the local player's quick launch as its key does (Ctrl+T seated, creative only; settings `QuickLaunch.*`) - the key's own checks (the binding, not while typing) skipped, the server's all kept: the world's switch, creative (the server's game mode of its own character), the server's own seat, a dynamic ship not joined to a station, near a planet. The next client frame asks; the answer is the player's toast (and `QuickLaunch.Status`, `aeroget`). One ask a second. Client, any thread, no lock. The Orbital Mod's DevHarness key `quicklaunch` calls it. |
+
+What happens to the ship: lifted straight up to `QuickLaunch.AltitudeM` over the ground under it (aero's 2 km ground ray;
+no ground found: over where it is), never lower than it is, never closer to the ground than its own radius + 100 m;
+turned level about itself (the cockpit's nose horizontal on its heading, its top up); every body of it and of what is
+joined to it (wheels, rotor and hinge parts, docked or locked ships) at `QuickLaunch.SpeedMps` along that nose (0: its
+top speed at 3/4 throttle, 150 m/s without one; at most 0.99 x the physics' speed cap). With the Orbital Mod loaded the
+move is the Orbital Mod's (its safe move path; clamped under its planet's space border, refused when that would leave
+the ship under its clearance; refused on rails); without it aero moves the ship itself in the teleport phase (before the
+simulation, as the game's fast travel does), the cockpit's target attitude turned with it. A station, or a ship joined
+to one, is never moved.
 
 ## Roadmap / gaps
 
@@ -525,6 +544,9 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Entry.FullMach` | world | float | 2.506 | 0.6..30 | Full heating at Mach · Re-entry heat · advanced | Entry heating is full here. |
 | `Entry.HeatLag` | world | float | 2 | 0.05..30 | Heat-up / cool-down time · Re-entry heat · advanced | Seconds the hull takes to heat up and cool down. |
 | `Heat.ScorchSpots` | world | int | 4 | 0..16 | Scorch marks per ship · Re-entry heat · advanced | The most scorch marks one ship gets (the hot faces are gathered into this many spots). |
+| `QuickLaunch.Creative` | world | bool | true |  | Quick launch in creative · Quick launch · basic | *(1.0.1)* In creative, a seated pilot's quick launch key (Controls) lifts the ship over the ground, turns it level and sends it flying along its nose. Survival never has it. Off: not in this world either. |
+| `QuickLaunch.AltitudeM` | world | float | 1000 | 100..5000 | Launch altitude · Quick launch · basic | *(1.0.1)* How high over the ground (m; no ground found under the ship: over where it is). Never lower than the ship is, never into the ground; with the Orbital Mod, always under the planet's space border. |
+| `QuickLaunch.SpeedMps` | world | float | 0 | 0..1000 | Launch speed (0: cruise) · Quick launch · advanced | *(1.0.1)* The speed along the nose (m/s). 0: the ship's cruise speed (its top speed at 3/4 throttle; 150 m/s when it has none). At most 0.99 x the world's speed cap. |
 | `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
 | `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
 | `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |
@@ -561,6 +583,8 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Fx.MaxGrids` | client | int | 4 | 1..32 | Ships with effects · Effects quality · basic | Grids with flight effects at once (the nearest). |
 | `Fx.Range` | client | float | 4000 | 100..50000 | Effect distance · Effects quality · basic | Distance (m) past which a grid shows no flight effects. |
 | `Fx.SpawnPerTick` | client | int | 48 | 1..200 | Effect build-up speed · Effects quality · advanced | Effects started per frame while a grid's effects build. |
+| `QuickLaunch.Key` | client | int | 20 | 0..26 | Quick launch key · Controls · basic | *(1.0.1)* The quick launch key: 0 off, 1..26 the letters A..Z (20: T). Seated, in creative worlds that allow it. |
+| `QuickLaunch.Modifier` | client | int | 1 | 0..3 | Quick launch modifier · Controls · basic | *(1.0.1)* Held with it: 0 none (no Ctrl, Shift or Alt held), 1 Ctrl, 2 Shift, 3 Alt. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.
 
@@ -574,8 +598,9 @@ The two mods compile apart and meet only by reflection. The Orbital Mod's `tools
 |---|---|---|
 | `TryGetGridEdits(Entity, out Vector3D, out long)` | `OrbitalLink` → `StructureContacts` | The contact loads' momentum balance. Orbital writes the physics velocity after the step (a frame anchor's motion drained into the rails every tick, warp's rescale and steering, differential gravity, a spinning planet's fictitious forces): none of it is a force. The change of its running sum since the last read is taken off the balance (× mass), and a changed move stamp masks the step as `NoteMoved` does. Without it an anchor's own thrust read as plate load, a warp switch as a giant impulse, the fictitious forces as a phantom support. |
 | `TryGetEntryState2(Entity, out Vector3, out float, out float, out Vector3)`, else `TryGetEntryState(Entity, out Vector3, out float)` | `OrbitalLink` (and `AeroEntryFx.EntryStateAt` through it) | A railed re-entry: the true travel into the air, density and the band's temperature (the hull heats from them, with that temperature as its ambient), and the frame's braking acceleration (`Structure.EntryLoads`: the structure is loaded with it). |
+| `TryQuickMove(Entity, Vector3D, Quaternion, Vector3D, double, out Vector3D, out string)` *(Orbital 1.0.1, 2026-10-18)* | `OrbitalLink` → `QuickLaunch.Server.cs` | Quick launch's move when the Orbital Mod is loaded: aero never teleports a grid behind its back (its frames, berths and queued moves would not know). Orbital moves the grid and its joined set by its own safe path (the teleport phase; statics and sets joined to one refused), refuses a grid on rails or outside a planet's cell, and clamps the target under its planet's space border (down by at most the clearance room aero passes, else refused). An Orbital Mod without the member (older) refuses the launch rather than aero moving the ship itself. |
 
-**Orbital → Aero** (this API): `RegisterEntrySource` / `HasEntrySource` (the plasma of a railed re-entry), `PredictHullForces` / `RequestForceTable` (each railed frame's ballistic coefficient), `TryGetAtmosphereAt` (the air at a planet's border: the band's density and temperature), `NoteMoved` (its teleports and turns), `SetFocusGrid`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac` and the design probe (`TryDesign`, `GetTopSpeed`, `GetTopSpeedAt`, `GetThrustAlong`, `TryGetCenterOfMass`, `GetMass`, `GetDesignPressures`, `GetControlRatio`: its build hints and flight gauges), version 7's `GetStructureEventSequence` / `ReadStructureEvents` (`StructureAlerts`: the seated ship's structural failures and burn-throughs as a toast, typed delegates, polled every 0.5 s), and, for its dev harness only, `TryGetLift`, `TryGetGroundHeight`, `TryGetEntry`, `TryGetAtmosphere`, `GetFxConsistency`, `FlightFixture.Build`, `PhysicsHack.GetGravityDirection` and static fields by name.
+**Orbital → Aero** (this API): `RegisterEntrySource` / `HasEntrySource` (the plasma of a railed re-entry), `PredictHullForces` / `RequestForceTable` (each railed frame's ballistic coefficient), `TryGetAtmosphereAt` (the air at a planet's border: the band's density and temperature), `NoteMoved` (its teleports and turns), `SetFocusGrid`, `TryGetFlight`, `TryGetForces`, `TryGetStructure`, `TryGetStall`, `TryGetLoac` and the design probe (`TryDesign`, `GetTopSpeed`, `GetTopSpeedAt`, `GetThrustAlong`, `TryGetCenterOfMass`, `GetMass`, `GetDesignPressures`, `GetControlRatio`: its build hints and flight gauges), version 7's `GetStructureEventSequence` / `ReadStructureEvents` (`StructureAlerts`: the seated ship's structural failures and burn-throughs as a toast, typed delegates, polled every 0.5 s), and, for its dev harness only, `RequestQuickLaunch` (its key `quicklaunch`), `TryGetLift`, `TryGetGroundHeight`, `TryGetEntry`, `TryGetAtmosphere`, `GetFxConsistency`, `FlightFixture.Build`, `PhysicsHack.GetGravityDirection` and static fields by name.
 
 **The physics' speed cap:** aero reads the engine's own (`IVelocityLimitProvider.LinearVelocityLimit`, the world definition's `Physics.MaximumSpeedLinear`; never assumed 1000) for the contact balance: at the cap the velocity's change along itself is the clamp's, not a contact's. The Orbital Mod publishes the same value as `GetPhysicsSpeedCap`; its `GetSpeedCap` is its arrival cap (990).
 

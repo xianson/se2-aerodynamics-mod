@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Launch/QuickLaunchRules.cs (game-free): whether the server lets a seated pilot's creative quick launch go (the world's
+       switch, the pilot found, creative, the server's own seat, static, joined to a station, a planet), where the ship ends
+       (over the ground, never lower, never into it; the clamp room it leaves the Orbital Mod's space border), the level
+       turn, its speed, the binding; and a source scan of the engine side (Program.cs). -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Launch\QuickLaunchRules.cs" />
+  </ItemGroup>
+</Project>

@@ -39,6 +39,7 @@ static class Program
         ["AeroPropulsorComponent.All"] = (true, "the propulsors' server AND client prefabs (PropulsorBlocks.ServerPrefabs / ClientPrefabs; its _server flag)"),
         ["AeroSolidSegmentComponent.All"] = (false, "the solid rocket segments' SERVER prefabs only (SolidRocketBlocks.SegmentServerPrefabs)"),
         ["AeroRotorStrikeComponent.All"] = (false, "the striking propulsors' SERVER prefabs only (PropulsorBlocks.StrikeServerPrefabs: rotor strikes - the client reads the published blades)"),
+        ["AeroWorldSettingsComponent.Planets"] = (false, "the SERVER planets only (EntityInjector: the DiscoverablePlanetComponent prefabs - the settings carrier; quick launch's planet centres, read on the server step)"),
         ["AeroSolidNozzleComponent.All"] = (true, "the solid rocket nozzles' server AND client prefabs (SolidRocketBlocks.Nozzle*Prefabs; its _server flag; its loops read only its own fields)"),
     };
 

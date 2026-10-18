@@ -12,6 +12,8 @@ namespace AeroMod;
 ///  - TryGetGridEdits (StructureContacts): what Orbital WROTE into a grid's physics velocity (a running world sum, m/s) and
 ///    a stamp changed by every teleport or turn it made - its writes land after the physics step, so between two of the
 ///    contact balance's reads, and are no force on the ship;
+///  - TryQuickMove (QuickLaunch.Server.cs, 2026-10-18): quick launch's move, done by Orbital's own safe move path and kept
+///    under its planet's space border - aero never teleports a grid behind the Orbital Mod's back;
 ///  - TryGetEntryState2 (StructureServer, the railed entry): the travel through the air, density, the band's temperature
 ///    and the frame's braking acceleration (world). Older Orbital mods: TryGetEntryState (AeroEntryFx.EntryStateAt).
 /// Every lookup of Orbital's members is here (one rule; Orbital's tools/check_contract.sh checks them against its source).
@@ -24,8 +26,9 @@ public static class OrbitalLink
     delegate bool GridEditsFn(Keen.VRage.DCS.Components.Entity grid, out Vector3D velocityWrittenSum, out long moveStamp);
     delegate bool EntryState2Fn(Keen.VRage.DCS.Components.Entity grid, out Vector3 travelWorld, out float density, out float temperature, out Vector3 brakingAccelWorld);
     delegate bool EntryStateFn(Keen.VRage.DCS.Components.Entity grid, out Vector3 trueAirWorld, out float density);
+    delegate bool QuickMoveFn(Keen.VRage.DCS.Components.Entity grid, Vector3D position, Quaternion orientation, Vector3D velocity, double maxDrop, out Vector3D placed, out string reason);
     /// <summary>Diagnostics: why each is (not) bound.</summary>
-    public static string EditsStatus = "not looked up", Entry2Status = "not looked up";
+    public static string EditsStatus = "not looked up", Entry2Status = "not looked up", QuickMoveStatus = "not looked up";
 
     /// <summary>The Orbital Mod's API type: the last loaded copy (2026-10-15: each lookup scanned for its own and kept the
     /// first delegate it bound for good - an Orbital reload left aero on the stale copy).</summary>
@@ -38,6 +41,8 @@ public static class OrbitalLink
         Bind<EntryState2Fn>("TryGetEntryState2", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType(), typeof(float).MakeByRefType(), typeof(Vector3).MakeByRefType() });
     static readonly CrossModBinding<EntryStateFn> _entry =
         Bind<EntryStateFn>("TryGetEntryState", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType() });
+    static readonly CrossModBinding<QuickMoveFn> _quickMove =
+        Bind<QuickMoveFn>("TryQuickMove", new[] { typeof(Keen.VRage.DCS.Components.Entity), typeof(Vector3D), typeof(Quaternion), typeof(Vector3D), typeof(double), typeof(Vector3D).MakeByRefType(), typeof(string).MakeByRefType() });
 
     /// <summary>Diagnostics: the times the Orbital Mod's assembly changed (found, reloaded, gone).</summary>
     public static int Generation => _api.Generation;
@@ -52,6 +57,28 @@ public static class OrbitalLink
         if (fn == null) return false;
         try { return fn(grid, out velocityWrittenSum, out moveStamp) && double.IsFinite(velocityWrittenSum.X + velocityWrittenSum.Y + velocityWrittenSum.Z); }
         catch (Exception e) { _edits.Fault(e, ref EditsStatus); velocityWrittenSum = default; moveStamp = 0; return false; }
+    }
+
+    /// <summary>
+    /// Quick launch's move by the Orbital Mod (OrbitalApi.TryQuickMove): the grid with its joined set to position, turned to
+    /// orientation (its new world orientation), at velocity - through Orbital's safe move (the teleport phase, statics and
+    /// sets joined to one refused) and kept under its planet's space border (clamped down at most maxDrop m, else refused).
+    /// 1: moved (placed: where it goes); 0: refused (reason - also when the Orbital Mod is there but older, without the
+    /// member: it would not know of a move aero made itself); -1: no Orbital Mod loaded (aero moves it: QuickLaunchMove).
+    /// Server, the teleport phase; never under a lock of ours (Orbital takes its frame lock).
+    /// </summary>
+    internal static int TryQuickMove(Keen.VRage.DCS.Components.Entity grid, Vector3D position, Quaternion orientation, Vector3D velocity, double maxDrop, out Vector3D placed, out string reason)
+    {
+        placed = position; reason = null;
+        var fn = _quickMove.Get(ref QuickMoveStatus);
+        if (fn == null)
+        {
+            if (_api.Type == null) return -1;
+            reason = "update the Orbital Mod (it moves the ship when loaded; this copy is too old)";
+            return 0;
+        }
+        try { return fn(grid, position, orientation, velocity, maxDrop, out placed, out reason) ? 1 : 0; }
+        catch (Exception e) { _quickMove.Fault(e, ref QuickMoveStatus); placed = position; reason = "the Orbital Mod's move failed (" + e.GetType().Name + ")"; return 0; }
     }
 
     /// <summary>A grid's railed re-entry, the fuller state (OrbitalApi.TryGetEntryState2; else TryGetEntryState with no

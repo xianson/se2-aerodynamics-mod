@@ -34,6 +34,7 @@ There is nothing to set up on your blocks: the whole ship's shape counts, wings 
 [*][b]Structure[/b] - air, thrust and contact loads spread through the ship you fly. Overloaded sections wear, fatigue, bend, crack and tear off, with creaks, shake and smoke. Rotor blades break on what they hit.
 [*][b]Re-entry[/b] - plasma, vapour cones, wingtip trails, hull heating with heat damage, scorch marks.
 [*][b]Warnings[/b] - stall and predicted loss of control; the game's "thrust overload" stays quiet while the wings carry the ship. Optional Mach readout.
+[*][b]Quick launch (creative)[/b] - seated, Ctrl + T lifts your ship 1 km over the ground, level, flying at cruise speed. Creative worlds only (survival: nothing happens); never lower than the ship is, never into the ground, never a station. Rebind or turn off in the settings (Controls, Quick launch).
 [/list]
 
 [h2]Settings[/h2]
