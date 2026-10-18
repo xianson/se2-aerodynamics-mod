@@ -10,9 +10,9 @@
     "PartialDefinitionKind": "Copy",
     "Manipulator": {
       "Guid": "ae200001-ae00-4e25-001c-000000000001",
-      "ThrustPower": 1667000.0,
+      "ThrustPower": 2500000.0,
       "ThrustClass": "Atmospheric",
-      "ResourcesRequiredToThrust": 1316.9,
+      "ResourcesRequiredToThrust": 1975.0,
       "ThrustDirection": "Up"
     },
     "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Movement.ThrusterDefinition",

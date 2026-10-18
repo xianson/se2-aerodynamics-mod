@@ -887,7 +887,7 @@ static partial class Program
     /// the limiter's law and the propulsor's cap write (RevShip). Thrust at rho 0.89 (the user's save: the maxima x 0.89).</summary>
     static void HeliLimiterChecks()
     {
-        const float rho = 0.89f, rotor15 = 600000f * rho, rotor25 = 1667000f * rho, tailCap = 85000f * rho;
+        const float rho = 0.89f; float rotor15 = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterRotor_150").StaticThrust * rho, rotor25 = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterRotor_250").StaticThrust * rho, tailCap = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterTailRotor_050").StaticThrust * rho;   // (the table's ratings: 2026-10-18 1.5x)
         RevShip Heli(float rotorMax, float R, float mass, Vector3 inertia, params (Vector3 pos, bool rev)[] tails)
         {
             var s = new RevShip { Mass = mass, I = inertia, Rho = rho, RotorR = R };
@@ -988,7 +988,7 @@ static partial class Program
     /// limiter or the solve off the dampeners (ReversibleThrust.Demand does, as the game does - its side only).</summary>
     static void HeliDampChecks()
     {
-        const float rho = 0.89f, rotor = 600000f * rho, tailCap = 85000f * rho, hoverLoad = 0.49f;
+        const float rho = 0.89f, hoverLoad = 0.49f; float rotor = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterRotor_150").StaticThrust * rho, tailCap = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterTailRotor_050").StaticThrust * rho;
         float mass = hoverLoad * rotor / 9.81f;
         RevShip Heli(bool damp, float gm, float up = 1f, bool ground = true, float h0 = 0f)
         {
@@ -1027,7 +1027,7 @@ static partial class Program
     /// dampeners: the game's braking multiplier (ComputeMaxThrusts) with the grid's flag as HonestHold.SuperDampeners sets it.</summary>
     static void HonestDampChecks()
     {
-        const float rho = 0.89f, rotor = 600000f * rho, tailCap = 85000f * rho, g = 9.81f;
+        const float rho = 0.89f, g = 9.81f; float rotor = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterRotor_150").StaticThrust * rho, tailCap = PropulsorBlocks.Rows.First(r => r.Name == "HelicopterTailRotor_050").StaticThrust * rho;
         RevShip Heli(float ratio, bool damp, bool honest, float up, bool ground, float h0)
         {
             var s = new RevShip { Mass = rotor / (ratio * g), I = new Vector3(8e5f, 8e5f, 1.5e5f), Rho = rho, RotorR = 7.5f, Damp = damp, GravityMultiplier = 2f, Ground = ground, Height = h0, Honest = honest };

@@ -13,8 +13,8 @@ Scripts/Simulation/Blocks/PropulsorBlocks.g.cs, the table the mod reads (GUIDs, 
 
 TUNING (the static thrusts - the curves are AeroPropulsorComponent's): a 2.5 m turboprop = 1.25 x the vanilla 2.5 m-face
 atmospheric thruster (AtmosphericThruster500: 1.516 MN), the others by disc area; fans 0.8 x the vanilla atmospheric
-thruster of their face; helicopter rotors one disc loading (HelicopterRotor_150 = 600 kN, the others by disc area), the
-Reversible Rotor 85 kN. Power: 1.58 kW per kN (the vanilla 500's ratio), the helicopter rotors half that, the turboprops
+thruster of their face; helicopter rotors one disc loading (HelicopterRotor_150 = 900 kN, the others by disc area), the
+Reversible Rotor 128 kN. Power: 1.58 kW per kN (the vanilla 500's ratio), the helicopter rotors half that, the turboprops
 0.32 kW per kN (POWER_SHARE: the kings of subsonic thrust per kW up to ~Mach 0.6).
 
 RAMJETS (2026-10-17, gen_ramjet): the modeller's Ramjet_050 / 150 / 250 / 750 (kind "ramjet" in the spec) are copies of the vanilla
@@ -179,7 +179,7 @@ KINDS = {
 # (2.5 / 7.5 / 12.5 m - checked against the spec's rotor_radius below), to the nearest kN: 67 kN / 600 kN / 1.667 MN.
 # (before: 100 kN / 0.9 MN / 2.5 MN - the yaw spin: RotorKinematics.ReactionScale, RotorLimiter)
 ROTOR_TIP = {"HelicopterRotor_050": 2.5, "HelicopterRotor_150": 7.5, "HelicopterRotor_250": 12.5}
-ROTOR_ANCHOR = ("HelicopterRotor_150", 600e3)
+ROTOR_ANCHOR = ("HelicopterRotor_150", 900e3)   # (2026-10-18, the user: 1.5x for honest dampeners - a hover now costs 2x the planet weight in real thrust; was 600 kN)
 rotor_thrust = lambda N: round(ROTOR_ANCHOR[1] * (ROTOR_TIP[N] / ROTOR_TIP[ROTOR_ANCHOR[0]]) ** 2, -3)
 THRUST = {"Turboprop_050": 76e3, "Turboprop_150": 684e3, "Turboprop_250": 1.9e6,
           **{N: rotor_thrust(N) for N in ROTOR_TIP},
@@ -187,7 +187,8 @@ THRUST = {"Turboprop_050": 76e3, "Turboprop_150": 684e3, "Turboprop_250": 1.9e6,
           # mast holds that rotor at its rating with the limiter's margin to spare (the reaction there is 10 % of its thrust:
           # RotorKinematics.ReactionScale; 85 kN x 7.5 m x RotorLimiter.Margin 0.8 = 510 kN m > 450) - no cap below 100 %;
           # two at the 2.5 m rotor's tip radius hold ~87 % of its rating
-          "HelicopterTailRotor_050": 85e3,
+          # (2026-10-18: 1.5x with the main rotors, so its anti-torque stays in proportion: 128 kN x 7.5 m x 0.8 = 768 kN m > 675 at rated)
+          "HelicopterTailRotor_050": 128e3,
           **{f"DuctedFan{h}_{s}": t for h in ("Oct", "Square", "D") for s, t in (("050", 48e3), ("150", 432e3), ("250", 1.2e6), ("750", 10.8e6))},
           # the RAMJETS (2026-10-17, the user): 1.5 x the vanilla atmospheric thruster each was built from, as its thrust at the
           # curve's 100 % (ThrustProfiles.Ramjet: Mach 2.5 .. 3.5): Atmo100 40 kN, Atmo250 287.1 kN, Atmo500 1.516 MN, Atmo1000 15.47 MN
