@@ -276,7 +276,7 @@ static class Program
 
     static void Content()
     {
-        string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "..", "Aerodynamics Mod Blocks", "Assets", "Aero", "Propulsors"));
+        string root = Path.GetFullPath(Path.Combine(SimDir(), "..", "..", "Assets", "Aero", "Propulsors"));
         string ex = Path.Combine(root, "Exhaust");
         if (!Directory.Exists(ex)) { Console.WriteLine("   (no Blocks project exhaust: content checks skipped)"); return; }
         var defs = new Dictionary<string, (string file, JsonElement doc)>();

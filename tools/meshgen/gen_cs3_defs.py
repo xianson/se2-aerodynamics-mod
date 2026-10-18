@@ -4,7 +4,7 @@ following the spec in docs (hand-authored: the SDK editor does not run on 2.4). 
 derived from the file's path (assets), so a rebuild after a model change keeps every reference.
 
   python gen_cs3_defs.py [--defs]   (--defs: the definition files only, rewritten in place - no model copy, nothing removed)
-  then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod Blocks>"
+  then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
 
 The block: a copy of the vanilla template "BasePowerableBlockBreakable" (PowerableBlockComponent - a FunctionalBlockComponent:
 the flap subpart only spawns on a functional block; the powerable one adds the game's on/off toggle and a power draw, as a
@@ -16,7 +16,7 @@ dummy (the mod's AeroFlapComponent turns it). Coordinates: VRage = Blender (x, z
 import json, os, shutil, uuid
 
 EXPORT = r"D:\Blender Brojects\SE2\ControlSurface\Export"
-BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod Blocks"
+BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"   # (the block content lives in this mod since 2026-10-17: the "Aerodynamics Mod Blocks" companion was folded in)
 ROOT_REL = os.path.join("Aero", "ControlSurface3x3")
 NS = uuid.UUID("ae200001-ae00-c500-0000-00000000c533")
 VER_META = "2.4.0.16"

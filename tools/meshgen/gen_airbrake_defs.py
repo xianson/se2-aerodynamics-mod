@@ -5,7 +5,7 @@ model (the two leaves' dummies on the hinge), the breakable set (two pieces), th
 (ConditionalSubParts), the block kind and group. The mod injects AeroAirbrakeComponent / AeroAirbrakeAnimComponent by the
 prefab GUIDs (AeroBlockGuids.Airbrake*Prefabs). Helpers from gen_gear_defs.py.
 
-  python gen_airbrake_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod Blocks>"
+  python gen_airbrake_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
 """
 import json, os, shutil, uuid
 import gen_gear_defs as gd
