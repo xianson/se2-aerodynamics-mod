@@ -197,10 +197,10 @@ KW_PER_N = 1.58e-3
 # the power per newton by kind, of KW_PER_N (2026-10-17, the user: rotors are the most efficient lifters - half the vanilla
 # ratio; fans and the Reversible Rotor at the vanilla ratio)
 # TURBOPROPS (2026-10-17, the user's speed roles: "turboprops kings of subsonic" - the turboprop route): 0.32 kW per kN, so a
-# turboprop leads thrust per kW up to ~Mach 0.6 against the common vanilla atmospherics (its constant power leaves it ~20 % of
-# its static thrust there): the jet takes over from Mach 0.60 against the AtmosphericThruster500 (1.58 kW/kN), 0.62 the 100
-# (1.88), 0.64 the 250 (2.26). The 1000 (1.03 kW/kN, the vanilla's most efficient) still takes over from Mach 0.40 - a
-# Mach 0.6 crossover there would need 0.21 kW/kN. (Tests/ThrustTests power ladder asserts these; docs/PROPULSOR_SPECS.md.)
+# turboprop leads thrust per kW against every vanilla atmospheric until its tip fade (2026-10-18: constant power from
+# ThrustProfiles.TurbopropV0 = 100 m/s, was 40): the jet takes over from Mach 0.655 against the AtmosphericThruster1000
+# (1.03 kW/kN), 0.685 the 500 (1.58), 0.695 the 100 (1.88), 0.705 the 250 (2.26). (Tests/ThrustTests power ladder asserts
+# these; docs/PROPULSOR_SPECS.md.)
 TURBOPROP_KW_PER_N = 0.32e-3
 POWER_SHARE = {"HelicopterRotor_": 0.5, "Turboprop_": TURBOPROP_KW_PER_N / KW_PER_N}
 power_kw = lambda N: round(THRUST[N] * KW_PER_N * next((v for k, v in POWER_SHARE.items() if N.startswith(k)), 1.0), 1)

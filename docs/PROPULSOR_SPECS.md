@@ -123,7 +123,7 @@ Each engine leads thrust per kW in its own band, and Mach 1 is a real wall.
 
 | Band | King | Thrust vs its rating |
 |---|---|---|
-| Subsonic, up to ~Mach 0.6 | **Turboprop** | Full static thrust, then constant power (∝ 1/true airspeed past 40 m/s); fades from Mach 0.6, gone at 0.75 (`ThrustProfiles.TurbopropFraction`, at the local Mach). 0.32 kW per kN. |
+| Subsonic, up to ~Mach 0.6 | **Turboprop** | Full static thrust, then constant power (∝ 1/true airspeed past 100 m/s - from 40 on 2026-10-18); fades from Mach 0.6, gone at 0.75 (`ThrustProfiles.TurbopropFraction`, at the local Mach). 0.32 kW per kN. |
 | Through the barrier, ~Mach 0.6–2 | **Vanilla atmospheric** (a jet) | A transonic pinch, then a ram rise above the rating (`ThrustProfiles.Jet`, `JetPinch` 0.76, `JetRamPeak` 1.8; 2026-10-17, the Mach wall made reachable): 100% at rest, 95% at Mach 0.6, 85% at 0.85, **80% at 0.95, 76% at 1.0, 95% at 1.1**, 112% at 1.2, 130% at 1.3, 148% at 1.4, 165% at 1.5, 177% at 1.6, **180% at 1.7**, 155% at 1.8, 120% at 1.9, 82% at 2.0 (below the ramjet from here), 45% at 2.2, 25% at 2.4, 0 at 2.8. Before the fix: 65% at 0.95, 55% at 1.0, 60% at 1.1, 80% at 1.3, 90% at 1.6, 60% at 2.0. |
 | Supersonic, ~Mach 2–6 | **Ramjet** (built 2026-10-17, see "Ramjets") | Zero static thrust; needs a boost to ~Mach 0.5; 100 % at Mach 2.5–3.5 (105 % at 3); fades by Mach 6. Burns hydrogen. |
 | Hypersonic (later) | Scramjet | Mach 4–15 curve kept in `ThrustProfiles`. |
@@ -160,14 +160,15 @@ Each engine leads thrust per kW in its own band, and Mach 1 is a real wall.
 
     (The "before" density figures use the bridge's speed of sound; the morning's report took 340 m/s at every density, hence its 2.24 at 0.8.)
   - Past the crossing, up to Mach 1.4, nothing asks more than 93 % of the crossing thrust (1.81 of 1.94, at Mach 1.05).
-- **Power per kW (Tests/ThrustTests power ladder, 2026-10-17): the turboprop route.** The turboprops draw **0.32 kW per kN** (`gen_propulsor_defs.py`; from 1.58). They lead thrust per kW (sea level, axial) up to about Mach 0.6 against the common vanilla atmospherics. The jet takes over:
-  - from Mach **0.60** against the 500 (1.58 kW/kN);
-  - from **0.62** against the 100 (1.88 kW/kN);
-  - from **0.64** against the 250 (2.26 kW/kN).
+- **Power per kW (Tests/ThrustTests power ladder, 2026-10-17): the turboprop route.** The turboprops draw **0.32 kW per kN** (`gen_propulsor_defs.py`; from 1.58). Constant power starts at **100 m/s** (`ThrustProfiles.TurbopropV0`; 40 until 2026-10-18), so they lead thrust per kW (sea level, axial) against **every** vanilla atmospheric until their tip fade ends the band. The jet takes over:
+  - from Mach **0.655** against the 1000 (1.03 kW/kN, the vanilla's most efficient);
+  - from **0.685** against the 500 (1.58 kW/kN);
+  - from **0.695** against the 100 (1.88 kW/kN);
+  - from **0.705** against the 250 (2.26 kW/kN).
 
   Each of those leads from there to Mach 2 (with the ram rise, by far: 1.8× its rating at Mach 1.7).
 
-  **The 1000 is the special case.** It's the vanilla's most efficient (1.03 kW/kN) and still takes over from Mach **0.40**. A Mach 0.6 crossover against it would need 0.21 kW/kN.
+  **Raw thrust too:** the 2.5 m turboprop (1.9 MN) out-thrusts the AtmosphericThruster500 (1.516 MN) up to about Mach 0.4 (at 40 m/s it was only to ~Mach 0.15).
 
   The ramjet profile takes over from the jet from Mach 1.98, at the vanilla 500's power per newton (1.8 before the ram rise; the jet's curve falls below the ramjet's from Mach 2.0 by design). Vanilla is unchanged.
 

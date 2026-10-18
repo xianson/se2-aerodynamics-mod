@@ -62,7 +62,9 @@ public static class ThrustProfiles
     /// local speed of sound (AeroGridComponent.LastAirVel / LastMach - 2026-10-17: it was a fixed 330 m/s over the GROUND speed).</summary>
     public const float SeaLevelSoundSpeed = 340.3f;
     /// <summary>Turboprop: the airspeed (m/s along the thrust) where constant power takes over from static thrust.</summary>
-    public static float TurbopropV0 = 40f;
+    /// (2026-10-18, the user: "raise the turboprop 40 m/s point to like 100 m/s" - at 40 it led the jets on raw thrust only below
+    /// ~Mach 0.15; at 100 it leads the Atmo500 on raw thrust to ~Mach 0.38 and per kW right up to the tip fade.)
+    public static float TurbopropV0 = 100f;
     /// <summary>Turboprop: tip compressibility - full up to this Mach, nothing at MachZero.</summary>
     public static float TurbopropMachFade = 0.6f, TurbopropMachZero = 0.75f;
 

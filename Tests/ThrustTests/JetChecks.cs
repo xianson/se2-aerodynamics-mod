@@ -100,9 +100,10 @@ static partial class Program
     {
         // 1. the law, game-free: the Mach it is given, not the speed over a constant
         float f1 = AeroPropulsorComponent.Speed(AeroPropulsorComponent.Kinds.Turboprop, 100f, 100f, 0.7f);
-        float want1 = 0.4f * (1f - (0.7f - ThrustProfiles.TurbopropMachFade) / (ThrustProfiles.TurbopropMachZero - ThrustProfiles.TurbopropMachFade));
-        float f2 = AeroPropulsorComponent.Speed(AeroPropulsorComponent.Kinds.Turboprop, 100f, 100f, 0.3f);   // (100 m/s in thin, cold air: Mach 0.3 - no fade)
-        Check(MathF.Abs(f1 - want1) < 1e-4f && MathF.Abs(f2 - 0.4f) < 1e-4f, $"turboprop: constant power by true airspeed ({f2:F3} at 100 m/s), the tip fade by the Mach it is given ({f1:F3} at Mach 0.7)");
+        float want1 = MathF.Min(1f, ThrustProfiles.TurbopropV0 / 100f) * (1f - (0.7f - ThrustProfiles.TurbopropMachFade) / (ThrustProfiles.TurbopropMachZero - ThrustProfiles.TurbopropMachFade));
+        float f2 = AeroPropulsorComponent.Speed(AeroPropulsorComponent.Kinds.Turboprop, 250f, 250f, 0.3f);   // (250 m/s with Mach 0.3 given - the law takes the Mach it's handed: no fade)
+        float want2 = ThrustProfiles.TurbopropV0 / 250f;
+        Check(MathF.Abs(f1 - want1) < 1e-4f && MathF.Abs(f2 - want2) < 1e-4f, $"turboprop: constant power by true airspeed ({f2:F3} at 250 m/s), the tip fade by the Mach it is given ({f1:F3} at Mach 0.7)");
         float r1 = AeroPropulsorComponent.Speed(AeroPropulsorComponent.Kinds.Rotor, 0f, 170f, 0.5f), r2 = (float)ThrustProfiles.HelicopterRotor.Evaluate(0.5);
         float fa = AeroPropulsorComponent.Speed(AeroPropulsorComponent.Kinds.Fan, 65f, 200f, 0.9f);
         Check(MathF.Abs(r1 - r2) < 1e-5f && MathF.Abs(fa - 0.5f) < 1e-4f, $"rotor: its profile at the given Mach ({r1:F3}); fan: by its true airspeed along the thrust ({fa:F3} at 65 m/s)");
@@ -143,10 +144,10 @@ static partial class Program
     /// <summary>THE POWER LADDER: thrust per kW (N/kW) across Mach at sea level, axial - the turboprop (the generated table's
     /// power, its own curve AeroPropulsorComponent.Speed at the true airspeed and Mach), each vanilla atmospheric thruster (the
     /// game's definitions' power, the Jet curve), the ramjet's profile (no block yet: at the vanilla 500's power per newton).
-    /// PASS/FAIL (2026-10-17, the turboprop route: 0.32 kW/kN, gen_propulsor_defs.py): the turboprop leads every common vanilla
-    /// size (100, 250, 500) per kW up to Mach 0.6 and each of them leads it from its crossover (<= 0.66) to Mach 2; the 1000 -
-    /// the vanilla's most efficient - is the special case (it takes over from ~Mach 0.4: printed with what a Mach 0.6
-    /// crossover there would take); the ramjet would take over from the jet between Mach 1.6 and 2.1.</summary>
+    /// PASS/FAIL (2026-10-17, the turboprop route: 0.32 kW/kN, gen_propulsor_defs.py; 2026-10-18 TurbopropV0 100 m/s): the
+    /// turboprop leads EVERY vanilla size (100, 250, 500 and the most efficient, the 1000) per kW up to Mach 0.6 - its tip fade,
+    /// not its power, ends its band now - and each of them leads it from its crossover (<= 0.75, the fade's end) to Mach 2; the
+    /// ramjet would take over from the jet between Mach 1.6 and 2.1.</summary>
     static void PowerLadderChecks()
     {
         var vanilla = new (string name, float thrust, float kw)[]
@@ -171,13 +172,8 @@ static partial class Program
             // the turboprop power per newton that puts this crossover at Mach 0.6
             float fix = Frac(0.6f) / JetCurve.Factor(0.6f) * p;
             Console.WriteLine($"   turboprop vs {v.name} ({p * 1000f:F2} kW/kN): the jet leads per kW from Mach {(cross < 0f ? "never below 0.8" : cross.ToString("F3"))}; a Mach 0.6 crossover would take {fix * 1000f:F2} kW/kN ({fix / tpKwPerN:F2} x now)");
-            if (v.name == "Atmo1000")
-            {
-                Check(cross > 0.3f && cross < 0.6f, $"  ladder: the Atmo1000 (the vanilla's most efficient) is the special case - it takes over from Mach {cross:F3}");
-                continue;
-            }
             Check(cross >= 0.6f, $"  ladder: the turboprop leads {v.name} per kW up to Mach 0.6 (the jet from Mach {cross:F3})");
-            bool jetLeads = cross > 0f && cross <= 0.66f; for (float m = MathF.Max(cross, 0.6f) + 0.005f; m <= 2.0f; m += 0.01f) if (Jet(m, p) <= Tp(m)) jetLeads = false;
+            bool jetLeads = cross > 0f && cross <= ThrustProfiles.TurbopropMachZero; for (float m = MathF.Max(cross, 0.6f) + 0.005f; m <= 2.0f; m += 0.01f) if (Jet(m, p) <= Tp(m)) jetLeads = false;
             Check(jetLeads, $"  ladder: {v.name} leads the turboprop per kW from its crossover (Mach {cross:F3}) to 2");
         }
         float rc = -1f; float p5 = vanilla[2].kw / vanilla[2].thrust;
