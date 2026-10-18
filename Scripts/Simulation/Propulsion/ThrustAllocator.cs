@@ -54,18 +54,6 @@ public static class ThrustAllocator
         return torque;
     }
 
-    /// <summary>What a helicopter rotor's CYCLIC is asked for (RotorCyclic.Give, ThrustTorque.Apply - 2026-10-18): the torque the
-    /// attitude law asks of the actuators less the thrusters' own torque - PLANNED before the solve against their torque as last
-    /// solved (its warm start; else at the game's share, GameShare's: the offset torque of a lift not through the centre of mass;
-    /// the solve is asked for the ask less the plan), GIVEN after it against their torque as solved. The solve makes the thrusters' arms x forces, their own offset
-    /// torque in it; the cyclic given the ask alone answered only the damping, and a lone rotor's lift is no torque the solve
-    /// can shift with the net force kept: its offset torque stood, a steady pitch rate of 0.3 x it / I in damping - the
-    /// unpiloted 3x helicopter tipped over to 66 deg and its per-axis hold fell at 12.5 m/s2 on 26 % of its rotor (in game,
-    /// 2026-10-18; Tests/ThrustTests TiltHeliChecks). Given once, before the solve, the tails' yaw forces it then chose left their
-    /// own pitch / roll unanswered; planned against the game's share, the solve traded the tails' yaw for the roll that plan
-    /// assumed (a yaw rate stood): hence planned on the last solve, then given.</summary>
-    public static Vector3 CyclicWant(Vector3 want, Vector3 shareTau) => want - shareTau;
-
     /// <summary>A reversible thruster's net-force error weight in the solve, of a one-way thruster's: rotation comes first on
     /// it (its torque need not be traded for keeping the game's net force - a lone reversible thruster on an axis would
     /// otherwise give only a fraction of the torque asked).</summary>

@@ -9,6 +9,8 @@
     <Compile Include="$(Sim)\Propulsion\PropulsorKinds.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorLimiter.cs" />
+    <!-- the cyclic's trim (the offset torque answered: TiltHeliChecks) -->
+    <Compile Include="$(Sim)\Propulsion\RotorTrim.cs" />
     <!-- the vanilla atmospherics' Mach curve, the thrust profiles and the generated propulsor table (the power ladder) -->
     <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />

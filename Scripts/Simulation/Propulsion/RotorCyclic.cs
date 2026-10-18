@@ -74,12 +74,29 @@ public static class RotorCyclic
         return aero._rotorIdx;
     }
 
+    /// <summary>The main rotors' summed cyclic reach (N m, RotorTrim.Reach) at these thrusts and the plane it is in: axis, the
+    /// first rotor's (grid-local unit); one, every rotor's axis along it (one plane of cyclic - RotorTrim's trim needs it).</summary>
+    internal static float Reach(AeroGridComponent aero, Vector3 com, Vector3[] dirs, float[] thrust, int n, out Vector3 axis, out bool one)
+    {
+        var idx = Rotors(aero, n); var comps = aero._rotorComp; var thrusters = aero._thrusterCache;
+        axis = Vector3.UnitY; one = idx.Length > 0;
+        float sinT = MathF.Sin(MaxTiltDeg * MathF.PI / 180f), sum = 0f;
+        for (int k = 0; k < idx.Length; k++)
+        {
+            int i = idx[k];
+            if (i >= thrusters.Count || i >= dirs.Length) continue;
+            if (k == 0) axis = dirs[i]; else if (Vector3.Dot(dirs[i], axis) < 0.999f) one = false;
+            float h = Vector3.Dot(thrusters[i].GridLocalPosition - com, dirs[i]) + comps[k].HubOffset;
+            sum += RotorTrim.Reach(thrust[i], h, comps[k].RotorRadius, sinT, HubMoment);
+        }
+        return sum;
+    }
+
     /// <summary>The grid has rotors (cheap after the first call per thruster list).</summary>
     internal static bool Has(AeroGridComponent aero, int n) => Enabled && Rotors(aero, n).Length > 0;
 
     /// <summary>Give what the rotors can of <paramref name="want"/> (local N m), apply it - the torque and the tilt's force -
-    /// and return the torque given. thrust: each thruster's thrust this frame (N, the game's share). apply false: only what
-    /// they would give (no torque, no tilt, no load set - ThrustTorque.Apply's plan before its solve).</summary>
+    /// and return the torque given. thrust: each thruster's thrust this frame (N, the game's share).</summary>
     internal static Vector3 Give(AeroGridComponent aero, in WorldTransform wt, Vector3 com, Vector3 want, Vector3[] dirs, float[] thrust, int n, float dt, bool apply)
     {
         var idx = Rotors(aero, n); var comps = aero._rotorComp;
@@ -95,7 +112,7 @@ public static class RotorCyclic
             if (i >= thrusters.Count) { cyc[k] = h[k] = 0f; continue; }
             float T = MathF.Max(thrust[i], 0f), R = comps[k].RotorRadius;
             h[k] = Vector3.Dot(thrusters[i].GridLocalPosition - com, dirs[i]) + comps[k].HubOffset;
-            cyc[k] = T * (MathF.Max(h[k], 0f) * sinT + HubMoment * R);
+            cyc[k] = RotorTrim.Reach(T, h[k], R, sinT, HubMoment);
             cycSum += cyc[k];
         }
         if (cycSum <= 0f) return Vector3.Zero;
@@ -124,24 +141,19 @@ public static class RotorCyclic
                 if (ll > 0f) aero._rotorTilt[k] = lean / ll * (MathF.Min(1f, gpl / cyc[k]) * MaxTiltDeg * MathF.PI / 180f);
             }
             // the tilt's part of the in-plane torque is the thrust tilted: its in-plane force = torque x a / h
-            float hk = MathF.Max(h[k], 0f);
-            if (hk > 0.25f && cyc[k] > 0f)
-            {
-                float tiltShare = hk * sinT * MathF.Max(thrust[i], 0f) / cyc[k];
-                forceK = Vector3.Cross(gp * tiltShare, a) / hk;
-                force += forceK;
-            }
+            forceK = RotorTrim.TiltForce(gp, a, thrust[i], h[k], cyc[k], sinT);
+            force += forceK;
             // (this rotor's part, for the structure at its block: PublishLoads)
             if (applied && k < loadF.Length) { loadF[k] = forceK; loadT[k] = givenK; }
         }
         if (applied && given.LengthSquared() > 0f)
         {
+            aero._cycForce = force;   // (ThrustTorque's Resting balance, next step)
             var forceW = WorldTransform.TransformDirection(force, wt);
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, forceW, given, dt);
             // (no contact: the structure's contact balance must not read it as the wheels' or the plates' - NoteKnownImpulse)
             if (aero.IsServerScene) aero.NoteKnownImpulse(forceW * dt);
         }
-        if (!apply) return given;   // (a plan - ThrustTorque.Apply's, before its solve: nothing set, nothing logged)
         Last = $"{(aero.IsServerScene ? "server" : "client")} h {h[0]:F2} m T {thrust[idx[0]]:F0} N reaction {aero._rotorReaction:F0} N m rotors {idx.Length}: want ({want.X:F0}, {want.Y:F0}, {want.Z:F0}) gave ({given.X:F0}, {given.Y:F0}, {given.Z:F0}) N m, tilt force ({force.X:F0}, {force.Y:F0}, {force.Z:F0}) N, reach cyclic {cycSum:F0}, anti-torque {(aero._limAuth.Length > 0 ? aero._limAuth[0] : 0f):F0} N m (reversible / sideways thrusters + gyros + control surfaces: RotorLimiter)";
         if (Log && aero.IsServerScene)
         {
@@ -299,6 +311,10 @@ public partial class AeroGridComponent
     internal int[] _spinIdx, _spinCyc; internal System.Collections.Generic.List<AeroPropulsorComponent> _spinComp;
     /// <summary>RotorCyclic: each rotor's disc tilt this step (grid-local lean, length = angle rad), for Publish.</summary>
     internal Vector3[] _rotorTilt = System.Array.Empty<Vector3>();
+    /// <summary>ThrustTorque: the thrusters' torque arms along the rotor axis (RotorTrim.ProjectArms; sized with the thruster list).</summary>
+    internal Vector3[] _rcsProj = System.Array.Empty<Vector3>();
+    /// <summary>RotorCyclic.Give: the tilt's force it applied this step (grid-local N; ThrustTorque reads and clears it).</summary>
+    internal Vector3 _cycForce;
     /// <summary>RotorCyclic: the rotors' summed reaction torque last step (N m, harness / logs).</summary>
     internal float _rotorReaction;
     /// <summary>RotorCyclic.Limit (RotorLimiter): per main rotor - tip radius, rpm, rating (in), the authority about its axis,
