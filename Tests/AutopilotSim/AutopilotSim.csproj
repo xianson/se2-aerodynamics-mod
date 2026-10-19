@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- THE AUTOPILOT'S OFFLINE FLIGHT SIMULATOR (Program.cs): the REAL autopilot core (Scripts/Simulation/Autopilot: goals,
+       guidance, protection) flying 6-dof ships through the REAL attitude law and allocator (ThrustAllocator, RotorTrim) on
+       the game's own thrust law (per-axis hold + dampening + input, HonestHold, ReversibleThrust) - ThrustTorque.Apply's
+       order mirrored (Plant.cs: Apply itself needs the engine). Planes fly the force polars AeroBench exported from the
+       dumped ships (Tests/data/polars), the stall from the mod's own LiftPeak. Exit 0 = every scenario passed. -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Autopilot\*.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
+    <Compile Include="$(Sim)\Propulsion\RotorTrim.cs" />
+    <Compile Include="$(Sim)\Propulsion\HonestHold.cs" />
+    <Compile Include="$(Sim)\Propulsion\ReversibleThrust.cs" />
+    <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
+    <Compile Include="$(Sim)\Lift\LiftPeak.cs" />
+    <Compile Include="$(Sim)\Core\CellCoords.cs" />
+  </ItemGroup>
+</Project>

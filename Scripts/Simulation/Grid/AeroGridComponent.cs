@@ -333,7 +333,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
 
     /// <summary>Recompute the forces every how many frames (the last ones are applied between): piloted or fast
     /// grids every frame, slower ones every 2nd or 4th - many grids cost proportionally less.</summary>
-    internal int ComputeInterval => Data.Has<TargetControlData>() || LastSpeed >= 80f ? 1 : LastSpeed >= 20f ? 2 : 4;
+    internal int ComputeInterval => Data.Has<TargetControlData>() || ApFlying || LastSpeed >= 80f ? 1 : LastSpeed >= 20f ? 2 : 4;   // (the autopilot flying: every step, as a pilot)
     internal int LodPhase = System.Threading.Interlocked.Increment(ref _lodSeed) & 3;
     private static int _lodSeed;
 
@@ -422,6 +422,7 @@ public partial class AeroGridComponent : Component, IInSceneListener
         DesignProbe.Forget(this);
         AeroEntryFx.Forget(this);
         ThrustTorque.Forget(this);   // (its published flame shares held this component - and its tables - alive forever)
+        ForgetAutopilot();           // (its engaged count, its terrain ray buffers)
         Ground.Release();            // (the ground ray's native hit/ignore lists)
         _initialized = false;
         AirKnown = false;            // (re-added: its air is read again before anyone takes it)

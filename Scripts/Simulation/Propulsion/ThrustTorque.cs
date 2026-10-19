@@ -55,7 +55,9 @@ public static class ThrustTorque
         public Vector3 Need, Delivered;
         /// <summary>The commanded attitude the law flew to, and the gyros' and thrusters' reach it had (local N m per axis):
         /// the predicted loss-of-control warning's (Loac.cs).</summary>
-        public Quaternion Target; public bool HasTarget; public Vector3 Reach; }
+        public Quaternion Target; public bool HasTarget; public Vector3 Reach;
+        /// <summary>The helicopter rotors' cyclic reach (N m about the in-plane axes; 0: none) - the autopilot's tilt authority.</summary>
+        public float CyclicReach; }
 
     /// <summary>
     /// AERO-AWARE ATTITUDE (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but they don't
@@ -158,18 +160,22 @@ public static class ThrustTorque
         for (int j = 0; j < steerN; j++) { var z = aero._solidSteer[j]; steerTau += Vector3.Cross(z.PosLocal - mass.CenterOfMass, z.PushLocal * z.ThrustNow); }
         // ── 0. Flown by the aero-aware law: the game gyros' turn this frame taken back (they are flown below) ──
         TargetControlData tcd = default;
-        bool aware = AeroAware && aero.HasResult && aero.LastDensity > AwareMinDensity
-            && data.TryGet<TargetControlData>(out tcd) && tcd.TargetOrientation.IsValidAndRotationIsNormalized() && aero.AttitudeTarget(wt, out _, out _);
+        // (THE AUTOPILOT, 2026-10-19 - Autopilot/AeroGridComponent.Autopilot.cs: its target is a pilot's, flown by this one law in
+        //  any air - the game's gyro law, the target's or the unpiloted rate damping, taken back; its reach the game's own budget,
+        //  the plain one with no cockpit: GyroControl.Reach's Vector3.One. Nothing else changes: the same actuators, the same limits)
+        bool hasTcd = data.TryGet<TargetControlData>(out tcd) && tcd.TargetOrientation.IsValidAndRotationIsNormalized();
+        bool apFly = aero.ApFlying;
+        bool aware = AeroAware && (apFly || (aero.HasResult && aero.LastDensity > AwareMinDensity && hasTcd)) && aero.AttitudeTarget(wt, out _, out _);
         Vector3 gyroReach = Vector3.Zero;
         if (aware)
         {
-            gyroReach = GyroControl.Reach(data, in mass, in tcd);
+            gyroReach = hasTcd ? GyroControl.Reach(data, in mass, in tcd) : GyroControl.Reach(data, in mass, Vector3.One);
             if (gyroReach != Vector3.Zero)
             {
                 if (!GyroControl.Ready) aware = false;   // (the game's gyro impulse unreadable: its law flies them, as before)
                 else
                 {
-                    rep.GameGyroUndone = GyroControl.Undo(data, wt);
+                    rep.GameGyroUndone = GyroControl.Undo(data, wt, hasTcd);
                     if (data.TryGet<RigidBodyData>(out var rbNow)) angVelWorld = rbNow.AngularVelocity;
                 }
             }
@@ -202,7 +208,7 @@ public static class ThrustTorque
         if (solid && aero.IsServerScene) gameF -= solidF;   // (the client's GameThrust leaves the overrides out already)
         // At rest - nothing pushing, not moving, not turning, no pilot steering: nothing to do (a parked ship cost
         // as much as a flying one, every frame)
-        if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>() && steerN == 0)
+        if (gameF.LengthSquared() < 1f && aero.LastSpeed < 0.05f && angVelWorld.LengthSquared() < 4e-6f && !data.Has<TargetControlData>() && !apFly && steerN == 0)
         {
             rep.Mode = "rest";
             Publish(aero, wt, null);
@@ -284,6 +290,7 @@ public static class ThrustTorque
         if (hasRotor)
         {
             cycReach = RotorCyclic.Reach(aero, com, dirs, f0, n, out cycAxis, out oneAxis);
+            rep.CyclicReach = cycReach;
             trim = oneAxis && !Resting(aero, data, wt, angVelWorld, mass.InvMass, lastLawForceW);
         }
         // a helicopter rotor's reaction torque (RotorCyclic.ReactionTorque): the thrust's own torque about the rotor axis, as
@@ -310,7 +317,12 @@ public static class ThrustTorque
             {
                 // the aero-aware law: all it needs (the air's torque answered); the thrusters asked for what the gyros cannot give
                 rep.Reach = gyroReach + ThrusterReach(aero, n) + SolidReach(aero, com, steerN); rep.Target = target; rep.HasTarget = true;
-                tauNeed = AwareNeed(aero, in mass, w, rep.Error, rep.Reach, dt, out rep.AeroTorque) - rotorReaction;
+                // (the autopilot flying a rotorcraft: the law plans its braking with part of the cyclic's reach too - CyclicPlanShare;
+                //  without it a large tilt was paced by the gyros and thrusters alone and the hover's outer loops chased it into a
+                //  limit cycle, sideways flight on a single tail - Tests/AutopilotSim. A pilot's target: as before)
+                Vector3 planReach = rep.Reach;
+                if (apFly && hasRotor && oneAxis) planReach += ApTuning.CyclicPlanShare * cycReach * (Vector3.One - Vector3.Abs(cycAxis));
+                tauNeed = AwareNeed(aero, in mass, w, rep.Error, planReach, dt, out rep.AeroTorque) - rotorReaction;
                 // (a helicopter rotor's cyclic / anti-torque first - RotorCyclic: the gyros and thrusters the rest)
                 if (hasRotor) { cyc = true; cycAsk = tauNeed; rotorTau = PlanCyclic(aero, wt, com, tauNeed, cycOwn, cycAxis, cycReach, oneAxis, trim, dirs, f0, n, dt, out project, out cycApplied); tauNeed -= rotorTau; }
                 // (the lit rockets' torque at their base is in the solve's slots: the gyros take what they can of the need BEYOND it,
@@ -618,7 +630,35 @@ public static class ThrustTorque
         public volatile RevTable Reversibles;
         /// <summary>The grid's rotor / prop blades' health (rotor strikes: AeroRotorStrikeComponent), by block AABB Min + Max.</summary>
         public volatile BladeTable Blades;
+        /// <summary>THE AUTOPILOT's two-way channel (Autopilot/AeroGridComponent.Autopilot.cs): the server's flight director state for
+        /// the client copy (its target for that copy's attitude law, the readout), and the client copy's pilot input for the server
+        /// (the cockpit writes only the client copy). Created once, written in place under its own lock.</summary>
+        public volatile ApPub Ap;
     }
+    /// <summary>THE AUTOPILOT's record (Published.Ap): server -> client the flight director's state, client -> server the pilot's
+    /// input. Both written and read under its own lock (a few fields, once a tick per autopilot grid: never contended for long).</summary>
+    internal sealed class ApPub
+    {
+        // server -> client
+        public bool Flying; public Quaternion Target = Quaternion.Identity; public string Readout = ""; public int Goals, Prot, Reason; public long Stamp;
+        // client -> server: the cockpit's movement keys and the pilot's steering (deg, a leaky sum), seated, when
+        public bool Seated; public Vector3 Keys; public float Steer; public long PilotStamp;
+    }
+
+    /// <summary>Server: the grid's autopilot record (made on first use; the pose refreshed as every publish does).</summary>
+    internal static ApPub ApRecord(AeroGridComponent aero, in WorldTransform wt)
+    {
+        var p = Record(aero, wt);
+        var a = p.Ap;
+        if (a == null) { lock (p) { a = p.Ap; if (a == null) p.Ap = a = new ApPub(); } }
+        return a;
+    }
+
+    /// <summary>Client: the server record with an autopilot for this client grid (matched as the flaps', kept and checked again
+    /// every 0.25 s by the caller).</summary>
+    internal static bool FindAp(Entity grid, Published kept, long now, out Published match) => FindRecord(grid, HasAp, kept, now, out match);
+    static readonly Func<Published, bool> HasAp = p => p.Ap != null;
+
     /// <summary>The grid's struck rotors' and props' blade health (0..1, 0 broken; RotorStrike): the index replaced when one is new to
     /// it, the values written in place (as the gears). Only a rotor whose blades are not whole (or were repaired a moment ago) is in it.</summary>
     internal sealed class BladeTable { public float[] Health; public readonly Dictionary<Vector3I, int> Index = new(); }

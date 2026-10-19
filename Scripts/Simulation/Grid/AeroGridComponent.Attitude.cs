@@ -24,6 +24,9 @@ public partial class AeroGridComponent
             try { _isSubPart = GridPhysics.IsSubPart(Entity, LastMass); } catch { _isSubPart = false; }
         }
         if (_isSubPart) { mode = "sub-part"; return false; }
+        // THE AUTOPILOT (Autopilot/AeroGridComponent.Autopilot.cs): its target, as a pilot's reticle - piloted or not (an unattended
+        // helicopter holds its hover); the client copy flies the server's, from the record
+        if (ApFlying) { target = ApTarget; mode = "autopilot"; return true; }
         if (TestTurnGen != 0 && IsServerScene && Data.TryGet<TargetControlData>(out var tt))
         {
             // DEV (harness): the pilot's target set as the reticle sets it - the orientation when TestTurnGen last changed,
@@ -62,6 +65,8 @@ public partial class AeroGridComponent
     /// </summary>
     private void UpdateAttitudeHold(WorldTransform wt, Vector3 angularVelocity)
     {
+        // The autopilot flying: the aware law's demand drives the surfaces (AllocateSurfaces), as a pilot's target does
+        if (ApFlying) return;
         // A pilot giving input: the surfaces' mixer sets the rate (UpdateControlSurfaceInputs)
         if (Data.Has<TargetControlData>()) return;
         // (AngularControlData persists on the entity without a pilot - a stale component: only real input counts)

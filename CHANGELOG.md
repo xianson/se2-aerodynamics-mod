@@ -3,6 +3,39 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - autopilot (hover hold, height hold, envelope protection)
+
+- **Hover hold** (`Ctrl` + `H`, seated): the ship holds its place and height; your movement keys fly it at up to
+  `Autopilot.HoverSpeed` (10 m/s) and it stops and holds where you let go; up / down change the height at
+  `Autopilot.ClimbRate`; steering lets go of the hover (the height hold stays). **Height hold** alone: `Ctrl` + `J`.
+  A ship left in hover hold keeps it (`Autopilot.Unattended`). It refuses or lets go with a reason in a toast (too fast,
+  no upward thrust, dampeners off, you steered, lost control, can't hold the height...); the speed readout shows the mode and
+  the protection in force (`Autopilot.Readout`: "AP HOVER POS AGL · FLOOR").
+- **The single-tail helicopter's sideways drift - confirmed and fixed.** Offline first (`Tests/AutopilotSim` "drift cause"):
+  unpiloted, level, nothing leans the ship, so the anti-torque tail's own yaw thrust (18 kN on the 30 t H25) moves it
+  sideways - 12.7 m/s after 20 s, within 3 % of that thrust's impulse over the mass; two tails (a yaw couple) hold their place.
+  Hover hold leans the lift axis into it: the speed loop's integral finds the steady lean by itself (4.2 deg on H25).
+  H25 3x / 2.5x, one tail: settles in 3 s and holds within 0.12 m and 0.03 m/s for 60 s.
+- **Envelope protection** on every autopilot command: short of the whole ship's best-lift angle (the stall warning's own
+  evaluation, less `Autopilot.AoaMarginDeg`), within `Autopilot.GLimit`, within what its controls can hold (the predicted
+  loss of control, asked for the command before it is given), off the terrain (a floor, `Autopilot.FloorM`, and a look
+  ahead along the path - pulls up in time, inside those same limits), full thrust when out of energy, the throttle eased at
+  the speed limit. `Autopilot.Protection` switches it off.
+- **Terrain aware:** height over the ground (`Autopilot.HoldAboveGround`, the terrain followed), the ground's slope fed
+  forward, the time to impact along the path - from the physics' own rays (the game builds voxel colliders only near ships:
+  a long ray that finds nothing is "not known").
+- **No cheats:** the autopilot writes only what a seated pilot writes - a target attitude and the movement keys - and the
+  ship's own aero-aware attitude law flies it through its real gyros, thrusters, rotors' cyclic and control surfaces.
+  (While it flies a rotorcraft the law plans its braking with 35 % of the cyclic's reach too: `ApTuning.CyclicPlanShare`.)
+- **For later modes:** one core (`Autopilot/FlightDirector.cs`) - goals, guidance, protection, the attitude law - with an
+  external goal source (a track, an acceleration flown with the lift, or an attitude), a flight-performance query
+  (`FlightPerf`: load, turn rates, drag, speed after a pull - from the ship's own lift and drag) and a terrain query.
+  `AeroApi` version 11: `TryGetAutopilot`, `RequestAutopilot`, `TryGetFlightPerformance`.
+- **Offline flight simulator:** `Tests/AutopilotSim` - the real core on the game's thrust law and the mod's allocator, rotor
+  trim and attitude law (ThrustTorque's order), the dumped planes on their AeroBench polars (`appolar`), terrain models,
+  gusts, noise, lag, mass changes, engine-out; a ledger proves every tick's forces come from real actuators. In the gate.
+- Not tested in game yet: the keys, the readout, the toasts, an unattended hover after the pilot leaves, the terrain rays.
+
 ## 1.0.4 - saving fixed on SE2 4.0
 
 - **A world with a newly placed aero block could not be saved** ("Failed save ... Serializing dead Entities ... AeroSurfaceSettingsComponent").

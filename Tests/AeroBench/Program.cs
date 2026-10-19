@@ -839,6 +839,7 @@ static partial class Program
         if (args.Length > 0 && args[0] == "bodies") return Bodies(atmo);
         if (args.Length > 1 && args[0] == "columns") return Columns(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "polar") return Polar(dataDir, atmo, args[1]);
+        if (args.Length > 1 && args[0] == "appolar") return ApPolarExport(dataDir, args.Skip(1).ToArray());   // (the autopilot sim's force polars: ApPolar.cs)
         if (args.Length > 1 && args[0] == "damping") return Damping(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "attitude") return Attitude(dataDir, atmo, args[1]);
         if (args.Length > 1 && args[0] == "dragmap") return DragMap(dataDir, atmo, args[1]);

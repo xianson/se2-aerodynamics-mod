@@ -615,6 +615,7 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (SettingsTab.Claim()) SettingsTab.Ticked(c.Entity.GetSession());   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one job per 250 ms)
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         QuickLaunch.ClientTick(c.Entity);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs, 2026-10-18)
+        ApKeys.ClientTick(c.Entity);   // (the autopilot's keys and its words to the pilot - Autopilot/Game/ApKeys.cs)
         QuickLaunch.TurnTarget(c.Entity);   // (this grid's cockpit target, after a quick launch aero turned it: a reference compare)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)

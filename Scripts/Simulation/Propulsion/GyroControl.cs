@@ -83,12 +83,18 @@ public static class GyroControl
     }
 
     /// <summary>Take back what the game's gyros gave this frame. Returns the local Δω removed.</summary>
-    public static Vector3 Undo(DEntityContext data, in WorldTransform wt)
+    public static Vector3 Undo(DEntityContext data, in WorldTransform wt) => Undo(data, wt, true);
+
+    /// <summary>... targetLaw: the grid has a TargetControlData (the game's target law applied it - ApplyAngularImpulseTarget, the
+    /// bounds-weighted Δω); false: none (an unpiloted grid the autopilot flies - the game's rate law applied it,
+    /// ApplyAngularImpulseAngular: the plain impulse through the inertia, RigidBodyDataFunctions.ApplyAngularImpulseLocal).</summary>
+    public static Vector3 Undo(DEntityContext data, in WorldTransform wt, bool targetLaw)
     {
         Vector3 imp = GameImpulse(data);
         if (imp == Vector3.Zero) return Vector3.Zero;
         if (!data.TryGet<RigidBodyMassProperties>(out var mass) || !data.TryGet<BoundingBoxData>(out var bb)) return Vector3.Zero;
-        Vector3 dw = GameDeltaW(in mass, in bb, imp);
+        Vector3 dw = targetLaw ? GameDeltaW(in mass, in bb, imp)
+            : Vector3.Transform(mass.InvInertiaMajorAxisRotation * imp * mass.InvInertiaTensor, mass.InertiaMajorAxisRotation);
         if (!dw.IsValid()) return Vector3.Zero;
         ref RigidBodyData rb = ref data.TryGetWritePtr<RigidBodyData>();
         if (Unsafe.IsNullRef(in rb)) return Vector3.Zero;

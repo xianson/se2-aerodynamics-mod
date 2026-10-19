@@ -39,6 +39,10 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Re-entry:** plasma, vapour cones, wingtip trails, hull heating with heat damage, and scorch marks.
 - **Warnings:** a stall warning and a predicted loss-of-control warning (on the Orbital Mechanics Mod's HUD), and an optional Mach
   readout.
+- **Autopilot:** seated, `Ctrl` + `H` holds a hover (place and height; your keys fly it at up to 10 m/s and it stops where
+  you let go), `Ctrl` + `J` holds the height. A helicopter left hovering keeps hovering. Protected against stalls, overload,
+  loss of control and the ground, and it flies only through the ship's real controls. Settings > Mods > Aerodynamics
+  (Autopilot, Controls).
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
   the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).

@@ -155,7 +155,7 @@ public static partial class QuickLaunch
 
     /// <summary>A screen takes the keyboard (SharedUIComponent.TryGetTopScreenNeedingInput, public, by reflection - the type
     /// is the client UI's: docs/REFLECTION_AND_WHITELIST.md). Asked only when the binding went down. Unknown: false.</summary>
-    static bool TopScreenNeedsInput(Session session)
+    internal static bool TopScreenNeedsInput(Session session)
     {
         try
         {
@@ -169,7 +169,7 @@ public static partial class QuickLaunch
 
     /// <summary>The local player is seated in a grid (its top observable entity is a block on one: MachHud's walk), and its
     /// identity (what the server's character is owned by).</summary>
-    static bool LocalPilot(Session session, out Keen.Game2.Simulation.GameSystems.Ownership.IdentityId who, out bool hasWho)
+    internal static bool LocalPilot(Session session, out Keen.Game2.Simulation.GameSystems.Ownership.IdentityId who, out bool hasWho)
     {
         who = default; hasWho = false;
         try

@@ -25,7 +25,8 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
     repeatability, rebuild garbage, cache version vs sources). Suites include `SurfaceTests`, `StructureTests`,
     `TearTests`, `ThrustTests`, `RotorTests`, `RotorStrikeTests`, `SolidRocketTests`, `ExhaustTests`,
     `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SceneTests`,
-    `SettingsTests`, `SettingsUiTests` (`-- dump` prints the settings menu), `ApiTests`, `BlockSaveTests`, `QuickLaunchTests`.
+    `SettingsTests`, `SettingsUiTests` (`-- dump` prints the settings menu), `ApiTests`, `BlockSaveTests`, `QuickLaunchTests`,
+    `AutopilotSim` (the autopilot's flight simulator: `-- full` the sweeps, `-- list`, `-- <name>`, `csv <folder>` traces).
 - **AeroBench modes** (`cd Tests/AeroBench; dotnet run -c Release -- <mode> <ships>`), e.g. `damage`, `impact`, `scale`,
   `cache`, `gcbuild` (`ALLOC=1` for per-type dumps), `polar`, `struct`, `fail`, `replay`, `tablehash`, `machwall`.
   Ships come from `Tests/data/*.boxes` (gitignored; exported in game with `aeroexport on`).

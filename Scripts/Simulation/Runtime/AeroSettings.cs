@@ -85,7 +85,7 @@ public static partial class AeroSettings
     // the screen's sections, in order
     const string GFlight = "Flight model", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
                  GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality",
-                 GLaunch = "Quick launch", GControls = "Controls";   // (a group is one scope: the menu keys sections by name)
+                 GLaunch = "Quick launch", GAutopilot = "Autopilot", GControls = "Controls";   // (a group is one scope: the menu keys sections by name)
     const Tier Basic = Tier.Basic, Advanced = Tier.Advanced, Hidden = Tier.Hidden;
 
     static AeroSettings()
@@ -300,6 +300,38 @@ public static partial class AeroSettings
             "Quick launch: the speed along the nose (m/s). 0: the ship's cruise speed (its top speed at 3/4 throttle; 150 m/s when it has none). At most just under the world's speed cap.")
             .Ui("Launch speed (0: cruise)", GLaunch, Advanced, "m/s", 10);
 
+        // ── autopilot (2026-10-19: hover hold, height hold, envelope protection - Autopilot/; the server reads these) ──
+        B("Autopilot.Enabled", "world", false, () => Autopilot.Enabled, v => Autopilot.Enabled = v,
+            "Autopilot modes may be engaged in this world (hover hold, height hold). Off: every engaged one lets go.")
+            .Ui("Autopilot", GAutopilot, Basic);
+        B("Autopilot.Unattended", "world", false, () => Autopilot.Unattended, v => Autopilot.Unattended = v,
+            "A ship whose pilot gets out keeps its engaged mode - a helicopter left in hover hold holds its hover. Off: it lets go when you leave the seat.")
+            .Ui("Keep the mode when you leave the seat", GAutopilot, Basic);
+        B("Autopilot.HoldAboveGround", "world", false, () => Autopilot.HoldAboveGround, v => Autopilot.HoldAboveGround = v,
+            "A height hold keeps the height over the ground under the ship, following the terrain. Off: the height along the gravity from where it was caught (steady over rough ground). With no ground in reach it holds along the gravity either way.")
+            .Ui("Hold the height over the ground", GAutopilot, Basic);
+        B("Autopilot.Protection", "world", false, () => Autopilot.Protection, v => Autopilot.Protection = v,
+            "Envelope protection on every autopilot command: short of the stall, within the g limit, inside what the ship's control authority holds (the predicted loss of control), off the terrain (a floor, and a look ahead along the path), full thrust when out of energy, the throttle eased at the speed limit. Off: the commands as made (the lean and thrust limits always hold).")
+            .Ui("Envelope protection", GAutopilot, Basic);
+        F("Autopilot.MaxLeanDeg", "world", 2, 45, false, () => Autopilot.MaxLeanDeg, v => Autopilot.MaxLeanDeg = (float)v,
+            "Hover hold: the most the ship leans to move or hold its place (deg).")
+            .Ui("Hover: most lean", GAutopilot, Advanced, "°", 1);
+        F("Autopilot.HoverSpeed", "world", 1, 50, false, () => Autopilot.HoverSpeed, v => Autopilot.HoverSpeed = (float)v,
+            "Hover hold: the speed your movement keys ask for, and the most it flies back to its held place at (m/s).")
+            .Ui("Hover: key speed", GAutopilot, Advanced, "m/s", 1);
+        F("Autopilot.ClimbRate", "world", 0.5, 20, false, () => Autopilot.ClimbRate, v => Autopilot.ClimbRate = (float)v,
+            "Hover / height hold: the climb and descent rate your up and down keys ask for (m/s).")
+            .Ui("Hover: climb rate", GAutopilot, Advanced, "m/s", 0.5);
+        F("Autopilot.GLimit", "world", 1.5, 15, false, () => Autopilot.GLimit, v => Autopilot.GLimit = (float)v,
+            "Protection: the most load an autopilot command may pull (g of the ship's real weight).")
+            .Ui("Protection: g limit", GAutopilot, Advanced, "g", 0.5);
+        F("Autopilot.AoaMarginDeg", "world", 0, 15, false, () => Autopilot.AoaMarginDeg, v => Autopilot.AoaMarginDeg = (float)v,
+            "Protection: the commanded attitude stays this far short of the whole ship's best-lift angle (the stall), deg.")
+            .Ui("Protection: stall margin", GAutopilot, Advanced, "°", 0.5);
+        F("Autopilot.FloorM", "world", 0, 500, false, () => Autopilot.FloorM, v => Autopilot.FloorM = (float)v,
+            "Protection: the lowest the autopilot lets the ship sink to over the ground (m), once it has been above it; 0 off.")
+            .Ui("Protection: terrain floor", GAutopilot, Advanced, "m", 5);
+
         // ── performance (the host's) ──
         F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,
             "The most aero may take of a simulation frame (ms); past it, grids not piloted wait a few frames.")
@@ -344,6 +376,9 @@ public static partial class AeroSettings
         B("Hud.GameStallWarning", "client", false, () => GameStallWarning.On, v => GameStallWarning.On = v,
             "The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity - it ignores the wings' lift). Off by default: removed.")
             .Ui("Game's own stall text", GHud, Basic);
+        B("Autopilot.Readout", "client", false, () => Autopilot.Readout, v => Autopilot.Readout = v,
+            "The engaged autopilot mode and its protection in the speed readout (\"12 m/s · AP HOVER POS AGL · FLOOR\").")
+            .Ui("Autopilot readout", GHud, Basic);
 
         // ── feel and audio (the airframe you can feel - StructureFeel.cs, 2026-10-14: the structure's load, heard and felt in the seat) ──
         B("Feel.Creaks", "client", false, () => StructureFeel.Creaks, v => StructureFeel.Creaks = v,
@@ -423,6 +458,15 @@ public static partial class AeroSettings
         I("QuickLaunch.Modifier", "client", 0, 3, false, () => QuickLaunch.Modifier, v => QuickLaunch.Modifier = (int)v,
             "Held with the quick launch key. None: the key alone, with no Ctrl, Shift or Alt held.")
             .Ui("Quick launch modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
+        I("Autopilot.HoverKey", "client", 0, 26, false, () => Autopilot.HoverKey, v => Autopilot.HoverKey = (int)v,
+            "Seated: toggles hover hold - the ship holds its place and height (your movement keys fly it at a speed, it stops and holds where you let go; steering lets go of the hover). A letter, with the autopilot modifier. Off: no key.")
+            .Ui("Hover hold key", GControls, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("Autopilot.HeightKey", "client", 0, 26, false, () => Autopilot.HeightKey, v => Autopilot.HeightKey = (int)v,
+            "Seated: toggles height hold - the ship holds its height (over the ground: the world's choice) while you fly it. A letter, with the autopilot modifier. Off: no key.")
+            .Ui("Height hold key", GControls, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("Autopilot.KeyModifier", "client", 0, 3, false, () => Autopilot.KeyModifier, v => Autopilot.KeyModifier = (int)v,
+            "Held with the autopilot keys. None: the key alone, with no Ctrl, Shift or Alt held.")
+            .Ui("Autopilot key modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
     }
 
     // ── the entry heating's Mach pair (stored as heat: OnsetHeat (M / OnsetMach)^3; FullMach is where it is full) ──

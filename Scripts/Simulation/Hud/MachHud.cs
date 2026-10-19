@@ -28,6 +28,7 @@ public static class MachHud
     static readonly string[] Keys = { "SpeedometerMetersPerSecond", "SpeedometerKilometersPerHour", "SpeedometerMilesPerHour" };
     static bool _filter;
     static long _nextPatch, _nextValue;
+    static string _lastAp = "", _lastMach = "";
 
     sealed class Filter : ITextFilter
     {
@@ -45,7 +46,9 @@ public static class MachHud
         // (the effects jobs run in parallel: one of them claims the tick - Install once, never twice at a time)
         long due = System.Threading.Interlocked.Read(ref _nextValue);
         if (now < due || System.Threading.Interlocked.CompareExchange(ref _nextValue, now + f / 10, due) != due) return;
-        if (!On) { Suffix = ""; return; }
+        // (the autopilot's readout too - "AP HOVER POS AGL" - whatever Hud.Mach says: Autopilot.Readout)
+        bool ap = Autopilot.Readout && System.Threading.Volatile.Read(ref AeroGridComponent.ApEngaged) > 0;
+        if (!On && !ap) { Suffix = ""; return; }
         if (now >= _nextPatch) { _nextPatch = now + 3 * f; Install(); }
         // (the Mach of what the local player is in)
         var players = anyGrid?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
@@ -54,8 +57,11 @@ public static class MachHud
         for (int up = 0; top != null && up < 4 && top.TryGet<AeroGridComponent>() == null; up++)
             top = top.TryGet<Keen.VRage.Core.Game.Components.HierarchyComponent>()?.Parent;
         // (a grid aero simulates - you are seated in it; on foot nothing: a character near a flying grid is not flying)
-        var p = top != null && top.TryGet<AeroGridComponent>() != null ? AeroEntryFx.FindFlow(top.Data.GetWorldTransform().Position) : null;
-        Suffix = p != null && p.Mach >= 0.05f ? $" · M {p.Mach:0.00}" : "";
+        var aero = top?.TryGet<AeroGridComponent>();
+        var p = On && aero != null ? AeroEntryFx.FindFlow(top.Data.GetWorldTransform().Position) : null;
+        string mach = p != null && p.Mach >= 0.05f ? $" · M {p.Mach:0.00}" : "", apText = ap && aero != null ? aero.ApReadoutClient ?? "" : "";
+        // (built only when a part changed: the readout's text is a few fixed strings)
+        if (!ReferenceEquals(apText, _lastAp) || mach != _lastMach) { _lastAp = apText; _lastMach = mach; Suffix = apText.Length > 0 ? mach + " · " + apText : mach; }
     }
 
     /// <summary>The filter (once), and the token on the three templates (when a load replaced them).</summary>

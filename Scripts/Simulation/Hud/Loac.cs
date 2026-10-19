@@ -103,9 +103,31 @@ public partial class AeroGridComponent
         if (raw != _loacRaw) { _loacRaw = raw; _loacHeld = 0f; }
         else _loacHeld += snap.Dt;
         if (_loacHeld >= LoacWarning.Hold || raw == LoacState) LoacState = raw;
+        // THE AUTOPILOT's reference governor (EnvelopeGuard, 2026-10-19): the same prediction for the attitude its guidance WANTS
+        // (before it is ever commanded) and for holding the attitude now - whatever the HUD warning's setting
+        if (snap.HasProbe && speed > StallWarning.MinSpeed && snap.Density > StallWarning.MinDensity) EvaluateApProbe(snap, L, speed);
 
         static string Kn(Vector3 v) => $"({v.X / 1000f:F0},{v.Y / 1000f:F0},{v.Z / 1000f:F0})kNm";
         // (one axis: what it needs over what it has - none to hold, nothing; none to give, everything)
-        static float Axis(float need, float have) => MathF.Abs(need) < 1f ? 0f : have <= 1f ? 10f : MathF.Abs(need) / have;
+        static float Axis(float need, float have) => LoacMath.Axis(need, have);
+    }
+
+    /// <summary>The autopilot's probe (StructSnap.Probe): the worst need / reach on the way from now to it (PathPoints), and at the
+    /// attitude now - LoacMath over DesignProbe.ForcesAt, as EvaluateLoac. Published for the flight director (ApLoac*).</summary>
+    void EvaluateApProbe(StructSnap snap, StructureEval.Loads L, float speed)
+    {
+        var airWorld = Vector3.Transform(L.AirVel, snap.Orient);
+        float mach = speed / MathF.Max(snap.SoS, 1f);
+        float Need(Quaternion q)
+        {
+            var airLocal = Vector3.Transform(airWorld, Quaternion.Inverse(q));
+            if (!DesignProbe.ForcesAt(this, airLocal / speed, mach, snap.Density, snap.SoS, L.AeroCom, out _, out var torque, out _)) return 0f;
+            return LoacMath.Worst(torque + snap.SurfNeutral, snap.Reach, snap.SurfPush, snap.SurfPull);
+        }
+        float here = Need(snap.Orient), worst = 0f;
+        int n = Math.Max(1, LoacWarning.PathPoints);
+        for (int k = 1; k <= n; k++) worst = MathF.Max(worst, Need(Quaternion.Slerp(snap.Orient, snap.Probe, k / (float)n)));
+        ApLoacHere = here; ApLoacProbe = worst; ApLoacAt = snap.Probe;
+        System.Threading.Volatile.Write(ref ApLoacStamp, System.Diagnostics.Stopwatch.GetTimestamp());
     }
 }

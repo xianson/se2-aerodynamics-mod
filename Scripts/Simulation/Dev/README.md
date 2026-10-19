@@ -8,6 +8,7 @@
 | `AeroBlockSaveDev.cs` | The per-block save observed and set from the harness: `AeroBlockSave.Restored` / `Written` / `LegacyClaimed` / `Counts` / `Last` (counted at load / save, never per tick), `aeroset AeroBlockSave.DevSet grid\|kind\|which\|value` and `aeroset AeroBlockSave.DevDump grid` (answers: `aeroget` the same), served on the server step (Orbital `tools/harness/test_blocksave.sh`) |
 | `AeroBlockSaveDevForm.cs` | Its request / answer text, pure (`Tests/BlockSaveTests`) |
 | `FlightFixture.cs` | A grid as the thruster steering sees it, as text for `Tests/ThrustTests` (Orbital's DevHarness `flightdump`) |
+| `TerrainDump.cs` | `aeroset TerrainDump.Go true` (with `Size`, `Step`, `Name`): a square of the ground around the seated ship sampled with the physics' ray, written as a heightfield (`%TEMP%/AeroMod/terrain/NAME.hf`) for `Tests/AutopilotSim` (`SimTerrain.Load`, `Tests/data/terrain/`); served from the seated server ship's autopilot step. Not run yet (an in-game step) |
 
 
 ## Entry points

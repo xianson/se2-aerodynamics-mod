@@ -39,7 +39,7 @@ public partial class AeroWorldSettingsComponent : Component, IInSceneListener
         lock (Planets) Planets.Remove(this);
         // (the last carrier gone - the world unloaded: the API's structure events let go of its entities, 2026-10-15 review;
         //  quick launch's unanswered ask, answer and cockpit turn of that world, 2026-10-18)
-        if (System.Threading.Interlocked.Decrement(ref _carriers) <= 0) { AeroApi.ResetStructureEvents(); QuickLaunch.ResetWorld(); }
+        if (System.Threading.Interlocked.Decrement(ref _carriers) <= 0) { AeroApi.ResetStructureEvents(); QuickLaunch.ResetWorld(); ApKeys.ResetWorld(); }
     }
     static int _carriers;
 }

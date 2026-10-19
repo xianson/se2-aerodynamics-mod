@@ -36,7 +36,8 @@ public partial class AeroGridComponent
         var L = snap.L;
         float speed = L.AirVel.Length();
         int raw = 0;
-        if (StallWarning.Enabled && speed > StallWarning.MinSpeed && snap.Density > StallWarning.MinDensity && snap.Weight > 0f)
+        // (also while the autopilot flies, whatever the HUD warning's setting: its protection reads it)
+        if ((StallWarning.Enabled || ApFlying) && speed > StallWarning.MinSpeed && snap.Density > StallWarning.MinDensity && snap.Weight > 0f)
         {
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var v = L.AirVel / speed;
@@ -44,11 +45,22 @@ public partial class AeroGridComponent
             var com = L.AeroCom;
             Vector3 F(Vector3 dir) => DesignProbe.ForcesAt(this, dir, mach, snap.Density, snap.SoS, com, out var f, out _, out _) ? f : Vector3.Zero;
             var l = LiftPeak.LiftDir(v, F(v), snap.Up);
-            LiftPeak.Find(t => Vector3.Dot(F(LiftPeak.Air(v, l, t)), LiftPeak.Normal(v, l, t)), out float tp, out float lp, out float l0);
+            // (every angle the sweep looks at recorded - lift and drag: the autopilot's flight performance, FlightPerf - into the back
+            //  buffer, published by a swap; the sweep's own evaluations, none added)
+            var ps = ApPerfBack; ps.Clear(); ps.Flow = v; ps.LiftDir = l; ps.Speed = speed; ps.Density = snap.Density;
+            LiftPeak.Find(t => { var ft = F(LiftPeak.Air(v, l, t)); ps.Record(t, ft, v, l); return Vector3.Dot(ft, LiftPeak.Normal(v, l, t)); }, out float tp, out float lp, out float l0);
+            ps.Sort(); ApPerfBack = ApPerfFront; ApPerfFront = ps; ApPerf = ps; StallFlowDir = v;
             raw = LiftPeak.State(tp, lp, l0, 0.05f * snap.Weight);
             StallMarginDeg = tp * 180f / MathF.PI;
             StallLiftInUse = lp > 0f ? l0 / lp : 0f;
             StallGAvailable = lp / snap.Weight;
+            StallLiftDir = l; System.Threading.Volatile.Write(ref StallStamp, System.Diagnostics.Stopwatch.GetTimestamp());   // (the autopilot's alpha protection: EnvelopeGuard)
+            // (the flight performance for the API - AeroApi.TryGetFlightPerformance: the same arithmetic the autopilot reads, at the
+            //  flow of this evaluation; two boxes swapped, no garbage)
+            var ss = new ApSense { Mass = snap.Mass, GravityTrue = snap.GravityTrue, Gravity = snap.GravityTrue, ThrustPos = snap.ThrustPos, ThrustNeg = snap.ThrustNeg,
+                StallFresh = true, StallMarginDeg = StallMarginDeg, StallLiftInUse = StallLiftInUse, StallG = StallGAvailable, LiftDir = l, StallFlow = v, AirVel = L.AirVel };
+            var box = PerfBoxBack; box.P = FlightPerf.Evaluate(ps, in ss); box.Speed = speed; box.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            PerfBoxBack = PerfBoxNow; PerfBoxNow = box;
             StallWarning.LastMs = (float)System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             StallWarning.Last = $"{Entity?.DebugName}: state {raw}, best lift {StallMarginDeg:+0.0;-0.0} deg away, using {StallLiftInUse * 100f:0}%, {StallGAvailable:0.0} g available ({StallWarning.LastMs:F1} ms)";
         }

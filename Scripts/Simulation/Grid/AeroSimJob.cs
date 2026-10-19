@@ -38,12 +38,14 @@ public partial class AeroGridComponent
         if (!ThrustTorque.Enabled || (aero._thrusterCache.Count == 0 && aero._gyroCache.Count == 0)) return;
         // (a quiet grid - the sim job's quiet path, this tick - was at rest for QuietAfter steps: ThrustTorque's rest branch
         //  ran each of them and darkened its flames; nothing to do until it stirs)
-        if (QuietGate && aero._quietFrames > QuietAfter && aero._quietFrames % QuietRefresh != 0) return;
+        if (QuietGate && !aero.ApActive && aero._quietFrames > QuietAfter && aero._quietFrames % QuietRefresh != 0) return;
         long tth2 = AeroCost.Start();
         AeroCost.EnterSim();
         try
         {
             GridPhysics.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
+            // (the autopilot first: its target and keys, as a pilot's, for the attitude law below - Autopilot/AeroGridComponent.Autopilot.cs)
+            aero.AutopilotStep(wt);
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
             aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
             // (the predicted loss-of-control warning's inputs: Loac.cs)
