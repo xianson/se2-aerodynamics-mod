@@ -1,0 +1,121 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS1591;CS8632;CS0169;CS0649;CS0414</NoWarn>
+    <ModDir Condition="'$(ModDir)'==''">C:\Users\slob\Documents\SpaceEngineers2\Mods\Orbital Mod</ModDir>
+    <Game2>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
+    <NetRt Condition="'$(NetRt)'==''">C:\Program Files\dotnet\shared\Microsoft.NETCore.App\9.0.19</NetRt>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoCompilerStandardLib>true</NoCompilerStandardLib>
+  </PropertyGroup>
+  <PropertyGroup>
+    <VRageBundleName>OrbitalMod</VRageBundleName>
+    <VRageBundleVersion>1.0.0.0</VRageBundleVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="VRageBundleName" />
+    <CompilerVisibleProperty Include="VRageBundleVersion" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(ModDir)\Scripts\Simulation\**\*.cs" />
+    <!-- What ScriptingAssemblyInjectorPreProcessor adds in game; makes the analyzer skip own symbols. -->
+    <Compile Include="$(MSBuildThisFileDirectory)InjectedScriptingAssembly.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Exactly ModCompilationDescriptor.MetadataReferences (2.4.0.95; WhitelistGen prints them):
+         GameCompilationDescriptor.MetaDatas, then the framework defaults below. -->
+    <Reference Include="$(Game2)\VRage.Core.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Library.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.DCS.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Core.Game.dll" Private="false" />
+    <Reference Include="$(Game2)\Game2.Simulation.dll" Private="false" />
+    <Reference Include="$(Game2)\Game2.Client.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Physics.dll" Private="false" />
+    <!-- CompilationDescriptorDefaults.DefaultMetadataReferences: CoreLib, Linq,
+         Collections, Collections.Immutable, System.Runtime. -->
+    <Reference Include="$(NetRt)\System.Private.CoreLib.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Runtime.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Linq.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Collections.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Collections.Immutable.dll" Private="false" />
+    <!-- 2.4.0.95 MetaDatas also add these three (JsonTokenType, ConcurrentDictionary<,>, DynamicObject):
+         referenced so their types resolve, but NOT whitelisted - using them is VRS1001. -->
+    <Reference Include="$(NetRt)\System.Text.Json.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Collections.Concurrent.dll" Private="false" />
+    <Reference Include="$(NetRt)\System.Linq.Expressions.dll" Private="false" />
+    <Analyzer Include="$(Game2)\VRage.CodeAnalysis.dll" />
+    <!-- Keen's whitelist analyzer (VRS1001) + the mod whitelist rebuilt by wlgen. -->
+    <Analyzer Include="$(Game2)\VRage.Scripting.dll" />
+    <Analyzer Include="$(Game2)\VRage.Library.dll" />
+    <Analyzer Include="$(Game2)\VRage.Core.dll" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)AllowedSymbols.Mod.txt" />
+    <Analyzer Include="$(Game2)\VRage.DCS.Generator.dll" />
+    <!-- Ours: what the game's analyzer bans but its offline run let through (a 'var' of a mod type's array). -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)VarArrayAnalyzer\VarArrayAnalyzer.csproj" ReferenceOutputAssembly="false" />
+    <Analyzer Include="$(MSBuildThisFileDirectory)VarArrayAnalyzer/bin/$(Configuration)/netstandard2.0/VarArrayAnalyzer.dll" />
+    <Analyzer Include="$(Game2)\VRage.Library.Generator.dll" />
+  </ItemGroup>
+  <!-- The game compiles with reportSuppressedDiagnostics:true and ScriptCompiler rejects the mod on ANY
+       Error-severity diagnostic, suppressed or not (DiagnosticBag.HasErrors). The mods' blanket
+       `#pragma warning disable` makes csc drop analyzer errors such as VRS1001, so a plain build passes code
+       the game refuses. With an ErrorLog csc reports suppressed diagnostics into the SARIF (marked
+       "suppressions"); this target turns every suppressed error there back into a build error. -->
+  <PropertyGroup>
+    <ModCheckSarif>$(BaseIntermediateOutputPath)modcheck.sarif</ModCheckSarif>
+    <ErrorLog>$(ModCheckSarif),version=2.1</ErrorLog>
+  </PropertyGroup>
+  <UsingTask TaskName="FailOnSuppressedErrors" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SarifPath ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // Roslyn's SARIF 2.1 writer: runs[0] = { "results": [ {"ruleId", "level", "message":{"text"},
+        // "suppressions"?, "locations"?...}, ... ], "tool": {...rules use "id", not "ruleId"...} }.
+        // (No System.Text.Json in an inline task's netstandard references, hence the regexes.)
+        if (!File.Exists(SarifPath)) { Log.LogError("ModCheck: no error log at " + SarifPath + " - cannot check pragma-suppressed errors"); return false; }
+        string sarif = File.ReadAllText(SarifPath);
+        int n = 0, from = 0;
+        while (true)
+        {
+          int rs = sarif.IndexOf("\"results\": [", from);
+          if (rs < 0) break;
+          int re = sarif.IndexOf("\"tool\": {", rs);
+          if (re < 0) re = sarif.Length;
+          string results = sarif.Substring(rs, re - rs);
+          from = re;
+          string[] chunks = results.Split(new[] { "\"ruleId\": " }, StringSplitOptions.None);
+          for (int i = 1; i < chunks.Length; i++)
+          {
+            string ch = chunks[i];
+            if (!ch.Contains("\"level\": \"error\"") || !ch.Contains("\"suppressions\": [")) continue;
+            string id = Regex.Match(ch, @"^""([^""]*)""").Groups[1].Value;
+            string msg = Regex.Unescape(Regex.Match(ch, @"""text"": ""((?:[^""\\]|\\.)*)""").Groups[1].Value);
+            var uri = Regex.Match(ch, @"""uri"": ""([^""]*)""");
+            var line = Regex.Match(ch, @"""startLine"": (\d+)");
+            var col = Regex.Match(ch, @"""startColumn"": (\d+)");
+            string file = uri.Success ? new Uri(uri.Groups[1].Value).LocalPath : null;
+            Log.LogError("ModCheck", id, null, file, line.Success ? int.Parse(line.Groups[1].Value) : 0,
+              col.Success ? int.Parse(col.Groups[1].Value) : 0, 0, 0,
+              msg + " [hidden here by #pragma warning disable, but the game fails the compile on it]");
+            n++;
+          }
+        }
+        if (n > 0) Log.LogError("ModCheck: " + n + " pragma-suppressed error(s): the game would reject this mod.");
+        // (the Fragment wrapper returns !Log.HasLoggedErrors)
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="ModCheckSuppressedErrors" AfterTargets="CoreCompile" Condition="'$(DesignTimeBuild)'!='true'">
+    <FailOnSuppressedErrors SarifPath="$(ModCheckSarif)" />
+  </Target>
+</Project>
