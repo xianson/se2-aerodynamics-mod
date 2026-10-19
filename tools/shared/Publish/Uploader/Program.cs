@@ -90,11 +90,32 @@ static class Upload
         finally { steam.Shutdown(); }
     }
 
+    // --fetch-description <id> <file>: READ ONLY - the item's current title + description as Steam has it (the owner's
+    // edits on the Workshop page included; the public web API returns nothing for an unlisted item). Writes the
+    // description to <file> (UTF-8). Needs Steam running; uploads nothing, so no approval flag.
+    static int FetchDescriptions(List<(ulong id, string file)> items, uint appId)
+    {
+        var steam = new SteamCalls(false, appId);
+        steam.Init();
+        try
+        {
+            foreach (var (id, file) in items)
+            {
+                var (title, desc) = steam.FetchDetails(id);
+                File.WriteAllText(file, desc.Replace("\r\n", "\n"), new System.Text.UTF8Encoding(false));
+                Console.WriteLine($"  item {id}: \"{title}\", {desc.Length} chars -> {file}");
+            }
+            return 0;
+        }
+        finally { steam.Shutdown(); }
+    }
+
     public static int Run(string[] args, string game2, uint appId)
     {
         var o = Options.Parse(args);
         bool dry = !o.Approved;
         if (o.SubscribeOnly.Count > 0) return SubscribeOnly(o.SubscribeOnly, dry, appId);
+        if (o.Fetch.Count > 0) return FetchDescriptions(o.Fetch, appId);
         Console.WriteLine(dry
             ? "=== DRY RUN: no Steam call is made (Steam is not even initialised). Real upload: add --i-have-user-approval ==="
             : "=== REAL UPLOAD (--i-have-user-approval) ===");
@@ -599,6 +620,20 @@ class SteamCalls(bool dry, uint appId)
         if (r.m_bUserNeedsToAcceptWorkshopLegalAgreement) Console.WriteLine("  NOTE: accept the Steam Workshop legal agreement, or the item stays hidden");
     }
 
+    public (string title, string desc) FetchDetails(ulong id)
+    {
+        var h = Steamworks.SteamUGC.CreateQueryUGCDetailsRequest(new[] { new Steamworks.PublishedFileId_t(id) }, 1);
+        Steamworks.SteamUGC.SetReturnLongDescription(h, true);
+        try
+        {
+            var r = Wait<Steamworks.SteamUGCQueryCompleted_t>(Steamworks.SteamUGC.SendQueryUGCRequest(h), "SendQueryUGCRequest", TimeSpan.FromSeconds(60));
+            if (r.m_eResult != Steamworks.EResult.k_EResultOK || r.m_unNumResultsReturned < 1) throw new IOException($"query {id}: {r.m_eResult}");
+            if (!Steamworks.SteamUGC.GetQueryUGCResult(h, 0, out var d)) throw new IOException($"GetQueryUGCResult {id} failed");
+            return (d.m_rgchTitle, d.m_rgchDescription);
+        }
+        finally { Steamworks.SteamUGC.ReleaseQueryUGCRequest(h); }
+    }
+
     public string WaitInstalled(ulong id, TimeSpan timeout)
     {
         Log($"SteamUGC.DownloadItem({id}, true); poll SteamUGC.GetItemState / GetItemDownloadInfo until k_EItemStateInstalled; GetItemInstallInfo");
@@ -643,6 +678,7 @@ class Options
     public ulong? ItemId;
     public List<string> Tags;
     public List<ulong> SubscribeOnly = new();
+    public List<(ulong id, string file)> Fetch = new();
     public bool Approved, NoSubscribe, IgnoreVerdict;
 
     public static Options Parse(string[] a)
@@ -668,6 +704,7 @@ class Options
                 case "--change-note-file": o.ChangeNoteFile = Next(); break;
                 case "--no-subscribe": o.NoSubscribe = true; break;
                 case "--subscribe-only": o.SubscribeOnly.Add(ulong.Parse(Next())); break;
+                case "--fetch-description": { ulong fid = ulong.Parse(Next()); o.Fetch.Add((fid, Next())); break; }
                 case "--ignore-verdict": o.IgnoreVerdict = true; break;
                 case "--dry-run": break;   // the default
                 case "--i-have-user-approval": o.Approved = true; break;
@@ -677,7 +714,7 @@ class Options
                     break;
             }
         }
-        if (o.StageDir == null && o.SubscribeOnly.Count == 0) throw new UsageException("usage: Uploader <stage out dir> [--create | --update <id> | --content-only <id>] [--visibility unlisted|private|friends|public] [--title t] [--summary s] [--description-file f] [--tags a,b] [--change-note t | --change-note-file f] [--no-subscribe] [--ignore-verdict] [--i-have-user-approval]");
+        if (o.StageDir == null && o.SubscribeOnly.Count == 0 && o.Fetch.Count == 0) throw new UsageException("usage: Uploader <stage out dir> [--create | --update <id> | --content-only <id>] [--visibility unlisted|private|friends|public] [--title t] [--summary s] [--description-file f] [--tags a,b] [--change-note t | --change-note-file f] [--no-subscribe] [--ignore-verdict] [--i-have-user-approval]");
         if (a.Contains("--dry-run")) o.Approved = false;   // an explicit --dry-run always wins
         return o;
     }
