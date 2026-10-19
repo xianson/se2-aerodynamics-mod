@@ -12,7 +12,7 @@ and the VANILLA block model, breakable and effects definitions referenced by GUI
 dummy, its fractures): a dummy look, the real mechanics. Ours: the block definition (name, kind, power), the prefabs
 (the aero mod injects AeroGearComponent / AeroGearAnimComponent by their GUIDs - AeroBlockGuids.Gear*Prefabs).
 
-  python gen_gear_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
+  python gen_gear_defs.py      then: python tools\\shared\\build_mod_content.py "<Aerodynamics Mod>"
 
 Writes only its own folder's definition files (re-runnable, fixed GUIDs, nothing removed).
 """

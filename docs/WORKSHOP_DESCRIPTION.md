@@ -1,7 +1,7 @@
 # Steam Workshop description
 
 The live text of the Workshop page (captured from Steam 2026-10-18, including the author's own edits). Publish it with
-`D:/aero/tools/Publish/Uploader.exe <stage> --update 3822388536 --description-file <this text>`; edit it here first so an
+`tools/shared/Publish/Uploader/bin/Release/net9.0/Uploader.exe <stage> --update 3822388536 --description-file <this text>`; edit it here first so an
 upload never overwrites changes made on the page.
 
 Summary (250 max):

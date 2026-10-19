@@ -10,7 +10,7 @@
 #   baseline   [launch 1, OLD content] copy the world "$SRC_WORLD" -> "$MERGED" (refuses if it exists); load it as it is
 #              (still listing the Blocks mod); every grid's block dump (gen dump) and aero block dump (AeroBlockSave
 #              .DevDump) -> $OUT/baseline/
-#   build      python D:/aero/tools/build_mod_content.py "<live Aero>" (~15 min - run it with run_in_background; keeps the
+#   build      python tools/shared/build_mod_content.py "<live Aero>" (~15 min - run it with run_in_background; keeps the
 #              previous Content as Content.before-<stamp>)
 #   verify     the new Aero Content: every definition GUID the Blocks mod had (blocks_definitions.txt) and every one Aero
 #              had before (assets step), every compiled file the Blocks mod had (blocks_content_files.txt)
@@ -23,13 +23,14 @@
 #              prefab, from Assets/Aero/**/*_Server.partialdef), `gen report`: every one placed with a mass
 #   worlds     list the user's worlds that still list the Blocks mod (they will NOT load once it is gone - and probably not
 #              with both: the same resource ids twice in the content cache). APPLY=1 backs each up into
-#              D:/aero/save_backups/blocks-merge-<stamp>/ and drops the Blocks mod from its list - ONLY with the user's go
+#              $BACKUPS/blocks-merge-<stamp>/ and drops the Blocks mod from its list - ONLY with the user's go
 #
 # Launch steps: every one is under 5 minutes and kills the game at its end. They REFUSE while a game runs (it may be the
 # user's: KILL_GAME=1 closes it - only when nobody plays). The world comes from the -start: of $ARGS (the Steam launch
-# reads it via D:/aero/launch-se2.bat): SET_ARGS=1 sets it for the step and puts the file back on exit; without it the
+# reads it via tools/shared/launch-se2.bat): SET_ARGS=1 sets it for the step and puts the file back on exit; without it the
 # step refuses unless the file already names the step's world. Results: $OUT/<step>/ and the step's last line.
 # env: AERO (the live Aerodynamics Mod) BLOCKS (the Blocks mod) HARNESS (the Orbital Mod's tools/harness) OUT ARGS
+#      (default: $SE2_LAUNCH_ARGS, else the live Aero tools/shared/se2-launch-args.txt - what the bat reads) BACKUPS
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AERO=${AERO:-/c/Users/slob/Documents/SpaceEngineers2/Mods/Aerodynamics Mod}
@@ -37,7 +38,8 @@ BLOCKS=${BLOCKS:-/c/Users/slob/Documents/SpaceEngineers2/Mods/Aerodynamics Mod B
 HARNESS=${HARNESS:-/c/Users/slob/Documents/SpaceEngineers2/Mods/Orbital Mod/tools/harness}
 SAVES=/c/Users/slob/AppData/Roaming/SpaceEngineers2/AppData/SaveGames
 OUT=${OUT:-/c/Users/slob/AppData/Local/Temp/AeroBlocksMerge}
-ARGS=${ARGS:-/d/aero/se2-launch-args.txt}
+ARGS=${ARGS:-${SE2_LAUNCH_ARGS:+$(cygpath -u "$SE2_LAUNCH_ARGS")}}; ARGS=${ARGS:-$AERO/tools/shared/se2-launch-args.txt}
+BACKUPS=${BACKUPS:-/c/Users/slob/Documents/SpaceEngineers2/SaveBackups}   # (the 2026-10-18 run: D:/aero/save_backups)
 SRC_WORLD="Orbital Test Tu-134 Control Surfaces"; MERGED="Orbital Test Tu-134 Merged"
 PLACE_SRC="Orbital Test World"; PLACE="Orbital Test Blocks Placement"
 BLOCKS_GUID=483980e4-2c19-4ef2-8274-c58f3354c645; AERO_GUID=de164d94-7a67-4832-81e4-34c06c6a65f1
@@ -183,7 +185,7 @@ EOF
     kill_game; summary ;;
 build)
     guard_game
-    python /d/aero/tools/build_mod_content.py "$(win "$AERO")" && record "the Aero content built" "" || record "the Aero content built" "build_mod_content.py failed - its log: %LOCALAPPDATA%/OrbitalModBuild/build-Aerodynamics_Mod.log"
+    python "$HERE/../shared/build_mod_content.py" "$(win "$AERO")" && record "the Aero content built" "" || record "the Aero content built" "build_mod_content.py failed - its log: %LOCALAPPDATA%/OrbitalModBuild/build-Aerodynamics_Mod.log"
     summary ;;
 verify)
     mkdir -p "$OUT/verify"
@@ -251,11 +253,11 @@ worlds)
         n=$((n + 1)); echo "   lists the Blocks mod: $w"
         if [ -n "${APPLY:-}" ]; then
             guard_game
-            mkdir -p "/d/aero/save_backups/blocks-merge-$stamp"; cp -r "$d" "/d/aero/save_backups/blocks-merge-$stamp/$w"
+            mkdir -p "$BACKUPS/blocks-merge-$stamp"; cp -r "$d" "$BACKUPS/blocks-merge-$stamp/$w"
             modlist "$(win "$d")" --drop "$BLOCKS_GUID" | tail -1
         fi
     done
-    echo "== $n world(s) list the Blocks mod$([ -n "${APPLY:-}" ] && echo " - migrated; backups in D:/aero/save_backups/blocks-merge-$stamp" || echo " (APPLY=1 migrates them - with the user's go)")" ;;
+    echo "== $n world(s) list the Blocks mod$([ -n "${APPLY:-}" ] && echo " - migrated; backups in $BACKUPS/blocks-merge-$stamp" || echo " (APPLY=1 migrates them - with the user's go)")" ;;
 *)
-    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

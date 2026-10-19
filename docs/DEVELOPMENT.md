@@ -19,7 +19,8 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
 ### Testing
 
 - **`tools/test_fast.sh`** (no game). Run it before every commit:
-  - **ModCheck:** the game's exact script compile and whitelist analyzers (`D:\aero\tools\ModCheck`);
+  - **ModCheck:** the game's exact script compile and whitelist analyzers (`tools/shared/ModCheck`; `MODCHECK=<a ModCheck.csproj>`
+    overrides it - a private copy with its own `obj/` for parallel checkouts);
   - every suite in `Tests/` (AeroBench runs its `gate`: known shapes, table vs exact forces, table cache, wing
     repeatability, rebuild garbage, cache version vs sources). Suites include `SurfaceTests`, `StructureTests`,
     `TearTests`, `ThrustTests`, `RotorTests`, `RotorStrikeTests`, `SolidRocketTests`, `ExhaustTests`,
@@ -39,12 +40,12 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
 
 ### Content build
 
-`D:\aero\tools\build_mod_content.py` compiles `Assets` into `Content`. Each build keeps the previous Content as
+`tools/shared/build_mod_content.py` compiles `Assets` into `Content`. Each build keeps the previous Content as
 `Content.before-<stamp>` (gitignored). It builds a staging copy holding only `Assets` (the game's builder would compile
 `Scripts/` too, and fail), then copies the compiled Content back. Run it with the game closed (the game holds Content
 open); it takes about 15 minutes:
 
-    python D:\aero\tools\build_mod_content.py "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"
+    python tools\shared\build_mod_content.py "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"
 
 The block generators (`tools/meshgen/gen_*_defs.py`) write into `Assets/Aero/...`; build after them. The compiled
 blocks (`Content/Aero/`, ~290 MB) are not in git, and for now neither are the block models and textures

@@ -76,7 +76,8 @@ To migrate one (after phase B's build):
 - **In game:** Load -> the world -> Mods: untick "Aerodynamics Mod Blocks", load. The game writes the new list into the
   save (`ContainerModManager.WriteChangesToContainerAsync`).
 - **Offline:** `tools/blocks_merge/phase_b.sh worlds` lists them; `APPLY=1` backs each up into
-  `D:\aero\save_backups\blocks-merge-<stamp>\` and drops the Blocks mod from its list with `tools/modlist`, which writes
+  `$BACKUPS/blocks-merge-<stamp>/` (default `Documents\SpaceEngineers2\SaveBackups`; the 2026-10-18 run's backups are
+  in `D:\aero\save_backups\`) and drops the Blocks mod from its list with `tools/modlist`, which writes
   the edited list as JSON to the save's extension-less `modlist` - the file the game reads first (`modlist`, then
   `modlist.vrb`, then `modlist.bak.json`); `modlist.vrb` is left as it was, and the game's next save replaces both with a
   new `modlist.vrb`.
@@ -100,7 +101,8 @@ is there and a world lists it, that world loads both.
     SET_ARGS=1 $B place             # launch 3: every one of the 42 blocks spawned alone in a fresh world (gen measure)
     $B worlds                       # the user's worlds still listing the Blocks mod; APPLY=1 only with the user's go
 
-`SET_ARGS=1` puts the step's world into the `-start:` of `D:\aero\se2-launch-args.txt` and restores the file on exit.
+`SET_ARGS=1` puts the step's world into the `-start:` of the launch args file (`$SE2_LAUNCH_ARGS`, else the live Aero
+repo's `tools/shared/se2-launch-args.txt` - what `tools/shared/launch-se2.bat` reads) and restores the file on exit.
 Expected: about 1091 definitions after the build (this mod's 346 + the Blocks mod's 746, one vanilla base both list).
 The build is the first of this project with the blocks in it (~925 source definitions: particle effects, a new resource
 type, tanks, conveyors): plan for builder errors; `%LOCALAPPDATA%\OrbitalModBuild\build-Aerodynamics_Mod.log` has them
