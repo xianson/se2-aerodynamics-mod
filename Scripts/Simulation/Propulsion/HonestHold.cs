@@ -7,7 +7,7 @@ namespace AeroMod;
 /// HONEST DAMPENERS - the law (game-free: Tests/ThrustTests; the engine side is HonestDampeners.cs). 2026-10-18, the user:
 /// "make it honest, thats fcking ridiculous".
 ///
-/// WHAT THE GAME DOES (SE2 2.4, ThrustComponent.ComputeThrust): with dampeners on, the GRAVITY HOLD (-m x GravitySum along each
+/// WHAT THE GAME DOES (SE2 2.4 and 4.0 - re-checked 2026-10-19, ThrustComponent.ComputeThrust): with dampeners on, the GRAVITY HOLD (-m x GravitySum along each
 /// grid axis, shrunk by an opposing input; ComputeGravityDampening) is never applied as thrust - it is clamped to that side's
 /// thrust and taken off the grid's CustomGravity IN PLACE (only the dampening and input thrust go into ActiveThrustData and the
 /// impulse). The physics then applies CustomGravity x the world's GravityMultiplier (vanilla 2). So one g of booked thrust
@@ -30,14 +30,18 @@ public static class HonestHold
     /// <summary>The world setting Physics.HonestDampeners (on: the honest hold and no super dampeners; off: the game's own).</summary>
     public static bool Enabled = true;
 
+    /// <summary>The game's input deadzone in the gravity hold (4.0 ThrustComponent.ComputeThrust: Vector3.Sign(Movement, 0.001)).</summary>
+    public const float InputDeadzone = 0.001f;
+
     /// <summary>The game's gravity hold (grid-local N): -m g on each axis, x (1 - |input|) where the pilot's input opposes it
-    /// (ThrustComponent.ComputeThrust after ComputeGravityDampening; zero gravity, zero hold).</summary>
+    /// (ThrustComponent.ComputeThrust after ComputeGravityDampening; zero gravity, zero hold). SE2 4.0: an input counts only
+    /// beyond 0.001 (the game's selector is Vector3.Sign(Movement, 0.001)).</summary>
     public static Vector3 GameHold(Vector3 gravityLocal, float mass, Vector3 movement)
     {
         if (gravityLocal == Vector3.Zero || !(mass > 0f)) return Vector3.Zero;
         Vector3 h = -gravityLocal * mass;
         return new Vector3(Axis(h.X, movement.X), Axis(h.Y, movement.Y), Axis(h.Z, movement.Z));
-        static float Axis(float h, float u) => u != 0f && MathF.Sign(u) == -MathF.Sign(h) ? h * (1f - MathF.Abs(u)) : h;
+        static float Axis(float h, float u) { float s = u > InputDeadzone ? 1f : u < -InputDeadzone ? -1f : 0f; return s != 0f && s == -MathF.Sign(h) ? h * (1f - MathF.Abs(u)) : h; }
     }
 
     /// <summary>The honest thrust (grid-local N, the overrides left out): the hold scaled to the gravity the body gets (x the

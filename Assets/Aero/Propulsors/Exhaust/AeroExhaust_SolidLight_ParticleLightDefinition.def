@@ -1,7 +1,8 @@
 {
   "$Bundles": {
+    "Game2": "4.0.0.2528",
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.2.0.538"
+    "VRage": "4.0.0.2528"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleLightDefinitionObjectBuilder",
   "$Value": {

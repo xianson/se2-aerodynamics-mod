@@ -960,6 +960,7 @@ EXHAUST_REL = os.path.join(ROOT_REL, "Exhaust")
 EXHAUST_CS_OUT = os.path.join(os.path.dirname(CS_OUT), "ExhaustBlocks.g.cs")
 VANILLA_PARTICLES = r"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData\Vanilla\Content\System\Particles"
 VANILLA_FIRE = r"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData\Vanilla\Content\System\Particles\Generic\Fire"
+if not os.path.exists(os.path.join(VANILLA_FIRE, "FireLarge_ParticleLightDefinition.def")): VANILLA_FIRE = os.path.join(VANILLA_FIRE, "V1")   # (SE2 4.0 moved it to V1)
 EXHAUST_DURATION = 2.0        # (s: the effects' timeline; the code holds the time at strength x this - as the game's flame)
 EXHAUST_REF_RADIUS = 0.96     # (m: the exit radius an effect is authored for at scale 1 - the vanilla H250 flame's, scale 1 = FlameLength 10)
 EXHAUST_LIFE = 0.2            # (s: a plume particle's life - the plume's length is its speed x this)
@@ -1032,6 +1033,9 @@ def ex_emitter(name, rel, guid, *, pps, life, velocity, cone, size, color, emiss
     v["EmitterFlags"].update({"EnableCollisions": collide, "EnableLocalSpaceSimulation": local})
     v["SimulationParameters"].update({"EmitterMotionInheritance": inherit})
     v["EmissionParameters"].update({"ParticleBurst": 0, "Direction": v3(0, 0, 1)})
+    # (SE2 4.0: the hydrogen flames are parameter-driven; ours are not - spawned through TrySpawnEffect, their time held by
+    #  EffectTime (the same render call the parameter makes) - and effect and emitters must agree, so the flag is cleared)
+    if "IsParameterDriven" in v["EmissionParameters"]: v["EmissionParameters"]["IsParameterDriven"] = False
     v["RenderingParameters"].update({"DistanceScalingFactor": 0})
     for k, x in (extra or {}).items(): v[k].update(x)
     out = os.path.join(gd.BLOCKS, "Assets", EXHAUST_REL, f"AeroExhaust_{name}_ParticleEmitter.def")
@@ -1047,6 +1051,7 @@ def ex_effect(name, guid, emitters, max_distance, lights=()):
               "ParticleEmitters": [{"Key": ex_kid(), "Value": {"Definition": e, "Parameters": {
                   "GlobalScaleFactor": 1, "EmitterLifeTime": EXHAUST_DURATION, "EmitterStartTime": 0, "GravityMultiplier": 0, "WindMultiplier": 0}}} for e in emitters],
               "ParticleLight": [{"Key": ex_kid(), "Value": l} for l in lights]})
+    if "IsParameterDriven" in v: v["IsParameterDriven"] = False   # (4.0: the template is parameter-driven; ours not - see ex_emitter)
     gd.definition(os.path.join(gd.BLOCKS, "Assets", EXHAUST_REL, f"AeroExhaust_{name}_ParticleEffect.def"), d, guid, False)
     return guid
 

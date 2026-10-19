@@ -1,7 +1,8 @@
 {
   "$Bundles": {
+    "Game2": "4.0.0.3012",
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.3.0.471"
+    "VRage": "4.0.0.3012"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleEmitterDefinitionObjectBuilder",
   "$Value": {
@@ -540,7 +541,13 @@
       "EnhanceVisibility": false
     },
     "EmissionParameters": {
+      "IsParameterDriven": false,
       "ParticleBurst": 0,
+      "ParticleBurstOverParameter": {
+        "KeyFrames": {
+          "_data": []
+        }
+      },
       "ParticleLifeSpanVariance": 0,
       "Direction": {
         "X": 0,
@@ -579,7 +586,9 @@
       "CameraBias": 0,
       "ParticleSizeVariance": 0,
       "DistanceScalingFactor": 0,
-      "FSRReactiveMaskMultiplier": 0
+      "MaxDistanceScale": 10,
+      "FSRReactiveMaskMultiplier": 0,
+      "AlphaMultiplier": 1
     },
     "AnimationParameters": {
       "NumFramesInAtlas": {
@@ -592,7 +601,9 @@
       "AnimationStartTimeVariance": 0,
       "AtlasTexture": "{G}f4a1b79e-860f-475d-b93c-850834ff268c",
       "TextureIsMonochromatic": true,
-      "TextureIsAdditive": true
+      "TextureIsAdditive": true,
+      "FlowMapTexture": null,
+      "FlowMapStrength": 0
     }
   }
 }

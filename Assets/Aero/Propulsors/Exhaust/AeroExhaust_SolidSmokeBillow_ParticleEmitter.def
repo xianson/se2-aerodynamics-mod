@@ -1,7 +1,7 @@
 {
   "$Bundles": {
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.3.0.2330"
+    "VRage": "4.0.0.322"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleEmitterDefinitionObjectBuilder",
   "$Value": {
@@ -576,12 +576,14 @@
         "Y": 8
       },
       "FirstFrameIndex": 0,
-      "NumFramesInAnimation": 64,
-      "AnimationFramerate": 64,
+      "NumFramesInAnimation": 32,
+      "AnimationFramerate": 32,
       "AnimationStartTimeVariance": 0,
-      "AtlasTexture": "{G}7caec144-f10e-485c-8cd5-78fbc8b42a9a",
+      "AtlasTexture": "{G}21d1be72-f86b-4de1-a125-9fc1485e411b",
       "TextureIsMonochromatic": true,
-      "TextureIsAdditive": false
+      "TextureIsAdditive": false,
+      "FlowMapTexture": "{G}8fe90c51-ae77-4016-a367-b9cb35716194",
+      "FlowMapStrength": 0.02
     }
   }
 }
