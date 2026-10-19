@@ -54,7 +54,7 @@ public static class AeroPanelProbe
             Say($"list: {count} blocks");
             if (entry == null) { Say("FAIL no block in the list offers AeroSurfaceBlockDetailModel"); cp.Detach(list); return; }
             object id = typeof(ControlPanelEntityModel).GetField("EntityId", inst).GetValue(entry);
-            Say($"block {id}: {entry.DetailViewTypes.Count} detail types ({string.Join(", ", entry.DetailViewTypes.Select(t => t.Type.Name))})");
+            Say($"block {id}: {System.Linq.Enumerable.Count(entry.DetailViewTypes)} detail types ({string.Join(", ", entry.DetailViewTypes.Select(t => t.Type.Name))})");
             var ids = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(id.GetType()));
             ids.Add(id);
             var attach = typeof(StreamedControlPanelSessionComponent).GetMethods(inst)

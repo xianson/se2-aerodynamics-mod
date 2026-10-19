@@ -23,7 +23,11 @@ namespace AeroMod;
 // the replication mapping, which a mod's model is never in. DetailModelPairing pairs it with itself in the ctor (see there).
 // The attribute stays OFF until one in-game check (open a thruster's control panel) passes: the user plays this build.
 // [BlockDetailProvider]
-public class AeroThrustBlockDetailModel : BlockDetailModel
+// SE2 4.0 runs the serializer generators on mod scripts: a partial BlockDetailModel gets a generated named-object
+// serializer whose code needs System.ObjectModel (INotifyPropertyChanged), which mod compiles do not reference (CS0012).
+// [NoSerialize] turns those generators off for the model - mod models were never serialized (DetailModelPairing).
+[Keen.VRage.Library.Serialization.NoSerialize]
+public partial class AeroThrustBlockDetailModel : BlockDetailModel
 {
     [Keen.VRage.DCS.Annotations.Component]
     private AeroThrustSettingsComponent _settings;

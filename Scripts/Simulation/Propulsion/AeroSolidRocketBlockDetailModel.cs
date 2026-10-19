@@ -15,7 +15,11 @@ namespace AeroMod;
 /// </summary>
 [BlockDetailProvider]
 [BlockDetailDisplayMode(DisplayMode.Controls)]
-public class AeroSolidNozzleBlockDetailModel : BlockDetailModel
+// SE2 4.0 runs the serializer generators on mod scripts: a partial BlockDetailModel gets a generated named-object
+// serializer whose code needs System.ObjectModel (INotifyPropertyChanged), which mod compiles do not reference (CS0012).
+// [NoSerialize] turns those generators off for the model - mod models were never serialized (DetailModelPairing).
+[Keen.VRage.Library.Serialization.NoSerialize]
+public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroSolidNozzleBlockDetailModel>(
         "Solid rocket nozzle: set its power level (50-100 %) with the thrust override BEFORE ignition, then ignite it - it burns at that level until its stack of segments is empty (lit, the flight controller may vary it 50-100 % to turn the ship).",
@@ -58,7 +62,8 @@ public class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 /// </summary>
 [BlockDetailProvider]
 [BlockDetailDisplayMode(DisplayMode.Controls)]
-public class AeroSolidSegmentBlockDetailModel : BlockDetailModel
+[Keen.VRage.Library.Serialization.NoSerialize]
+public partial class AeroSolidSegmentBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroSolidSegmentBlockDetailModel>(
         "Solid rocket segment: a tank of solid propellant for the nozzle it is stacked on (not in a motor stack: inert). It cannot be refilled, switched off or set to charge.",

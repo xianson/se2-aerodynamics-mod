@@ -13,7 +13,11 @@ namespace AeroMod;
 /// </summary>
 [BlockDetailProvider]
 [BlockDetailDisplayMode(DisplayMode.Controls)]
-public class AeroAirbrakeBlockDetailModel : BlockDetailModel
+// SE2 4.0 runs the serializer generators on mod scripts: a partial BlockDetailModel gets a generated named-object
+// serializer whose code needs System.ObjectModel (INotifyPropertyChanged), which mod compiles do not reference (CS0012).
+// [NoSerialize] turns those generators off for the model - mod models were never serialized (DetailModelPairing).
+[Keen.VRage.Library.Serialization.NoSerialize]
+public partial class AeroAirbrakeBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroAirbrakeBlockDetailModel>(
         "Airbrake: opens with the parking brake (P); how far.", nameof(MaxOpening));
