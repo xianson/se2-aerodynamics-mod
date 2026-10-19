@@ -3,7 +3,7 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
-## 1.0.1 - creative quick launch
+## 1.0.1 - honest dampeners, gyro rebalance, quick launch
 
 - **Gyro rebalance** (the user, 2026-10-18: "just do 1, maybe a lil 2. have them both as settings"). Vanilla gyros are
   huge reactionless torque (one large gyro on a 39 t plane: 44 MN m), so they held lopsided designs straight and out-torqued
@@ -45,24 +45,6 @@ was flown in game for this release. The commit hashes are on the integration bra
     (`SceneTests`).
   - Not tested in game yet: the key, creative on a live session, both moves (aero's own and the Orbital Mod's for aero).
 
-## 1.0.0 - first public release (for players)
-
-The first Workshop release. In plain words, what you get:
-
-- **Ships fly by their shape.** Drag, lift, stall, the sound barrier and supersonic flight come from the hull you built;
-  wings are found from your blocks. Wind and ground effect count, and damage changes how a ship flies at once.
-- **Aircraft parts** in the G menu (Aerodynamics): hinged control surfaces, retractable landing gear in four wheel sizes,
-  clamshell airbrakes (open with the parking brake), turboprops, ducted fans, helicopter main rotors with cyclic
-  steering, reversible rotors, ramjets in four sizes, and solid rocket motors you stack from segments.
-- **Engines by speed.** Atmospheric thrusters lapse a little up to Mach 0.85, then gain from ram air (about 2x their
-  rating at Mach 1.6) and fade fast past Mach 1.7; jets flame out
-  with the air from the side or behind; ramjets only work supersonic.
-- **A structure that can break.** Air, thrust and impact loads run through the ship you fly; overloaded parts wear,
-  fatigue, bend, crack across and tear off, with sound, shake and smoke. Rotor blades break on what they hit; weld the
-  block to repair them.
-- **Re-entry.** Plasma, vapour and wingtip trails, hull heating with heat damage and scorch marks.
-- **Warnings** for stall and coming loss of control (on the Orbital Mod's HUD), and an optional Mach readout.
-- **Settings menu** under pause menu > Settings > Mods, plus text files for hosts.
 - **Honest dampeners** (2026-10-18, `Physics.HonestDampeners`, on by default). The game's dampeners cancel the world's
   doubled gravity (GravityMultiplier 2) with one weight of thrust, so a ship that cannot fly with dampeners off floats with
   them on and climbs with nearly all its thrust. Now the hold is real thrust against the real gravity, within the
@@ -104,6 +86,36 @@ The first Workshop release. In plain words, what you get:
   before); its drag at Mach 1 1.92x -> 1.26x its subsonic drag; still ~2x what a real F-16 needs (SE ships are about
   twice as draggy per ton). A brick of the same frontal area stalls at Mach 0.45 on that thrust. The Tu-134 at Mach
   0.79: 886 -> 707 kN (its wings' wave drag now starts past its cruise Mach). Below Mach 0.75 nothing changes.
+- **Rotor ratings x1.5** (the user's choice for honest dampeners, df2331a): main rotors 100 kN / 900 kN / 2.5 MN, the
+  Reversible Rotor 128 kN; `RotorKinematics.ReactionScale` 0.42 -> 0.344 (the tail keeps its 10 % share).
+- **Rotor trim:** the cyclic now trims an off-axis rotor's lift torque, so an unpiloted helicopter on dampeners stays
+  level instead of slowly tipping over (`Propulsion/RotorTrim.cs`; a 3x craft hovers level at 67 % rotor). A single tail
+  rotor's sideways push still drifts the ship when nobody flies it.
+- **Turboprops hold full thrust to 100 m/s** before constant power (`ThrustProfiles.TurbopropV0` 40 -> 100, b57c845).
+- **Contact loads use the gravity the ship really feels** (the world's multiplier and the dampeners' hold): a parked
+  ship's gear and ground loads read its true weight (they read half), and hovering or falling ships no longer get a
+  phantom support load.
+- **Fixes:** a client crash ("Collection was modified") in the wingtip trails after a grid split (b03665a); the effects
+  of a split-off grid no longer carry the original's state.
+
+## 1.0.0 - first public release (for players)
+
+The first Workshop release. In plain words, what you get:
+
+- **Ships fly by their shape.** Drag, lift, stall, the sound barrier and supersonic flight come from the hull you built;
+  wings are found from your blocks. Wind and ground effect count, and damage changes how a ship flies at once.
+- **Aircraft parts** in the G menu (Aerodynamics): hinged control surfaces, retractable landing gear in four wheel sizes,
+  clamshell airbrakes (open with the parking brake), turboprops, ducted fans, helicopter main rotors with cyclic
+  steering, reversible rotors, ramjets in four sizes, and solid rocket motors you stack from segments.
+- **Engines by speed.** Atmospheric thrusters lapse a little up to Mach 0.85, pinch through Mach 1 (76 %), then gain from ram air (1.8x
+  their rating at Mach 1.7) and fade fast past it (the pinch is gone in 1.0.1); jets flame out
+  with the air from the side or behind; ramjets only work supersonic.
+- **A structure that can break.** Air, thrust and impact loads run through the ship you fly; overloaded parts wear,
+  fatigue, bend, crack across and tear off, with sound, shake and smoke. Rotor blades break on what they hit; weld the
+  block to repair them.
+- **Re-entry.** Plasma, vapour and wingtip trails, hull heating with heat damage and scorch marks.
+- **Warnings** for stall and coming loss of control (on the Orbital Mod's HUD), and an optional Mach readout.
+- **Settings menu** under pause menu > Settings > Mods, plus text files for hosts.
 
 Good to know:
 

@@ -28,8 +28,8 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   climbs with them on). Here they hold the ship up with real thrust against the gravity it really feels (2x the planet's
   pull in vanilla), so **a ship needs thrust for twice its planet weight to hover**, and super dampeners brake with real
   thrust. Turn `Physics.HonestDampeners` off (Settings > Mods > Flight model > Advanced) for the game's own dampeners.
-- **Engines by speed:** turboprops rule subsonic flight, vanilla atmospheric thrusters (jets) pinch through Mach 1 and
-  gain from ram air above it, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
+- **Engines by speed:** turboprops rule subsonic flight, vanilla atmospheric thrusters (jets) push through Mach 1 (108 %)
+  and gain from ram air to about 2x at Mach 1.6, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
   airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets, and
   stackable solid rocket motors.
