@@ -25,7 +25,7 @@ Do this with the game closed only where a step says so; staging and dry runs nev
    `thumb.jpg` (< 1 MB) in the mod folder or pass `--thumb`.
 2. **Stage.**
    ```
-   python D:\aero\tools\Publish\stage.py "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod" D:\aero-release\aero-1.0.0
+   python "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod\tools\shared\Publish\stage.py" "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod" D:\aero-release\aero-1.0.0
    ```
    `<out>\content` is the upload folder, `<out>\manifest.txt` lists every file, `<out>\publish.json` carries the
    rest. It ends `STAGED OK` only if the game's compile verdict passes. Read the warnings: placeholder summary, no
@@ -44,7 +44,7 @@ Do this with the game closed only where a step says so; staging and dry runs nev
    in-game test is step 7, on the unlisted upload.
 4. **Dry run the upload** (default) and read every call:
    ```
-   cd D:\aero\tools\Publish\Uploader && dotnet build -c Release
+   cd "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod\tools\shared\Publish\Uploader" && dotnet build -c Release
    bin\Release\net9.0\Uploader.exe D:\aero-release\aero-1.0.0
    ```
    It prints the KV tag, title, tags, visibility, the content folder, writes `uploader-dryrun-metadata.json` (the exact

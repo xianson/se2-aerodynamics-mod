@@ -11,14 +11,14 @@
 #
 # The builder rewrites the metas and Content of the project it runs on, so it only ever runs on the copy in
 # <out dir>/work (the live mod folder is only read). The builder setup (a copy of the game's Game2, a stand-in
-# Vanilla project) is the one of D:\aero\tools\build_mod_content.py, reused here.
+# Vanilla project) is the one of ..\build_mod_content.py (tools/shared, beside Publish/), reused here.
 #
 # Output (<out dir> must not exist; nothing is ever deleted - remove old stagings yourself):
 #   <out>/content/        the folder to upload (SetItemContent)
 #   <out>/publish.json    what the uploader needs: title, summary, tags, project GUID, mod id, thumb, verdict
 #   <out>/manifest.txt    every staged file with its size
 #   <out>/work/           the scratch copy the builder ran on + its logs
-# Then the game's own compile verdict runs on <out>/content (D:\aero\tools\ModCheck\gameverdict.sh).
+# Then the game's own compile verdict runs on <out>/content (..\ModCheck\gameverdict.sh).
 #
 # Speed: the scratch copy holds only the builder's inputs (Assets/ Worlds/ the top-level metas; robocopy /MT), and
 # the content build is cached: its result (every file the build wrote or changed in the copy) is kept under
@@ -33,7 +33,7 @@
 import argparse, concurrent.futures, fnmatch, hashlib, inspect, json, os, re, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))   # D:\aero\tools
+sys.path.insert(0, os.path.dirname(HERE))   # tools/shared (build_mod_content.py)
 import build_mod_content as bmc   # noqa: E402
 
 GAMEVERDICT = os.path.join(os.path.dirname(HERE), "ModCheck", "gameverdict.sh")
@@ -592,7 +592,7 @@ def main():
         warnings.append("Scripts/Client ships but GameVerdict only compiles Scripts/Simulation - check Client with ModCheck")
 
     info = {
-        "tool": "D:/aero/tools/Publish/stage.py", "staged_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "tool": "tools/shared/Publish/stage.py", "staged_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "mod_dir": mod, "content_dir": content, "project_file": proj_name,
         "project_guid": project_guid, "project_version": v.get("Version"), "mod_id": mod_id,
         "title": title, "summary": summary, "tags": tags, "thumb": "thumb.jpg" if has_thumb else None,

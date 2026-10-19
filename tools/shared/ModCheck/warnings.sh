@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usage: tools/ModCheck/warnings.sh "<mod dir>"
+# usage: tools/shared/ModCheck/warnings.sh "<mod dir>"
 # Lists dead-code compiler warnings (unused locals/fields, unreachable code, unused events) that the mods'
 # blanket `#pragma warning disable` hides: compiles a scratch copy of Scripts/Simulation with the pragmas
 # stripped (blanket or narrow-list pragmas). The mod's own files are not touched.

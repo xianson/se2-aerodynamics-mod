@@ -10,9 +10,9 @@ seconds. Two tools:
 | `gameverdict.sh` (`GameVerdict/`) | the game's own compile code, run offline: its exact pass/fail | ~10 s | before a release, after a game update, when in doubt |
 
 ```
-dotnet build tools/ModCheck/ModCheck.csproj                                  # Orbital Mod (default)
-dotnet build tools/ModCheck/ModCheck.csproj "-p:ModDir=C:\...\Mods\Aerodynamics Mod"
-bash tools/ModCheck/gameverdict.sh "C:\...\Mods\Aerodynamics Mod" AeroMod    # exit 1 = the game rejects it
+dotnet build tools/shared/ModCheck/ModCheck.csproj                                  # Orbital Mod (default)
+dotnet build tools/shared/ModCheck/ModCheck.csproj "-p:ModDir=C:\...\Mods\Aerodynamics Mod"
+bash tools/shared/ModCheck/gameverdict.sh "C:\...\Mods\Aerodynamics Mod" AeroMod    # exit 1 = the game rejects it
 ```
 
 ## ModCheck.csproj
@@ -102,7 +102,7 @@ with `SE2_GAME2`) but starts nothing of the game.
    game rolls forward to it).
 
 ```
-dotnet run --project tools/ModCheck/WhitelistGen -- "<Game2 dir>" tools/ModCheck/AllowedSymbols.Mod.txt
+dotnet run --project tools/shared/ModCheck/WhitelistGen -- "<Game2 dir>" tools/shared/ModCheck/AllowedSymbols.Mod.txt
 ```
 
 3. Check: `gameverdict.sh <mod> --dump-whitelist=x.txt` must equal the new `AllowedSymbols.Mod.txt`, and
@@ -127,5 +127,5 @@ and the real `ConfigureWhitelist` runs cleanly over the 10 seeds.
 ## Dead-code warnings
 
 The blanket pragma hides unused locals and fields, and ModCheck's `NoWarn` hides some too.
-`bash tools/ModCheck/warnings.sh "<mod dir>"` compiles a scratch copy with all `#pragma warning disable`
+`bash tools/shared/ModCheck/warnings.sh "<mod dir>"` compiles a scratch copy with all `#pragma warning disable`
 lines stripped and lists only those warnings (CS0168/0219/0169/0414/0649/0162/0067).

@@ -1,0 +1,3 @@
+# the personal launch args launch-se2.bat reads (copy se2-launch-args.example.txt)
+se2-launch-args.txt
+__pycache__/
