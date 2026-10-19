@@ -462,11 +462,11 @@
       "NumFramesInAnimation": 32,
       "AnimationFramerate": 24,
       "AnimationStartTimeVariance": 0,
-      "AtlasTexture": "{G}09ee8f09-1f5b-48ed-8fbe-5c430c9da531",
+      "AtlasTexture": "{G}63cd1bce-f5d8-419e-b338-154eb309c6ef",
       "TextureIsMonochromatic": false,
       "TextureIsAdditive": true,
-      "FlowMapTexture": null,
-      "FlowMapStrength": 0
+      "FlowMapTexture": "{G}dee8f93f-a172-466e-8de1-cf36521d19a6",
+      "FlowMapStrength": 0.02
     }
   }
 }

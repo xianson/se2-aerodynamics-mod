@@ -1,7 +1,7 @@
 {
   "$Bundles": {
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.3.0.3"
+    "VRage": "4.0.0.405"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleEmitterDefinitionObjectBuilder",
   "$Value": {
@@ -213,7 +213,7 @@
                             "X": 0.97,
                             "Y": 0.98,
                             "Z": 1,
-                            "W": 0.0
+                            "W": 0
                           },
                           "Key": 1
                         }
@@ -239,7 +239,7 @@
                       {
                         "Key": "1911c538-a11c-59fb-9200-617e53cb7b18",
                         "Value": {
-                          "Value": 3.0,
+                          "Value": 3,
                           "Key": 0
                         }
                       },
@@ -253,7 +253,7 @@
                       {
                         "Key": "62e74dc2-164f-5929-937a-9bbd664120ae",
                         "Value": {
-                          "Value": 0.0,
+                          "Value": 0,
                           "Key": 1
                         }
                       }
@@ -278,14 +278,14 @@
                       {
                         "Key": "0888aff0-1df9-5be9-898d-a16b0e353914",
                         "Value": {
-                          "Value": 2.0,
+                          "Value": 2,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "f43ac1a9-1dc1-5b44-b706-b15e2d521916",
                         "Value": {
-                          "Value": 2.0,
+                          "Value": 2,
                           "Key": 1
                         }
                       }
@@ -457,7 +457,8 @@
       "CameraSoftRadius": 0,
       "CameraBias": 0,
       "ParticleSizeVariance": 0.3,
-      "DistanceScalingFactor": 0
+      "DistanceScalingFactor": 0,
+      "FSRReactiveMaskMultiplier": 0
     },
     "AnimationParameters": {
       "NumFramesInAtlas": {
@@ -466,11 +467,13 @@
       },
       "FirstFrameIndex": 16,
       "NumFramesInAnimation": 32,
-      "AnimationFramerate": 6.4,
+      "AnimationFramerate": 106.7,
       "AnimationStartTimeVariance": 0,
-      "AtlasTexture": "{G}523e9a22-6af5-4310-831e-7c03257fe476",
+      "AtlasTexture": "{G}21d1be72-f86b-4de1-a125-9fc1485e411b",
       "TextureIsMonochromatic": true,
-      "TextureIsAdditive": false
+      "TextureIsAdditive": false,
+      "FlowMapTexture": "{G}8fe90c51-ae77-4016-a367-b9cb35716194",
+      "FlowMapStrength": 0.02
     }
   }
 }

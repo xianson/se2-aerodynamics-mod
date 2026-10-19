@@ -1,7 +1,7 @@
 {
   "$Bundles": {
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.3.0.3"
+    "VRage": "4.0.0.405"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleEmitterDefinitionObjectBuilder",
   "$Value": {
@@ -239,7 +239,7 @@
                       {
                         "Key": "64d0a4a7-72e4-5cc0-abb4-6526d1d88e57",
                         "Value": {
-                          "Value": 3.0,
+                          "Value": 3,
                           "Key": 0
                         }
                       },
@@ -253,7 +253,7 @@
                       {
                         "Key": "a6a22f7b-0c9f-5379-ac44-7e8c94a71a08",
                         "Value": {
-                          "Value": 0.0,
+                          "Value": 0,
                           "Key": 1
                         }
                       }
@@ -278,14 +278,14 @@
                       {
                         "Key": "45eb4da1-8d9e-5454-9206-392ce6e7f873",
                         "Value": {
-                          "Value": 2.0,
+                          "Value": 2,
                           "Key": 0
                         }
                       },
                       {
                         "Key": "b78b7742-aa6a-5673-82e7-047381a33e28",
                         "Value": {
-                          "Value": 2.0,
+                          "Value": 2,
                           "Key": 1
                         }
                       }
@@ -457,7 +457,8 @@
       "CameraSoftRadius": 0,
       "CameraBias": 0,
       "ParticleSizeVariance": 0.3,
-      "DistanceScalingFactor": 0
+      "DistanceScalingFactor": 0,
+      "FSRReactiveMaskMultiplier": 0
     },
     "AnimationParameters": {
       "NumFramesInAtlas": {
@@ -468,9 +469,11 @@
       "NumFramesInAnimation": 32,
       "AnimationFramerate": 91.4,
       "AnimationStartTimeVariance": 0,
-      "AtlasTexture": "{G}523e9a22-6af5-4310-831e-7c03257fe476",
+      "AtlasTexture": "{G}21d1be72-f86b-4de1-a125-9fc1485e411b",
       "TextureIsMonochromatic": true,
-      "TextureIsAdditive": false
+      "TextureIsAdditive": false,
+      "FlowMapTexture": "{G}8fe90c51-ae77-4016-a367-b9cb35716194",
+      "FlowMapStrength": 0.02
     }
   }
 }
