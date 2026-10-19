@@ -81,7 +81,9 @@ public static class RotorKinematics
     /// One constant fits every size: at a uniform disc loading Q / (T R) does not depend on R (and with the thrust ~ rho, nor
     /// on the air's density). Tests/RotorTests pins the 10 % for every rotor in the table.
     /// </summary>
-    public static float ReactionScale = 0.344f;
+    /// (2026-10-18, the user: "just lower the helicopter torque" - a tip-radius tail needs 3 % of rated thrust, not 10 %, so one
+    /// small Reversible Rotor (36 kN) holds the 1.5 m rotor; 0.344 x 0.3.)
+    public static float ReactionScale = 0.1032f;
 
     /// <summary>The reaction torque (N m, about the rotor axis, against its turn: +axis for this clockwise-from-above rotor)
     /// the shaft puts on the ship: Q = ReactionScale x P / omega. None below 2 % rpm (stopped: nothing to react).</summary>

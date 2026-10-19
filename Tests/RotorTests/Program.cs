@@ -32,7 +32,7 @@ static class Program
             float rdl = r.StaticThrust / (MathF.PI * r.Radius * r.Radius);
             Check(MathF.Abs(rdl - dl) < 0.01f * dl, $"{r.Name}: disc loading {rdl:F0} N/m^2 (the 1.5 m's {dl:F0})");
         }
-        Check(tail.StaticThrust == 128000f, $"Reversible Rotor: {tail.StaticThrust / 1e3f:F0} kN");
+        Check(tail.StaticThrust == 38000f, $"Reversible Rotor: {tail.StaticThrust / 1e3f:F0} kN");
         // 2. power per kN: every helicopter rotor half the vanilla 1.58 (the most efficient lifters); the turboprops 0.32 (2026-10-17,
         //    the kings of subsonic thrust per kW to ~Mach 0.6 - Tests/ThrustTests power ladder); fans and the Reversible Rotor 1.58
         float Ratio(PropulsorBlocks.Row r) => r.PowerKw / (r.StaticThrust / 1000f);
@@ -48,7 +48,7 @@ static class Program
             foreach (float rho in new[] { 1f, 0.89f, 0.5f })
             {
                 float T = r.StaticThrust * rho, share = K.ReactionTorque(T, r.Radius, 1f, rho) / r.Radius / T;
-                Check(share > 0.095f && share < 0.105f, $"{r.Name} at rho {rho}: a tail at {r.Radius} m needs {share * 100f:F1} % of its thrust");
+                Check(share > 0.0285f && share < 0.0315f, $"{r.Name} at rho {rho}: a tail at {r.Radius} m needs {share * 100f:F1} % of its thrust");
             }
         Check(K.ReactionTorque(1.25f * r15.StaticThrust, 7.5f, 1f, 1f) > 1.25f * 1.1f * K.ReactionTorque(r15.StaticThrust, 7.5f, 1f, 1f), "reaction: still grows faster than thrust (1.25 x thrust > 1.37 x torque)");
         // 4. the Reversible Rotor (128 kN, 2026-10-18; 85 kN until the rotors went 1.5x): one at a 1.5 m rotor's tip radius holds it at its rating WITH the limiter's
@@ -264,7 +264,7 @@ static class Program
             float P = K.Power(T, R, 1f, rho), Q = K.ReactionTorque(T, R, 1f, rho);
             Check(MathF.Abs(P - (K.InducedFactor * T * vi + K.ProfileCoef * rho * A * MathF.Pow(K.TipSpeed, 3))) < 1f, $"power: momentum theory ({P:F0} W)");
             Check(MathF.Abs(Q - K.ReactionScale * P / omega) < 1e-2f * Q, $"reaction: Q = ReactionScale x P / omega ({Q:F0} N m)");
-            Check(P > 2e6f && P < 8e6f && Q > 3e4f && Q < 2e5f, $"reaction: a 17 t helicopter's hover power {P / 1e6f:F2} MW, torque {Q / 1e3f:F0} kN m (x ReactionScale {K.ReactionScale})");
+            Check(P > 2e6f && P < 8e6f && Q > 1e4f && Q < 6e4f, $"reaction: a 17 t helicopter's hover power {P / 1e6f:F2} MW, torque {Q / 1e3f:F0} kN m (x ReactionScale {K.ReactionScale})");
             Check(K.ReactionTorque(2f * T, R, 1f, rho) > 2f * Q, "reaction: grows faster than thrust (T^1.5 induced)");
             Check(K.ReactionTorque(0f, R, 1f, rho) > 0f && K.ReactionTorque(0f, R, 1f, rho) < 0.2f * Q, "reaction: flat pitch still drags (profile power), little");
             Check(K.ReactionTorque(T, R, 0f, rho) == 0f && K.ReactionTorque(T, R, 0.01f, rho) == 0f, "reaction: none when stopped");
