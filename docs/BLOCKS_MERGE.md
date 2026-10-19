@@ -77,7 +77,7 @@ To migrate one (after phase B's build):
   save (`ContainerModManager.WriteChangesToContainerAsync`).
 - **Offline:** `tools/blocks_merge/phase_b.sh worlds` lists them; `APPLY=1` backs each up into
   `$BACKUPS/blocks-merge-<stamp>/` (default `Documents\SpaceEngineers2\SaveBackups`; the 2026-10-18 run's backups are
-  in `D:\aero\save_backups\`) and drops the Blocks mod from its list with `tools/modlist`, which writes
+  in `Documents\SpaceEngineers2\SaveBackups\`) and drops the Blocks mod from its list with `tools/modlist`, which writes
   the edited list as JSON to the save's extension-less `modlist` - the file the game reads first (`modlist`, then
   `modlist.vrb`, then `modlist.bak.json`); `modlist.vrb` is left as it was, and the game's next save replaces both with a
   new `modlist.vrb`.
@@ -118,7 +118,7 @@ type, tanks, conveyors): plan for builder errors; `%LOCALAPPDATA%\OrbitalModBuil
 - `after` (NEW content, migrated copy): no "Could not find", the same 297 grids, every grid name's blocks identical; the
   aero dump the same but for one name the baseline's dump had missed a grid of (scene membership at that moment).
 - `place`: all 42 blocks spawned alone, each with mass and cells.
-- `worlds` APPLY=1: the 7 worlds migrated (backups `D:\aero\save_backups\blocks-merge-20261018-124221\`); the Blocks
+- `worlds` APPLY=1: the 7 worlds migrated (backups `Documents\SpaceEngineers2\SaveBackups\blocks-merge-20261018-124221\`); the Blocks
   mod's folder moved to `Documents\SpaceEngineers2\ModsRetired\Aerodynamics Mod Blocks` (merge_blocks_assets.py's
   source, if ever needed again). A migrated world (Orbital Test Tu-134 Control Surfaces) loads with every block.
 - `%APPDATA%\SpaceEngineers2\Temp\LocalMods\ModIndex` (ModHub's local-mod index) still names the old folder: the game
