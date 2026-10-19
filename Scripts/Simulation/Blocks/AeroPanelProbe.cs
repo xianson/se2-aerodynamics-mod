@@ -61,7 +61,8 @@ public static class AeroPanelProbe
                 .First(m => m.Name == "Attach" && m.GetParameters().Length == 3);
             // (the game's own Task<Dictionary<EntityId, ...>> - a struct of VRage.Library's: kept boxed and polled each
             //  frame from the flap job, its result read through its awaiter)
-            _pending = attach.Invoke(cp, new object[] { entry.DetailViewTypes, ids, list });
+            // (4.0: the entity's DetailViewTypes is an ImmutableArray, Attach takes a HashSet)
+            _pending = attach.Invoke(cp, new object[] { new HashSet<SubclassOf<BlockDetailModel>>(entry.DetailViewTypes), ids, list });
             _cp = cp; _list = list; _id = id; _block = block; _since = Environment.TickCount64;
         }
         catch (Exception e) { Say($"FAIL {e.GetType().Name}: {e.Message} @ {e.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}"); }

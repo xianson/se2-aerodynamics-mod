@@ -12,7 +12,7 @@ internal sealed partial class FlightField
     // ── particles and the spot light (the game's render types are outside what mods compile against: late-bound,
     //    resolved once; see EntryFxBridge and docs/REFLECTION_AND_WHITELIST.md) ──
 
-    private static MethodInfo _spawn, _fixTime, _setParams, _dispose;
+    private static MethodInfo _spawn, _setParams, _dispose;
     private static Type _tParams, _tSession;
     private object _fxSession;
     private static object _contracts;
@@ -102,8 +102,7 @@ internal sealed partial class FlightField
             if (FixTimeEvery == 0 && _fixedAt.TryGetValue(h, out float was) && MathF.Abs(was - seconds) < step && !(seconds <= 0.0011f && was > seconds)) return;
             _fixedAt[h] = seconds;
         }
-        _fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst);
-        _fixTime.Invoke(h, new object[] { true, TimeSpan.FromSeconds(seconds) });
+        EffectTime.Fix(h, seconds);   // (SE2 4.0: FixEffectTime is gone - EffectTime)
         FixTimeWrites++;
     }
     private static readonly Dictionary<object, float> _fixedAt = new Dictionary<object, float>(ReferenceEqualityComparer.Instance);

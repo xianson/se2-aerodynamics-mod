@@ -18,8 +18,8 @@ internal sealed class ExhaustSlot
 /// The exhaust's particle plumbing (client): the game's particle API is in VRage.Game.Client / VRage.Render (not mod references), so it is
 /// late-bound ONCE (docs/REFLECTION_AND_WHITELIST.md, "ExhaustParticles"): ParticleEffectsSessionComponent.TrySpawnEffect(RelativeTransform,
 /// ...) and a boxed ParticleEffectUserParameters (as FlightField / TearSmoke), and the handle's per-frame members bound as TYPED open
-/// delegates over the handle's own type (Access&lt;H&gt;, made generic on it by reflection - as AeroFlameComponent's FlameAccess): FixEffectTime,
-/// UpdateTransform, StopEmitting, ResumeEmitting, DisposeAfterParticlesDie, IsDisposed - no boxing, no argument array, no garbage per frame.
+/// delegates over the handle's own type (Access&lt;H&gt;, made generic on it by reflection - as AeroFlameComponent's FlameAccess): the time fix
+/// (EffectTime: SE2 4.0 dropped FixEffectTime), UpdateTransform, StopEmitting, ResumeEmitting, DisposeAfterParticlesDie, IsDisposed - no boxing, no argument array, no garbage per frame.
 /// SetParameters goes through MethodInfo.Invoke with the slot's own box and argument array (a few small boxes per write) - written only when
 /// a parameter moved by more than ParamStep (a lit engine's are steady: none per frame). A handle the game disposed is seen by IsDisposed
 /// before any call (no exception on the frame path - docs: an exception costs ~200 ms); the slot is then dead and respawned.
@@ -49,18 +49,17 @@ internal static class ExhaustParticles
     }
     sealed class Access<H> : Access where H : class
     {
-        readonly Action<H, bool, TimeSpan> _fix; readonly Action<H, RelativeTransform> _move; readonly Action<H, bool> _stop;
+        readonly Action<H, RelativeTransform> _move; readonly Action<H, bool> _stop;
         readonly Action<H> _resume, _dispose; readonly Func<H, bool> _gone;
-        public Access(MethodInfo fix, MethodInfo move, MethodInfo stop, MethodInfo resume, MethodInfo dispose, MethodInfo gone)
+        public Access(MethodInfo move, MethodInfo stop, MethodInfo resume, MethodInfo dispose, MethodInfo gone)
         {
-            _fix = (Action<H, bool, TimeSpan>)fix.CreateDelegate(typeof(Action<H, bool, TimeSpan>));
             _move = (Action<H, RelativeTransform>)move.CreateDelegate(typeof(Action<H, RelativeTransform>));
             _stop = (Action<H, bool>)stop.CreateDelegate(typeof(Action<H, bool>));
             _resume = (Action<H>)resume.CreateDelegate(typeof(Action<H>));
             _dispose = (Action<H>)dispose.CreateDelegate(typeof(Action<H>));
             _gone = (Func<H, bool>)gone.CreateDelegate(typeof(Func<H, bool>));
         }
-        public override void Fix(object h, TimeSpan t) => _fix((H)h, true, t);
+        public override void Fix(object h, TimeSpan t) => EffectTime.Fix(h, (float)t.TotalSeconds);
         public override void Move(object h, RelativeTransform at) => _move((H)h, at);
         public override void Stop(object h) => _stop((H)h, false);
         public override void Resume(object h) => _resume((H)h);
@@ -88,22 +87,22 @@ internal static class ExhaustParticles
                     _fScale = _tParams.GetField("EmitterScaleMultiplier"); _fSize = _tParams.GetField("EmitterSizeMultiplier");
                     _fVel = _tParams.GetField("VelocityMultiplier"); _fColor = _tParams.GetField("ColorMultiplier");
                 }
-                MethodInfo fix = ht?.GetMethod("FixEffectTime", AnyInst, null, new[] { typeof(bool), typeof(TimeSpan) }, null),
-                           move = ht?.GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null),
+                bool fix = EffectTime.Ready;   // (SE2 4.0: FixEffectTime is gone - EffectTime fixes the time)
+                MethodInfo move = ht?.GetMethod("UpdateTransform", AnyInst, null, new[] { typeof(RelativeTransform) }, null),
                            stop = ht?.GetMethod("StopEmitting", AnyInst, null, new[] { typeof(bool) }, null),
                            resume = ht?.GetMethod("ResumeEmitting", AnyInst, null, Type.EmptyTypes, null),
                            dispose = ht?.GetMethod("DisposeAfterParticlesDie", AnyInst, null, Type.EmptyTypes, null),
                            gone = ht?.GetProperty("IsDisposed", AnyInst)?.GetGetMethod();
                 _setParams = ht?.GetMethod("SetParameters", AnyInst);
-                if (_spawn == null || _tParams == null || ht == null || ht.IsValueType || fix == null || move == null || stop == null || resume == null || dispose == null || gone == null
+                if (_spawn == null || _tParams == null || ht == null || ht.IsValueType || !fix || move == null || stop == null || resume == null || dispose == null || gone == null
                     || _setParams == null || _fScale == null || _fVel == null || _fSize == null || _fColor == null || _fColor.FieldType != typeof(ColorSRGB))
                 {
                     _failed = true;
-                    Why = $"particle API not found (spawn {_spawn != null}, params {_tParams != null}, handle {ht?.Name ?? "-"}, fix {fix != null}, move {move != null}, stop {stop != null}, resume {resume != null}, dispose {dispose != null}, disposed {gone != null}, set {_setParams != null}, colour {_fColor?.FieldType.Name ?? "-"})";
+                    Why = $"particle API not found (spawn {_spawn != null}, params {_tParams != null}, handle {ht?.Name ?? "-"}, fix {(fix ? "ok" : EffectTime.Why)}, move {move != null}, stop {stop != null}, resume {resume != null}, dispose {dispose != null}, disposed {gone != null}, set {_setParams != null}, colour {_fColor?.FieldType.Name ?? "-"})";
                 }
                 else
                 {
-                    _access = (Access)typeof(Access<>).MakeGenericType(ht).GetConstructors()[0].Invoke(new object[] { fix, move, stop, resume, dispose, gone });
+                    _access = (Access)typeof(Access<>).MakeGenericType(ht).GetConstructors()[0].Invoke(new object[] { move, stop, resume, dispose, gone });
                     Why = "ok";
                 }
             }

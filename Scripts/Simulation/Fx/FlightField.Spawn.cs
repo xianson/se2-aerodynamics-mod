@@ -141,7 +141,7 @@ internal sealed partial class FlightField
         {
             SetParamsIfChanged(h, prm);
             { float w7 = held > 0f ? held / Math.Max(1e-3f, Heat) : 1f; _plasma.Add((h, w7)); held = Math.Clamp(_entryS * w7, 0.00001f, 0.999f); }
-            if (held > 0f) { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
+            if (held > 0f) { EffectTime.Fix(h, held); NoteFixed(h, held); }
         }
         catch (Exception e) { _puffWhy = "set: " + Inner(e); }
     }

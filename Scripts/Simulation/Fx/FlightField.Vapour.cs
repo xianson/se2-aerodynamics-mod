@@ -240,7 +240,7 @@ internal sealed partial class FlightField
         _vapour.Add((h, weight, kind));
         if (tip && prm != null) { _tipPrm[h] = (prm, speed); _tipAt[h] = (at, q, -1f); _tipOrder.Add(h); }   // (its airspeed as sent: no rebuild at once)   // (its spawn line's length and its lead kept live: TipLine)
         float held = Math.Clamp((kind == 1 ? _coneI : kind == 2 ? _tipI : _edgeI) * weight, 0.001f, 0.999f);
-        try { (_fixTime ??= h.GetType().GetMethod("FixEffectTime", AnyInst)).Invoke(h, new object[] { true, TimeSpan.FromSeconds(held) }); NoteFixed(h, held); }
+        try { EffectTime.Fix(h, held); NoteFixed(h, held); }
         catch (Exception e) { _puffWhy = "vapour time: " + Inner(e); }
     }
 }

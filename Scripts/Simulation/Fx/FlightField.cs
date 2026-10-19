@@ -158,7 +158,7 @@ internal sealed partial class FlightField
     private Guid ShockSparks => SparkColor == 3 ? RateGuid(3) : SparkColor == 2 ? RateGuid(1) : SparkColor == 1 ? ShockSparksViolet : ShockSparksOrange;
     private Guid TailSparks => SparkColor == 3 ? RateGuid(4) : SparkColor == 2 ? RateGuid(2) : SparkColor == 1 ? TailSparksViolet : TailSparksOrange;
     private readonly List<object> _puffs = new List<object>();
-    // (the effect handle's methods - _setParams, _fixTime, declared in FlightField.Render.cs - looked up once, not by name per spawn)
+    // (the effect handle's methods - _setParams, declared in FlightField.Render.cs, and the time fix, EffectTime - looked up once, not by name per spawn)
     private string _puffWhy;
     private long _puffWhyAt;   // (when the last spawn failure was seen: retried after 2 s)
 }

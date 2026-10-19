@@ -97,8 +97,11 @@ public partial class AeroFlameComponent : Component, IInSceneListener
     // and EffectDuration, Convert.ToSingle, TryGet<EfficiencyData>.Invoke boxing the context and the data): the handle's
     // members are bound once as typed open delegates over the game's own types (FlameAccess<H, D>, made generic on them by
     // reflection - VRage.Game.Client is not referenceable), the efficiency read through a generic TryGet<E> on the private
-    // EfficiencyData (EfficiencyReader<E>: its one float field), and FixEffectTime called typed with a TimeSpan made from the
-    // same 1/TimeSteps steps the boxed table held (no box, no argument array). Nothing changes but the garbage.
+    // EfficiencyData (EfficiencyReader<E>: its one float field), and the flame's time fixed typed at the same 1/TimeSteps
+    // steps the boxed table held (no box, no argument array). Nothing changes but the garbage.
+    // SE2 4.0: the game's flames are ParameterDrivenParticleEffectHandles its animator drives with SetParameter(scale), and
+    // FixEffectTime is gone - the flame is set through EffectTime.Parameter (the same render call); the handle type is the
+    // list's own element type.
     static readonly object _reflectLock = new object();
     static volatile bool _ready, _reflectFailed;
     static System.Reflection.FieldInfo _handlesField, _defField;
@@ -112,17 +115,16 @@ public partial class AeroFlameComponent : Component, IInSceneListener
     {
         /// <summary>Each live handle of the list (the thruster's _flameEffectHandles) with a timeline, and its duration.</summary>
         public abstract void ReadHandles(object list, List<(object handle, float duration)> into);
-        public abstract void Fix(object handle, TimeSpan time);
+        public abstract void Fix(object handle, float parameter);
     }
     sealed class FlameAccess<H, D> : FlameAccess where H : class where D : class
     {
-        readonly Func<H, D> _resolved; readonly Func<D, float> _duration; readonly Func<H, bool> _disposed; readonly Action<H, bool, TimeSpan> _fix;
-        public FlameAccess(System.Reflection.MethodInfo resolved, System.Reflection.MethodInfo duration, System.Reflection.MethodInfo disposed, System.Reflection.MethodInfo fix)
+        readonly Func<H, D> _resolved; readonly Func<D, float> _duration; readonly Func<H, bool> _disposed;
+        public FlameAccess(System.Reflection.MethodInfo resolved, System.Reflection.MethodInfo duration, System.Reflection.MethodInfo disposed)
         {
             _resolved = (Func<H, D>)resolved.CreateDelegate(typeof(Func<H, D>));
             _duration = (Func<D, float>)duration.CreateDelegate(typeof(Func<D, float>));
             _disposed = disposed != null ? (Func<H, bool>)disposed.CreateDelegate(typeof(Func<H, bool>)) : null;
-            _fix = (Action<H, bool, TimeSpan>)fix.CreateDelegate(typeof(Action<H, bool, TimeSpan>));
         }
         public override void ReadHandles(object list, List<(object handle, float duration)> into)
         {
@@ -134,10 +136,10 @@ public partial class AeroFlameComponent : Component, IInSceneListener
                 if (h == null || (_disposed != null && _disposed(h))) continue;
                 var rd = _resolved(h);
                 float dur = rd != null ? _duration(rd) : 0f;
-                if (dur > 0f) into.Add((h, dur));
+                if (rd != null) into.Add((h, dur));   // (4.0: the flame is set by its parameter - any duration)
             }
         }
-        public override void Fix(object handle, TimeSpan time) => _fix((H)handle, true, time);
+        public override void Fix(object handle, float parameter) => EffectTime.Parameter(handle, parameter);
     }
     /// <summary>The thruster's private EfficiencyData read typed: E is it (one float field, Efficiency - checked).</summary>
     abstract class EfficiencyReader { public abstract bool Read(DEntityContext data, out float efficiency); }
@@ -166,21 +168,20 @@ public partial class AeroFlameComponent : Component, IInSceneListener
             var effFields = effData?.GetFields(F);
             bool effOk = effData != null && effData.IsValueType && effFields.Length == 1 && effFields[0].Name == "Efficiency" && effFields[0].FieldType == typeof(float);
             var random = def?.FieldType.GetProperty("FlameRandomScale", F);
-            // the handle's type and its definition's, from the game's assembly by name
-            var ht = et.Assembly.GetType("Keen.VRage.Game.Client.Effects.Components.ParticleEffectHandle")
-                     ?? AppDomain.CurrentDomain.GetAssemblies().Select(x => x.GetType("Keen.VRage.Game.Client.Effects.Components.ParticleEffectHandle")).FirstOrDefault(x => x != null);
-            var fix = ht?.GetMethod("FixEffectTime", new[] { typeof(bool), typeof(TimeSpan) });
+            // the handle's type: the list's own element type (4.0: ParameterDrivenParticleEffectHandle), and its definition's
+            var ht = handles != null && handles.FieldType.IsGenericType ? handles.FieldType.GetGenericArguments()[0] : null;
+            bool fix = EffectTime.Ready;
             var resolved = ht?.GetProperty("ResolvedDefinition");
             var disposed = ht?.GetProperty("IsDisposed");
             var duration = resolved?.PropertyType.GetProperty("EffectDuration", F);
-            // (bound typed: the handle's ResolvedDefinition, IsDisposed and FixEffectTime, the definition's EffectDuration)
+            // (bound typed: the handle's ResolvedDefinition and IsDisposed, the definition's EffectDuration; the time: EffectTime)
             FlameAccess access = null; EfficiencyReader effReader = null; string why = null;
-            if (handles != null && fix != null && resolved?.GetGetMethod() != null && duration?.GetGetMethod(true) != null && duration.PropertyType == typeof(float) && !ht.IsValueType && !resolved.PropertyType.IsValueType)
+            if (handles != null && ht != null && fix && resolved?.GetGetMethod() != null && duration?.GetGetMethod(true) != null && duration.PropertyType == typeof(float) && !ht.IsValueType && !resolved.PropertyType.IsValueType)
             {
                 try
                 {
                     access = (FlameAccess)typeof(FlameAccess<,>).MakeGenericType(ht, resolved.PropertyType).GetConstructors()[0]
-                        .Invoke(new object[] { resolved.GetGetMethod(), duration.GetGetMethod(true), disposed?.PropertyType == typeof(bool) ? disposed.GetGetMethod() : null, fix });
+                        .Invoke(new object[] { resolved.GetGetMethod(), duration.GetGetMethod(true), disposed?.PropertyType == typeof(bool) ? disposed.GetGetMethod() : null });
                     if (effOk) effReader = (EfficiencyReader)typeof(EfficiencyReader<>).MakeGenericType(effData).GetConstructors()[0].Invoke(null);
                 }
                 catch (Exception e) { access = null; why = $"{e.GetType().Name}: {(e.InnerException ?? e).Message}"; }
@@ -188,7 +189,7 @@ public partial class AeroFlameComponent : Component, IInSceneListener
             if (access == null)
             {
                 _reflectFailed = true;
-                Keen.VRage.Library.Diagnostics.Log.Default?.Warning($"[AERO] flames: the thruster's flame effects not found (handles {handles != null}, FixEffectTime {fix != null}, ResolvedDefinition {resolved != null}, EffectDuration {duration != null}{(why != null ? ", binding: " + why : "")}) - the game's own flames");
+                Keen.VRage.Library.Diagnostics.Log.Default?.Warning($"[AERO] flames: the thruster's flame effects not found (handles {handles != null}, handle {ht?.Name ?? "-"}, effect time {(fix ? "ok" : EffectTime.Why)}, ResolvedDefinition {resolved != null}, EffectDuration {duration != null}{(why != null ? ", binding: " + why : "")}) - the game's own flames");
                 return false;
             }
             _handlesField = handles; _defField = def; _randomProp = random;
@@ -236,9 +237,8 @@ public partial class AeroFlameComponent : Component, IInSceneListener
         var access = _access;
         foreach (var (h, duration) in flame._flames)
         {
-            // (the step's time as the table made it: duration x step / TimeSteps in float, then seconds)
-            var time = TimeSpan.FromSeconds(duration * step / TimeSteps);
-            try { access.Fix(h, time); }
+            // (the step as the table made it: step / TimeSteps of the flame's timeline - its parameter)
+            try { access.Fix(h, (float)step / TimeSteps); }
             catch { flame._flamesAt = 0; }   // (a handle given back since: re-read next frame)
         }
     }
