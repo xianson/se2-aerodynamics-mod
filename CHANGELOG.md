@@ -3,6 +3,40 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## 1.0.3 - works on SE2 4.0
+
+Ported to Space Engineers 2 **4.0.0.3151** (from 2.4.0.95; 4.0 only from this version on). Checked in game on 4.0
+(three runs of an SSTO test world, both mods): both compile and load, flight, the structure failure (crack, tear,
+split, alerts), debris drag on broken blocks, warp billing, the settings tab, the control-surface panel, the map; no
+exception in our code, no crash.
+
+- **Compiles on 4.0.** 4.0 runs Keen's serializer generators on mod scripts: the control-panel models (surface, airbrake,
+  gear, solid rocket nozzle / segment, thruster) are `partial` (VRG1006) and `[NoSerialize]` - the generated serializer
+  needs an assembly mod scripts cannot reference (CS0012).
+- **Control panels open again.** 4.0 hands a block's panel models to the client through the server transport's
+  replication tracker: a mod model was not in it, the whole request was dropped ("Skipping story ... completion failed
+  patching") and the block's panel - the game's own parts too - never came. `DetailModelPairing` pairs the model there
+  as well (checked in game: the control surface's six models come back, its sliders reach the block).
+- Control-panel labels have en-US text entries now (`Assets/Texts`, `AeroMod.loc-texts`). 4.0 checks every label as a
+  localization key and logs an error line for each it cannot find - it still does: 4.0 does not pick up the mods' en-US
+  texts (the Orbital Mod's block names are reported too). Harmless: the label shown is its own (English) text.
+- **Effects hold their time again.** 4.0 removed `ParticleEffectHandle.FixEffectTime`, which the flight field (plasma,
+  vapour, tip trails), the exhaust and the thruster flames used: `Fx/EffectTime.cs` sets the same render state through
+  `ParticleEffectEntity.SetParameter` (bound once, typed: no allocation per call - FlightField's four reflection
+  `Invoke`s per write are gone too). The thruster flames are the game's parameter-driven handles in 4.0;
+  `AeroFlameComponent` drives them through the same call.
+- **Content tracks 4.0's vanilla:** the exhaust effects re-copied from the 4.0 hydrogen flames and rocket trail
+  (`gen_propulsor_defs.py gen_exhaust`; not parameter-driven, as ours are held by EffectTime), the vapour from the 4.0
+  meteor smoke (`gen_vapor.py`), and the two plasma emitters on a texture the game retired moved to its successor.
+  No asset reference unknown to 4.0 is left (all definitions and textures checked).
+- **Honest dampeners**: 4.0's gravity hold ignores a pilot input under 0.001 (`HonestHold.InputDeadzone`); the rest of the
+  thrust law, the gyro law and the gravity multiplier (2) are unchanged in 4.0 (decompiles diffed).
+- Dev: `AeroPanelProbe` passes the detail types as the `HashSet` 4.0's `Attach` takes.
+- Tools (`tools/shared`): ModCheck / GameVerdict / WhitelistGen for 4.0 (VRage.Multiplayer is a mod reference and
+  whitelist seed now; the KCG analyzers run - four of their rules are errors in 4.0; `gameverdict.sh --analyzers`,
+  `--dump-generated`); `build_mod_content.py` stubs the builder's editor plugin at the version the game's builder asks
+  for and keeps the Mod SDK half of its vanilla index across game updates.
+
 ## 1.0.2 - lighter helicopter torque, settings look
 
 - **Helicopter torque lowered** (the user's call): the tail rotor needs 3 % of the main rotor's rated thrust (was 10 %;

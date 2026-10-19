@@ -46,13 +46,13 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 
 ## Requirements
 
-- **Space Engineers 2, version 2.4.x** (made and tested on 2.4.0.95).
+- **Space Engineers 2, version 4.0.x** (made and tested on 4.0.0.3151; 1.0.2 and older: 2.4.x).
 - **Add `-loadScripts` to the game's launch options.** Steam > Library > Space Engineers 2 > right-click > Properties >
   General > Launch Options: type `-loadScripts`. Without it the game loads the mod's blocks and effects but never runs
   its scripts, and ships fly exactly as in the unmodded game. (It turns scripts on for every mod you load.)
 - No other mod is needed. **Optional:** the Orbital Mechanics Mod, whose flight HUD shows this mod's warnings and whose railed
   re-entries heat the hull.
-- **Single player or hosting only.** SE2 2.4 runs the server inside the game, so a remote client sees the game's normal
+- **Single player or hosting only.** SE2 (4.0 as 2.4) runs the server inside the game, so a remote client sees the game's normal
   flight.
 
 ## Install
