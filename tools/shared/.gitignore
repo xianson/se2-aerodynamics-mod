@@ -1,3 +1,7 @@
 # the personal launch args launch-se2.bat reads (copy se2-launch-args.example.txt)
 se2-launch-args.txt
 __pycache__/
+
+# build output of the shared tools (never committed: they copy the game's own DLLs)
+**/bin/
+**/obj/

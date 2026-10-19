@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SE2Dir>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</SE2Dir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="VRage.Library">
+      <HintPath>$(SE2Dir)\VRage.Library.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VRage.Core">
+      <HintPath>$(SE2Dir)\VRage.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VRage.Core.Game">
+      <HintPath>$(SE2Dir)\VRage.Core.Game.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VRage.DCS">
+      <HintPath>$(SE2Dir)\VRage.DCS.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Game2.Simulation">
+      <HintPath>$(SE2Dir)\Game2.Simulation.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VRage.Game">
+      <HintPath>$(SE2Dir)\VRage.Game.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VRage.Physics">
+      <HintPath>$(SE2Dir)\VRage.Physics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Aero.Core\Aero.Core.csproj" />
+  </ItemGroup>
+
+</Project>
