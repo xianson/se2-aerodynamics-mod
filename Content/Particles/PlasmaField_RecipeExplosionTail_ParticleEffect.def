@@ -1,7 +1,8 @@
 {
   "$Bundles": {
+    "Game2": "4.0.0.3151",
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.4.0.95"
+    "VRage": "4.0.0.3151"
   },
   "$Type": "VRage:Keen.VRage.Render.Data.ParticleEffectDefinitionObjectBuilder",
   "$Value": {
@@ -10,6 +11,7 @@
     "EffectDurationVariation": 0,
     "EffectMaxDistance": 20000,
     "IsLooping": true,
+    "IsParameterDriven": false,
     "ParticleEmitters": [
       {
         "Key": "e0ef35d9-5772-5dc1-96d4-dd6df8663908",

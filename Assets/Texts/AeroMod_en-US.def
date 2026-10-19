@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.2753"
+  },
+  "$Type": "VRage:Keen.VRage.Library.Localization.CultureInfoAssetDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7e70-0000-000000000001",
+    "CultureId": "f59b9226-51d4-4fe7-9479-dfd24c60a387",
+    "Resources": [
+      {
+        "Key": "ae200001-ae00-7e70-0000-000000000003",
+        "Value": {
+          "ContentId": "AeroModTexts",
+          "Asset": "{G}ae200001-ae00-7e70-0000-000000000002"
+        }
+      }
+    ]
+  }
+}
