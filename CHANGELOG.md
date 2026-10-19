@@ -15,7 +15,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   unpiloted, level, nothing leans the ship, so the anti-torque tail's own yaw thrust (18 kN on the 30 t H25) moves it
   sideways - 12.7 m/s after 20 s, within 3 % of that thrust's impulse over the mass; two tails (a yaw couple) hold their place.
   Hover hold leans the lift axis into it: the speed loop's integral finds the steady lean by itself (4.2 deg on H25).
-  H25 3x / 2.5x, one tail: settles in 3 s and holds within 0.12 m and 0.03 m/s for 60 s.
+  H25 3x / 2.5x, one tail: settles in 2.2 s, then holds its place within 0.3 m, 0.07 m/s and its height within 0.02 m
+  for 60 s (two tails: 0.09 m); a 0.05 s actuator lag changes nothing, it holds up to 0.12 s.
 - **Envelope protection** on every autopilot command: short of the whole ship's best-lift angle (the stall warning's own
   evaluation, less `Autopilot.AoaMarginDeg`), within `Autopilot.GLimit`, within what its controls can hold (the predicted
   loss of control, asked for the command before it is given), off the terrain (a floor, `Autopilot.FloorM`, and a look
