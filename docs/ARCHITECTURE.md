@@ -278,7 +278,7 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   (the API's shape, the event ring, the cross-mod binding), `BlockSaveTests` (the blocks' save keys, the old lines'
   reader and migration, the engine serializer round trip with no mod assembly loaded). They compile the engine-free
   folders by path.
-- **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `D:\aero\tools\ModCheck`)
+- **The gate** - `tools/test_fast.sh`: ModCheck (the game's own compiler and whitelist analyzers, `tools/shared/ModCheck`)
   then every suite. AeroBench's gate also hashes the table-building sources (`Tests/table_sources.txt`): a change there
   must bump `AeroTableCache.Version` (or re-record the hash for a pure refactor: `dotnet run -- tablehash`).
 

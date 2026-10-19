@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Steam Workshop uploader for SE2 script mods staged by ../stage.py. See ../README.md.
+       Default is a dry run that prints every Steam call; a real upload needs dry-run off AND explicit approval flags. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <!-- the game's Game2: the build_mod_content.py copy when present (never the Mod SDK's stale 2.2 Game2) -->
+    <Game2 Condition="'$(Game2)' == '' And Exists('$(LOCALAPPDATA)\OrbitalModBuild\game2\Steamworks.NET.dll')">$(LOCALAPPDATA)\OrbitalModBuild\game2</Game2>
+    <Game2 Condition="'$(Game2)' == ''">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- the game's own Steamworks.NET + native steam_api64.dll (same versions the game uploads with) -->
+    <Reference Include="$(Game2)\Steamworks.NET.dll" Private="true" />
+    <None Include="$(Game2)\steam_api64.dll" CopyToOutputDirectory="PreserveNewest" Link="steam_api64.dll" />
+    <!-- serializer of the metadata string: loaded from Game2 at run time (AssemblyResolve), never copied -->
+    <Reference Include="$(Game2)\VRage.Library.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Core.dll" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="steam_appid.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

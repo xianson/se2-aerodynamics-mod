@@ -11,7 +11,7 @@ internal sealed partial class FlightField
 {
     // ── Mode 6: TRANSONIC VAPOUR - the condensation cone at the grid's widest station, and sheets off the outline half a
     //    chord downwind; driven by the aero mod's real Mach, density and flow direction (AeroEntryFx.TryGetFlow, by
-    //    reflection - D:\aero\docs\REFLECTION_AND_WHITELIST.md). Effects: the aero mod's Vapour_* (tools/particles/gen_vapor.py).
+    //    reflection - docs/REFLECTION_AND_WHITELIST.md). Effects: the aero mod's Vapour_* (tools/particles/gen_vapor.py).
 
     /// <summary>Mach bands (in, full .. full, out): the cone and the edge sheets; density factor (rho / VapourRho)^0.5,
     /// capped at 1. The flow axis follows the real travel (AoA); past AxisTol degrees the field is placed again.

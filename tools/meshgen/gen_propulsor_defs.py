@@ -48,7 +48,7 @@ THE EXHAUST (2026-10-17, gen_exhaust): the ramjets' and solid nozzles' own parti
 definitions copied from vanilla flames and smoke, no vanilla definition referenced) and Scripts/Simulation/Blocks/ExhaustBlocks.g.cs
 (their GUIDs, authored numbers, each engine's exhaust point / axis / exit radius); the mod's Fx/AeroExhaustComponent drives them.
 
-  python gen_propulsor_defs.py      then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
+  python gen_propulsor_defs.py      then: python tools\\shared\\build_mod_content.py "<Aerodynamics Mod>"
 """
 import json, os, shutil, uuid
 import gen_gear_defs as gd

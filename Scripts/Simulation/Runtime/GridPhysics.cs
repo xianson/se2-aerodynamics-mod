@@ -201,7 +201,7 @@ public static class GridPhysics
             // Until its contentcache.vrb built, the .def never mounted and the probe read the world's values
             // (CONFIGPROBE before override: MaximumSpeedLinear=300 GravityMultiplier=2), so the values were forced by reflection.
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] CONFIGPROBE before override: MaximumSpeedLinear={config.MaximumSpeedLinear} GravityMultiplier={config.GravityMultiplier} MaximumCharacterSpeedLinear={config.MaximumCharacterSpeedLinear}");
-            // (2026-10-01: the cache builds now - D:/aero/tools/build_mod_content.py - and the probe reads the
+            // (2026-10-01: the cache builds now - tools/shared/build_mod_content.py - and the probe reads the
             // mod's 1000 / 1. The reflection setters, unused since, went in the 2026-10-15 reorg.)
         }
         catch (Exception ex)

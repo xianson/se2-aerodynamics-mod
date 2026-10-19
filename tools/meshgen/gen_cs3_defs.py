@@ -4,7 +4,7 @@ following the spec in docs (hand-authored: the SDK editor does not run on 2.4). 
 derived from the file's path (assets), so a rebuild after a model change keeps every reference.
 
   python gen_cs3_defs.py [--defs]   (--defs: the definition files only, rewritten in place - no model copy, nothing removed)
-  then: python D:\\aero\\tools\\build_mod_content.py "<Aerodynamics Mod>"
+  then: python tools\\shared\\build_mod_content.py "<Aerodynamics Mod>"
 
 The block: a copy of the vanilla template "BasePowerableBlockBreakable" (PowerableBlockComponent - a FunctionalBlockComponent:
 the flap subpart only spawns on a functional block; the powerable one adds the game's on/off toggle and a power draw, as a

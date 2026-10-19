@@ -2,7 +2,7 @@
 # test_fast.sh - the aero mod's fast gate (no game): the mod's scripts compiled exactly as the game compiles them
 # (ModCheck), then every offline suite in Tests/. Exit 0 only if everything passes.
 cd "$(dirname "$0")/.."
-MODCHECK=/d/aero/tools/ModCheck/ModCheck.csproj
+MODCHECK=${MODCHECK:-tools/shared/ModCheck/ModCheck.csproj}   # (env override: a private ModCheck copy, own obj/ - parallel checkouts)
 rc=0; t0=$(date +%s)
 
 s=$(date +%s)
