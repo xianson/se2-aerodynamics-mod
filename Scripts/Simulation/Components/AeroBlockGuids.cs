@@ -47,6 +47,13 @@ public static class AeroBlockGuids
     public static readonly System.Collections.Generic.HashSet<Guid> AirbrakeClientPrefabs = new()
         { new("ae200001-ae00-ab02-0012-000000000001"), new("ae200001-ae00-ab03-0012-000000000001") };
 
+    // ── The Autopilot block (2026-10-19; tools/meshgen/gen_autopilot_defs.py): its server prefabs (AeroAutopilotComponent - the
+    //    terminal's panel and the saved state). Large: on the vanilla Event Controller's model; Small: the vanilla Timer's. ──
+    public static readonly Guid Autopilot_Large = new("ae200001-ae00-a901-0001-000000000001");
+    public static readonly Guid Autopilot_Small = new("ae200001-ae00-a902-0001-000000000001");
+    public static readonly System.Collections.Generic.HashSet<Guid> AutopilotServerPrefabs = new()
+        { new("ae200001-ae00-a901-0011-000000000001"), new("ae200001-ae00-a902-0011-000000000001") };
+
     // ── Atmospheric Scoops ──
     public static readonly Guid Scoop_1x1          = new("ae200001-ae00-5c01-0001-000000000001");
 }

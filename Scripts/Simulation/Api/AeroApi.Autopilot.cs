@@ -10,7 +10,7 @@ public static partial class AeroApi
     /// <summary>(version 11) The grid's autopilot: the goals it holds (bits: 1 attitude, 2 hover, 4 position, 8 height, 16 an
     /// external goal source), the protections in force this tick (bits: 1 lean limit, 2 thrust limit, 4 stall limit, 8 g limit,
     /// 16 control limit - the predicted loss of control, 32 overspeed, 64 terrain floor, 128 full thrust - low energy, 256 terrain
-    /// ahead), why it last let go or refused (0 none; see docs/API.md), and its readout ("AP HOVER POS AGL · FLOOR", "" off).
+    /// ahead), why it last let go or refused (0 none; 15: the Autopilot block went dark - see docs/API.md), and its readout ("AP HOVER POS AGL · FLOOR", "" off).
     /// False: no autopilot on this grid (never engaged) or no server grid found for it.</summary>
     public static bool TryGetAutopilot(Keen.VRage.DCS.Components.Entity grid, out int goals, out int protections, out int reason, out string readout)
     {
@@ -23,9 +23,10 @@ public static partial class AeroApi
     }
 
     /// <summary>(version 11) Ask the grid's autopilot for exactly these goals (the bits of TryGetAutopilot; 0: every goal off) -
-    /// what a seated pilot's keys ask (Ctrl+H hover hold is 2 | 8), the world's Autopilot.* settings and the autopilot's own
-    /// checks applying (it refuses with a reason: TryGetAutopilot). Queued for the grid's next simulation step (server). False: no
-    /// server grid found for it (a client grid not yet paired - ask again a tick later).</summary>
+    /// what an Autopilot block's Hover Hold button asks is 2 | 8, Height Hold 8 - the world's Autopilot.* settings and the autopilot's
+    /// own checks applying (it refuses with a reason: TryGetAutopilot). An Autopilot block on the grid keeps its own panel: choosing a
+    /// mode there (or the block going dark) replaces what was asked here. Queued for the grid's next simulation step (server). False:
+    /// no server grid found for it (a client grid not yet paired - ask again a tick later).</summary>
     public static bool RequestAutopilot(Keen.VRage.DCS.Components.Entity grid, int goals)
     {
         var aero = DesignProbe.ServerAero(grid);

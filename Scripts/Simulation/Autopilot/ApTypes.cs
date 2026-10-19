@@ -12,6 +12,8 @@ public enum ApReason : byte
 {
     None, TurnedOff, Steered, DampenersOff, NotAllowed, NoGravity, NoLift, TooFast, Upset, LeftSeat, CantHoldHeight, NoAttitude,
     NeedsDampeners, NoSource, GoalDone,
+    /// <summary>The controlling Autopilot block was switched off, lost its power, was damaged or removed (15).</summary>
+    BlockOff,
 }
 
 /// <summary>What the envelope protection changed this tick (several at once).</summary>
@@ -45,6 +47,9 @@ public enum ApProt : ushort
 /// </summary>
 public struct ApSense
 {
+    /// <summary>The limits and choices it flies with this tick - the controlling Autopilot block's (its panel), the world's caps in
+    /// (ApLimits.Of); offline the static defaults (ApLimits.Defaults).</summary>
+    public ApLimits Lim;
     public float Dt;
     /// <summary>The ship's orientation (grid local to world), its rate (local rad/s), centre of mass (world) and velocity (world m/s).</summary>
     public Quaternion Orient; public Vector3 AngVel; public Vector3D Pos; public Vector3 Vel;

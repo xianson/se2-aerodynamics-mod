@@ -31,12 +31,9 @@ public partial class AeroGridComponent
     internal Quaternion ApTarget = Quaternion.Identity;
     /// <summary>Client: the readout of the server's autopilot for this grid ("" none) - the HUD (MachHud).</summary>
     internal volatile string ApReadoutClient = "";
-    /// <summary>A pending ask (ApServer / AeroApi.RequestAutopilot): the goals to toggle (ApAskOff: every goal off; -1 none).</summary>
+    /// <summary>A pending API ask (AeroApi.RequestAutopilot): exactly these goals engaged (ApAskOff 0: every goal off; -1 none).</summary>
     internal int ApAsk = -1;
     internal const int ApAskOff = 0;
-    /// <summary>An ask from a key (ApKeys): ApAskKey + the key's goal - a toggle (the hover key: hover + height on / all off; the height
-    /// key: height on / off). Below it, an API ask: exactly these goals engaged (0 off).</summary>
-    internal const int ApAskKey = 0x100;
     /// <summary>The attitude the guidance wants (unclipped) - the loss-of-control evaluation's probe (StructureServer).</summary>
     internal Quaternion ApProbe; internal bool ApHasProbe;
     /// <summary>The probe's prediction (Loac.cs EvaluateApProbe): the worst need / reach on the way and holding now, for which
@@ -48,7 +45,7 @@ public partial class AeroGridComponent
     /// <summary>Engaged flight directors in this process (both scenes' code paths gate on it: nothing to do at 0).</summary>
     internal static int ApEngaged;
     /// <summary>An autopilot is on this grid or asked of it (the quiet gate lets it run).</summary>
-    internal bool ApActive => ApFlying || Volatile.Read(ref ApAsk) >= 0 || (Fd != null && Fd.Engaged);
+    internal bool ApActive => ApFlying || ApBlockWants || Volatile.Read(ref ApAsk) >= 0 || (Fd != null && Fd.Engaged);
 
     ApCommand _apCmd;
     GridTerrain _apTerrain;
@@ -68,32 +65,70 @@ public partial class AeroGridComponent
         else if (Volatile.Read(ref ApEngaged) > 0 || ApFlying) ClientAp(wt);
     }
 
+    // the Autopilot block that flies this grid (ApArbiter), its link to the flight director, the panel's write-back
+    AeroAutopilotComponent _apCtl; ApBlockLink _apLink; ApBlockLink.Out _apOut; int _apReportIn;
+
+    /// <summary>The limits the autopilot flies with now: the flying block's panel (the world's caps in), or the defaults (any thread:
+    /// a reference read and the block's locked copy).</summary>
+    internal ApLimits ApLimitsNow { get { var c = _apCtl; return c != null ? ApLimits.Of(c.Panel) : ApLimits.Defaults; } }
+
     void ServerAp(in WorldTransform wt)
     {
         if (TerrainDump.Go && Data.Has<TargetControlData>()) TerrainDump.Sample(this, wt);   // (the harness's terrain dump: the seated ship's step)
         int ask = Volatile.Read(ref ApAsk);
         var fd = Fd;
-        if (ask < 0 && (fd == null || !fd.Engaged)) { if (ApFlying || _apMoved || _apWasEngaged) StopAp(wt); return; }
-        var s = ApSenseNow(wt, fd);
-        if (ask >= 0 && Interlocked.Exchange(ref ApAsk, -1) >= 0)
+        // ── which block flies (the first working, switched-on one by position; none: the API's asks only) ──
+        AeroAutopilotComponent[] blocks = ApBlocks;
+        var ctl = PickApBlock(blocks, out bool anyWants);
+        bool ctlChanged = !ReferenceEquals(ctl, _apCtl);
+        bool want = ctl != null && ctl.Panel.Mode != ApMode.Off;
+        if (ask < 0 && (fd == null || !fd.Engaged) && !ctlChanged && !want)
         {
-            if (fd == null) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = _apTerrain; }
-            if (ask >= ApAskKey)
-            {
-                // a key: a toggle - the hover key hover + height on / everything off; the height key height on / off
-                var key = (ApGoal)(ask - ApAskKey);
-                bool on = key == ApGoal.Hover ? (fd.Goals & ApGoal.Hover) != 0 : (fd.Goals & key) == key;
-                if (on) { fd.Disengage(ApReason.TurnedOff, key == ApGoal.Hover ? (ApGoal)0xFF : key); Say(ApReason.TurnedOff, s.Piloted, force: true); }
-                else Engage(fd, key == ApGoal.Hover ? ApGoal.Hover | ApGoal.Height : key, in s);
-            }
-            else if (ask == ApAskOff) { if (fd.Engaged) { fd.Disengage(ApReason.TurnedOff); Say(ApReason.TurnedOff, s.Piloted, force: true); } }
-            else { if (fd.Engaged) fd.Disengage(ApReason.TurnedOff); Engage(fd, (ApGoal)ask, in s); }   // (an API ask: exactly these)
+            if (ApFlying || _apMoved || _apWasEngaged) StopAp(wt);
+            if (!anyWants) ApBlockWants = false;
+            ReportBlocks(blocks, ctl, fd, force: false);
+            return;
+        }
+        var s = ApSenseNow(wt, fd);
+        s.Lim = ctl != null ? ApLimits.Of(ctl.Panel) : ApLimits.Defaults;
+        if (fd == null && (ask >= 0 || ctl != null)) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = _apTerrain; }
+        if (ctlChanged)
+        {
+            // (the block that flew is gone, dark or outranked: let go - a dark one's panel back to Off, as a lone block's, so it
+            //  does not engage again by itself when its power returns; the new one's panel engages its own mode)
+            var old = _apCtl;
+            if (fd != null && fd.Engaged && old != null) { fd.Disengage(ApReason.BlockOff); Say(ApReason.BlockOff, s.Piloted, force: true); }
+            if (old != null && !old.Working && old.Panel.Mode != ApMode.Off)
+                old.WriteBack(new ApBlockLink.Out { ModeChanged = true, Mode = ApMode.Off, Reason = ApReason.BlockOff });
+            _apCtl = ctl; _apLink = ctl != null ? new ApBlockLink() : null;
         }
         if (fd == null) return;
+        if (ctl != null)
+        {
+            var panel = ctl.Panel;
+            bool wasEngaged = fd.Engaged;
+            _apLink.Before(fd, in panel, ctl.Working, in s, ref _apOut);
+            if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
+            if (!wasEngaged && fd.Engaged) { _apSaid = ApReason.None; if (s.Piloted) ApNotes.Say(ApText.Engaged(fd.Goals, fd.HeightRef)); }
+            else if (_apOut.ModeChanged && _apOut.Reason != ApReason.None) Say(_apOut.Reason, s.Piloted, force: true);
+        }
+        if (ask >= 0 && Interlocked.Exchange(ref ApAsk, -1) >= 0)
+        {
+            if (ask == ApAskOff) { if (fd.Engaged) { fd.Disengage(ApReason.TurnedOff); Say(ApReason.TurnedOff, s.Piloted, force: true); } }
+            else { if (fd.Engaged) fd.Disengage(ApReason.TurnedOff); Engage(fd, (ApGoal)ask, in s); }   // (an API ask: exactly these)
+        }
         bool was = fd.Engaged;
         fd.Step(in s, ref _apCmd);
+        if (ctl != null)
+        {
+            var panel = ctl.Panel;
+            _apOut = default;
+            _apLink.After(fd, in panel, ref _apOut);
+            if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
+        }
         if (was && !fd.Engaged || fd.Reason != ApReason.None && fd.Reason != _apSaid) Say(fd.Reason, s.Piloted);
         if (fd.Engaged != _apWasEngaged) { Interlocked.Add(ref ApEngaged, fd.Engaged ? 1 : -1); _apWasEngaged = fd.Engaged; }
+        ReportBlocks(blocks, ctl, fd, force: was != fd.Engaged);
         if (!fd.Engaged) { StopAp(wt); return; }
         // what a pilot writes: the target (for ThrustTorque, this tick), the movement keys (the game's thrust law, next tick)
         ApTarget = _apCmd.Target; ApFlying = _apCmd.Flying;
@@ -101,6 +136,44 @@ public partial class AeroGridComponent
         if (_apCmd.SetMove) { WriteMove(_apCmd.Move); _apMoved = true; }
         else if (_apMoved) { WriteMove(PilotKeys(s)); _apMoved = false; }   // (the keys handed back: the pilot's, or none)
         Publish(wt, fd);
+    }
+
+    /// <summary>The block that flies: the first ready one by block position (ApArbiter) - none ready: the first that is not (so its
+    /// panel's let-go shows on it). anyWants: some block's panel has a mode on.</summary>
+    static AeroAutopilotComponent PickApBlock(AeroAutopilotComponent[] blocks, out bool anyWants)
+    {
+        anyWants = false;
+        int n = blocks.Length;
+        if (n == 0) return null;
+        if (n == 1) { anyWants = blocks[0].Panel.Mode != ApMode.Off; return blocks[0]; }
+        Span<bool> ready = n <= 16 ? stackalloc bool[n] : new bool[n];
+        Span<int> x = n <= 16 ? stackalloc int[n] : new int[n], y = n <= 16 ? stackalloc int[n] : new int[n], z = n <= 16 ? stackalloc int[n] : new int[n];
+        for (int i = 0; i < n; i++)
+        {
+            var b = blocks[i];
+            ready[i] = b.Working && b.HasCell; var c = b.Cell; x[i] = c.X; y[i] = c.Y; z[i] = c.Z;
+            if (b.Panel.Mode != ApMode.Off) anyWants = true;
+        }
+        int k = ApArbiter.Pick(ready, x, y, z);
+        if (k >= 0) return blocks[k];
+        for (int i = 0; i < n; i++) ready[i] = true;
+        return blocks[ApArbiter.Pick(ready, x, y, z)];
+    }
+
+    /// <summary>The blocks' status lines' inputs (four times a second, or at once when the mode changed): the one that flies its
+    /// mode, reason and height; the others "standby".</summary>
+    void ReportBlocks(AeroAutopilotComponent[] blocks, AeroAutopilotComponent ctl, FlightDirector fd, bool force)
+    {
+        if (blocks.Length == 0 || (!force && --_apReportIn > 0)) return;
+        _apReportIn = 15;
+        bool flying = fd != null && fd.Engaged; float h = float.NaN;
+        bool hasH = fd != null && fd.HeldHeight(out h);
+        for (int i = 0; i < blocks.Length; i++)
+        {
+            var b = blocks[i];
+            if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);
+            else b.Report(b.Panel.Mode, ApReason.None, false, true, false, 0f, b.Panel.HeightRef, ApProt.None);
+        }
     }
 
     /// <summary>Let go: the target and the keys handed back (once), the record told.</summary>
@@ -257,10 +330,15 @@ public partial class AeroGridComponent
     }
 
     /// <summary>A grid leaving the scene: its engaged count given back.</summary>
-    internal void ForgetAutopilot() { if (_apWasEngaged) { Interlocked.Decrement(ref ApEngaged); _apWasEngaged = false; } ApFlying = false; _apTerrain?.Release(); _apTerrain = null; Fd = null; }
+    internal void ForgetAutopilot()
+    {
+        if (_apWasEngaged) { Interlocked.Decrement(ref ApEngaged); _apWasEngaged = false; }
+        ApFlying = false; _apTerrain?.Release(); _apTerrain = null; Fd = null;
+        _apCtl = null; _apLink = null;   // (back in a scene: its block's panel engages its mode again, as at a load)
+    }
 }
 
-/// <summary>The autopilot's words to the seated pilot (a toast; the client says it - ApKeys.ClientTick).</summary>
+/// <summary>The autopilot's words to the seated pilot (a toast; the client says it - ApToasts.ClientTick).</summary>
 internal static class ApNotes
 {
     /// <summary>The line waiting to be said (null none).</summary>

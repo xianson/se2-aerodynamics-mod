@@ -120,6 +120,12 @@ public class InjectAeroComponents : Injections
             Add(entity, typeof(AeroAirbrakeAnimComponent));
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroAirbrakeAnimComponent into airbrake client prefab '{entity.DebugName}'");
         }
+        // the Autopilot block (2026-10-19): the server keeps its panel, flies its grid through it and saves it
+        if (AeroBlockGuids.AutopilotServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, AeroBlockSave.Info(typeof(AeroAutopilotComponent), AeroBlockSave.AutopilotId));   // (saved with the block)
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroAutopilotComponent into autopilot server prefab '{entity.DebugName}'");
+        }
         // the propulsors (turboprops, rotors, ducted fans - vanilla atmospheric thrusters underneath): both scenes shape their
         // maximum with the air (AeroPropulsorComponent); the rotors' cyclic reads it (RotorCyclic)
         if (PropulsorBlocks.ServerPrefabs.Contains(entity.Guid) || PropulsorBlocks.ClientPrefabs.Contains(entity.Guid))

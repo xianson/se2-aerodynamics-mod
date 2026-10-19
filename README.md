@@ -31,18 +31,18 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Engines by speed:** turboprops rule subsonic flight, vanilla atmospheric thrusters (jets) push through Mach 1 (108 %)
   and gain from ram air to about 2x at Mach 1.6, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
-  airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets, and
-  stackable solid rocket motors.
+  airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets,
+  stackable solid rocket motors, and the Autopilot.
 - **Structure and damage:** air, thrust, gyro and impact loads spread through the ship you fly. Overloaded sections
   wear, fatigue, bend, crack across and tear off, with creaks, shake and smoke.
 - **Rotor strikes:** rotors and props are damaged by what they hit, and damage it back. Weld to repair.
 - **Re-entry:** plasma, vapour cones, wingtip trails, hull heating with heat damage, and scorch marks.
 - **Warnings:** a stall warning and a predicted loss-of-control warning (on the Orbital Mechanics Mod's HUD), and an optional Mach
   readout.
-- **Autopilot:** seated, `Ctrl` + `H` holds a hover (place and height; your keys fly it at up to 10 m/s and it stops where
-  you let go), `Ctrl` + `J` holds the height. A helicopter left hovering keeps hovering. Protected against stalls, overload,
-  loss of control and the ground, and it flies only through the ship's real controls. Settings > Mods > Aerodynamics
-  (Autopilot, Controls).
+- **Autopilot block** (Aircraft Parts): its control panel holds a hover (place and height; your keys fly it at up to
+  10 m/s and it stops where you let go) or just the height. A helicopter left hovering keeps hovering, also after a
+  reload. Protected against stalls, overload, loss of control and the ground; it flies only through the ship's real
+  controls.
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
   the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).

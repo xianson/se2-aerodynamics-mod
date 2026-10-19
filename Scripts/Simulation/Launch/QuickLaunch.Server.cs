@@ -136,7 +136,7 @@ public static partial class QuickLaunch
 
     /// <summary>The asking player's character on this server: the alive character its identity owns; not known (or no owner
     /// match), the only character if there is just one (single player) - never a guess between several.</summary>
-    internal static Entity Pilot(Session session, Ask ask)
+    static Entity Pilot(Session session, Ask ask)
     {
         var list = _chars; list.Clear();
         Entity found = null;

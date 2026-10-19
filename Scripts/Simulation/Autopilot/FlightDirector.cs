@@ -85,6 +85,8 @@ public sealed class FlightDirector
     // the held place (world, centre of mass) and whether it is caught (after a key move or the engage's braking); the height over
     // the ground held (Ground reference)
     Vector3D _hold; bool _holdH, _holdV; float _holdAgl = -1f; bool _aglPending;
+    // the level altitude's datum (Inertial: the ground under the ship where the height hold was engaged) and its up
+    Vector3D _datum; Vector3 _upDatum = Vector3.UnitY;
     // the integrals: the horizontal acceleration (world m/s2), its smoothed command, the vertical key (share)
     Vector3 _aI, _aF, _vRamp; float _uI;
     // the attitude goal's target
@@ -112,7 +114,7 @@ public sealed class FlightDirector
     public bool Engage(ApGoal goals, in ApSense s, out ApReason why, IApGoalSource source)
     {
         why = ApReason.None;
-        if (!Autopilot.Enabled) { why = ApReason.NotAllowed; Reason = why; return false; }
+        if (!s.Lim.Enabled) { why = ApReason.NotAllowed; Reason = why; return false; }
         if ((goals & ApGoal.External) != 0 && (source ?? Source) == null) { why = ApReason.NoSource; Reason = why; return false; }
         bool hover = (goals & (ApGoal.Hover | ApGoal.Position | ApGoal.Height)) != 0;
         if (hover)
@@ -131,15 +133,16 @@ public sealed class FlightDirector
                 if (h.LengthSquared() < 1e-4f) h = ApMath.Flat(Vector3.Transform(Vector3.Cross(_upL, _fwdL), s.Orient), upW);
                 _headW = Vector3.Normalize(h);
                 _aI = Vector3.Zero; _uI = 0f;
-                _floorArmed = s.Agl > Autopilot.FloorM + 2f;
+                _floorArmed = s.Agl > s.Lim.FloorM + 2f;
             }
             if ((goals & ApGoal.Hover) != 0) goals |= ApGoal.Position;   // (a hover holds its place, caught where it stops)
             // (the height held from now - AltHold's rule - over the ground or along the gravity; the place caught where it stops)
             _holdH = false; _brakeBest = float.MaxValue; _brakeStall = 0f;
             if ((goals & ApGoal.Height) != 0 && (Goals & ApGoal.Height) == 0)
             {
-                HeightRef = Autopilot.HoldAboveGround ? ApHeightRef.Ground : ApHeightRef.Inertial;
+                HeightRef = s.Lim.HoldAboveGround ? ApHeightRef.Ground : ApHeightRef.Inertial;
                 _hold = s.Pos; _holdV = true; _aglPending = HeightRef == ApHeightRef.Ground;
+                CatchDatum(in s, -Vector3.Normalize(s.Gravity));
             }
             else if ((goals & ApGoal.Height) == 0 && (Goals & ApGoal.Height) == 0) _holdV = false;
             _aF = Vector3.Zero; _vRamp = ApMath.Flat(s.Vel, -Vector3.Normalize(s.Gravity));
@@ -157,6 +160,50 @@ public sealed class FlightDirector
     /// <summary>The attitude goal's target (an API / a later mode sets it; engaging Attitude holds the attitude it had).</summary>
     public void SetAttitude(Quaternion q) { if (q.IsValidAndRotationIsNormalized()) _att = Quaternion.Normalize(q); }
 
+    /// <summary>The height held now (m; false: none held yet - climbing on the keys, or no height goal): over the ground (Ground:
+    /// the filtered height under the ship it keeps) or over the DATUM (Inertial: the ground under the ship where the height hold
+    /// was engaged - a level altitude, read as a height over that ground). The Autopilot block's panel shows it.</summary>
+    public bool HeldHeight(out float h)
+    {
+        h = 0f;
+        if ((Goals & ApGoal.Height) == 0 && (Goals & ApGoal.Hover) == 0 || !_holdV) return false;
+        if (HeightRef == ApHeightRef.Ground) { if (_aglPending || _holdAgl < 0f) return false; h = _holdAgl; return true; }
+        h = (float)Vector3D.Dot(_hold - _datum, (Vector3D)_upDatum); return true;
+    }
+
+    /// <summary>Hold this height (m, in the reference held - HeldHeight's meaning) from now: it climbs or sinks to it at the climb
+    /// rate (the panel's setpoint changed). No height goal: nothing.</summary>
+    public void SetHeight(float h, in ApSense s)
+    {
+        if ((Goals & (ApGoal.Height | ApGoal.Hover)) == 0 || !float.IsFinite(h)) return;
+        h = MathF.Max(0f, h);
+        Vector3 upW = s.Gravity.LengthSquared() > 1e-4f ? -Vector3.Normalize(s.Gravity) : _upDatum;
+        if (!_holdV) CatchHeight(s.Pos, upW);
+        if (HeightRef == ApHeightRef.Ground) { _holdAgl = h; _aglPending = false; return; }
+        Vector3D u = _upDatum;
+        _hold += u * (h - Vector3D.Dot(_hold - _datum, u));
+    }
+
+    /// <summary>Switch the height reference while holding: the height it holds now is kept (caught in the new reference), so the
+    /// ship does not move; the panel then shows its number in the new reference.</summary>
+    public void SetHeightRef(ApHeightRef r, in ApSense s)
+    {
+        if (r == HeightRef) return;
+        HeightRef = r;
+        if ((Goals & (ApGoal.Height | ApGoal.Hover)) == 0) return;
+        Vector3 upW = s.Gravity.LengthSquared() > 1e-4f ? -Vector3.Normalize(s.Gravity) : _upDatum;
+        CatchHeight(s.Pos, upW);
+        CatchDatum(in s, upW);
+        _aglPending = r == ApHeightRef.Ground; _holdAgl = -1f;
+    }
+
+    /// <summary>The level altitude's datum: the ground under the ship now (ApSense.Agl; none found: where it is).</summary>
+    void CatchDatum(in ApSense s, Vector3 upW)
+    {
+        float agl = s.Agl;   // (the ground ray straight down - fresh at an engage, when the watch has not looked yet)
+        _upDatum = upW; _datum = s.Pos - (Vector3D)(upW * MathF.Max(0f, float.IsFinite(agl) ? agl : 0f));
+    }
+
     /// <summary>Let go of some goals (all: every one), saying why.</summary>
     public void Disengage(ApReason why, ApGoal goals = (ApGoal)0xFF)
     {
@@ -172,9 +219,9 @@ public sealed class FlightDirector
         c = default;
         Prot = ApProt.None;
         if (!Engaged) { UpdateReadout(); return; }
-        if (!Autopilot.Enabled) { Disengage(ApReason.NotAllowed); UpdateReadout(); return; }
+        if (!s.Lim.Enabled) { Disengage(ApReason.NotAllowed); UpdateReadout(); return; }
         // (the pilot left and the world wants the mode with them; seated, they switched the dampeners off - the hover needs them)
-        if (!Autopilot.Unattended && _wasPiloted && !s.Piloted) { _wasPiloted = false; Disengage(ApReason.LeftSeat); UpdateReadout(); return; }
+        if (!s.Lim.Unattended && _wasPiloted && !s.Piloted) { _wasPiloted = false; Disengage(ApReason.LeftSeat); UpdateReadout(); return; }
         _wasPiloted = s.Piloted;
         if (_dampWanted && !s.Dampeners && s.Piloted) { _dampWanted = false; Disengage(ApReason.DampenersOff); UpdateReadout(); return; }
         _dampWanted = false;
@@ -220,11 +267,11 @@ public sealed class FlightDirector
         Ground.Step(Terrain, s.Pos, s.Vel, _aMeas, g > 1e-2f ? -upW : -Vector3.UnitY, s.Belly, dt);
         float agl = Ground.HasGround ? Ground.Agl : s.Agl, aglHold = Ground.HasGround ? Ground.AglHold : s.Agl;
         float sink = -Vector3.Dot(s.Vel, upW);
-        if (agl > Autopilot.FloorM + 2f) _floorArmed = true;
-        bool floor = Autopilot.Protection && Autopilot.FloorM > 0f && _floorArmed && agl >= 0f
-            && (agl < Autopilot.FloorM || (sink > 0.5f && agl / sink < 3f));
-        float tti = Ground.Tti;
-        bool aheadHover = Autopilot.Protection && (hover || height) && tti < TtiHover;
+        if (agl > s.Lim.FloorM + 2f) _floorArmed = true;
+        bool floor = s.Lim.Protection && s.Lim.FloorM > 0f && _floorArmed && agl >= 0f
+            && (agl < s.Lim.FloorM || (sink > 0.5f && agl / sink < 3f));
+        float tti = s.Lim.LookAhead ? Ground.Tti : float.PositiveInfinity;   // (the look ahead switched off: the floor alone)
+        bool aheadHover = s.Lim.Protection && (hover || height) && tti < TtiHover;
 
         Vector3 move = Vector3.Zero; bool setMove = false;
         if (hover || height)
@@ -240,7 +287,7 @@ public sealed class FlightDirector
                 if (keyFlat.LengthSquared() > 0.0025f)
                 {
                     Vector3 kw = ApMath.Flat(Vector3.Transform(keyFlat, s.Orient), upW);
-                    vCmd = ApMath.ClampLen(kw * Autopilot.HoverSpeed, Autopilot.HoverSpeed);
+                    vCmd = ApMath.ClampLen(kw * s.Lim.HoverSpeed, s.Lim.HoverSpeed);
                     _holdH = false; _brakeBest = float.MaxValue; _brakeStall = 0f;
                 }
                 else if (track)
@@ -248,7 +295,7 @@ public sealed class FlightDirector
                     // (a moving place: its velocity fed forward, the gap closed as the hold's)
                     _hold = _ext.Position; _holdH = true;
                     Vector3 e = ApMath.Flat((Vector3)(_hold - s.Pos), upW);
-                    vCmd = ApMath.ClampLen(ApMath.Flat(_ext.Velocity, upW) + e * kp, MathF.Max(Autopilot.HoverSpeed, ApMath.Flat(_ext.Velocity, upW).Length() * 1.5f));
+                    vCmd = ApMath.ClampLen(ApMath.Flat(_ext.Velocity, upW) + e * kp, MathF.Max(s.Lim.HoverSpeed, ApMath.Flat(_ext.Velocity, upW).Length() * 1.5f));
                 }
                 else if ((Goals & ApGoal.Position) != 0)
                 {
@@ -263,7 +310,7 @@ public sealed class FlightDirector
                     if (_holdH)
                     {
                         Vector3 e = ApMath.Flat((Vector3)(_hold - s.Pos), upW);
-                        vCmd = ApMath.ClampLen(e * kp, Autopilot.HoverSpeed);
+                        vCmd = ApMath.ClampLen(e * kp, s.Lim.HoverSpeed);
                     }
                 }
                 // (terrain ahead: no closer toward it - the speed toward the hit taken out; the climb below)
@@ -274,7 +321,7 @@ public sealed class FlightDirector
                     if (into > 0f) vCmd -= toward * into;
                     prot |= ApProt.Terrain;
                 }
-                float tanMax = MathF.Tan(MathF.Min(Autopilot.MaxLeanDeg, 60f) * ApMath.Deg);
+                float tanMax = MathF.Tan(MathF.Min(s.Lim.MaxLeanDeg, 60f) * ApMath.Deg);
                 // the lean the thrust can take and still hold the weight (10 % to spare), and none out of energy
                 float cosNeed = upCap > 0f ? Math.Clamp(1.1f * weight / upCap, 0f, 1f) : 1f;
                 float tanThr = cosNeed >= 1f ? 0f : MathF.Sqrt(1f - cosNeed * cosNeed) / cosNeed;
@@ -334,11 +381,11 @@ public sealed class FlightDirector
             float climb = 0f; bool vActive = false;
             bool overGround = HeightRef == ApHeightRef.Ground && aglHold >= 0f;
             if (_aglPending && aglHold >= 0f) { _holdAgl = aglHold; _aglPending = false; }
-            if (MathF.Abs(keyUp) > 0.05f) { climb = keyUp * Autopilot.ClimbRate; _holdV = false; vActive = true; }
+            if (MathF.Abs(keyUp) > 0.05f) { climb = keyUp * s.Lim.ClimbRate; _holdV = false; vActive = true; }
             else if (track)
             {
                 float eh = (float)Vector3D.Dot(_ext.Position - s.Pos, (Vector3D)upW);
-                climb = Math.Clamp(Vector3.Dot(_ext.Velocity, upW) + eh * 0.5f, -2f * Autopilot.ClimbRate, 2f * Autopilot.ClimbRate);
+                climb = Math.Clamp(Vector3.Dot(_ext.Velocity, upW) + eh * 0.5f, -2f * s.Lim.ClimbRate, 2f * s.Lim.ClimbRate);
                 vActive = MathF.Abs(eh) > 0.1f || MathF.Abs(vz - Vector3.Dot(_ext.Velocity, upW)) > 0.1f;
             }
             else if (height || hover)
@@ -350,7 +397,7 @@ public sealed class FlightDirector
                     float eh = overGround && _holdAgl >= 0f && !_aglPending ? _holdAgl - aglHold : (float)Vector3D.Dot(_hold - s.Pos, (Vector3D)upW);
                     // (over the ground: the terrain's rise under the ship fed forward - it follows the slope, not chases it)
                     float ff = overGround && Ground.HasGround ? Ground.GroundRate : 0f;
-                    climb = Math.Clamp(eh * 0.5f + ff, -Autopilot.ClimbRate - MathF.Abs(ff), Autopilot.ClimbRate + MathF.Abs(ff));
+                    climb = Math.Clamp(eh * 0.5f + ff, -s.Lim.ClimbRate - MathF.Abs(ff), s.Lim.ClimbRate + MathF.Abs(ff));
                     vActive = MathF.Abs(eh) > 0.1f || MathF.Abs(vz) > 0.1f;
                     // (piloted and sinking far below it at full thrust: it cannot hold the height)
                     _cantHold = eh > CantHoldM && sink > 0.2f && lowEnergy ? _cantHold + dt : 0f;
@@ -358,12 +405,12 @@ public sealed class FlightDirector
             }
             if (floor || aheadHover)
             {
-                climb = MathF.Max(climb, MathF.Max(1f, Autopilot.ClimbRate) * (aheadHover ? 1.5f : 1f)); vActive = true;
+                climb = MathF.Max(climb, MathF.Max(1f, s.Lim.ClimbRate) * (aheadHover ? 1.5f : 1f)); vActive = true;
                 prot |= floor ? ApProt.Floor : ApProt.Terrain;
             }
             ClimbCmd = climb;
             float uUp = 0f;
-            if (lowEnergy && Autopilot.Protection && (sink > 0.2f || climb > vz))
+            if (lowEnergy && s.Lim.Protection && (sink > 0.2f || climb > vz))
             {
                 uUp = 1f; prot |= ApProt.LowEnergy; _uI = 0f;   // (out of energy: all the up thrust there is, no lean)
                 if (hover) { want = LevelOnly(in s, upW); prot |= ApProt.Thrust; }
@@ -414,13 +461,13 @@ public sealed class FlightDirector
         // ── protection: the attitude step governed; terrain ahead; low energy / overspeed on the main thrust ──
         if (attitude)
         {
-            if (!hover && Autopilot.Protection)
+            if (!hover && s.Lim.Protection)
             {
                 // TERRAIN AHEAD (flying): within the time the turn takes (the reaction, then the path turned through a radian at
                 // the g it has) - pull up: the nose raised about the path's own axis, the governor below cuts it to what the stall,
                 // g and the loss of control allow; full thrust
                 float speed = s.Vel.Length();
-                float nAvail = s.StallFresh && s.StallG > 0f ? MathF.Min(s.StallG, Autopilot.GLimit) : Autopilot.GLimit;
+                float nAvail = s.StallFresh && s.StallG > 0f ? MathF.Min(s.StallG, s.Lim.GLimit) : s.Lim.GLimit;
                 float tPull = PullReact + speed / (gTrue.Length() * MathF.Max(nAvail - 1f, 0.5f) + 1e-3f);
                 // (latched: once pulling, it pulls until the path is clear by half as much again, for at least PullHold s - a look
                 //  that flickers clear as the nose comes up never lets it sag back into the hill)
@@ -445,7 +492,7 @@ public sealed class FlightDirector
             {
                 Vector3 main = ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out _);
                 if (!float.IsNaN(throttle)) { move = main * throttle; setMove = true; }
-                if (Autopilot.Protection)
+                if (s.Lim.Protection)
                 {
                     float over = s.SpeedLimit > 0f ? s.Vel.Length() - (s.SpeedLimit - OverspeedBand) : -1f;
                     if (over > 0f)
@@ -646,6 +693,7 @@ public static class ApText
         ApReason.NoAttitude => "nothing to steer with",
         ApReason.NoSource => "no goal source",
         ApReason.GoalDone => "goal reached",
+        ApReason.BlockOff => "the autopilot block is off, unpowered or damaged",
         _ => "",
     };
 

@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-a900-0021-000000000001",
+    "Name": "Autopilot",
+    "Order": 5,
+    "Subcategories": [
+      {
+        "Key": "ae200001-ae00-a900-0023-000000000001",
+        "Value": "ae200001-ae00-0000-0002-000000000001"
+      }
+    ],
+    "BlockKinds": []
+  }
+}

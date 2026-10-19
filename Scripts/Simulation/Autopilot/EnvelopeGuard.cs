@@ -65,14 +65,14 @@ public sealed class EnvelopeGuard
         which = ApProt.None;
         // (the margin now: the evaluation's, less the nose-up turn of the flow since it was made)
         float since = Since(in s);
-        float margin = s.StallMarginDeg * ApMath.Deg - since, cap = margin - Autopilot.AoaMarginDeg * ApMath.Deg;
+        float margin = s.StallMarginDeg * ApMath.Deg - since, cap = margin - s.Lim.AoaMarginDeg * ApMath.Deg;
         which = ApProt.Alpha;
         // (the g limit: the lift linear from now's share of the best to the best at the margin)
-        if (s.StallG > Autopilot.GLimit && margin > 1e-3f)
+        if (s.StallG > s.Lim.GLimit && margin > 1e-3f)
         {
             float m0 = MathF.Max(s.StallMarginDeg * ApMath.Deg, 1e-3f);
             float inUse = Math.Clamp(s.StallLiftInUse + (1f - s.StallLiftInUse) * since / m0, 0f, 0.999f);
-            float g = margin * (Autopilot.GLimit / s.StallG - inUse) / (1f - inUse);
+            float g = margin * (s.Lim.GLimit / s.StallG - inUse) / (1f - inUse);
             if (g < cap) { cap = g; which = ApProt.GLimit; }
         }
         return cap;
@@ -86,7 +86,7 @@ public sealed class EnvelopeGuard
     public Quaternion Govern(in ApSense s, Quaternion desired, ref ApProt prot, Vector3 pathRate)
     {
         LastPull = 0f; LastPullCap = float.PositiveInfinity;
-        if (!Autopilot.Protection) { _loacFrac = 1f; return desired; }
+        if (!s.Lim.Protection) { _loacFrac = 1f; return desired; }
         Quaternion now = s.Orient;
         float f = 1f;
         // ── LOSS OF CONTROL, predicted for the attitude wanted (the evaluation runs a few times a second) ──

@@ -103,12 +103,12 @@ public static class FlightPerf
         float weight = s.Mass * MathF.Max(g, 1e-3f);
         float since = EnvelopeGuard.Since(in s);
         float margin = s.StallFresh ? s.StallMarginDeg * ApMath.Deg - since : p.Theta[p.Count - 1];
-        float capRel = margin - Autopilot.AoaMarginDeg * ApMath.Deg;   // (from the flow now)
+        float capRel = margin - s.Lim.AoaMarginDeg * ApMath.Deg;   // (from the flow now)
         float thetaMax = since + capRel;                                  // (from the samples' flow)
         r.AlphaMax = capRel;
         float liftMax = LiftAt(p, thetaMax);
         r.NAtAlphaMax = liftMax / weight;
-        r.NInst = MathF.Min(r.NAtAlphaMax, Autopilot.GLimit);
+        r.NInst = MathF.Min(r.NAtAlphaMax, s.Lim.GLimit);
         r.NormalAccelMax = r.NInst * g;
         float v = MathF.Max(p.Speed, 1f), q0 = 1f;
         float thrust = ApMath.Along(s.ThrustPos, s.ThrustNeg, p.Flow);

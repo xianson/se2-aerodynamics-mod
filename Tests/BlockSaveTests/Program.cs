@@ -100,9 +100,31 @@ static class Program
         Check(AeroBlockSaveForm.TryReadBlades("aero-blades:1 -3", out float hn) && hn == 0f && AeroBlockSaveForm.TryReadBlades("aero-blades:1 7", out float hx) && hx == 1f, "blades clamped 0..1");
         Check(!AeroBlockSaveForm.TryReadBlades(null, out float hz) && hz == 1f && !AeroBlockSaveForm.TryReadBlades("aero-blades:1 NaN", out hz) && !AeroBlockSaveForm.TryReadBlades(AeroBlockSaveForm.Thrust(0.25f), out hz), "blades: none / NaN / another tag refused (whole)");
         Check(AeroBlockSaveForm.Find(new Dictionary<string, object> { [AeroBlockSaveForm.Blades(0.5f)] = null }, AeroBlockSaveForm.BladesKey) == "aero-blades:1 0.5", "Find the blades key");
+        // THE AUTOPILOT BLOCK (2026-10-19): its whole panel round-trips bit-exact; every mode and reference; an older / shorter key keeps
+        // the defaults for what it lacks; out-of-range, NaN and unknown values are clamped or read as off
+        var ap = ApPanel.Defaults; ap.Mode = ApMode.HoverHold; ap.HeightM = 123.456f; ap.HeightRef = ApHeightRef.Inertial; ap.HoverSpeed = 7.25f; ap.Protection = false;
+        ap.GLimit = 4.5f; ap.AoaMarginDeg = 2.5f; ap.FloorM = 42f; ap.LookAhead = false; ap.Unattended = false;
+        Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(ap), out var ap2) && ap2.Mode == ap.Mode && Same(ap2.HeightM, ap.HeightM) && ap2.HeightRef == ap.HeightRef
+              && Same(ap2.HoverSpeed, ap.HoverSpeed) && ap2.Protection == ap.Protection && Same(ap2.GLimit, ap.GLimit) && Same(ap2.AoaMarginDeg, ap.AoaMarginDeg) && Same(ap2.FloorM, ap.FloorM)
+              && ap2.LookAhead == ap.LookAhead && ap2.Unattended == ap.Unattended, $"autopilot panel round trip: '{AeroBlockSaveForm.Autopilot(ap)}'");
+        foreach (ApMode m in new[] { ApMode.Off, ApMode.HoverHold, ApMode.HeightHold })
+            foreach (ApHeightRef hr in new[] { ApHeightRef.Ground, ApHeightRef.Inertial })
+            {
+                var q = ApPanel.Defaults; q.Mode = m; q.HeightRef = hr;
+                Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(q), out var q2) && q2.Mode == m && q2.HeightRef == hr, $"autopilot mode {m}, reference {hr} round trip");
+            }
+        Check(AeroBlockSaveForm.Autopilot(ApPanel.Defaults) == "aero-autopilot:1 0 0 0 10 1 3 3 15 1 1", $"autopilot defaults key: '{AeroBlockSaveForm.Autopilot(ApPanel.Defaults)}'");
+        Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 1", out var ap3) && ap3.Mode == ApMode.HoverHold && ap3.GLimit == ApPanel.Defaults.GLimit && ap3.Unattended,
+              "autopilot: a short key keeps the defaults for the rest (a later format may append)");
+        Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:2 9 NaN 7 999 0 -3 99 -1 0 0 extra", out var ap4) && ap4.Mode == ApMode.Off && ap4.HeightM == 0f && ap4.HeightRef == ApHeightRef.Ground
+              && ap4.HoverSpeed == ApPanel.HoverSpeedMax && ap4.GLimit == ApPanel.GLimitMin && ap4.AoaMarginDeg == ApPanel.AoaMarginMax && ap4.FloorM == ApPanel.FloorMin && !ap4.Protection && !ap4.LookAhead && !ap4.Unattended,
+              "autopilot: unknown mode / reference off / ground, NaN height 0, every number clamped, a later format's extra value ignored");
+        Check(!AeroBlockSaveForm.TryReadAutopilot(null, out var ap5) && ap5.Mode == ApMode.Off && !AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Airbrake(3f), out ap5) && !AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:x 1", out ap5),
+              "autopilot: none / another tag / a bad format refused (the defaults: off)");
+        Check(AeroBlockSaveForm.Find(new Dictionary<string, object> { ["x:1"] = null, [AeroBlockSaveForm.Autopilot(ap)] = null }, AeroBlockSaveForm.AutopilotKey) == AeroBlockSaveForm.Autopilot(ap), "Find the autopilot key");
         // tags do not prefix each other, nor the old lines' tags
         string[] tags = { AeroBlockSaveForm.SurfaceKey, AeroBlockSaveForm.GearKey, AeroBlockSaveForm.AirbrakeKey, AeroBlockSaveForm.ThrustKey, AeroBlockSaveForm.BladesKey,
-                          AeroBlockSaveForm.SolidNozzleKey,
+                          AeroBlockSaveForm.SolidNozzleKey, AeroBlockSaveForm.AutopilotKey,
                           AeroBlockSaveForm.LegacySurfaceTag, AeroBlockSaveForm.LegacyGearTag, AeroBlockSaveForm.LegacyBrakeTag, AeroBlockSaveForm.LegacyThrustTag };
         for (int i = 0; i < tags.Length; i++)
             for (int j = 0; j < tags.Length; j++)

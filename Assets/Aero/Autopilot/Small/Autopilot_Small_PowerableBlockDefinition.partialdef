@@ -1,0 +1,33 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "794c5233-6a1c-4932-b37c-03a0e539d069",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-a902-0001-000000000001",
+      "UIData": {
+        "Name": "Autopilot",
+        "Icon": "{G}d7b04087-e064-48c3-999f-7ff49562d4af"
+      },
+      "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+      "Recipe": "6e3ac5b6-0b6a-41c8-b7c0-8743ae3aded8",
+      "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4",
+      "BlockKind": "ae200001-ae00-a900-0020-000000000001",
+      "PCU": 25,
+      "ConsumedResource": {
+        "Type": "bcded093-f5c0-4997-af3a-a6fbd853ad66",
+        "Amount": 0.02
+      },
+      "ConsumptionPriority": {
+        "Priority": 6
+      }
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

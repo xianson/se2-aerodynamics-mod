@@ -57,7 +57,7 @@ public partial class AeroGridComponent
             StallLiftDir = l; System.Threading.Volatile.Write(ref StallStamp, System.Diagnostics.Stopwatch.GetTimestamp());   // (the autopilot's alpha protection: EnvelopeGuard)
             // (the flight performance for the API - AeroApi.TryGetFlightPerformance: the same arithmetic the autopilot reads, at the
             //  flow of this evaluation; two boxes swapped, no garbage)
-            var ss = new ApSense { Mass = snap.Mass, GravityTrue = snap.GravityTrue, Gravity = snap.GravityTrue, ThrustPos = snap.ThrustPos, ThrustNeg = snap.ThrustNeg,
+            var ss = new ApSense { Lim = ApLimitsNow, Mass = snap.Mass, GravityTrue = snap.GravityTrue, Gravity = snap.GravityTrue, ThrustPos = snap.ThrustPos, ThrustNeg = snap.ThrustNeg,
                 StallFresh = true, StallMarginDeg = StallMarginDeg, StallLiftInUse = StallLiftInUse, StallG = StallGAvailable, LiftDir = l, StallFlow = v, AirVel = L.AirVel };
             var box = PerfBoxBack; box.P = FlightPerf.Evaluate(ps, in ss); box.Speed = speed; box.Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
             PerfBoxBack = PerfBoxNow; PerfBoxNow = box;

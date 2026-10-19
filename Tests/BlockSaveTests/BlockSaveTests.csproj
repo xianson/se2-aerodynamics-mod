@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />
+    <Compile Include="$(Sim)\Autopilot\ApPanel.cs" />   <!-- (the Autopilot block's panel: its saved form) -->
+    <Compile Include="$(Sim)\Autopilot\ApConfig.cs" />
     <Compile Include="$(Sim)\Dev\AeroBlockSaveDevForm.cs" />   <!-- (the harness's set / dump text: DevForm()) -->
     <!-- (the solid nozzle's key clamps its power level with SolidRocket.LevelOr1: one floor, the law's) -->
     <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />

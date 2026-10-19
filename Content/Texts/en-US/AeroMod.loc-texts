@@ -15,5 +15,20 @@
   "Propellant (%)": "Propellant (%)",
   "Burn time left (s)": "Burn time left (s)",
   "Segments in its stack": "Segments in its stack",
-  "In a motor stack (else inert)": "In a motor stack (else inert)"
+  "In a motor stack (else inert)": "In a motor stack (else inert)",
+  "Status": "Status",
+  "Hover Hold": "Hover Hold",
+  "Height Hold": "Height Hold",
+  "Autopilot Off": "Autopilot Off",
+  "Toggle Hover Hold": "Toggle Hover Hold",
+  "Toggle Height Hold": "Toggle Height Hold",
+  "Height (m)": "Height (m)",
+  "Height Over Ground": "Height Over Ground",
+  "Hover Speed (m/s)": "Hover Speed (m/s)",
+  "Envelope Protection": "Envelope Protection",
+  "G Limit": "G Limit",
+  "Stall Margin (deg)": "Stall Margin (deg)",
+  "Terrain Floor (m)": "Terrain Floor (m)",
+  "Terrain Look-Ahead": "Terrain Look-Ahead",
+  "Keep Mode Unattended": "Keep Mode Unattended"
 }

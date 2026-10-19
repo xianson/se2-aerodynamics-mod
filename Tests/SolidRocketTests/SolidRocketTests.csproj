@@ -11,6 +11,8 @@
     <Compile Include="$(Sim)\Propulsion\LookRetry.cs" />
     <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />
     <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />
+    <Compile Include="$(Sim)\Autopilot\ApPanel.cs" />   <!-- (the autopilot block's saved form) -->
+    <Compile Include="$(Sim)\Autopilot\ApConfig.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
   </ItemGroup>
 </Project>

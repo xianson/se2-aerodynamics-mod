@@ -143,7 +143,7 @@ sealed class Plant
     // ── the instruments: what the autopilot may know (with the scenario's sensor noise) ──
     ApSense Sense(float dt)
     {
-        var s = new ApSense { Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
+        var s = new ApSense { Lim = ApLimits.Defaults, Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
         s.Orient = Q; s.AngVel = W; s.Pos = P; s.Vel = V;
         if (NoiseVel > 0f) s.Vel += Gauss3(NoiseVel);
         if (NoisePos > 0f) s.Pos += (Vector3D)Gauss3(NoisePos);
@@ -274,7 +274,14 @@ sealed class Plant
         if (_evalClock >= 1f / StallEvalHz) { _evalClock = 0f; Evaluate(); }
         var sense = Sense(dt);
         bool wasFlying = Fd.Engaged;
+        // (an Autopilot block flying it: the game's order - AeroGridComponent.ServerAp - its panel's limits, the link before and after)
+        if (Link != null)
+        {
+            sense.Lim = ApLimits.Of(Panel);
+            Link.Before(Fd, in Panel, BlockReady, in sense, ref LinkOut); Apply(in LinkOut);
+        }
         Fd.Step(in sense, ref Cmd);
+        if (Link != null) { LinkOut = default; Link.After(Fd, in Panel, ref LinkOut); Apply(in LinkOut); }
         if (Fd.Engaged)
         {
             if (Cmd.SetMove) Move = Cmd.Move; else Move = Piloted ? PilotKeys : Vector3.Zero;
@@ -382,4 +389,15 @@ sealed class Plant
 
     /// <summary>The autopilot's instruments now (for an engage at a scripted moment).</summary>
     public ApSense SenseNow() => Sense(1f / 60f);
+
+    // ── an Autopilot block's panel flying it (Scenarios/BlockPack.cs): the panel, its link, the block working, the last write-back ──
+    public ApBlockLink Link; public ApPanel Panel = ApPanel.Defaults; public bool BlockReady = true; public ApBlockLink.Out LinkOut;
+    public ApReason LastPanelReason; public int PanelWrites;
+    /// <summary>A block on this plant: the link made (as the grid makes it when a block takes over).</summary>
+    public void AddBlock(in ApPanel p) { Panel = p; Link = new ApBlockLink(); }
+    void Apply(in ApBlockLink.Out o)
+    {
+        if (o.ModeChanged) { Panel.Mode = o.Mode; LastPanelReason = o.Reason; PanelWrites++; }
+        if (o.HeightChanged) { Panel.HeightM = o.HeightM; PanelWrites++; }
+    }
 }

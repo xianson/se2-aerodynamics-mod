@@ -48,7 +48,8 @@ open); it takes about 15 minutes:
 
     python tools\shared\build_mod_content.py "C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"
 
-The block generators (`tools/meshgen/gen_*_defs.py`) write into `Assets/Aero/...`; build after them. The compiled
+The block generators (`tools/meshgen/gen_*_defs.py`) write into `Assets/Aero/...`; build after them. (`gen_autopilot_defs.py`
+takes the mod root as its argument - the repository it is in by default; the others write the live folder.) The compiled
 blocks (`Content/Aero/`, ~290 MB) are not in git, and for now neither are the block models and textures
 (`Assets/**/*.fbx`, `*.png`, ~220 MB: [`docs/BLOCKS_MERGE.md`](docs/BLOCKS_MERGE.md) "Git"). The particles
 (`Assets/Particles/`) come from `tools/particles/gen_*.py`; the game allows at most 4 keyframes over a particle's

@@ -40,7 +40,7 @@ Time to learn how to be a real aerospace engineer. Ships fly by their shape, thr
 [/list]
 
 [h2]New blocks[/h2]
-Control surfaces, retractable gear, airbrakes, turboprops, ducted fans, helicopter rotors, the Reversible Rotor, ramjets and solid rocket motors (G menu > Aerodynamics).
+Control surfaces, retractable gear, airbrakes, turboprops, ducted fans, helicopter rotors, the Reversible Rotor, ramjets, solid rocket motors and the Autopilot (G menu > Aerodynamics).
 
 [h2]Keys[/h2]
 [table]

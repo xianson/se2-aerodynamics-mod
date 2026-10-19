@@ -7,9 +7,9 @@ block definitions and models are this mod's `Assets/Aero/` (the companion mod "A
 | File | What |
 |---|---|
 | `AeroSurfaceSettingsComponent.cs` | A 3x3x1 control surface's settings (server); `AeroSurfaceSaved`: the old position-matched save lines, read only (one release), and the thrusters' client-copy follow |
-| `AeroBlockSave.cs`, `AeroBlockSaveForm.cs` | Per-block saved data (2026-10-15): the surface, gear, airbrake, thruster, rotor blades (rotor strikes: `aero-blades:1 health`) and solid rocket (nozzle burning; the segment's old propellant key is only read since the conveyor version - the game saves its tank) components' `[Init]` / `[Serializer]` on the engine's `EntityNameSessionComponentObjectBuilder` (fixed component ids), and the keys' text + the old lines' reader (pure: `Tests/BlockSaveTests`). `docs/ARCHITECTURE.md` section 11 |
+| `AeroBlockSave.cs`, `AeroBlockSaveForm.cs` | Per-block saved data (2026-10-15): the surface, gear, airbrake, autopilot (its panel: `aero-autopilot:1 ...`), thruster, rotor blades (rotor strikes: `aero-blades:1 health`) and solid rocket (nozzle burning; the segment's old propellant key is only read since the conveyor version - the game saves its tank) components' `[Init]` / `[Serializer]` on the engine's `EntityNameSessionComponentObjectBuilder` (fixed component ids), and the keys' text + the old lines' reader (pure: `Tests/BlockSaveTests`). `docs/ARCHITECTURE.md` section 11 |
 | `AeroSurfaceBlockDetailModel.cs` | Its terminal page |
-| `DetailModelPairing.cs` | Lets a mod `[BlockDetailProvider]` open in the control panel without the replication crash (also used by the thruster's, gear's and airbrake's models) |
+| `DetailModelPairing.cs` | Lets a mod `[BlockDetailProvider]` open in the control panel without the replication crash (also used by the thruster's, gear's, airbrake's and autopilot's models) |
 | `ModDetailTypeInfo.cs` | Hand-built member list for a mod panel model (`GetTypeInfo()`) |
 | `AeroPanelProbe.cs` | DEV: opens a surface's panel as the terminal does (`aeroset AeroPanelProbe.Gen n`), `[AERO-PANEL]` PASS / FAIL (the slider's check: the nearest server settings found on the server step, `ServerDevReads`) |
 | `AeroFlapComponent.cs` | Client: turns a surface's flap subpart to the deflection `ThrustTorque.PublishFlaps` published |

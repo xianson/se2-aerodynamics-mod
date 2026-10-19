@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-a900-0020-000000000001",
+    "Name": "Autopilot",
+    "Description": "Flight computer: hover hold and height hold for its ship, with envelope protection - set in its control panel.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-a900-0022-000000000001",
+        "Value": "ae200001-ae00-a900-0021-000000000001"
+      }
+    ]
+  }
+}

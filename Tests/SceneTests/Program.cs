@@ -36,6 +36,7 @@ static class Program
         ["AeroSurfaceSettingsComponent.All"] = (false, "the control surfaces' SERVER prefabs only (AeroBlockGuids.SurfaceServerPrefabs)"),
         ["AeroGearComponent.All"] = (false, "the gears' SERVER prefabs only (AeroBlockGuids.GearServerPrefabs)"),
         ["AeroAirbrakeComponent.All"] = (false, "the airbrakes' SERVER prefabs only (AeroBlockGuids.AirbrakeServerPrefabs)"),
+        ["AeroAutopilotComponent.All"] = (false, "the Autopilot blocks' SERVER prefabs only (AeroBlockGuids.AutopilotServerPrefabs)"),
         ["AeroPropulsorComponent.All"] = (true, "the propulsors' server AND client prefabs (PropulsorBlocks.ServerPrefabs / ClientPrefabs; its _server flag)"),
         ["AeroSolidSegmentComponent.All"] = (false, "the solid rocket segments' SERVER prefabs only (SolidRocketBlocks.SegmentServerPrefabs)"),
         ["AeroRotorStrikeComponent.All"] = (false, "the striking propulsors' SERVER prefabs only (PropulsorBlocks.StrikeServerPrefabs: rotor strikes - the client reads the published blades)"),

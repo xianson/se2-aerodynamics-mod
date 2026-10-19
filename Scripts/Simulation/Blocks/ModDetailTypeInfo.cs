@@ -13,7 +13,7 @@ namespace AeroMod;
 /// TypeInfoHolder per model), and they do not run on mod scripts: a mod model inherited BlockDetailModel's list and its
 /// toggles and sliders never showed. Built here by hand the way the generated code builds it: BlockDetailModel's members,
 /// then the model's own, in the order given (the inspector sorts by it), each with its attributes ([Label], [Slider],
-/// [Range], [Increment] - read off the property). Only bool and float properties (what the panels use).
+/// [Range], [Increment], [ReadOnlyInInspector] - read off the property). Only bool, float and string properties (what the panels use).
 /// </summary>
 public static class ModDetailTypeInfo
 {
@@ -36,7 +36,8 @@ public static class ModDetailTypeInfo
             IMemberAccessor a;
             if (p.PropertyType == typeof(bool)) a = Accessor<TModel, bool>(p);
             else if (p.PropertyType == typeof(float)) a = Accessor<TModel, float>(p);
-            else throw new ArgumentException($"{typeof(TModel).Name}.{name}: only bool and float are supported");
+            else if (p.PropertyType == typeof(string)) a = Accessor<TModel, string>(p);   // (2026-10-19: the autopilot's read-only status line)
+            else throw new ArgumentException($"{typeof(TModel).Name}.{name}: only bool, float and string are supported");
             accessors.Add((name, a));
             order[p] = next++;
             docs[p] = null;

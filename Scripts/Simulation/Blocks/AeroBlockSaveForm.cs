@@ -18,6 +18,7 @@ namespace AeroMod;
 /// latched at ignition - a key without one reads 1)</item>
 /// <item>rotor / prop blades (rotor strikes, 2026-10-17): "aero-blades:1 health" (0..1, 0 = broken; written only below 1 - whole
 /// blades carry no key)</item>
+/// <item>autopilot (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead unattended" (Autopilot)</item>
 /// </list>
 /// A later format may append values: a reader takes the ones it knows from any format &gt;= 1.
 /// Also the reader of the OLD form (<see cref="ParseLegacy"/>): the "surface / gear / airbrake / thrust x y z ..." lines after
@@ -27,7 +28,7 @@ public static class AeroBlockSaveForm
 {
     public const int Format = 1;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
-    public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:";
+    public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
     static readonly CultureInfo C = CultureInfo.InvariantCulture;
 
     static string B(bool b) => b ? "1" : "0";
@@ -120,6 +121,33 @@ public static class AeroBlockSaveForm
         string[] w = Values(key, BladesKey, 1);
         if (w == null || !Float(w[1], out float h)) return false;
         health = Math.Clamp(h, 0f, 1f);
+        return true;
+    }
+
+    /// <summary>An Autopilot block's panel (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead
+    /// unattended" (mode 0 off / 1 hover hold / 2 height hold; ref 0 over the ground / 1 altitude; m, m/s, g, deg, m; switches
+    /// 1/0). Always written (the block's mode survives a save: an unattended hover holds on after a load).</summary>
+    public static string Autopilot(in ApPanel p)
+        => AutopilotKey + Format + " " + ((int)p.Mode).ToString(C) + " " + F(p.HeightM) + " " + ((int)p.HeightRef).ToString(C) + " " + F(p.HoverSpeed)
+           + " " + B(p.Protection) + " " + F(p.GLimit) + " " + F(p.AoaMarginDeg) + " " + F(p.FloorM) + " " + B(p.LookAhead) + " " + B(p.Unattended);
+
+    /// <summary>Read it (false: not this key - the defaults out). Values missing at the end keep the defaults (a later format
+    /// appends), each one clamped to its range, an unknown mode or reference read as off / over the ground.</summary>
+    public static bool TryReadAutopilot(string key, out ApPanel p)
+    {
+        p = ApPanel.Defaults;
+        string[] w = Values(key, AutopilotKey, 1);
+        if (w == null) return false;
+        int I(int i, int def) => i < w.Length && int.TryParse(w[i], NumberStyles.Integer, C, out int v) ? v : def;
+        float Fl(int i, float def) => i < w.Length && Float(w[i], out float v) ? v : def;
+        bool Bo(int i, bool def) => i < w.Length ? w[i] == "1" || (w[i] != "0" && def) : def;
+        int mode = I(1, 0), href = I(3, (int)p.HeightRef);
+        p.Mode = mode >= 0 && mode <= (int)ApMode.HeightHold ? (ApMode)mode : ApMode.Off;
+        p.HeightM = Fl(2, p.HeightM);
+        p.HeightRef = href == 1 ? ApHeightRef.Inertial : ApHeightRef.Ground;
+        p.HoverSpeed = Fl(4, p.HoverSpeed); p.Protection = Bo(5, p.Protection); p.GLimit = Fl(6, p.GLimit);
+        p.AoaMarginDeg = Fl(7, p.AoaMarginDeg); p.FloorM = Fl(8, p.FloorM); p.LookAhead = Bo(9, p.LookAhead); p.Unattended = Bo(10, p.Unattended);
+        p = p.Clamped();
         return true;
     }
 

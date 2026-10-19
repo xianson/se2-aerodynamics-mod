@@ -38,6 +38,7 @@ internal static partial class AeroBlockSave   // (the dev counters and requests:
     internal static readonly System.Guid SolidSegmentId = new("ae205e77-1a65-4c0d-9b1e-0000000000b5");   // (2026-10-17: solid rocket segment, nozzle)
     internal static readonly System.Guid SolidNozzleId = new("ae205e77-1a65-4c0d-9b1e-0000000000b6");
     internal static readonly System.Guid BladesId = new("ae205e77-1a65-4c0d-9b1e-0000000000b7");   // (2026-10-17: rotor strikes - the blades' health)
+    internal static readonly System.Guid AutopilotId = new("ae205e77-1a65-4c0d-9b1e-0000000000b8");   // (2026-10-19: the Autopilot block's panel)
 
     /// <summary>The build info a saving component is injected with (its fixed id, a fresh default builder).</summary>
     internal static Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo Info(System.Type component, System.Guid id)
@@ -238,5 +239,28 @@ public partial class AeroRotorStrikeComponent
     {
         string key = AeroBlockSaveForm.Blades(Health);
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KBlades, key);
+    }
+}
+
+public partial class AeroAutopilotComponent
+{
+    /// <summary>Took its panel from its own saved data.</summary>
+    internal bool RestoredFromBlockData;
+
+    [Keen.VRage.DCS.Annotations.Init]
+    private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
+    {
+        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.AutopilotKey);
+        if (!AeroBlockSaveForm.TryReadAutopilot(key, out var p)) return;
+        SetPanel(in p);
+        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KAutopilot, key);
+    }
+
+    [Keen.VRage.DCS.Annotations.Serializer]
+    private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
+    {
+        var p = Panel;
+        string key = AeroBlockSaveForm.Autopilot(in p);
+        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KAutopilot, key);
     }
 }

@@ -54,6 +54,7 @@ projects in `Tests/`; keep game types out of them.
 | `ResourceContainerComponent` (tanks) | `AeroFuelMassComponent` |
 | `DiscoverablePlanetComponent` (server planets) | `AeroWorldSettingsComponent` (carries the world settings in the save) |
 | the mod's control-surface / gear / airbrake prefabs (`AeroBlockGuids`) | `AeroSurfaceSettingsComponent` / `AeroFlapComponent`, `AeroGearComponent` / `AeroGearAnimComponent`, `AeroAirbrakeComponent` / `AeroAirbrakeAnimComponent` (server / client; the server ones saved with the block, section 11) |
+| the Autopilot block's server prefabs (`AeroBlockGuids.AutopilotServerPrefabs`) | `AeroAutopilotComponent` (its panel, saved with the block; it registers with its grid, whose attitude step flies it: `Autopilot/`) |
 
 ## 3. Scenes and threads
 
@@ -63,7 +64,7 @@ exists twice, a **server copy** and a **client copy**, each with its own `AeroGr
 
 | Thread | What runs there |
 |---|---|
-| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear and airbrake server jobs (before `Simulation`) |
+| **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear, airbrake and autopilot block server jobs (before `Simulation`) |
 | **Aero workers** (`AeroWork`, `Workers` = 2 long-running tasks, highest priority first) | full rebuilds (`AeroGridComponent.StartBackgroundBuild`'s lambda), local chunk updates after damage (`Damage.cs`), structure evaluations (`EvaluateStructure`). They only touch the snapshot they were handed; results are installed on the simulation thread (`FinalizeStaggeredBuild`, `TickLocal`, `TickStructureCore`) |
 | **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch stamping twice a second, smoke, creaks, Mach readout, settings poll, the settings tab's 250 ms claim - `SettingsTab.Claim` / `Ticked`), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
 | **Avalonia UI thread** | The settings tab (`SettingsTab.UiTick`, posted by the claim): attach to the open Options screen, read the controls (~4 Hz while the tab is selected), `AeroSettings.Set` |
@@ -317,6 +318,7 @@ The engine type is always there, so a world saved with the mod still loads witho
 | Gear: down / up, Airshock | `AeroGearComponent` on the block, id `...b2` | `aero-gear:1 down airshock` (every gear) |
 | Airbrake: max opening | `AeroAirbrakeComponent` on the block, id `...b3` | `aero-airbrake:1 max` (every airbrake) |
 | Thruster: attitude fraction | `AeroThrustSettingsComponent` on the block, id `...b4` | `aero-thrust:1 f` (only off the default 0.5) |
+| Autopilot block: its panel - mode, height and reference, hover speed, protection's limits, unattended (2026-10-19) | `AeroAutopilotComponent` on the block, id `...b8` | `aero-autopilot:1 mode height ref speed prot g aoa floor look unattended` (every autopilot block) |
 | Rotor / prop blades' health (rotor strikes, 2026-10-17) | `AeroRotorStrikeComponent` on the striking propulsors' server blocks, id `...b7` | `aero-blades:1 health` (only below 1: worn or broken - 0) |
 
 - **The blocks' keys** (since 2026-10-15; `Blocks/AeroBlockSave.cs`, the text in `Blocks/AeroBlockSaveForm.cs`, pure):

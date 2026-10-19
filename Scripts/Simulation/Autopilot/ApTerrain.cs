@@ -18,10 +18,6 @@ public interface ITerrainQuery
     bool Cast(Vector3D p, Vector3 dir, float length, out float distance, out Vector3 normal);
 }
 
-/// <summary>Which height a height hold keeps: over the ground under the ship (AGL), or along the gravity from where it was
-/// engaged (the sea-level style, steady over rough ground).</summary>
-public enum ApHeightRef : byte { Ground, Inertial }
-
 /// <summary>
 /// THE AUTOPILOT'S LOOK AT THE TERRAIN, each tick (engine-free): the ground below (height, normal - filtered for a hold, raw for
 /// the floor) and a look ahead along the path - the velocity, and the path bent by the acceleration it flies now (two rays,

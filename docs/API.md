@@ -464,18 +464,18 @@ state (`GetFlightState`; its length 75 -> 77): index 75 `GyroSaturation` (the gy
 ## Version 11
 
 Every earlier member is unchanged. New (2026-10-19): the **autopilot** (hover hold, height hold, envelope protection -
-`Scripts/Simulation/Autopilot/`) and the **flight performance**.
+`Scripts/Simulation/Autopilot/`; players fly it from the **Autopilot block's** control panel) and the **flight performance**.
 
 | Member | Since | What it does |
 |---|---|---|
 | `bool TryGetAutopilot(Entity grid, out int goals, out int protections, out int reason, out string readout)` | 11 | The grid's autopilot: the goals it holds (bits: 1 attitude, 2 hover, 4 position, 8 height, 16 an external goal source), the protections in force this tick (bits: 1 lean limit, 2 thrust limit, 4 stall limit, 8 g limit, 16 control limit - the predicted loss of control, 32 overspeed, 64 terrain floor, 128 full thrust - low energy, 256 terrain ahead), why it last let go or refused (`reason`, below; 0 none) and its readout (`"AP HOVER POS AGL · FLOOR"`, `""` off). False: never engaged on this grid, or no server grid found for it. Any thread, no lock. |
-| `bool RequestAutopilot(Entity grid, int goals)` | 11 | Asks the grid's autopilot for exactly these goals (the bits above; 0: all off), as a seated pilot's keys do (Ctrl+H is 2 \| 8, Ctrl+J is 8). The world's `Autopilot.*` settings and the autopilot's own checks apply; a refusal sets `reason`. Queued for the grid's next simulation step. False: no server grid found (a client grid not paired yet - ask again a tick later). |
-| `bool TryGetFlightPerformance(Entity grid, out float nInstant, out float nSustained, out float turnRateInstant, out float turnRateSustained, out float dragDecel, out float excessAccel, out float alphaMaxDeg)` | 11 | What a flown grid can do now, from the mod's own whole-ship lift and drag over the angle of attack (the stall evaluation's sweep - the force table's faces and the wings, Mach and density in - a few times a second) and its thrust: the most load the lift gives within the stall margin and `Autopilot.GLimit` (g of the real weight) and the most its full thrust sustains, the level turn rates at those (rad/s), the drag's deceleration now (m/s2), full thrust less the drag along the path (m/s2), the most nose-up the flow may turn before the stall margin (deg). False: not evaluated (under 20 m/s, thin air, or a grid nobody flies). |
+| `bool RequestAutopilot(Entity grid, int goals)` | 11 | Asks the grid's autopilot for exactly these goals (the bits above; 0: all off), as the Autopilot block's buttons do (Hover Hold is 2 \| 8, Height Hold is 8). The world's `Autopilot.*` settings and the autopilot's own checks apply; a refusal sets `reason`. An Autopilot block on the grid keeps its own panel: a mode chosen there, or the block going dark, replaces the ask. Queued for the grid's next simulation step. False: no server grid found (a client grid not paired yet - ask again a tick later). |
+| `bool TryGetFlightPerformance(Entity grid, out float nInstant, out float nSustained, out float turnRateInstant, out float turnRateSustained, out float dragDecel, out float excessAccel, out float alphaMaxDeg)` | 11 | What a flown grid can do now, from the mod's own whole-ship lift and drag over the angle of attack (the stall evaluation's sweep - the force table's faces and the wings, Mach and density in - a few times a second) and its thrust: the most load the lift gives within the stall margin and the g limit (the flying Autopilot block's; g of the real weight) and the most its full thrust sustains, the level turn rates at those (rad/s), the drag's deceleration now (m/s2), full thrust less the drag along the path (m/s2), the most nose-up the flow may turn before the stall margin (deg). False: not evaluated (under 20 m/s, thin air, or a grid nobody flies). |
 
 `reason`: 1 turned off, 2 the pilot steered, 3 the dampeners were switched off, 4 not allowed in this world, 5 no gravity,
 6 not enough upward thrust to hover, 7 too fast to hover, 8 lost control of the attitude (upset), 9 the pilot left the seat
 (`Autopilot.Unattended` off), 10 can't hold the height (thrust short), 11 nothing to steer with, 12 the dampeners must be
-on, 13 no goal source, 14 goal reached.
+on, 13 no goal source, 14 goal reached, 15 the Autopilot block was switched off, lost its power, was damaged or removed.
 
 **What it does.** Only what a seated pilot writes: a target attitude (handed to the aero-aware attitude law as a pilot's
 reticle is - the real gyros, thrusters, rotors' cyclic and control surfaces fly it), the movement keys
@@ -485,7 +485,18 @@ steady lean a single tail rotor's sideways thrust needs found by its integral), 
 protection cuts every attitude command to the stall margin, the g limit and what the control authority holds (the
 loss-of-control prediction made for the command before it is given), and keeps the ship off the terrain (a floor under it
 and a look ahead along its path - the physics' own rays: the game builds voxel colliders only near entities, so a long ray
-that finds nothing means "not known"). Settings `Autopilot.*`.
+that finds nothing means "not known"). The limits are the flying Autopilot block's panel (the world's `Autopilot.*` caps in);
+an API ask on a grid without one flies the panel defaults.
+
+**The Autopilot block** (`Autopilot/Game/AeroAutopilotComponent.cs`, its panel `AeroAutopilotBlockDetailModel.cs`): its own grid
+is the one it flies. Several on one grid: the first that is built, powered and switched on, by block position (x, then y,
+then z), flies; the others show "Standby". Its panel: Hover Hold / Height Hold / Autopilot Off (also toolbar actions, with
+Toggle Hover Hold / Toggle Height Hold), a status line, Height (engaging catches the ship's own and shows it; a new number
+flies there), Height Over Ground (off: a level altitude over the ground where it was engaged - the planet's sea level is not
+readable by mods: `VoxelPlanetComponent` is in VRage.Voxels), Hover Speed, Envelope Protection, G Limit, Stall Margin, Terrain
+Floor, Terrain Look-Ahead, Keep Mode Unattended. A let-go is written back to it (steering: Height hold; anything else: Off) with
+the reason in the status line. Saved with the block (`aero-autopilot:1 ...`): a ship left in hover hold engages it again after
+a load.
 
 **Inside the mod (engine-free, for later modes - waypoints, fixed-wing modes, formation, AI pilots):** a goal source
 implements `IApGoalSource.Step(in ApSense, ref ApExternal)` - a `Track` (a place and its velocity: a hover slot, a moving
@@ -597,16 +608,10 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `QuickLaunch.Creative` | world | bool | true |  | Quick launch in creative · Quick launch · basic | *(1.0.1)* In creative, a seated pilot's quick launch key (Controls) lifts the ship over the ground, turns it level and sends it flying along its nose. Survival never has it. Off: not in this world either. |
 | `QuickLaunch.AltitudeM` | world | float | 1000 | 100..5000 | Launch altitude · Quick launch · basic | *(1.0.1)* How high over the ground (m; no ground found under the ship: over where it is). Never lower than the ship is, never into the ground; with the Orbital Mod, always under the planet's space border. |
 | `QuickLaunch.SpeedMps` | world | float | 0 | 0..1000 | Launch speed (0: cruise) · Quick launch · advanced | *(1.0.1)* The speed along the nose (m/s). 0: the ship's cruise speed (its top speed at 3/4 throttle; 150 m/s when it has none). At most 0.99 x the world's speed cap. |
-| `Autopilot.Enabled` | world | bool | true |  | Autopilot · Autopilot · basic | *(Unreleased)* Autopilot modes may be engaged in this world (hover hold, height hold). Off: every engaged one lets go. |
-| `Autopilot.Unattended` | world | bool | true |  | Keep the mode when you leave the seat · Autopilot · basic | *(Unreleased)* A ship whose pilot gets out keeps its engaged mode (a helicopter left in hover hold holds its hover). Off: it lets go. |
-| `Autopilot.HoldAboveGround` | world | bool | true |  | Hold the height over the ground · Autopilot · basic | *(Unreleased)* Height hold keeps the height over the ground under the ship (following the terrain); off: along the gravity from where it was caught. With no ground in reach: along the gravity either way. |
-| `Autopilot.Protection` | world | bool | true |  | Envelope protection · Autopilot · basic | *(Unreleased)* Envelope protection on every autopilot command: stall margin, g limit, the predicted loss of control, terrain floor and look ahead, full thrust when out of energy, the speed limit. Off: commands as made (the lean and thrust limits hold). |
+| `Autopilot.Enabled` | world | bool | true |  | Autopilot · Autopilot · basic | *(Unreleased)* Autopilot blocks may fly ships in this world (hover hold, height hold). Off: every engaged one lets go. |
+| `Autopilot.Unattended` | world | bool | true |  | Allow unattended autopilot · Autopilot · basic | *(Unreleased)* A ship with nobody seated may keep its autopilot mode (a helicopter left in hover hold holds its hover); each block's "Keep Mode Unattended" chooses within it. Off: it lets go when the pilot leaves. |
 | `Autopilot.MaxLeanDeg` | world | float | 20 | 2..45 | Hover: most lean · Autopilot · advanced | *(Unreleased)* The most a hover leans to move or hold its place (deg). |
-| `Autopilot.HoverSpeed` | world | float | 10 | 1..50 | Hover: key speed · Autopilot · advanced | *(Unreleased)* The speed the movement keys ask for in hover hold, and the most it flies back to its place at (m/s). |
-| `Autopilot.ClimbRate` | world | float | 4 | 0.5..20 | Hover: climb rate · Autopilot · advanced | *(Unreleased)* The climb / descent rate the up / down keys ask for (m/s). |
-| `Autopilot.GLimit` | world | float | 3 | 1.5..15 | Protection: g limit · Autopilot · advanced | *(Unreleased)* The most load an autopilot command may pull (g of the real weight). |
-| `Autopilot.AoaMarginDeg` | world | float | 3 | 0..15 | Protection: stall margin · Autopilot · advanced | *(Unreleased)* Commands stay this far short of the whole ship's best-lift angle (deg). |
-| `Autopilot.FloorM` | world | float | 15 | 0..500 | Protection: terrain floor · Autopilot · advanced | *(Unreleased)* The lowest the autopilot lets the ship sink to over the ground, once it was above it (m); 0 off. |
+| `Autopilot.ClimbRate` | world | float | 4 | 0.5..20 | Hover: climb rate · Autopilot · advanced | *(Unreleased)* The climb / descent rate the up / down keys ask for in hover or height hold, and the most it climbs or sinks to a new height (m/s). |
 | `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
 | `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
 | `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |
@@ -646,9 +651,6 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Fx.SpawnPerTick` | client | int | 48 | 1..200 | Effect build-up speed · Effects quality · advanced | Effects started per frame while a grid's effects build. |
 | `QuickLaunch.Key` | client | int | 20 | 0..26 | Quick launch key · Controls · basic | *(1.0.1)* The quick launch key: 0 off, 1..26 the letters A..Z (20: T). Seated, in creative worlds that allow it. |
 | `QuickLaunch.Modifier` | client | int | 1 | 0..3 | Quick launch modifier · Controls · basic | *(1.0.1)* Held with it: 0 none (no Ctrl, Shift or Alt held), 1 Ctrl, 2 Shift, 3 Alt. |
-| `Autopilot.HoverKey` | client | int | 8 | 0..26 | Hover hold key · Controls · basic | *(Unreleased)* Seated: toggles hover hold (place and height held; the movement keys fly it at a speed; steering lets go of the hover). 0 off, 1..26 A..Z (8: H). |
-| `Autopilot.HeightKey` | client | int | 10 | 0..26 | Height hold key · Controls · basic | *(Unreleased)* Seated: toggles height hold alone (10: J). |
-| `Autopilot.KeyModifier` | client | int | 1 | 0..3 | Autopilot key modifier · Controls · basic | *(Unreleased)* Held with the autopilot keys: 0 none, 1 Ctrl, 2 Shift, 3 Alt. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.
 
