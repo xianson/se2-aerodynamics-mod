@@ -201,7 +201,7 @@ static partial class Program
         Check(Still(sol), $"tilt heli honest, two tails + a lit solid rocket 0.7 m off the axis (60 kN): level within {sol.MaxTilt:F2} deg, {Hv(sol)}");
         // 6. RESTING (RotorTrim.Resting): parked, held up by the ground - no trim; hovering, sinking, turning - trimmed
         Check(RotorTrim.Resting(0f, 0f, 9.8f) && !RotorTrim.Resting(0f, 0f, 0.01f) && !RotorTrim.Resting(0.5f, 0f, 9.8f) && !RotorTrim.Resting(0f, 0.05f, 9.8f)
-              && tw.Rested <= 1 && newH.Rested <= 1 && h15.Rested <= 3,
+              && tw.Rested <= 2 && newH.Rested <= 2 && h15.Rested <= 3,   // (2026-10-18: 2 steps at the lower reaction torque - the first steps, the law's forces not yet known)
             $"resting: parked (no speed, 1 g unbalanced) not trimmed; a hover, a sinking ship past 0.2 m/s, a turning one trimmed (the 3x hovers rested {tw.Rested} / {newH.Rested} steps - the first, the law's forces not yet known - the 1.5x sink {h15.Rested} at its release)");
         // 7. a structure steering cap / no trim: the plan given as planned, no pick-up after the solve
         {

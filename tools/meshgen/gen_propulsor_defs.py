@@ -188,7 +188,9 @@ THRUST = {"Turboprop_050": 76e3, "Turboprop_150": 684e3, "Turboprop_250": 1.9e6,
           # RotorKinematics.ReactionScale; 85 kN x 7.5 m x RotorLimiter.Margin 0.8 = 510 kN m > 450) - no cap below 100 %;
           # two at the 2.5 m rotor's tip radius hold ~87 % of its rating
           # (2026-10-18: 1.5x with the main rotors, so its anti-torque stays in proportion: 128 kN x 7.5 m x 0.8 = 768 kN m > 675 at rated)
-          "HelicopterTailRotor_050": 128e3,
+          # (2026-10-18, the user: lower the helicopter torque - the reaction share went 10 % -> 3 % (ReactionScale 0.1032), so the
+          #  Reversible Rotor shrinks to 38 kN, under the 0.5 m main rotor: 38 kN x 7.5 m x 0.8 = 228 kN m > 202.5 at rated; two at the 2.5 m tip hold ~87 %)
+          "HelicopterTailRotor_050": 38e3,
           **{f"DuctedFan{h}_{s}": t for h in ("Oct", "Square", "D") for s, t in (("050", 48e3), ("150", 432e3), ("250", 1.2e6), ("750", 10.8e6))},
           # the RAMJETS (2026-10-17, the user): 1.5 x the vanilla atmospheric thruster each was built from, as its thrust at the
           # curve's 100 % (ThrustProfiles.Ramjet: Mach 2.5 .. 3.5): Atmo100 40 kN, Atmo250 287.1 kN, Atmo500 1.516 MN, Atmo1000 15.47 MN
