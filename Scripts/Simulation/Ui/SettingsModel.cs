@@ -106,6 +106,8 @@ public static class SettingsModel
         public string Name, Type, Scope, Label, Group, Tier, Unit = "", Doc, Note;
         public double Min, Max, Default, Step;
         public string[] Choices;
+        /// <summary>Values that are words, not numbers (the planet day's -1: "the world's own"); null: none. The mod's adapter fills it.</summary>
+        public Dictionary<double, string> Specials;
         public int Order;
         /// <summary>A logarithmic slider's values (Table; made once).</summary>
         public double[] LogTable;
@@ -124,6 +126,8 @@ public static class SettingsModel
         public string Scope;
         public readonly List<Row> Basic = new List<Row>(), Advanced = new List<Row>();
         public int Count => Basic.Count + Advanced.Count;
+        /// <summary>Every row of it is Advanced (shown as its rows, no expander: its heading notes it).</summary>
+        public bool AllAdvanced;
     }
 
     /// <summary>The menu: groups in the order their first setting was registered; Hidden rows (and Advanced ones, with
@@ -143,6 +147,9 @@ public static class SettingsModel
             else if (g.Scope != r.Scope) g.Scope = "mixed";
             (adv ? g.Advanced : g.Basic).Add(r);
         }
+        // a group with no Basic row is not an empty heading over a lone "Advanced" (UI audit C7: "Performance (host)"): its
+        // rows are shown as its own, the group marked AllAdvanced (its heading says so)
+        foreach (var g in groups) if (g.Basic.Count == 0 && g.Advanced.Count > 0) { g.Basic.AddRange(g.Advanced); g.Advanced.Clear(); g.AllAdvanced = true; }
         return groups;
     }
 
@@ -159,10 +166,25 @@ public static class SettingsModel
     public static string LockReason(Row r, bool canEditWorld, bool forced, string worldFile)
     {
         if (!r.World) return null;
-        if (forced) return "Forced by " + worldFile;
+        if (forced) return ForcedText(worldFile);
         if (!canEditWorld) return HostOnly;
         return null;
     }
+
+    /// <summary>A forced row's reason: the file's NAME (2026-10-18, UI audit C7: "Forced by C:\Users\...\OrbitalMod.world.cfg" wrapped
+    /// mid-path under the row; the full paths are at the section's top).</summary>
+    public static string ForcedText(string worldFile)
+    {
+        string f = worldFile ?? "";
+        int cut = Math.Max(f.LastIndexOf('\\'), f.LastIndexOf('/'));
+        return "Forced by the host's " + (cut >= 0 ? f.Substring(cut + 1) : f);
+    }
+
+    /// <summary>A locked control's opacity (UI audit C7: a locked checkbox looked editable - IsEnabled alone did not grey it).</summary>
+    public const double LockedOpacity = 0.45;
+
+    /// <summary>A group's reset button names its group (UI audit C7: many identical "Reset to defaults").</summary>
+    public static string ResetLabel(string group) => string.IsNullOrEmpty(group) ? "Reset to defaults" : "Reset " + group + " to defaults";
 
     // ── a number's slider: index k = 0..steps. LINEAR: value Min + k * step (the last index is Max exactly). Over
     //    MaxSliderSteps steps (a planet day of -1 s .. 10,000,000 s in minutes): LOGARITHMIC - Min (and 0, below the first
@@ -277,6 +299,7 @@ public static class SettingsModel
     {
         Scale(r, out double s, out _);
         int d = r.Type == "float" ? Math.Min(6, Decimals(r.Step > 0 ? r.Step : s)) : 0;
+        if (r.Specials != null && r.Specials.TryGetValue(v, out var special)) return special;   // ("-1 s" said "the world's own" - UI audit C7)
         string t = v.ToString(Math.Abs(v) >= 10000 ? "N" + d : "F" + d, CultureInfo.InvariantCulture);
         if (string.IsNullOrEmpty(r.Unit)) return t;
         return r.Unit == "×" ? t + "×" : t + " " + r.Unit;

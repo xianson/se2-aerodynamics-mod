@@ -100,7 +100,7 @@ namespace SettingsUiTests
             Ok("groups in the order their first shown setting was registered", groups.Select(g => g.Name).SequenceEqual(firstSeen), string.Join(" | ", groups.Select(g => g.Name)));
             foreach (var g in groups)
             {
-                Ok($"{g.Name}: Basic rows are basic, Advanced rows advanced", g.Basic.All(r => r.Tier == "basic") && g.Advanced.All(r => r.Tier == "advanced"));
+                Ok($"{g.Name}: Basic rows are basic (or all advanced, shown as its own), Advanced rows advanced", (g.AllAdvanced ? g.Basic.All(r => r.Tier == "advanced") && g.Advanced.Count == 0 : g.Basic.All(r => r.Tier == "basic")) && g.Advanced.All(r => r.Tier == "advanced"));
                 Ok($"{g.Name}: rows in registration order", Sorted(g.Basic) && Sorted(g.Advanced));
                 Ok($"{g.Name}: every row of the group", g.Basic.Concat(g.Advanced).All(r => r.Group == g.Name));
                 var scopes = g.Basic.Concat(g.Advanced).Select(r => r.Scope).Distinct().ToList();
@@ -117,6 +117,13 @@ namespace SettingsUiTests
             finally { SettingsModel.ShowAdvanced = true; }
             var none = new List<SettingsModel.Row> { new SettingsModel.Row { Name = "x", Type = "bool", Scope = "client", Tier = "basic", Order = 0 } };
             Ok("a row with no group goes to Other", SettingsModel.Build(none).Single().Name == "Other");
+            // (UI audit C7, 2026-10-18: "Performance (host)" was a heading over a lone "Advanced")
+            var advOnly = new List<SettingsModel.Row> { new SettingsModel.Row { Name = "a", Type = "bool", Scope = "world", Group = "Perf", Tier = "advanced", Order = 0 }, new SettingsModel.Row { Name = "b", Type = "bool", Scope = "world", Group = "Perf", Tier = "advanced", Order = 1 } };
+            var ag = SettingsModel.Build(advOnly).Single();
+            Ok("a group of Advanced rows only: its rows shown as its own, marked", ag.AllAdvanced && ag.Basic.Count == 2 && ag.Advanced.Count == 0);
+            var mixed = new List<SettingsModel.Row> { advOnly[0], new SettingsModel.Row { Name = "c", Type = "bool", Scope = "world", Group = "Perf", Tier = "basic", Order = 2 } };
+            var mg = SettingsModel.Build(mixed).Single();
+            Ok("a group with a Basic row keeps its Advanced expander", !mg.AllAdvanced && mg.Basic.Count == 1 && mg.Advanced.Count == 1);
         }
         static bool Sorted(List<SettingsModel.Row> l) { for (int k = 1; k < l.Count; k++) if (l[k].Order <= l[k - 1].Order) return false; return true; }
 
@@ -198,8 +205,8 @@ namespace SettingsUiTests
             Ok("a client row: never locked", SettingsModel.LockReason(client, false, true, path) == null);
             Ok("a world row, host, not forced: editable", SettingsModel.LockReason(world, true, false, path) == null);
             Ok("a world row, not the host: read-only, the reason", SettingsModel.LockReason(world, false, false, path) == SettingsModel.HostOnly);
-            Ok("a world row the host file forces: locked, its path", SettingsModel.LockReason(world, true, true, path) == "Forced by " + path);
-            Ok("forced and not the host: the file says why", SettingsModel.LockReason(world, false, true, path) == "Forced by " + path);
+            Ok("a world row the host file forces: locked, its path", SettingsModel.LockReason(world, true, true, path) == SettingsModel.ForcedText(path));
+            Ok("forced and not the host: the file says why", SettingsModel.LockReason(world, false, true, path) == SettingsModel.ForcedText(path));
 
             // the adapter over the real registry: a process that only saw a client refuses world edits
             var sawServer = Registry.GetField("SawServer", Any); var sawClient = Registry.GetField("SawClient", Any);
@@ -223,7 +230,7 @@ namespace SettingsUiTests
                 forced.SetValue(null, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { world.Name });
                 Ok($"{world.Name} forced: IsForced", SettingsTab.IsForced(world.Name));
                 Ok($"{world.Name} forced: locked with the world file's path",
-                   SettingsModel.LockReason(world, SettingsTab.CanEditWorld(), SettingsTab.IsForced(world.Name), SettingsTab.WorldPath) == "Forced by " + SettingsTab.WorldPath);
+                   SettingsModel.LockReason(world, SettingsTab.CanEditWorld(), SettingsTab.IsForced(world.Name), SettingsTab.WorldPath) == SettingsModel.ForcedText(SettingsTab.WorldPath));
                 Ok("the world file is the mod's own", SettingsTab.WorldPath.EndsWith(".world.cfg") && SettingsTab.ClientPath.EndsWith(".client.cfg"));
                 var other = rows.FirstOrDefault(r => r.World && r != world);
                 if (other != null) Ok($"{other.Name} not forced: editable", SettingsModel.LockReason(other, true, SettingsTab.IsForced(other.Name), SettingsTab.WorldPath) == null);
@@ -274,6 +281,12 @@ namespace SettingsUiTests
             Ok("200 steps: still linear", !SettingsModel.IsLog(narrow));
             var x = new SettingsModel.Row { Name = "x", Type = "float", Unit = "×", Min = 0, Max = 10, Step = 0.05 };
             Ok("1.50×", SettingsModel.Format(x, 1.5) == "1.50×", SettingsModel.Format(x, 1.5));
+            // (UI audit C7: the planet day's "-1 s" - a value that is a word)
+            var day = new SettingsModel.Row { Name = "d", Type = "float", Unit = "s", Min = -1, Max = 1e7, Step = 60, Specials = new Dictionary<double, string> { [-1] = "the world's own" } };
+            Ok("a special value says its word", SettingsModel.Format(day, -1) == "the world's own", SettingsModel.Format(day, -1));
+            Ok("other values stay numbers", SettingsModel.Format(day, 120) == "120 s", SettingsModel.Format(day, 120));
+            Ok("a forced row names the file, not its path", SettingsModel.ForcedText(@"C:\Users\x\AppData\Mod.world.cfg") == "Forced by the host's Mod.world.cfg" && SettingsModel.ForcedText("a/b/Mod.world.cfg") == "Forced by the host's Mod.world.cfg", SettingsModel.ForcedText(@"C:\Users\x\Mod.world.cfg"));
+            Ok("a reset button names its group", SettingsModel.ResetLabel("Map") == "Reset Map to defaults" && SettingsModel.ResetLabel(null) == "Reset to defaults");
             var i = new SettingsModel.Row { Name = "i", Type = "int", Min = 16, Max = 4096, Step = 1 };
             SettingsModel.Scale(i, out double ist, out int inn);
             Ok("a wide int range: logarithmic, whole values", SettingsModel.IsLog(i) && SettingsModel.Table(i).All(v => v == Math.Round(v)), $"{ist} x {inn}");

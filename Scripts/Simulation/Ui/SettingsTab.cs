@@ -296,7 +296,7 @@ public static partial class SettingsTab
         foreach (string path in new[] { "This PC: " + ClientPath, "Host defaults: " + WorldPath })
         {
             var line = Text(path, Muted);
-            AvaloniaReflect.AddClass(line, SettingsModel.SmallClass);
+            // (the theme's body size, not its Small: the paths were ~9 px - UI audit C7)
             list.Add(line);
         }
         _worldHint = Text(SettingsModel.WorldUnsavedHint, Warning);
@@ -319,6 +319,7 @@ public static partial class SettingsTab
             var hl = AvaloniaReflect.List(head, "Children");
             hl?.Add(name);
             string scope = g.Scope == "world" ? "this world, every player" : g.Scope == "client" ? "this PC" : null;
+            if (g.AllAdvanced) scope = scope != null ? scope + "  ·  advanced" : "advanced";   // (its rows shown as its own: SettingsModel.Build)
             if (scope != null)
             {
                 var sc = Text(scope, Muted);
@@ -355,7 +356,7 @@ public static partial class SettingsTab
             var reset = AvaloniaReflect.New("Button");
             if (foot == null || reset == null) return null;
             AvaloniaReflect.Set(foot, "Margin", AvaloniaReflect.Thickness(0, 8, 0, 0));
-            AvaloniaReflect.Set(reset, "Content", "Reset to defaults");
+            AvaloniaReflect.Set(reset, "Content", SettingsModel.ResetLabel(g.Name));
             AvaloniaReflect.Set(reset, "Tag", ResetTag + g.Name);
             AvaloniaReflect.Set(reset, "HorizontalAlignment", AvaloniaReflect.EnumValue("Avalonia.Layout.HorizontalAlignment", "Left"));
             if (!AvaloniaReflect.HookClick(reset)) return null;
@@ -557,6 +558,7 @@ public static partial class SettingsTab
             {
                 u.LockShown = reason;
                 AvaloniaReflect.Set(u.Control, "IsEnabled", reason == null);
+                AvaloniaReflect.Set(u.Control, "Opacity", reason == null ? 1.0 : SettingsModel.LockedOpacity);   // (greyed: it looked editable)
                 string sub = reason ?? r.Note;
                 AvaloniaReflect.Set(u.Sub, "Text", sub ?? "");
                 AvaloniaReflect.Set(u.Sub, "Foreground", ThemeBrush(reason != null ? Warning : Muted));
