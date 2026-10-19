@@ -43,12 +43,29 @@ internal static partial class AeroBlockSave   // (the dev counters and requests:
     internal static Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo Info(System.Type component, System.Guid id)
         => new() { Type = component, ComponentId = id, ObjectBuilder = new EntityNameSessionComponentObjectBuilder() };
 
-    /// <summary>A fresh map with the one key (a fresh one each save: the builder must be a complete snapshot).</summary>
+    /// <summary>A fresh map with the one key (a fresh one each save: the builder must be a complete snapshot). The value is
+    /// the block's GRID, never the block: only the key is read back, but the value is an entity reference the save must be
+    /// able to resolve. SE2 4.0 checks that (EntityContainerSerializer.Serialize: "Serializing dead Entities") and a block
+    /// is not an entity of its own in the saved bundle - it lives inside its grid's builder - so a block placed this
+    /// session (not indexed by the load) failed every save of the world (2026-10-19, 1.0.3). The grid is a bundle root.</summary>
     internal static Dictionary<string, Entity> One(string key, Entity self)
     {
         var m = new Dictionary<string, Entity>();
-        if (key != null && self != null) m[key] = self;
+        if (key != null && self != null) m[key] = GridOf(self);
         return m;
+    }
+
+    /// <summary>The grid a block is on (up its hierarchy to the entity with the grid's aero component); the block itself if
+    /// none is found (then the save may refuse it, as before).</summary>
+    internal static Entity GridOf(Entity block)
+    {
+        var e = block;
+        for (int up = 0; e != null && up < 4; up++)
+        {
+            if (e.TryGet<AeroGridComponent>() != null) return e;
+            e = e.TryGet<Keen.VRage.Core.Game.Components.HierarchyComponent>()?.Parent;
+        }
+        return block;
     }
 }
 

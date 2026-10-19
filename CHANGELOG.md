@@ -3,6 +3,14 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## 1.0.4 - saving fixed on SE2 4.0
+
+- **A world with a newly placed aero block could not be saved** ("Failed save ... Serializing dead Entities ... AeroSurfaceSettingsComponent").
+  SE2 4.0 checks every entity a save points to; each aero block's saved settings pointed at the block itself, which 4.0's save
+  does not hold as an entity of its own. They now point at the block's grid (only the settings text is read back, so
+  nothing else changes). Checked in game: placing a control surface then saving failed before the fix and saves after it, in a
+  saved test world and in a fresh world with both mods.
+
 ## 1.0.3 - works on SE2 4.0
 
 Ported to Space Engineers 2 **4.0.0.3151** (from 2.4.0.95; 4.0 only from this version on). Checked in game on 4.0
