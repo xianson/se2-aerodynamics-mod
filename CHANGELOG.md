@@ -3,6 +3,14 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## 1.0.2 - lighter helicopter torque, settings look
+
+- **Helicopter torque lowered** (the user's call): the tail rotor needs 3 % of the main rotor's rated thrust (was 10 %;
+  `RotorKinematics.ReactionScale` 0.344 -> 0.1032), and the Reversible Rotor is 38 kN (was 128 kN; it out-thrust the 0.5 m
+  main rotor).
+- **Settings menu:** backplates behind labels, locked rows greyed, "Reset <group> to defaults", groups with only advanced
+  rows shown flat (shared with the Orbital Mechanics Mod).
+
 ## 1.0.1 - honest dampeners, gyro rebalance, quick launch
 
 - **Gyro rebalance** (the user, 2026-10-18: "just do 1, maybe a lil 2. have them both as settings"). Vanilla gyros are
