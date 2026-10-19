@@ -1,7 +1,7 @@
 # ModCheck — compile SE2 mod scripts offline, the way the game does
 
 Launching the game to find a compile error costs minutes. ModCheck reproduces the in-game script
-compile of SE2 **2.4.0.95** (`Game2/VRage.Scripting.dll`, `SpaceEngineers2.dll`) in about five
+compile of SE2 **4.0.0.3151** (`Game2/VRage.Scripting.dll`, `SpaceEngineers2.dll`) in about five
 seconds. Two tools:
 
 | | what | time | use |
@@ -19,15 +19,17 @@ bash tools/shared/ModCheck/gameverdict.sh "C:\...\Mods\Aerodynamics Mod" AeroMod
 
 - **References:** exactly `ModCompilationDescriptor.MetadataReferences`:
   `GameCompilationDescriptor.MetaDatas` (VRage.Core, VRage.Library, VRage.DCS, VRage.Core.Game,
-  Game2.Simulation, Game2.Client, VRage.Physics, and since 0.95 System.Text.Json,
-  System.Collections.Concurrent, System.Linq.Expressions) plus
+  Game2.Simulation, Game2.Client, VRage.Physics, since 4.0 VRage.Multiplayer, and since 2.4.0.95
+  System.Text.Json, System.Collections.Concurrent, System.Linq.Expressions) plus
   `CompilationDescriptorDefaults.DefaultMetadataReferences` (CoreLib, System.Runtime, System.Linq,
   System.Collections, System.Collections.Immutable). Nothing else, so a type from an unreferenced engine
   assembly fails with CS0012 here exactly as in game. The three 0.95 additions are *referenced, not
   whitelisted*: their types resolve, and using one is VRS1001 (namespaces that also live in CoreLib, such
   as `System.Collections.Concurrent`, are allowed).
 - **Generators:** Keen's `VRage.DCS.Generator` and `VRage.Library.Generator` (job groups, `[Component]`
-  wiring), which need `VRageBundleName` / `VRageBundleVersion`.
+  wiring; since 4.0 also the serializers / `IAccessible` type info of every `[Serialize]` type - a
+  `BlockDetailModel` subclass included, which must then be `partial`, VRG1006), which need
+  `VRageBundleName` / `VRageBundleVersion`.
 - **Whitelist:** Keen's own `WhitelistDiagnosticAnalyzer` (VRS1001) from `VRage.Scripting.dll`, fed
   `AllowedSymbols.Mod.txt`. `WhitelistGen` writes that file with the game's own code (see below); it is
   byte-identical to the text the game feeds its analyzer (`gameverdict.sh <mod> --dump-whitelist=<file>`).
@@ -38,9 +40,13 @@ bash tools/shared/ModCheck/gameverdict.sh "C:\...\Mods\Aerodynamics Mod" AeroMod
   (the 2026-10-02 Orbital `EncounterFrames` incident). The suppressed-error check below now catches the
   underlying VRS1001 as well; MODVAR1 stays as the clearer message.
 
-Not run by ModCheck: the KCG analyzers (`KN*`, Keen code-style rules, all warnings in 0.95) and the
-documentation-comment diagnostics (`DocumentationMode.Diagnose` in game: CS1570/1573/1574/0419/1734,
-warnings). GameVerdict runs both.
+- **KCG analyzers (`KN*`, `VRage.CodeGuard.Analyzers.dll`):** run since 4.0, because four of their rules are
+  errors the game fails a mod on (KN044 configurations, KN046 particle playback mode, KN053, KN059
+  network-story results); the rules that are warnings (Keen's code style, tens of thousands of hits) are
+  hidden by `KnNoWarn` (regenerate the list with `gameverdict.sh <mod> --analyzers` after an update).
+
+Not run by ModCheck: the documentation-comment diagnostics (`DocumentationMode.Diagnose` in game:
+CS1570/1573/1574/0419/1734, warnings). GameVerdict runs them.
 
 Known gaps: only `Scripts/Simulation` is compiled (the game compiles it as `<bundle>.Simulation`; add
 `Scripts/Client` if a mod ever uses it), and everything is regenerated from the installed DLLs, so it
@@ -86,11 +92,14 @@ not location-bound). Both trees compile with 0 errors either way.
 
 `GameVerdict/Program.cs` sets the `GameApp.AddScripting` statics verbatim, builds the real
 `ModCompilationDescriptor` (references, options, whitelist via the real `GameWhitelistProvider`, every
-analyzer and generator the game attaches - 45 analyzers, 2 generators), runs the body of
+analyzer and generator the game attaches - on 4.0 54 analyzers (52 KCG, 2 whitelist), 2 generators; the
+summary line prints them), runs the body of
 `ScriptCompiler.CompileAsync` (copied; only the parallel scheduling is left out) and asks the real
 `DiagnosticBag.HasErrors`. Errors are printed with `[pragma-suppressed]` where a pragma hid them;
-`--all` adds every warning. Exit 0 = PASS, 1 = FAIL. It loads the game's DLLs from `Game2` (override
-with `SE2_GAME2`) but starts nothing of the game.
+`--all` adds every warning, `--analyzers` lists every analyzer with its rules' ids and default severities,
+`--dump-generated=<dir>` writes what Keen's generators add to the mod (what they make of its types).
+Exit 0 = PASS, 1 = FAIL. It loads the game's DLLs from `Game2` (override with `SE2_GAME2`) but starts
+nothing of the game.
 
 ## After a game update
 
@@ -107,6 +116,18 @@ dotnet run --project tools/shared/ModCheck/WhitelistGen -- "<Game2 dir>" tools/s
 
 3. Check: `gameverdict.sh <mod> --dump-whitelist=x.txt` must equal the new `AllowedSymbols.Mod.txt`, and
    ModCheck and GameVerdict must agree on both mods.
+
+**4.0.0.3151 changes found this way (2026-10-19):** an 11th mod whitelist seed and compile reference,
+`typeof(ClientId)` - **VRage.Multiplayer** (22 `Keen.VRage.Multiplayer.*` namespaces allowed, among them
+`Replications`, `Annotations` with `[Replicate]` / `[NoReplicate]` / `[SyncFromClients]`, `SecureIds`,
+`NetworkStories`); 46 more Game2 / VRage namespaces of new game systems; `Keen.Game2.Client.Helpers` and
+`Keen.Game2.Simulation.GameSystems.AI.BehaviorTree.ObjectBuilders` gone. The in-game compile path
+(`ScriptCompiler.CompileAsync`, `ModCompilationDescriptor`) matches GameVerdict's `Run` as it was. **The generators now run on mod
+types** (above): a partial `BlockDetailModel` gets a generated named-object serializer that needs
+System.ObjectModel (`INotifyPropertyChanged`, on `ObservableObject`) - not a mod compile reference, so it
+fails with CS0012 in game too (GameVerdict, the game's own path, shows it); `[NoSerialize]` on the class
+turns those generators off. ModCheck reports the CS0012 too, but only once the rest compiles (csc stops
+short of it while declaration errors such as the CS0111 of a duplicate `GetTypeInfo` remain).
 
 **2.4.0.95 changes found this way:** a 10th mod whitelist seed `typeof(ImmutableArray)`
 (System.Collections.Immutable and System.Collections.Frozen allowed); three new compile references (above).

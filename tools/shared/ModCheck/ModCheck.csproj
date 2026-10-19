@@ -8,6 +8,9 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <ImplicitUsings>disable</ImplicitUsings>
     <NoWarn>$(NoWarn);CS1591;CS8632;CS0169;CS0649;CS0414</NoWarn>
+    <!-- KnNoWarn: the KCG rules that are warnings (style; GameVerdict with all lists them). Their Error rules stay on. -->
+    <KnNoWarn>KN001;KN002;KN003;KN004;KN005;KN012;KN013;KN014;KN015;KN017;KN018;KN019;KN020;KN021;KN022;KN023;KN024;KN026;KN027;KN028;KN029;KN030;KN031;KN032;KN033;KN034;KN035;KN036;KN037;KN038;KN039;KN040;KN041;KN042;KN043;KN045;KN047;KN048;KN049;KN050;KN051;KN052;KN054;KN055;KN056;KN058</KnNoWarn>
+    <NoWarn>$(NoWarn);$(KnNoWarn)</NoWarn>
     <ModDir Condition="'$(ModDir)'==''">C:\Users\slob\Documents\SpaceEngineers2\Mods\Orbital Mod</ModDir>
     <Game2>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
     <NetRt Condition="'$(NetRt)'==''">C:\Program Files\dotnet\shared\Microsoft.NETCore.App\9.0.19</NetRt>
@@ -29,7 +32,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)InjectedScriptingAssembly.cs" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Exactly ModCompilationDescriptor.MetadataReferences (2.4.0.95; WhitelistGen prints them):
+    <!-- Exactly ModCompilationDescriptor.MetadataReferences (4.0.0.3151; WhitelistGen prints them):
          GameCompilationDescriptor.MetaDatas, then the framework defaults below. -->
     <Reference Include="$(Game2)\VRage.Core.dll" Private="false" />
     <Reference Include="$(Game2)\VRage.Library.dll" Private="false" />
@@ -38,6 +41,7 @@
     <Reference Include="$(Game2)\Game2.Simulation.dll" Private="false" />
     <Reference Include="$(Game2)\Game2.Client.dll" Private="false" />
     <Reference Include="$(Game2)\VRage.Physics.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Multiplayer.dll" Private="false" />
     <!-- CompilationDescriptorDefaults.DefaultMetadataReferences: CoreLib, Linq,
          Collections, Collections.Immutable, System.Runtime. -->
     <Reference Include="$(NetRt)\System.Private.CoreLib.dll" Private="false" />
@@ -45,12 +49,15 @@
     <Reference Include="$(NetRt)\System.Linq.dll" Private="false" />
     <Reference Include="$(NetRt)\System.Collections.dll" Private="false" />
     <Reference Include="$(NetRt)\System.Collections.Immutable.dll" Private="false" />
-    <!-- 2.4.0.95 MetaDatas also add these three (JsonTokenType, ConcurrentDictionary<,>, DynamicObject):
+    <!-- Since 2.4.0.95 MetaDatas also add these three (JsonTokenType, ConcurrentDictionary<,>, DynamicObject):
          referenced so their types resolve, but NOT whitelisted - using them is VRS1001. -->
     <Reference Include="$(NetRt)\System.Text.Json.dll" Private="false" />
     <Reference Include="$(NetRt)\System.Collections.Concurrent.dll" Private="false" />
     <Reference Include="$(NetRt)\System.Linq.Expressions.dll" Private="false" />
     <Analyzer Include="$(Game2)\VRage.CodeAnalysis.dll" />
+    <!-- Keen's KCG rules (KN*), as the game attaches them (AddKCGAnalyzers). Mostly style warnings (hidden: KnNoWarn), but 4.0 has
+         Error rules too (KN044 configurations, KN046 particle playback mode, KN053, KN059 network-story results) - the game fails a mod on them. -->
+    <Analyzer Include="$(Game2)\VRage.CodeGuard.Analyzers.dll" />
     <!-- Keen's whitelist analyzer (VRS1001) + the mod whitelist rebuilt by wlgen. -->
     <Analyzer Include="$(Game2)\VRage.Scripting.dll" />
     <Analyzer Include="$(Game2)\VRage.Library.dll" />

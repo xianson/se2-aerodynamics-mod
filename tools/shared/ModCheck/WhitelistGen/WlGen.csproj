@@ -18,5 +18,6 @@
     <Reference Include="$(Game2)\Game2.Simulation.dll" Private="false" />
     <Reference Include="$(Game2)\Game2.Client.dll" Private="false" />
     <Reference Include="$(Game2)\VRage.Physics.dll" Private="false" />
+    <Reference Include="$(Game2)\VRage.Multiplayer.dll" Private="false" />
   </ItemGroup>
 </Project>

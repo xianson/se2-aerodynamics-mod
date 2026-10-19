@@ -1,6 +1,6 @@
 // GameVerdict: the game's own verdict on a mod's scripts, offline, without launching the game.
 //
-// Replays the in-game mod compile (SE2 2.4.0.95) with the game's code: GameApp.AddScripting statics ->
+// Replays the in-game mod compile (SE2 4.0.0.3151) with the game's code: GameApp.AddScripting statics ->
 // the real ModCompilationDescriptor (references, parse/compile options incl. reportSuppressedDiagnostics,
 // whitelist built by the real GameWhitelistProvider, Keen's analyzers + generators incl. the KCG KN* set)
 // -> the body of ScriptCompiler.CompileAsync (copied; only the parallel scheduling is left out) -> the real
@@ -10,6 +10,8 @@
 //   exit 0 = the game compiles the mod, 1 = the game rejects it (ScriptLoadingException), 2 = usage.
 //   --all also lists every warning (suppressed ones included).
 //   --dump-whitelist writes the AllowedSymbols text the game fed its analyzer (must equal AllowedSymbols.Mod.txt).
+//   --dump-generated=<dir> writes the sources Keen's generators add to the mod (what they make of its types).
+//   --analyzers lists every analyzer the game attaches, with its diagnostics' ids and default severities.
 // After a game update: diff GameApp.AddScripting and ScriptCompiler.CompileAsync against Run below.
 using System.Collections.Immutable;
 using System.Reflection;
@@ -22,6 +24,7 @@ using Keen.VRage.Core.Render;
 using Keen.VRage.DCS.Components;
 using Keen.VRage.Library.Reflection;
 using Keen.VRage.Library.Utils;
+using Keen.VRage.Multiplayer;
 using Keen.VRage.Physics;
 using Keen.VRage.Scripting;
 using Keen.VRage.Scripting.Diagnostics;
@@ -39,20 +42,22 @@ AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
 var pos = args.Where(a => !a.StartsWith("--")).ToArray();
 if (pos.Length < 1) { Console.Error.WriteLine("usage: GameVerdict <mod dir> [bundle name] [--all]"); return 2; }
 string dump = args.FirstOrDefault(a => a.StartsWith("--dump-whitelist="))?.Substring("--dump-whitelist=".Length);
-return Run(pos[0], pos.Length > 1 ? pos[1] : "ModCheckBundle", args.Contains("--all"), dump);
+string dumpGen = args.FirstOrDefault(a => a.StartsWith("--dump-generated="))?.Substring("--dump-generated=".Length);
+return Run(pos[0], pos.Length > 1 ? pos[1] : "ModCheckBundle", args.Contains("--all"), dump, dumpGen, args.Contains("--analyzers"));
 
-static int Run(string modDir, string bundle, bool all, string dumpWhitelist)
+static int Run(string modDir, string bundle, bool all, string dumpWhitelist, string dumpGenerated, bool listAnalyzers)
 {
-    // GameApp.AddScripting (2.4.0.95), verbatim.
-    GameWhitelistProvider<ModWhitelistProvider>.AllowedAssemblies = new Type[10]
+    // GameApp.AddScripting (4.0.0.3151), verbatim.
+    GameWhitelistProvider<ModWhitelistProvider>.AllowedAssemblies = new Type[11]
     {
         typeof(int), typeof(Enumerable), typeof(ImmutableArray), typeof(MeshBuilder), typeof(StringId),
-        typeof(Entity), typeof(Blob), typeof(UpdateTime), typeof(InputGameComponent), typeof(IPhysics)
+        typeof(Entity), typeof(Blob), typeof(UpdateTime), typeof(InputGameComponent), typeof(IPhysics),
+        typeof(ClientId)
     };
-    GameCompilationDescriptor.MetaDatas = new Type[10]
+    GameCompilationDescriptor.MetaDatas = new Type[11]
     {
         typeof(MeshBuilder), typeof(StringId), typeof(Entity), typeof(Blob), typeof(UpdateTime),
-        typeof(InputGameComponent), typeof(IPhysics), typeof(System.Text.Json.JsonTokenType),
+        typeof(InputGameComponent), typeof(IPhysics), typeof(ClientId), typeof(System.Text.Json.JsonTokenType),
         typeof(System.Collections.Concurrent.ConcurrentDictionary<,>), typeof(System.Dynamic.DynamicObject)
     };
 
@@ -70,12 +75,22 @@ static int Run(string modDir, string bundle, bool all, string dumpWhitelist)
     foreach (var pre in descriptor.PreProcessors) trees = pre.Process(descriptor, trees);
     var compilation = CSharpCompilation.Create(bundle + ".Simulation", trees.ToImmutableArray(), descriptor.MetadataReferences, descriptor.CompilationOptions);
     var analyzers = descriptor.GetAnalyzers(compilation);
+    if (listAnalyzers)
+        foreach (var an in analyzers.Analyzers.OrderBy(x => x.GetType().Assembly.GetName().Name).ThenBy(x => x.GetType().Name))
+            Console.WriteLine($"analyzer {an.GetType().Assembly.GetName().Name} {an.GetType().Name}: " +
+                string.Join(" ", an.SupportedDiagnostics.Select(d => $"{d.Id}:{d.DefaultSeverity}{(d.IsEnabledByDefault ? "" : "(off)")}")));
     if (dumpWhitelist != null)
         File.WriteAllText(dumpWhitelist, analyzers.AnalyzerOptions.AdditionalFiles
             .Single(f => Path.GetFileName(f.Path).StartsWith("AllowedSymbols")).GetText()!.ToString());
     var driver = CSharpGeneratorDriver.Create(analyzers.SourceGenerators, analyzers.AnalyzerOptions?.AdditionalFiles, descriptor.ParseOptions, analyzers.AnalyzerOptions?.AnalyzerConfigOptionsProvider);
-    driver.RunGeneratorsAndUpdateCompilation(compilation, out var outComp, out var genDiags);
+    GeneratorDriver ran = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outComp, out var genDiags);
     compilation = (CSharpCompilation)outComp;
+    if (dumpGenerated != null)
+        foreach (var gen in ran.GetRunResult().Results.SelectMany(r => r.GeneratedSources))
+        {
+            Directory.CreateDirectory(dumpGenerated);
+            File.WriteAllText(Path.Combine(dumpGenerated, gen.HintName), gen.SourceText.ToString());
+        }
     var cwa = compilation.WithAnalyzers(analyzers.Analyzers, new CompilationWithAnalyzersOptions(analyzers.AnalyzerOptions, null, true, false, compilation.Options.ReportSuppressedDiagnostics, null));
     var diags = cwa.GetAllDiagnosticsAsync().GetAwaiter().GetResult();
     var bag = new DiagnosticBag();
@@ -93,7 +108,7 @@ static int Run(string modDir, string bundle, bool all, string dumpWhitelist)
     foreach (var e in errors) Console.WriteLine(e);
     if (all)
         foreach (var w in list.Where(d => d.Severity == DiagnosticSeverity.Warning).Select(Fmt).Distinct()) Console.WriteLine(w);
-    Console.WriteLine($"GameVerdict: {scripts.Count} files, {errors.Count} error(s); summary by id:");
+    Console.WriteLine($"GameVerdict: {scripts.Count} files, {analyzers.Analyzers.Length} analyzers, {analyzers.SourceGenerators.Length} generators ({string.Join(", ", analyzers.SourceGenerators.Select(g => g.GetType().Name))}); {errors.Count} error(s); summary by id:");
     foreach (var g in list.Where(d => d.Severity >= DiagnosticSeverity.Warning)
                  .GroupBy(d => (d.Id, d.Severity, d.IsSuppressed)).OrderByDescending(g => g.Key.Severity).ThenBy(g => g.Key.Id))
         Console.WriteLine($"  {g.Key.Severity,-8} {g.Key.Id,-8} {(g.Key.IsSuppressed ? "suppressed" : ""),-10} x{g.Count()}");
