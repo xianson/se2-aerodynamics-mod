@@ -1,4 +1,4 @@
-"""bp2boxes.py - a blueprint's blocks (D:\\aero\\tools\\VrbReader --json) as an AeroBench / aero_probe .boxes fixture.
+"""bp2boxes.py - a blueprint's blocks (tools\\shared\\VrbReader --json) as an AeroBench / aero_probe .boxes fixture.
 
     VrbReader <blueprint dir> --json > ship.json
     python bp2boxes.py ship.json Tests/data/NAME.boxes
