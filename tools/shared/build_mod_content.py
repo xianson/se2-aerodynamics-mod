@@ -1,8 +1,8 @@
 # build_mod_content.py <mod project dir> — compile a SE2 mod project's Assets into its Content (the compiled
 # definitions plus contentcache.vrb / definitionsets.vrb), which is all the game mounts for a mod.
 #
-# SE2 2.4 ships no working content builder for mods: the Mod SDK is stale (2.0.2 editor, a half-updated 2.2
-# Game2) and the game's own builder (Game2\VRage.ContentPipeline.Builder.exe, 2.4) needs an editor plugin it
+# SE2 (2.4, and 4.0 alike) ships no working content builder for mods: the Mod SDK lags the game (2.4: a 2.0.2 editor,
+# a half-updated 2.2 Game2) and the game's own builder (Game2\VRage.ContentPipeline.Builder.exe) needs an editor plugin it
 # does not ship and a Vanilla project WITH SOURCES (the game has only compiled Content). The recipe (proven on
 # the Orbital Mod's sensor blocks; see that mod's tools/blocks/gen_blocks.py), in BUILD_ENV, outside every repo
 # and never touching the game or the SDK install:
@@ -34,6 +34,16 @@ def meta(asset_id):
             "$Type": "VRage:Keen.VRage.ContentPipeline.Metafiles.MetaData",
             "$Value": {"AssetID": asset_id, "InternalItems": []}}
 
+def editor_version():
+    """The VRage.Plugin.Editor version the game's builder is bound to (its deps.json: 2.4.0.95 on 2.4, 4.0.0.3151 on 4.0)."""
+    deps = os.path.join(GAME, "Game2", "VRage.ContentPipeline.Builder.deps.json")
+    try:
+        t = open(deps, encoding="utf-8-sig").read()
+        k = t.find('"VRage.Plugin.Editor/')
+        if k >= 0: return t[k + len('"VRage.Plugin.Editor/'):t.index('"', k + 1)]
+    except OSError: pass
+    raise SystemExit("cannot read the builder's VRage.Plugin.Editor version from " + deps)
+
 def game2_copy():
     game2 = os.path.join(BUILD_ENV, "game2")
     ver_file = os.path.join(game2, ".copied_from")
@@ -46,7 +56,7 @@ def game2_copy():
         os.makedirs(stub, exist_ok=True)
         open(os.path.join(stub, "Stub.csproj"), "w").write(
             '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net9.0</TargetFramework>'
-            '<AssemblyName>VRage.Plugin.Editor</AssemblyName><AssemblyVersion>2.4.0.95</AssemblyVersion></PropertyGroup></Project>')
+            '<AssemblyName>VRage.Plugin.Editor</AssemblyName><AssemblyVersion>' + editor_version() + '</AssemblyVersion></PropertyGroup></Project>')
         open(os.path.join(stub, "Stub.cs"), "w").write("namespace Keen.VRage.Plugin.Editor { internal static class Stub { } }")
         subprocess.run(["dotnet", "build", "-c", "Release", "-o", "out"], cwd=stub, check=True, capture_output=True)
         shutil.copy(os.path.join(stub, "out", "VRage.Plugin.Editor.dll"), game2)
@@ -105,20 +115,27 @@ def vanilla_indexes():
            "vanilla_sig": sig}
     cache = os.path.join(BUILD_ENV, "vanilla-index.json")
     usable = key["sdk"] is not None and key["game"] is not None
+    index = None
     if usable and os.path.exists(cache):
         try:
             c = load_raw(cache)
             if c.get("key") == key: return c["index"], c["compiled"]
+            # (the SDK's half kept when only the game moved on: re-reading the SDK's ~96k metas is the slow part, and the
+            #  SDK lives on a failing drive - 2026-10-19; its half is keyed by the SDK's own build)
+            ck = c.get("key") or {}
+            if ck.get("sdk") == key["sdk"] and ck.get("sdk_assets") == key["sdk_assets"]: index = c["index"]
         except (OSError, ValueError, KeyError): pass
-    index, compiled = {}, {}
-    for rt, _, files in os.walk(SDK_ASSETS):
-        for f in files:
-            if f.endswith(".def.meta") or f.endswith(".partialdef.meta"):
-                try:
-                    with open(os.path.join(rt, f), encoding="utf-8-sig") as fh: t = fh.read(400)
-                    k = t.find('"AssetID": "')
-                    if k >= 0: index[t[k + 12:k + 48]] = os.path.join(rt, f[:-5])
-                except OSError: pass
+    compiled = {}
+    if index is None:
+        index = {}
+        for rt, _, files in os.walk(SDK_ASSETS):
+            for f in files:
+                if f.endswith(".def.meta") or f.endswith(".partialdef.meta"):
+                    try:
+                        with open(os.path.join(rt, f), encoding="utf-8-sig") as fh: t = fh.read(400)
+                        k = t.find('"AssetID": "')
+                        if k >= 0: index[t[k + 12:k + 48]] = os.path.join(rt, f[:-5])
+                    except OSError: pass
     for rt, _, files in os.walk(VANILLA):
         for f in files:
             if f.endswith(".def"):
