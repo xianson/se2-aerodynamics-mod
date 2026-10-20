@@ -325,6 +325,7 @@ The engine type is always there, so a world saved with the mod still loads witho
 | What | Where | Key (value: the entity itself) |
 |---|---|---|
 | World settings (values off their default) | `AeroWorldSettingsComponent` on each server planet, component id `ae205e77-1a65-4c0d-9b1e-0000000000a5` | `aero-settings:<name = value lines>` |
+| World settings, the players' bodies (2026-10-19: a planetless world) | `AeroWorldBodyComponent` on each server character and spectator, id `...a7` | `aero-settings:<name = value lines>` (value: the body's root - a seated character's grid) |
 | Control surface: pitch / yaw / roll, max deflection, trim | `AeroSurfaceSettingsComponent` on the block, id `...b1` | `aero-surface:1 p y r max trim` (every surface) |
 | Gear: down / up, Airshock | `AeroGearComponent` on the block, id `...b2` | `aero-gear:1 down airshock` (every gear) |
 | Airbrake: max opening | `AeroAirbrakeComponent` on the block, id `...b3` | `aero-airbrake:1 max` (every airbrake) |
@@ -332,6 +333,15 @@ The engine type is always there, so a world saved with the mod still loads witho
 | Autopilot block: its panel - mode, height and reference, hover speed, protection's limits, unattended (2026-10-19) | `AeroAutopilotComponent` on the block, id `...b8` | `aero-autopilot:1 mode height ref speed prot g aoa floor look unattended` (every autopilot block) |
 | Rotor / prop blades' health (rotor strikes, 2026-10-17) | `AeroRotorStrikeComponent` on the striking propulsors' server blocks, id `...b7` | `aero-blades:1 health` (only below 1: worn or broken - 0) |
 
+- **The world settings' carriers** (2026-10-19; `Save/WorldCarriers.cs`, shared with the Orbital Mod; the engine side
+  `Runtime/AeroWorldSettingsComponent.cs`): a planetless save (the game's Empty World) holds only the players' bodies, so
+  the server character and spectator carry the text as the planets do. Every carrier writes the same text. On load one
+  text is applied: a body's wins over a planet's (old saves: planets only - still read), the first of a kind wins, and a
+  body loaded later never undoes a change made since the load; the host's world.cfg wins over both. The world's end - world
+  settings to defaults, then the hooks (`WorldCarrier.Hooks`: the API's structure events, quick launch, the autopilot's
+  toasts) - is the last carrier leaving while its session unloads (`Session.IsUnloading`; a body leaving mid-session is not
+  it), or a carrier of another session (that unload unseen: reset, then its text). Offline: `Tests/WorldCarrierTests`,
+  SettingsTests "planetless", SceneTests 6.
 - **The blocks' keys** (since 2026-10-15; `Blocks/AeroBlockSave.cs`, the text in `Blocks/AeroBlockSaveForm.cs`, pure):
   each component is injected with a fixed component id and the builder (`InjectAeroComponents`); its `[Init]` reads the
   key, its `[Serializer]` writes a fresh map. Saved with the block, they follow it through a moved grid, blueprints,

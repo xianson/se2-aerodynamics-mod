@@ -19,6 +19,10 @@
 //    nearest settings) go through ServerDevReads, answered on the server step.
 // 5. THE CLIENT'S SESSION TICK (2026-10-19): the client's session-level work (settings poll and menu, HUD readout, quick launch's
 //    key, autopilot toasts, creaks) is called from AeroClientHost.Frame only - the render camera's job, grid or no grid.
+// 6. THE WORLD'S CARRIERS (2026-10-19, planetless worlds): the world's settings ride on the players' SERVER bodies too (the
+//    character and spectator server compositions: a fixed id, the engine's builder); the world's end and its hooks (the API's
+//    structure events, quick launch's ask, the autopilot's toasts) are WorldCarriers' (Save/WorldCarriers.cs: the last carrier
+//    while the session unloads, or another session) - never a count of planets of a component's own.
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
@@ -178,6 +182,31 @@ static class Program
         Check(Regex.IsMatch(Text("Injection/EntityInjector.cs"), @"typeof\(Keen\.Game2\.Client\.GameSystems\.CameraSystems\.CameraComponent\)[\s\S]*Add\(entity, typeof\(AeroClientHostComponent\)\)"),
             "EntityInjector: AeroClientHostComponent into the render camera's prefab (CameraComponent)");
         Check(Code(Method("Fx/AeroEntryFx.cs", "EntryJob")!).Contains("AeroClientHost.Frame(c.Entity,fromHost:false)"), "EntryJob: the session tick's fallback only");
+
+        // ── 6. the world's carriers (2026-10-19): a planetless world saves and resets too ──
+        string inj = Text("Injection/EntityInjector.cs");
+        Check(Regex.IsMatch(inj, @"typeof\(Keen\.Game2\.Simulation\.WorldObjects\.Characters\.CharacterMovementServerComponent\)[\s\S]*typeof\(Keen\.Game2\.Simulation\.WorldObjects\.Spectators\.ServerSpectatorComponent\)[\s\S]*isServerBody = true"),
+            "EntityInjector: the server bodies found by server-only types (CharacterMovementServerComponent, ServerSpectatorComponent)");
+        Check(Regex.IsMatch(inj, @"Type = typeof\(AeroWorldBodyComponent\),\s*ComponentId = WorldCarrier\.BodyId,\s*ObjectBuilder = new Keen\.Game2\.Simulation\.GameSystems\.EntityNameSessionComponentObjectBuilder\(\)"),
+            "EntityInjector: the body carrier with its fixed id and the engine's builder");
+        Check(Regex.IsMatch(inj, @"ComponentId = WorldCarrier\.PlanetId"), "EntityInjector: the planets' carrier keeps its id (...a5: older saves)");
+        string wc = Text("Runtime/AeroWorldSettingsComponent.cs");
+        Check(wc.Contains("PlanetId = new(\"ae205e77-1a65-4c0d-9b1e-0000000000a5\")") && wc.Contains("BodyId = new(\"ae205e77-1a65-4c0d-9b1e-0000000000a7\")"), "WorldCarrier: the fixed ids (planet ...a5, body ...a7)");
+        Check(Regex.IsMatch(wc, @"class AeroWorldBodyComponent[\s\S]*WorldCarrier\.Write\(ob, Entity, WorldCarrier\.RootOf\(Entity\)\)"), "AeroWorldBodyComponent: its key points at the body's root (an entity the save holds)");
+        foreach (var hook in new[] { "QuickLaunch.ResetWorld(", "ApToasts.ResetWorld(", "AeroApi.ResetStructureEvents(" })
+        {
+            var hooks = Method("Runtime/AeroWorldSettingsComponent.cs", "Hooks");
+            Check(hooks != null && Code(hooks).Contains(hook), $"WorldCarrier.Hooks: calls {hook}..) at the world's end");
+            foreach (var (f, root) in trees)
+            {
+                string rel = Rel(f);
+                if (rel == "Runtime/AeroWorldSettingsComponent.cs" || (hook == "AeroApi.ResetStructureEvents(" && rel == "Grid/AeroGridComponent.cs")) continue;
+                Check(!Code(root).Contains(hook), $"{rel}: no {hook}..) of its own (the world's end is WorldCarriers': planetless worlds too)");
+            }
+        }
+        foreach (var (f, root) in trees)
+            Check(!Regex.IsMatch(Code(root), @"Interlocked\.(Increment|Decrement)\(ref_carriers\)"), $"{Rel(f)}: no carrier count of its own (WorldCarriers counts)");
+        Check(Regex.IsMatch(Text("Runtime/AeroSettings.Store.cs"), @"new WorldCarriers\("), "AeroSettings: the world's text and end through WorldCarriers");
 
         Console.WriteLine(_fails == 0 ? $"SceneTests: {_checks}/{_checks} passed" : $"SceneTests: {_fails} of {_checks} FAILED");
         return _fails == 0 ? 0 : 1;

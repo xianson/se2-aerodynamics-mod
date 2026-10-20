@@ -6,8 +6,9 @@ namespace AeroMod;
 /// THE AERO MOD'S SETTINGS: one list of named values over the mod's static tuning fields (no reflection: each setting
 /// is a getter and a setter on its field), in two scopes:
 ///  - WORLD (server): the same for every player - the aero strength, entry heating, performance budgets. Saved WITH
-///    THE WORLD (AeroWorldSettingsComponent on the server planets: the engine's EntityNameSessionComponentObjectBuilder,
-///    the only builder a mod can use - see the Orbital Mod's SavedState). Optional host overrides in
+///    THE WORLD (AeroWorldSettingsComponent on the server planets and, since 2026-10-19, AeroWorldBodyComponent on the
+///    players' server bodies - a planetless world has no planet; the engine's EntityNameSessionComponentObjectBuilder,
+///    the only builder a mod can use - see the Orbital Mod's SavedState; which text wins: Save/WorldCarriers.cs). Optional host overrides in
 ///    %APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.world.cfg (uncommented lines win over the save).
 ///  - CLIENT (this PC): the visual effects. Saved in %APPDATA%\SpaceEngineers2\ModSettings\AerodynamicsMod.client.cfg.
 /// Both files are polled (~2 s): edit them while playing. Every change takes effect at once - the fields are read each

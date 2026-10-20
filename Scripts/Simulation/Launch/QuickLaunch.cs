@@ -236,7 +236,8 @@ public static partial class QuickLaunch
         catch { }
     }
 
-    /// <summary>A world gone (the last settings carrier left): the last world's ask, answer and turn dropped.</summary>
+    /// <summary>A world gone (WorldCarrier.Hooks - Save/WorldCarriers.cs: its last settings carrier left while it unloaded,
+    /// planetless worlds too): the last world's ask, answer and turn dropped.</summary>
     internal static void ResetWorld()
     {
         Volatile.Write(ref _ask, null); Volatile.Write(ref _turn, null); Interlocked.Exchange(ref _devAsk, 0);

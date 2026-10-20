@@ -215,7 +215,8 @@ public static partial class AeroApi
         _events.Add(new StructEvent { Kind = kind, Grid = grid, Block = block, At = at, Dir = dir, Value = value, Stamp = now });
     }
 
-    /// <summary>A world gone (its last settings carrier: AeroWorldSettingsComponent) or a new session: recording off, the
+    /// <summary>A world gone (WorldCarrier.Hooks: its last settings carrier left while it unloaded, planets or players' bodies -
+    /// Save/WorldCarriers.cs) or a new session: recording off, the
     /// ring's entities let go - it held the last world's destroyed grids and blocks into the next (2026-10-15 review). The
     /// numbers go on: a reader's cursor stays valid.</summary>
     internal static void ResetStructureEvents() { _eventsWanted.Close(); _events.Clear(); }

@@ -75,6 +75,10 @@ was flown in game for this release. The commit hashes are on the integration bra
   you (or with the Orbital Mod, which ticks the shared tab). Now it is there in a fresh world, on foot, with nothing built;
   the settings files are read then too. The Mach readout, creaks and cockpit shake no longer stay stuck when the last ship
   goes. In a world with no planets and no ship, single player, the world's settings were read-only: fixed.
+- **Fixed: world settings in a world with no planet** (space only, the Empty World) were never saved - they were kept only
+  on the planets. The players' character and spectator now carry them too; older saves still load from the planets (a
+  body's copy wins where both exist). The world's end (quick launch's pending ask, the autopilot's messages, the API's
+  structure events) is now seen in planetless worlds too.
 
 ## 1.0.4 - saving fixed on SE2 4.0
 
