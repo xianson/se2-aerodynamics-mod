@@ -22,8 +22,9 @@ Client effects are visual only. The flow record is also what `AeroApi` answers f
 - Server: `AeroEntryFx.Flow` / `AeroEntryFx.Server` (each step of `AeroGridComponent.AeroSimJobCore`), `AeroEntryFx.Forget` (removal).
 - Client: `AeroExhaustComponent.ExhaustJob` (each ramjet / solid nozzle, after `RenderSubmissionBegin`): the exhaust.
 - Client: `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (injected into every grid by `InjectAeroComponents`) ->
-  `FlightJob` -> `FlightField.Update`; the same job ticks `MachHud`, `StructureFeel`, `TearSmoke`, `HeatScorch.Sync` (twice a
-  second, flight field on or not) and claims the settings tab's 250 ms tick (`Ui/SettingsTab.Claim`).
+  `FlightJob` -> `FlightField.Update`; the same job ticks `TearSmoke`, `HeatScorch.Sync` (twice a second, flight field on or
+  not) and quick launch's cockpit turn. The session-level work (settings, `MachHud`, `StructureFeel`, the settings tab) is
+  the render camera's, `Runtime/AeroClientHost.cs`; this job only calls it as its fallback.
 - Other mods: `AeroApi.RegisterEntrySource` -> `AeroEntryFx.RegisterEntrySource`; `AeroEntryFx.TryGetFlow` (Orbital, by reflection).
 
 ## Threading

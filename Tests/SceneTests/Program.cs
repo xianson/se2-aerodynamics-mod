@@ -17,6 +17,8 @@
 //    server scene); every probe works on the snapshots (DesignSnapshot.cs: engine-free - compiled and run here,
 //    DesignSnapshotTests.cs). The dev reads of the server blocks (the surface / gear / airbrake summaries, the panel probe's
 //    nearest settings) go through ServerDevReads, answered on the server step.
+// 5. THE CLIENT'S SESSION TICK (2026-10-19): the client's session-level work (settings poll and menu, HUD readout, quick launch's
+//    key, autopilot toasts, creaks) is called from AeroClientHost.Frame only - the render camera's job, grid or no grid.
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
@@ -157,6 +159,25 @@ static class Program
         Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene && AeroBlockSave.DevPending != 0) AeroBlockSave.DevStep(aero.Data.Scene);"), "AeroBlockSave.DevStep: called from the server grid's own step");
         Check(!Regex.IsMatch(Text("Dev/AeroBlockSaveDev.cs"), @"\bset\s*\{[^}]*\.All\b"), "AeroBlockSave.DevSet / DevDump: the setters only queue (no block list walked from the harness's thread)");
         DesignSnapshotTests.Run(Check);
+
+        // ── 5. the client's session tick (2026-10-19): session-level client work runs from the render camera, never only from a
+        //       grid - with no client grid the settings menu never appeared (unless the Orbital Mod ticked the shared tab) ──
+        var host = trees.ContainsKey(Path.Combine(sim, "Runtime", "AeroClientHost.cs")) ? Method("Runtime/AeroClientHost.cs", "Frame") : null;
+        string hostCode = host == null ? "" : Code(host);
+        foreach (var call in new[] { "AeroSettings.Poll(", "SettingsTab.Claim(", "SettingsTab.Ticked(", "MachHud.Tick(", "QuickLaunch.ClientTick(", "ApToasts.ClientTick(", "StructureFeel.Tick(" })
+        {
+            Check(hostCode.Contains(call), $"AeroClientHost.Frame: calls {call}..)");
+            // (elsewhere only the server's own: the sim job's settings poll and a planet carrier's forced one)
+            foreach (var (f, root) in trees)
+            {
+                string rel = Rel(f);
+                if (rel == "Runtime/AeroClientHost.cs" || (call == "AeroSettings.Poll(" && (rel == "Grid/AeroSimJob.cs" || rel.StartsWith("Runtime/AeroSettings")))) continue;
+                Check(!Code(root).Contains(call), $"{rel}: no {call}..) of its own (the client's session tick owns it: AeroClientHost.Frame)");
+            }
+        }
+        Check(Regex.IsMatch(Text("Injection/EntityInjector.cs"), @"typeof\(Keen\.Game2\.Client\.GameSystems\.CameraSystems\.CameraComponent\)[\s\S]*Add\(entity, typeof\(AeroClientHostComponent\)\)"),
+            "EntityInjector: AeroClientHostComponent into the render camera's prefab (CameraComponent)");
+        Check(Code(Method("Fx/AeroEntryFx.cs", "EntryJob")!).Contains("AeroClientHost.Frame(c.Entity,fromHost:false)"), "EntryJob: the session tick's fallback only");
 
         Console.WriteLine(_fails == 0 ? $"SceneTests: {_checks}/{_checks} passed" : $"SceneTests: {_fails} of {_checks} FAILED");
         return _fails == 0 ? 0 : 1;

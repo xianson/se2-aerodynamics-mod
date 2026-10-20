@@ -48,7 +48,8 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 ## Entry points
 - `AeroGridComponent.TickStructure` (end of the sim job, server, after the air's forces are applied) and
   `TickWingStrain`; `TearJob` (`OnTear`); `AeroApi.SetFocusGrid` (who flies what), `TryGetStructure`, `NoteMoved`.
-- Client: `StructureFeel.Tick`, `TearSmoke.Tick`, `HeatScorch.Sync` from `AeroEntryFxComponent.EntryJob` / `FlightJob`.
+- Client: `StructureFeel.Tick` from `AeroClientHost.Frame` (the client's session tick); `TearSmoke.Tick`, `HeatScorch.Sync` from
+  `AeroEntryFxComponent.EntryJob` / `FlightJob`.
 - The flow, step by step: `docs/ARCHITECTURE.md` §6.
 
 ## Threading

@@ -33,6 +33,7 @@ public class InjectAeroComponents : Injections
         bool hasTank = false;
         bool hasFlame = false;   // a client thruster (it draws flames)
         bool isServerPlanet = false;   // (carries the world's aero settings in the save)
+        bool isRenderCamera = false;   // (the client's render camera: the client's session tick, AeroClientHost)
 
         foreach (var type in composition.Types)
         {
@@ -46,6 +47,16 @@ public class InjectAeroComponents : Injections
                 hasFlame = true;
             if (type == typeof(Keen.Game2.Simulation.GameSystems.Discoveries.Discoverables.DiscoverablePlanetComponent))
                 isServerPlanet = true;
+            if (type == typeof(Keen.Game2.Client.GameSystems.CameraSystems.CameraComponent))
+                isRenderCamera = true;
+        }
+
+        if (isRenderCamera)
+        {
+            // (the client scene's one camera entity - ClientPlayersSessionConfiguration.RenderCamera: there with no grid, on
+            //  foot, in spectator; the settings menu, the files' poll and the local player's HUD and feel run from it)
+            Add(entity, typeof(AeroClientHostComponent));
+            Log.Default?.Info($"[AERO] Injected AeroClientHostComponent into camera prefab '{entity.DebugName}'");
         }
 
         if (isServerPlanet)

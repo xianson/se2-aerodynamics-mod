@@ -14,7 +14,7 @@ The stall and LOAC warnings are computed here and drawn by the Orbital mod's fli
 ## Entry points
 - `EvaluateStall` / `EvaluateLoac`: `StructureServer.EvaluateStructure` (background, player-flown grids only).
 - `AeroStallJob` (`OnAeroStall`, after `GridMovementCollectorComponent.ThrusterUpdate.ReportStall`).
-- `GameStallWarning.Apply` (`AeroSettings`), `MachHud.Tick` (`AeroEntryFxComponent.EntryJob`).
+- `GameStallWarning.Apply` (`AeroSettings`), `MachHud.Tick` (`AeroClientHost.Frame`, the client's session tick - grid or no grid).
 
 ## Threading
 - Background (`AeroWork`): the two evaluations write the grid's own `StallState` / `LoacState` fields; `AeroApi` reads them.

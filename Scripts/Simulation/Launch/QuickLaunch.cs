@@ -80,23 +80,23 @@ public static partial class QuickLaunch
         KeyboardInputs.V, KeyboardInputs.W, KeyboardInputs.X, KeyboardInputs.Y, KeyboardInputs.Z,
     };
 
-    /// <summary>Client, the effects jobs (AeroEntryFxComponent.EntryJob, every client grid's): one job a frame claims the
-    /// tick, and only one runs it at a time (_busy, 2026-10-18: the time claim alone let a second job in while a slow first
+    /// <summary>Client, the client's session tick (Runtime/AeroClientHost.cs; a grid's effects job only as its fallback): one
+    /// caller a frame claims the tick, and only one runs it at a time (_busy, 2026-10-18: the time claim alone let a second job in while a slow first
     /// one - a toast, the screen lookup - was still at the key: one press read twice). Cheap when nothing is pressed: one key
     /// state read.</summary>
-    internal static void ClientTick(Entity anyGrid)
+    internal static void ClientTick(Entity anyClient)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         long due = Interlocked.Read(ref _nextFrame);
         if (now < due || Interlocked.CompareExchange(ref _nextFrame, now + f / 250, due) != due) return;
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) return;
-        try { Tick(anyGrid, now, f); }
+        try { Tick(anyClient, now, f); }
         finally { Volatile.Write(ref _busy, 0); }
     }
 
-    static void Tick(Entity anyGrid, long now, long f)
+    static void Tick(Entity anyClient, long now, long f)
     {
-        var session = anyGrid?.GetSession();
+        var session = anyClient?.GetSession();
         var say = PendingSay;
         if (say != null) { PendingSay = null; Status = say; Toast(session, say); }
         long devAt = Interlocked.Exchange(ref _devAsk, 0);

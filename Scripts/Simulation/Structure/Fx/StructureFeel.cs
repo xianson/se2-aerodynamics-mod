@@ -86,9 +86,10 @@ public static class StructureFeel
     static float _util, _shakeU, _jolt;
     static readonly Random _rng = new Random();
 
-    /// <summary>Client, every frame, from every grid's effects job (AeroEntryFx.EntryJob; after the frame's camera update,
-    /// so the shake lands on the next frame's): one job a frame does the work.</summary>
-    internal static void Tick(Entity anyGrid)
+    /// <summary>Client, every frame, from the client's session tick (Runtime/AeroClientHost.cs, grid or no grid: a creak still
+    /// playing is stopped when the last grid goes; after the frame's camera update, so the shake lands on the next frame's):
+    /// one caller a frame does the work.</summary>
+    internal static void Tick(Entity anyClient)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         long due = System.Threading.Interlocked.Read(ref _nextFrame);
@@ -96,20 +97,20 @@ public static class StructureFeel
         if (!Creaks && !Shake) { if (_clientGrid != null) Drop(); return; }
         float dt = _lastFrame == 0 ? 0f : MathF.Min((now - _lastFrame) / (float)f, 0.1f);
         _lastFrame = now;
-        if (now >= _lookAt) { _lookAt = now + f / 4; Look(anyGrid, now, f); }
+        if (now >= _lookAt) { _lookAt = now + f / 4; Look(anyClient, now, f); }
         StopDue(now);
         if (_clientGrid == null) return;
-        if (Shake) ShakeFrame(dt, anyGrid, now, f); else _jolt = 0f;
+        if (Shake) ShakeFrame(dt, anyClient, now, f); else _jolt = 0f;
         if (Creaks && _armed && now >= _nextCreakAt) Creak(now, f);
     }
 
     /// <summary>4x a second: the seat, the server copy, the utilisation, the wear and break counters.</summary>
-    static void Look(Entity anyGrid, long now, long f)
+    static void Look(Entity anyClient, long now, long f)
     {
         Entity seat = null, grid = null;
         try
         {
-            var players = anyGrid?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
+            var players = anyClient?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
             seat = players?.LocalPlayerController?.GetTopObservableEntity();
             // (seated, that is the cockpit block: its grid is up the hierarchy - MachHud's walk)
             grid = seat;
@@ -178,7 +179,7 @@ public static class StructureFeel
         }
     }
 
-    static void ShakeFrame(float dt, Entity anyGrid, long now, long f)
+    static void ShakeFrame(float dt, Entity anyClient, long now, long f)
     {
         float u = _util;
         _shakeU += (u - _shakeU) * MathF.Min(1f, dt * ShakeEase);
@@ -193,7 +194,7 @@ public static class StructureFeel
         p *= ShakeScale;
         LastShake = p;
         if (p < 0.005f) return;
-        var cam = Shaker(anyGrid, now, f);
+        var cam = Shaker(anyClient, now, f);
         if (cam == null) return;
         try { cam.Shake(new CameraShakeArgs { Power = MathF.Min(p, CameraShakeComponent.MAX_SHAKE) }); }
         catch (Exception e) { _shaker = null; Status = "shake failed: " + e.Message; }
@@ -204,7 +205,7 @@ public static class StructureFeel
     static long _shakerAt;
     /// <summary>The render camera's shake component (the one the camera reads - CameraComponent's UpdateShake), looked for
     /// every 2 s while there is none.</summary>
-    static CameraShakeComponent Shaker(Entity anyGrid, long now, long f)
+    static CameraShakeComponent Shaker(Entity anyClient, long now, long f)
     {
         var s = _shaker;
         if (s != null && s.Entity != null && GridPhysics.Alive(s.Entity.Data)) return s;
@@ -213,7 +214,7 @@ public static class StructureFeel
         _shakerAt = now + 2 * f;
         try
         {
-            var session = anyGrid?.GetSession();
+            var session = anyClient?.GetSession();
             if (session == null) return null;
             foreach (var e in session.GetEntitiesOfType<CameraShakeComponent>())
             {
