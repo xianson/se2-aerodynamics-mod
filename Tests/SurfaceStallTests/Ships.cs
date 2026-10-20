@@ -18,15 +18,9 @@ static partial class Program
 
     static string DataDir() => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data", "surfaces"));
 
-    static Ship Load(string dir, string stem)
+    /// <summary>A ship's airframe from its blocks (min, max per box), as AeroBench builds it: the surface, the wings, the shadow map.</summary>
+    static Ship Build(string name, List<(Vector3I, Vector3I)> boxes)
     {
-        var boxes = new List<(Vector3I, Vector3I)>();
-        foreach (var line in File.ReadLines(Path.Combine(dir, stem + ".boxes")))
-        {
-            if (line.StartsWith("#")) continue;
-            var p = line.Split(' '); if (p.Length < 6) continue;
-            boxes.Add((new Vector3I(int.Parse(p[0]), int.Parse(p[1]), int.Parse(p[2])), new Vector3I(int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]))));
-        }
         int k = SnapshotGridAccessor.CellScale(BlockSize);
         var (cs, co) = SnapshotGridAccessor.CellGeometry(k);
         var grid = new SnapshotGridAccessor(boxes);
@@ -42,7 +36,20 @@ static partial class Program
         model.InstallWings(wings); inner.InstallShadowMap(shadow);
         model.BuildFaceOverrideIndex(surface, new List<IAeroBlockComponent>());
         model.ExcludeWingFaces(inner, surface.Version);
-        var ship = new Ship { Name = stem, Grid = grid, Surface = surface, Manifold = manifold, Model = model };
+        return new Ship { Name = name, Grid = grid, Surface = surface, Manifold = manifold, Model = model };
+    }
+
+    static Ship Load(string dir, string stem)
+    {
+        var boxes = new List<(Vector3I, Vector3I)>();
+        foreach (var line in File.ReadLines(Path.Combine(dir, stem + ".boxes")))
+        {
+            if (line.StartsWith("#")) continue;
+            var p = line.Split(' '); if (p.Length < 6) continue;
+            boxes.Add((new Vector3I(int.Parse(p[0]), int.Parse(p[1]), int.Parse(p[2])), new Vector3I(int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]))));
+        }
+        var ship = Build(stem, boxes);
+        var grid = ship.Grid;
         static Vector3 V3(string[] p, int i) => new Vector3(float.Parse(p[i], CI), float.Parse(p[i + 1], CI), float.Parse(p[i + 2], CI));
         foreach (var raw in File.ReadAllLines(Path.Combine(dir, stem + ".ship")))
         {

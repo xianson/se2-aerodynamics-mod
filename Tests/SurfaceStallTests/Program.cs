@@ -10,6 +10,7 @@ using AeroMod;
 ///  2. attached flow (both angles under the stall): the new Compute IS the old one (Legacy.cs);
 ///  3. Refine (the allocator's second step) never ends worse than doing nothing, nor with a surface against the demand;
 ///  4. the flight assists' pure parts (FlightAssists: the uncommanded offset torque, post-stall lift, stall angle, presets);
+///     4b. on a plate wing through the real wing model (Wings.cs): all at 1 bit-identical, the stall angle and post-stall lift move;
 ///  5. dumped ships (Tests/data/surfaces/*.boxes + *.ship - conv.py from blueprints, local only: skipped when absent):
 ///     nose-down / up, roll, yaw authority over the angle of attack 0-90 deg at 100 m/s, before (Legacy) and after - the best
 ///     a scan of each surface's inputs finds, what the allocator gives, what the keyboard mixer gives; no reversal anywhere;
@@ -30,6 +31,7 @@ static partial class Program
         AttachedUnchanged(r);
         RefineChecks(r);
         AssistChecks();
+        WingAssists();
         Ships(args.Length > 0 && args[0] == "quick");
         Console.WriteLine($"SurfaceStallTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;

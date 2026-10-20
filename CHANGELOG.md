@@ -64,7 +64,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   pull 25 deg past the stall stops at 10.7 deg (unprotected 19.3); a 10 deg pull at 200 m/s 2.6 g (4.7); from 35 deg,
   surfaces only, the nose is under the stall in 3.4 s (unprotected it stays at 27+). Inside the envelope: identical.
 - **Changes physics:** stall angle, lift kept past the stall, control bite past the stall (`Assists.StallAngleScale`,
-  `PostStallLift`, `SurfaceAuthority`). 1 is bit-identical to realistic.
+  `PostStallLift`, `SurfaceAuthority`). 1 is bit-identical to realistic. A 10 x 3 m plate wing at 100 m/s: stall angle
+  x1.3 moves its best lift 17.5 -> 23 deg (48.8 -> 63.2 kN); post-stall lift x1.5 at 32 deg 29.2 -> 45.5 kN.
 - `Gyros.TorqueScale` moved here (same name; saves unchanged).
 - **Unrealistic, opt-in:** `Assists.OffsetThrust` scales only the offset-thrust torque the attitude control could not
   cancel; what it asks the thrusters for is never touched. Realistic (1): the controller already cancels offset thrust
