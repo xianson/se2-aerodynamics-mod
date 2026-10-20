@@ -6,7 +6,9 @@ using AeroMod;
 // gate, tools/test_fast.sh) or full (the "full" sweep), and an Action that flies Runs and calls Sim.Check / Sim.Note. A scenario
 // builds its ship (Ships.*, or its own SimShip), its terrain (SimTerrain.*), its moving references (SimTarget.*), an external goal
 // source for the autopilot (IApGoalSource - the core's hook for navigation legs, formation slots, landing pads) and its own
-// per-run metrics (Run.Each, Run.Metrics).
+// per-run metrics (Run.Each, Run.Metrics: Min / Max / Rms / Mean; Run.Trace: its own CSV columns). Several ships in one run:
+// Flight.cs (each member any pilot mode, goal source, block or none; another member as a target: Flight.Target). The author's
+// own packs: UserScenarios/ (README.md there; TemplatePack.cs to copy).
 
 /// <summary>A set of scenarios defined outside the harness's own files.</summary>
 public interface IScenarioPack { void Register(ScenarioRegistry r); }

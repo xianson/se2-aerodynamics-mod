@@ -24,8 +24,9 @@ sealed class Wind
 }
 
 /// <summary>
-/// ONE SCENARIO RUN: a plant, a timeline (events at times), metrics over measuring windows, an optional CSV trace
-/// (AP_CSV=folder or "-- csv folder": one file per scenario, every 6th tick). New scenarios (fixed-wing modes, waypoints, AI
+/// ONE SCENARIO RUN: a plant, a timeline (events at times), metrics over measuring windows (the standard ones below; a scenario's
+/// own by name - Each hooks writing Min / Max / Rms / Mean into Metrics), an optional CSV trace (AP_CSV=folder or "-- csv folder":
+/// one file per run, every 6th tick, the scenario's own columns after the standard ones - Trace). Several ships in one run: Flight. New scenarios (fixed-wing modes, waypoints, AI
 /// pilots, intercepts) are a ship, a timeline and their checks - the plant and the metrics stay.
 /// </summary>
 sealed class Run
@@ -63,10 +64,28 @@ sealed class Run
         if (CsvDir != null)
         {
             Directory.CreateDirectory(CsvDir);
-            _csv = new StreamWriter(Path.Combine(CsvDir, Safe(name) + ".csv"));
-            _csv.WriteLine("t,x,y,z,vx,vy,vz,tilt_deg,lean_cmd_deg,ax_cmd,az_cmd,move_x,move_y,move_z,goals,prot,tail_side_N,cyclic_share,loac_probe,stall_margin_deg,vcmd_x,vcmd_z,mode");
+            _csv = new StreamWriter(_csvPath = Path.Combine(CsvDir, Safe(name) + ".csv"));
         }
     }
+    const string CsvHeader = "t,x,y,z,vx,vy,vz,tilt_deg,lean_cmd_deg,ax_cmd,az_cmd,move_x,move_y,move_z,goals,prot,tail_side_N,cyclic_share,loac_probe,stall_margin_deg,vcmd_x,vcmd_z,mode";
+    bool _csvHead;
+    readonly List<(string col, Func<Run, double> val)> _cols = new();
+    string _csvPath;
+    /// <summary>A column of the scenario's own in this run's CSV trace (after the standard ones). Added after the trace began (a
+    /// trimmed start flown first): the file starts again from now, with the new header.</summary>
+    public Run Trace(string column, Func<Run, double> value)
+    {
+        _cols.Add((column, value));
+        if (_csv != null && _csvHead) { _csv.Dispose(); _csv = new StreamWriter(_csvPath); _csvHead = false; }
+        return this;
+    }
+    readonly Dictionary<string, (double sum, long n)> _acc = new();
+    /// <summary>A metric kept as the root mean square of every value given (Metrics[name]).</summary>
+    public void Rms(string name, double v) { var a = _acc.TryGetValue(name, out var o) ? o : default; a.sum += v * v; a.n++; _acc[name] = a; Metrics[name] = Math.Sqrt(a.sum / a.n); }
+    /// <summary>A metric kept as the mean of every value given (Metrics[name]; its own accumulator - not an Rms name).</summary>
+    public void Mean(string name, double v) { var a = _acc.TryGetValue("mean:" + name, out var o) ? o : default; a.sum += v; a.n++; _acc["mean:" + name] = a; Metrics[name] = a.sum / a.n; }
+    /// <summary>A metric (NaN: never set).</summary>
+    public double Metric(string name) => Metrics.TryGetValue(name, out var v) ? v : double.NaN;
     static string Safe(string s) { foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_'); return s.Replace(' ', '_'); }
 
     public Run At(float t, Action<Run> act) { _events.Add((t, act)); return this; }
@@ -84,7 +103,14 @@ sealed class Run
     public void Fly(float seconds, Action<Run> each = null)
     {
         int steps = (int)MathF.Round(seconds * 60f);
-        for (int k = 0; k < steps; k++)
+        for (int k = 0; k < steps; k++) Step(each);
+        _csv?.Flush();
+    }
+
+    /// <summary>ONE TICK (1/60 s): the timeline's events due, the wind, the moving references, 'each', the plant, the metrics,
+    /// the hooks, the trace. Fly is these in a row; a Flight steps several runs this way, one tick each in turn.</summary>
+    public void Step(Action<Run> each = null)
+    {
         {
             for (int e = _events.Count - 1; e >= 0; e--) if (P.Time + 1e-4f >= _events[e].t) { var a = _events[e].act; _events.RemoveAt(e); a(this); }
             P.Wind = Air.At(P.Time, 1f / 60f);
@@ -105,12 +131,16 @@ sealed class Run
             if (P.Cmd.HasProbe) MaxLoac = MathF.Max(MaxLoac, P.LastLoacProbe);
             if (P.Fd.Guard.LastPullCap < float.PositiveInfinity) MaxPullOverCap = MathF.Max(MaxPullOverCap, (P.Fd.Guard.LastPull - P.Fd.Guard.LastPullCap) / ApMath.Deg);
             if (_csv != null && (Ticks % 6 == 0))
+            {
+                if (!_csvHead) { _csvHead = true; _csv.WriteLine(CsvHeader + string.Concat(_cols.Select(c => "," + c.col))); }
                 _csv.WriteLine(string.Join(",", F(P.Time), F(P.P.X), F(P.P.Y), F(P.P.Z), F(P.V.X), F(P.V.Y), F(P.V.Z), F(P.TiltDeg), F(P.Fd.LeanRad / ApMath.Deg),
                     F(P.Fd.AccelCmd.X), F(P.Fd.AccelCmd.Z), F(P.Move.X), F(P.Move.Y), F(P.Move.Z), ((int)P.Fd.Goals).ToString(), ((int)P.Cmd.Prot).ToString(),
-                    F(P.TailSideForce), F(P.LastCycReach > 0f ? P.LastCyclicT.Length() / P.LastCycReach : 0f), F(P.LastLoacProbe), F(P.LastStallMargin), F(P.Fd.VelCmd.X), F(P.Fd.VelCmd.Z), P.Mode));
+                    F(P.TailSideForce), F(P.LastCycReach > 0f ? P.LastCyclicT.Length() / P.LastCycReach : 0f), F(P.LastLoacProbe), F(P.LastStallMargin), F(P.Fd.VelCmd.X), F(P.Fd.VelCmd.Z), P.Mode)
+                    + string.Concat(_cols.Select(c => "," + F(c.val(this)))));
+            }
         }
-        _csv?.Flush();
     }
+    public void FlushTrace() => _csv?.Flush();
     static string F(double x) => x.ToString("G5", System.Globalization.CultureInfo.InvariantCulture);
     public void Close() { _csv?.Dispose(); _csv = null; }
 
