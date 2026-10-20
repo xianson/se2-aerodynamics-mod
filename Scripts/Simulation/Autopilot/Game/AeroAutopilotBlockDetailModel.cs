@@ -44,7 +44,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
         nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
-        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw), nameof(ShowNever),
         nameof(ToggleHoverHold), nameof(ToggleHeightHold), nameof(ToggleFlightHold), nameof(ToggleNavigate), nameof(ToggleEngage));
     /// <summary>The game's member-order lookup (MemberReference.DeclarationOrder asks AccessibleTypeIndexer, which finds a type's
     /// info by its nested TypeInfoHolder.Value): without it every member here sorted as -1, in no stable order - the panel came
@@ -94,6 +94,10 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool ShowBand => ApPanelLayout.ShowBand(P);
     [HideInInspector] public bool ShowTargetFilter => ApPanelLayout.ShowTargetFilter(P);
     [HideInInspector] public bool ShowAimSw => ApPanelLayout.ShowAimSw(P);
+    /// <summary>The toolbar's hidden toggles: the game shows every public button method on the panel (HideInInspector is not read
+    /// for a method - TerminalInspectorViewModel.InjectInspectable), so a switch that is never true keeps them off it (the toolbar
+    /// lists them all the same: BlockDetailProviderIndexer.IsButtonEligible). In game, 2026-10-20: they showed at the bottom.</summary>
+    [HideInInspector] public bool ShowNever => ApPanelLayout.ShowNever;
 
     // ── the modes ──
     [Label("Hover Hold")] [Button(null)] [WritableInInspectorWhen("CanHover", WritableWhen.True)]
@@ -122,19 +126,19 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Label("Autopilot Off")] [Button(null)] [WritableInInspectorWhen("CanOff", WritableWhen.True)]
     public void AutopilotOff() { _ap?.SetMode(ApMode.Off); Changed(); }
 
-    [Label("Toggle Hover Hold")] [Button(null)] [HideInInspector]
+    [Label("Toggle Hover Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
     public void ToggleHoverHold() { _ap?.ToggleMode(ApMode.HoverHold); Changed(); }
 
-    [Label("Toggle Height Hold")] [Button(null)] [HideInInspector]
+    [Label("Toggle Height Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
     public void ToggleHeightHold() { _ap?.ToggleMode(ApMode.HeightHold); Changed(); }
 
-    [Label("Toggle Flight Hold")] [Button(null)] [HideInInspector]
+    [Label("Toggle Flight Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
     public void ToggleFlightHold() { _ap?.ToggleMode(ApMode.FlightHold); Changed(); }
 
-    [Label("Toggle Navigate")] [Button(null)] [HideInInspector]
+    [Label("Toggle Navigate")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
     public void ToggleNavigate() { _ap?.ToggleMode(ApMode.Navigate); Changed(); }
 
-    [Label("Toggle Engage")] [Button(null)] [HideInInspector]
+    [Label("Toggle Engage")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
     public void ToggleEngage() { _ap?.ToggleMode(ApMode.Engage); Changed(); }
 
     // ── the flight style (the pilot modes) ──
@@ -360,7 +364,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
         nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
-        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw), nameof(ShowNever),
         nameof(Enemy), nameof(EnemyText),
         nameof(HeightM), nameof(OverGround), nameof(AltOverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };

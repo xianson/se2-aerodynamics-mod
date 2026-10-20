@@ -36,6 +36,8 @@ public static class ApPanelLayout
     public static bool ShowTargetFilter(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour != ApBehaviour.Formation;
     /// <summary>The aim switch: not for a formation or a rocket (no guns to bear).</summary>
     public static bool ShowAimSw(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour != ApBehaviour.Formation && p.Behaviour != ApBehaviour.RocketGuidance;
+    /// <summary>Never: the toolbar's toggle buttons (a [Button] method's [HideInInspector] does not hide it on the panel).</summary>
+    public const bool ShowNever = false;
     public static bool ShowHeading(in ApPanel p) => p.Mode == ApMode.FlightHold && p.HeadingOn;
     public static bool ShowAlt(in ApPanel p) => ApPanel.IsPilotMode(p.Mode) && p.AltOn;
     /// <summary>The altitude's reference (over the ground / level): the flight hold's and the route's altitude (Engage flies its
@@ -76,6 +78,7 @@ public static class ApPanelLayout
             case "ShowBand": return ShowBand(in p);
             case "ShowTargetFilter": return ShowTargetFilter(in p);
             case "ShowAimSw": return ShowAimSw(in p);
+            case "ShowNever": return ShowNever;
         }
         known = false;
         return false;

@@ -47,7 +47,10 @@ sealed class PanelLayoutPack : IScenarioPack
             var c = Regex.Match(attrs, @"ShowInInspectorWhen\(""(\w+)""");
             all[m.Groups[2].Value] = new Member
             {
-                Name = m.Groups[2].Value, Hidden = attrs.Contains("[HideInInspector]"), Button = attrs.Contains("[Button"),
+                Name = m.Groups[2].Value, Button = attrs.Contains("[Button"),
+                // (the game reads [HideInInspector] on a property only: every public [Button] method is shown unless its
+                //  [ShowInInspectorWhen] is false - TerminalInspectorViewModel.InjectInspectable; in game 2026-10-20)
+                Hidden = attrs.Contains("[HideInInspector]") && !attrs.Contains("[Button"),
                 Labelled = attrs.Contains("[Label("), Cond = c.Success ? c.Groups[1].Value : null,
             };
         }
@@ -77,7 +80,7 @@ sealed class PanelLayoutPack : IScenarioPack
         var ms = Read(src, out var unlisted);
         Sim.Check(ms.Count > 40 && ms.All(m => !m.Name.EndsWith("?")), $"panel layout: every name in the model's order is a member of it ({string.Join(", ", ms.Where(m => m.Name.EndsWith("?")).Select(m => m.Name))})");
         Sim.Check(unlisted.Count == 0, $"panel layout: every shown member (labelled, not hidden) is in the order - an unlisted button falls to the bottom ({string.Join(", ", unlisted)})");
-        var buttons = ms.Where(m => m.Button && !m.Hidden).Select(m => m.Name).ToArray();
+        var buttons = ms.Where(m => m.Button && !m.Hidden && m.Cond != "ShowNever").Select(m => m.Name).ToArray();
         var wantButtons = new[] { "HoverHold", "HeightHold", "FlightHold", "Navigate", "Engage", "LevelOff", "Return", "AutopilotOff" };
         Sim.Check(buttons.SequenceEqual(wantButtons), $"panel layout: the mode buttons, in order ({string.Join(", ", buttons)})");
 
