@@ -12,8 +12,9 @@ namespace AeroMod;
 /// control's edit is applied. No engine and no Avalonia here: the offline tests (Tests/SettingsUiTests) run it over the real
 /// registry. The tab itself is SettingsTab.cs; the controls, AvaloniaReflect.cs.
 ///
-/// SHARED: written once in the Orbital mod (Scripts/Simulation/Ui/), copied into the Aerodynamics Mod by
-/// tools/sync_settings_ui.sh (only the namespace line differs; tools/check_contract.sh checks the copies). Edit it here.
+/// SHARED: written once in the Aerodynamics Mod's tools/shared/modsrc/files/ (this path under it), copied into both mods by
+/// tools/shared/modsrc/sync.sh (only the namespace line differs; both mods' gates check the copies). Edit it THERE, not in a
+/// mod's copy.
 ///
 /// THE MENU'S DEFAULTS (the user's answers to DESIGN.md's open questions, 2026-10-15) - change them here:
 ///  1. ONE shared "Mods" tab, an expander per mod: TabHeader / TabTag (the cross-mod contract: SettingsTab.cs).

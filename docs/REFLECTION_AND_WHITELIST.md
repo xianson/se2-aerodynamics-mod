@@ -71,7 +71,7 @@
 - `EngineOverrides.cs` holds only `Component.SetData<T>` (its comment no longer claims to be the mod's whole reflection). The mod has 12+ targets (this table).
 - `Runtime/GridPhysics.cs` has **no** reflection: it is a typed facade over the public `DEntityContext` API.
 
-#### 2026-10-15 the Options screen's "Mods" tab (A/Ui/SettingsTab.cs, A/Ui/AvaloniaReflect.cs - copies of the Orbital mod's, synced by its tools/sync_settings_ui.sh) - shipped, not yet tested in game
+#### 2026-10-15 the Options screen's "Mods" tab (A/Ui/SettingsTab.cs, A/Ui/AvaloniaReflect.cs - copies; since 2026-10-19 written once in this repo's tools/shared/modsrc/files/ and synced into both mods by its sync.sh, before that the Orbital mod's tools/sync_settings_ui.sh) - shipped, not yet tested in game
 The in-game settings menu (pause menu -> Settings -> **Mods**): this mod's expander in the tab both mods share (the Avalonia `Tag` contract `ModSettings/v1`), generated from `AeroSettings` through `Ui/SettingsTab.Mod.cs` (the one file of it that is the aero mod's own). The same members as the Orbital document's §3.7 table, reflected by this mod's own copy; repeated here so this document stays whole. Ticked from `AeroClientHost.Frame` (the render camera's job, grid or no grid; one caller per 250 ms claims it - until 2026-10-19 from the client grids' `AeroEntryFx.EntryJob` only, and with no grid in the world there was no aero section). Toast on failure: `IUserMessages.DisplayMessage` (public, no reflection), once per session.
 
 | site | target | assembly | access | purpose | failure |

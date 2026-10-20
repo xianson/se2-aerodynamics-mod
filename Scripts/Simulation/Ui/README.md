@@ -1,8 +1,9 @@
 # Ui/ - the in-game settings menu (client)
 
 The Options screen's **Mods** tab (pause menu -> Settings -> Mods), generated from the settings registry
-(`Runtime/AeroSettings*.cs`). The shared files are COPIES of the Orbital mod's (its `tools/sync_settings_ui.sh` writes them;
-only the namespace line differs, its `tools/check_contract.sh` checks them): edit them there, not here.
+(`Runtime/AeroSettings*.cs`). The shared files are COPIES: written once in `tools/shared/modsrc/files/` (this repo),
+`tools/shared/modsrc/sync.sh` writes them into both mods (only the namespace line differs); `tools/test_fast.sh` checks this
+mod's copies, the Orbital mod's `tools/check_contract.sh` both. Edit them there, not here.
 
 | File | What | Shared |
 |---|---|---|

@@ -3,9 +3,10 @@ using System.Linq;
 using System.Reflection;
 using AeroMod;
 
-// SHARED with the Aerodynamics Mod's Tests/SettingsUiTests (tools/sync_settings_ui.sh copies it; only the 'using' of the mod's
-// namespace differs). It reaches the registry only through the adapter (SettingsTab.Gather / CanEditWorld / IsForced) and
-// the registry class's SawServer / SawClient / _forced fields, found by reflection - so the same file tests either mod.
+// SHARED by both mods' Tests/SettingsUiTests: written once in the Aerodynamics Mod's tools/shared/modsrc/files/, copied by
+// tools/shared/modsrc/sync.sh (only the 'using' of the mod's namespace differs; edit it there). It reaches the registry only
+// through the adapter (SettingsTab.Gather / CanEditWorld / IsForced) and the registry class's SawServer / SawClient / _forced
+// fields, found by reflection - so the same file tests either mod.
 namespace SettingsUiTests
 {
     /// <summary>

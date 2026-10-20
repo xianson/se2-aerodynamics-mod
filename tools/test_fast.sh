@@ -10,6 +10,11 @@ out=$(dotnet build "$MODCHECK" -nologo -v q "-p:ModDir=$(cygpath -w "$PWD")" 2>&
 if echo "$out" | grep -q "Build succeeded"; then echo "PASS  compile (ModCheck)  $(( $(date +%s)-s ))s"
 else rc=1; echo "FAIL  compile (ModCheck)"; echo "$out" | grep -E " error " | sort -u | head -20; fi
 
+# the source both mods carry (tools/shared/modsrc: the settings menu) - this mod's copies as written there
+s=$(date +%s)
+if out=$(tools/shared/modsrc/sync.sh --check --aero . 2>&1); then echo "PASS  shared source copies (tools/shared/modsrc)  $(( $(date +%s)-s ))s"
+else rc=1; echo "FAIL  shared source copies (tools/shared/modsrc: edit there, then its sync.sh)"; echo "$out" | head -12 | sed 's/^/      /'; fi
+
 for d in Tests/*/; do
     [ -n "$(ls "$d"*.csproj 2>/dev/null)" ] || continue
     s=$(date +%s)

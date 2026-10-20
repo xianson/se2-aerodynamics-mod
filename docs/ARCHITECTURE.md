@@ -312,8 +312,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
 - **The menu** (`Ui/`): the Options screen's **Mods** tab, one tab for both mods (Tag contract `ModSettings/v1`, a section
   per mod), rows generated from the registry (`SettingsModel`: basic shown, advanced collapsed, hidden left out; a
   slider's edit applies once it holds still), reset per group (`ResetGroup`), refusal reasons shown. The shared files are
-  the Orbital mod's (`tools/sync_settings_ui.sh` there writes them, its `check_contract.sh` checks the copies); edit them
-  there. API: `docs/API.md` version 8 and Settings.
+  written once in `tools/shared/modsrc/files/` (this repo; `tools/shared/modsrc/sync.sh` writes both mods' copies, both
+  mods' gates check them); edit them there, never a copy. API: `docs/API.md` version 8 and Settings.
 
 ## 11. What the save holds
 
