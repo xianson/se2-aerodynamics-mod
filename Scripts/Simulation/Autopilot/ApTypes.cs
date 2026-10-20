@@ -14,6 +14,9 @@ public enum ApReason : byte
     NeedsDampeners, NoSource, GoalDone,
     /// <summary>The controlling Autopilot block was switched off, lost its power, was damaged or removed (15).</summary>
     BlockOff,
+    /// <summary>(16..) The flight pilot (2026-10-19): an airplane needs airspeed (and air) to fly on its wings; a route needs a
+    /// waypoint; six-axis flight needs thrust across the main axis; the style asked does not fit the ship.</summary>
+    TooSlow, NoAir, NoWaypoints, NoTranslation, WrongStyle,
 }
 
 /// <summary>What the envelope protection changed this tick (several at once).</summary>
@@ -94,6 +97,10 @@ public struct ApSense
     public bool LoacFresh; public float LoacProbe, LoacHere; public Quaternion LoacProbeAt;
     /// <summary>The speed limit (m/s; 0 none) - the world's, or the ship's own design limit.</summary>
     public float SpeedLimit;
+    /// <summary>The ship's nose (local unit; zero: not known - the cockpit's forward, -Z) and its fixed forward guns (2026-10-19): their
+    /// common firing axis (local unit; zero: none found), their projectile's muzzle speed (m/s; 0 unknown) and range (m; 0 unknown).
+    /// SE2 4.0's projectiles fly straight (no drop) at the muzzle speed plus the shooter's velocity.</summary>
+    public Vector3 Nose, GunAxis; public float MuzzleSpeed, GunRange;
 }
 
 /// <summary>
@@ -205,6 +212,13 @@ public struct ApExternal
     public Quaternion Attitude;
     /// <summary>The throttle along the main thrust (0..1; NaN: the autopilot's own for Accel, the pilot's for Attitude).</summary>
     public float Throttle;
+    /// <summary>(2026-10-19) Track: the heading the nose is turned to (world; zero: the one held), the most speed the gap is closed at
+    /// (m/s; 0: the hover speed), the place's own acceleration (Accel, fed forward). A Track without the hover goal is flown
+    /// SIX-AXIS: translated on the movement keys, no lean, the attitude level on the heading (or aimed).</summary>
+    public Vector3 Heading; public float MaxSpeed;
+    /// <summary>AIM (any kind): this local axis turned toward this world direction - the share Blend (0 none .. 1 all) of the way
+    /// from the attitude the goal flies (the lift's, the hover's lean, six-axis level) to the aimed one; the protection still clips.</summary>
+    public Vector3 AimAxis, AimDir; public float Blend;
 }
 
 /// <summary>An external goal source, asked every tick while ApGoal.External is held. False: done (the goal lets go: GoalDone).</summary>

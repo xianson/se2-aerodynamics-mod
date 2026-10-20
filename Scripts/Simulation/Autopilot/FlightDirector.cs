@@ -79,6 +79,12 @@ public sealed class FlightDirector
     public const float PullUpDeg = 30f, PullReact = 2f, PullHold = 2f;
     /// <summary>The commanded attitude moves at most this fast (deg/s): hovering, flying.</summary>
     public const float SlewHover = 90f, SlewFlying = 25f;
+    /// <summary>A track's heading is turned toward at most this fast (deg/s) - the yaw the hover's frame follows.</summary>
+    public const float TrackYawRate = 45f;
+    /// <summary>Six-axis: the share of the weakest side's acceleration a translation is planned with (the rest for the attitude
+    /// law's thrust and the disturbances), and the movement key kept past the game's input deadzone on every axis it flies (a key
+    /// under it hands the axis to the dampeners' brake - a moving target would be braked toward).</summary>
+    public const float SixShare = 0.6f, SixKeyMin = 0.0015f;
 
     // the hover's frame: the local lift axis (the most thrust), the local heading axis across it, the world heading held
     Vector3 _upL = Vector3.UnitY, _fwdL = -Vector3.UnitZ, _headW;
@@ -99,6 +105,10 @@ public sealed class FlightDirector
     float _brakeBest = float.MaxValue, _brakeStall;
     Vector3 _vPrev, _aMeas; bool _hasVPrev; float _pullHold;
     Quaternion _lastTarget = Quaternion.Identity; bool _hasLastTarget;
+    // six-axis: the attitude held (caught at the engage), its local up and nose (a level frame on a heading)
+    Quaternion _sixAtt = Quaternion.Identity; Vector3 _sixUpL = Vector3.UnitY, _sixNoseL = -Vector3.UnitZ;
+    /// <summary>Six-axis: the translation acceleration it plans with (m/s2, the weakest side's share) - diagnostics.</summary>
+    public float SixAccel;
     /// <summary>The last command's lean (rad), acceleration (world m/s2), speed wanted (world m/s) and climb (m/s) - the traces.</summary>
     public float LeanRad; public Vector3 AccelCmd; public Vector3 VelCmd; public float ClimbCmd;
 
@@ -148,6 +158,23 @@ public sealed class FlightDirector
             _aF = Vector3.Zero; _vRamp = ApMath.Flat(s.Vel, -Vector3.Normalize(s.Gravity));
         }
         if ((goals & ApGoal.Attitude) != 0 && (Goals & ApGoal.Attitude) == 0) _att = s.Orient;
+        if ((goals & ApGoal.External) != 0 && (Goals & ApGoal.External) == 0)
+        {
+            // (six-axis: the attitude now held; its local up - the side most against the gravity -, its nose across it)
+            _sixAtt = s.Orient;
+            Quaternion inv = Quaternion.Inverse(s.Orient);
+            Vector3 upLoc = s.Gravity.LengthSquared() > 1e-4f ? Vector3.Transform(-Vector3.Normalize(s.Gravity), inv) : Vector3.UnitY;
+            _sixUpL = Nearest(upLoc);
+            Vector3 nose = s.Nose.LengthSquared() > 0.5f ? s.Nose : -Vector3.UnitZ;
+            nose = ApMath.Flat(nose, _sixUpL);
+            _sixNoseL = nose.LengthSquared() > 1e-4f ? Vector3.Normalize(nose) : ApMath.Across(_sixUpL);
+            if (!hover)
+            {
+                Vector3 upW0 = s.Gravity.LengthSquared() > 1e-4f ? -Vector3.Normalize(s.Gravity) : Vector3.UnitY;
+                Vector3 h0 = ApMath.Flat(Vector3.Transform(_sixNoseL, s.Orient), upW0);
+                if (h0.LengthSquared() > 1e-4f) _headW = Vector3.Normalize(h0);
+            }
+        }
         if (source != null) Source = source;
         if ((Goals & ~ApGoal.External) == 0) Ground.Reset();
         Goals |= goals;
@@ -273,7 +300,7 @@ public sealed class FlightDirector
         float tti = s.Lim.LookAhead ? Ground.Tti : float.PositiveInfinity;   // (the look ahead switched off: the floor alone)
         bool aheadHover = s.Lim.Protection && (hover || height) && tti < TtiHover;
 
-        Vector3 move = Vector3.Zero; bool setMove = false;
+        Vector3 move = Vector3.Zero; bool setMove = false, sixAxis = false;
         if (hover || height)
         {
             Vector3 v = s.Vel; float vz = Vector3.Dot(v, upW); Vector3 vh = v - upW * vz;
@@ -292,10 +319,13 @@ public sealed class FlightDirector
                 }
                 else if (track)
                 {
-                    // (a moving place: its velocity fed forward, the gap closed as the hold's)
+                    // (a moving place: its velocity fed forward, the gap closed as the hold's - at most the track's speed, or the hover's)
                     _hold = _ext.Position; _holdH = true;
                     Vector3 e = ApMath.Flat((Vector3)(_hold - s.Pos), upW);
-                    vCmd = ApMath.ClampLen(ApMath.Flat(_ext.Velocity, upW) + e * kp, MathF.Max(s.Lim.HoverSpeed, ApMath.Flat(_ext.Velocity, upW).Length() * 1.5f));
+                    Vector3 vff = ApMath.Flat(_ext.Velocity, upW);
+                    float vLim = _ext.MaxSpeed > 0f ? MathF.Max(_ext.MaxSpeed, vff.Length() * 1.2f) : MathF.Max(s.Lim.HoverSpeed, vff.Length() * 1.5f);
+                    vCmd = ApMath.ClampLen(vff + ApMath.ClampLen(e * kp, vLim), vLim);
+                    FollowHeading(in s, upW, dt);
                 }
                 else if ((Goals & ApGoal.Position) != 0)
                 {
@@ -344,7 +374,7 @@ public sealed class FlightDirector
                 Vector3 eI = ApMath.ClampLen(el > IntegralDeadband ? err * ((el - IntegralDeadband) / el) : Vector3.Zero, IntegralMaxError);
                 // (and only in a steady hold - not while the keys fly it or it brakes to a stop: there the speed error is the move's,
                 //  not a steady push to trim out, and on an axis the dampeners hold it would stay wound up)
-                bool steady = keyFlat.LengthSquared() <= 0.0025f && (_holdH || (Goals & ApGoal.Position) == 0);
+                bool steady = keyFlat.LengthSquared() <= 0.0025f && (_holdH || (Goals & ApGoal.Position) == 0) && !(track && _ext.Blend > 0.3f);
                 // (and only near the speed wanted: a transient - a track joined, a gust - is the speed loop's, not a trim to learn)
                 if (steady && el < IntegralMaxError && !sat) _aI += eI * (ki * dt);
                 _aI = ApMath.ClampLen(ApMath.Flat(_aI, upW), aMax);
@@ -364,7 +394,10 @@ public sealed class FlightDirector
                     want = Quaternion.Normalize(Quaternion.CreateFromAxisAngle(k, LeanRad) * level);
                 }
                 else want = level;
+                // (aimed: the nose turned toward the aim on top of the lean - its push accepted while it lasts, the integral held)
+                if (track) want = Aimed(want);
                 attitude = true;
+
                 // the movement keys across the lift axis (a VTOL's side thrusters; ineffective, and harmless, on a helicopter)
                 Vector3 aL = Vector3.Transform(aKeys, Quaternion.Inverse(s.Orient));
                 Vector3 side = ApMath.Flat(aL, _upL);
@@ -436,23 +469,31 @@ public sealed class FlightDirector
         float throttle = float.NaN;
         if (!hover)
         {
-            if (ext && _ext.Kind == ApExternalKind.Accel)
+            if (ext && _ext.Kind == ApExternalKind.Track)
+            {
+                // SIX-AXIS: the place and its velocity flown on the movement keys (every side's real thrust), no lean; the attitude
+                // level on the heading asked (or held), the aim on top
+                want = SixAxis(in s, dt, ref move);
+                setMove = true; attitude = true; sixAxis = true;
+                if (s.Dampeners) { c.Dampeners = true; _dampWanted = true; }
+            }
+            else if (ext && _ext.Kind == ApExternalKind.Accel)
             {
                 Vector3 need = _ext.Accel - gTrue;   // (the specific force wanted: the gravity compensated)
-                if (LiftFlight(in s, need, _ext.Accel, out Quaternion q, out float thr)) { want = q; throttle = float.IsNaN(_ext.Throttle) ? thr : Math.Clamp(_ext.Throttle, 0f, 1f); }
+                if (LiftFlight(in s, need, _ext.Accel, out Quaternion q, out float thr)) { want = Aimed(q); throttle = float.IsNaN(_ext.Throttle) ? thr : Math.Clamp(_ext.Throttle, 0f, 1f); }
                 else
                 {
                     // (no lift to fly it with - slow, no air, no stall sweep: the main thrust axis along it, the throttle that force over
                     //  the axis' thrust - a VTOL, a rocket)
                     Vector3 main = ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out float tmax);
-                    want = Point(s.Orient, main, need);
+                    want = Aimed(Point(s.Orient, main, need));
                     throttle = float.IsNaN(_ext.Throttle) ? (tmax > 1f ? Math.Clamp(need.Length() * s.Mass / tmax, 0f, 1f) : 0f) : Math.Clamp(_ext.Throttle, 0f, 1f);
                 }
                 AccelCmd = _ext.Accel; attitude = true;
             }
             else if (ext && _ext.Kind == ApExternalKind.Attitude && _ext.Attitude.IsValidAndRotationIsNormalized())
             {
-                want = Quaternion.Normalize(_ext.Attitude); attitude = true;
+                want = Aimed(Quaternion.Normalize(_ext.Attitude)); attitude = true;
                 if (!float.IsNaN(_ext.Throttle)) throttle = Math.Clamp(_ext.Throttle, 0f, 1f);
             }
             else if ((Goals & ApGoal.Attitude) != 0) { want = _att; attitude = true; }
@@ -488,7 +529,7 @@ public sealed class FlightDirector
             Quaternion gov = Guard.Govern(in s, want, ref prot, pathRate);
             c.Probe = want; c.HasProbe = true;
             want = gov;
-            if (!hover)
+            if (!hover && !sixAxis)
             {
                 Vector3 main = ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out _);
                 if (!float.IsNaN(throttle)) { move = main * throttle; setMove = true; }
@@ -508,7 +549,7 @@ public sealed class FlightDirector
             //  snaps the ship round; the attitude law flies the rest)
             if (_hasLastTarget)
             {
-                float maxStep = (hover ? SlewHover : SlewFlying) * ApMath.Deg * dt, ang = hover ? 0f : ApMath.Angle(_lastTarget, want);   // (a hover's lean is smoothed already)
+                float maxStep = (hover || sixAxis ? SlewHover : SlewFlying) * ApMath.Deg * dt, ang = hover ? 0f : ApMath.Angle(_lastTarget, want);   // (a hover's lean is smoothed already)
                 if (ang > maxStep && ang > 1e-6f) want = Quaternion.Normalize(Quaternion.Slerp(_lastTarget, want, maxStep / ang));
             }
             _lastTarget = want; _hasLastTarget = true;
@@ -579,8 +620,100 @@ public sealed class FlightDirector
         return true;
     }
 
+    /// <summary>The attitude q with the external goal's aim on top: its axis turned toward its direction, Blend of the way.</summary>
+    Quaternion Aimed(Quaternion q)
+    {
+        float b = _ext.Blend;
+        if (!(b > 0f) || _ext.AimDir.LengthSquared() < 1e-6f || _ext.AimAxis.LengthSquared() < 0.5f) return q;
+        Quaternion a = Point(q, Vector3.Normalize(_ext.AimAxis), _ext.AimDir);
+        return b >= 1f ? a : Quaternion.Normalize(Quaternion.Slerp(q, a, b));
+    }
+
+    /// <summary>A track's heading: the frame's world heading turned toward the one asked, at most TrackYawRate.</summary>
+    void FollowHeading(in ApSense s, Vector3 upW, float dt)
+    {
+        Vector3 want = ApMath.Flat(_ext.Heading, upW);
+        if (want.LengthSquared() < 1e-6f) return;
+        want = Vector3.Normalize(want);
+        Vector3 cur = ApMath.Flat(_headW, upW);
+        if (cur.LengthSquared() < 1e-6f) { _headW = want; return; }
+        cur = Vector3.Normalize(cur);
+        float ang = MathF.Atan2(Vector3.Dot(Vector3.Cross(cur, want), upW), Vector3.Dot(cur, want));
+        float step = Math.Clamp(ang, -TrackYawRate * ApMath.Deg * dt, TrackYawRate * ApMath.Deg * dt);
+        _headW = Vector3.Normalize(Vector3.Transform(cur, Quaternion.CreateFromAxisAngle(upW, step)));
+    }
+
+    /// <summary>SIX-AXIS translation (engine-free): the place (ApExternal.Position) and its velocity / acceleration fed forward, the
+    /// gap closed no faster than the ship can brake (the weakest side's acceleration, SixShare of it), the velocity error an
+    /// acceleration, the force for it in the ship's frame - the dampeners' hold of the weight in when they are on, the weight held
+    /// by the keys when off - and per axis the movement key that gives that force from the game's own thrust law. The attitude:
+    /// level on the heading (gravity) or the one held, the aim on top.</summary>
+    Quaternion SixAxis(in ApSense s, float dt, ref Vector3 move)
+    {
+        Quaternion inv = Quaternion.Inverse(s.Orient);
+        Vector3 gL = Vector3.Transform(s.Gravity, inv);
+        Vector3 hold = s.Dampeners ? -gL * s.Mass : Vector3.Zero;
+        // the weakest side's acceleration left over its share of the weight
+        float aMin = float.MaxValue;
+        for (int k = 0; k < 6; k++)
+        {
+            float sg = k < 3 ? 1f : -1f;
+            float cap = Comp(k < 3 ? s.ThrustPos : s.ThrustNeg, k % 3), wt = MathF.Max(0f, -Comp(gL, k % 3) * sg) * s.Mass;
+            aMin = MathF.Min(aMin, (cap - wt) / MathF.Max(s.Mass, 1f));
+        }
+        float aUse = MathF.Max(0.3f, SixShare * aMin); SixAccel = aUse;
+        float kv = Math.Clamp(aUse / 4f, 0.6f, 3f), kp = 0.3f * kv;
+        Vector3 e = (Vector3)(_ext.Position - s.Pos);
+        float el = e.Length(), vMax = _ext.MaxSpeed > 0f ? _ext.MaxSpeed : s.Lim.HoverSpeed;
+        float close = MathF.Min(vMax, MathF.Min(kp * el, MathF.Sqrt(aUse * el)));
+        Vector3 vCmd = _ext.Velocity + (el > 1e-3f ? e * (close / el) : Vector3.Zero);
+        Vector3 aCmd = ApMath.ClampLen((vCmd - s.Vel) * kv + _ext.Accel, 2f * aUse);
+        AccelCmd = aCmd; VelCmd = vCmd;
+        Vector3 f = aCmd * s.Mass;
+        if (!s.Dampeners) f -= s.Gravity * s.Mass;   // (no dampeners: the weight is the keys' to hold)
+        Vector3 fl = Vector3.Transform(f, inv);
+        move = new Vector3(KeyFor(fl.X, hold.X, s.ThrustPos.X, s.ThrustNeg.X), KeyFor(fl.Y, hold.Y, s.ThrustPos.Y, s.ThrustNeg.Y), KeyFor(fl.Z, hold.Z, s.ThrustPos.Z, s.ThrustNeg.Z));
+        // the attitude: level on the heading (in gravity), else the one held - the aim on top
+        Quaternion q = _sixAtt;
+        float g = s.Gravity.Length();
+        if (g > 1e-2f)
+        {
+            Vector3 upW = -s.Gravity / g;
+            FollowHeading(in s, upW, dt);
+            Vector3 head = ApMath.Flat(_headW, upW);
+            if (head.LengthSquared() > 1e-6f) q = ApMath.Frame(_sixUpL, _sixNoseL, upW, Vector3.Normalize(head));
+        }
+        else if (_ext.Heading.LengthSquared() > 1e-6f) q = Point(_sixAtt, _sixNoseL, _ext.Heading);
+        return Aimed(q);
+    }
+
+    /// <summary>The movement key (-1..1) on one local axis that gives the extra force f (N) beyond the hold h (N, the dampeners'
+    /// gravity hold along +axis) from the side maxima - the game's thrust law: a key along the hold adds key x (max - hold); against
+    /// it the hold shrinks by the key too. Kept past the input deadzone (SixKeyMin) so the axis stays the keys'.</summary>
+    static float KeyFor(float f, float h, float cp, float cn)
+    {
+        float u;
+        if (f >= 0f) { float den = cp - h - MathF.Min(h, 0f); u = den > 1f ? f / den : (f > 0f ? 1f : 0f); }
+        else { float den = cn + h + MathF.Max(h, 0f); u = den > 1f ? f / den : -1f; }
+        u = Math.Clamp(u, -1f, 1f);
+        if (MathF.Abs(u) < SixKeyMin) u = u < 0f ? -SixKeyMin : SixKeyMin;
+        return u;
+    }
+
+    static float Comp(Vector3 v, int i) => i == 0 ? v.X : i == 1 ? v.Y : v.Z;
+
+    /// <summary>The local unit axis (+-X, Y, Z) nearest a direction.</summary>
+    static Vector3 Nearest(Vector3 d)
+    {
+        float ax = MathF.Abs(d.X), ay = MathF.Abs(d.Y), az = MathF.Abs(d.Z);
+        if (ax >= ay && ax >= az) return new Vector3(d.X >= 0f ? 1f : -1f, 0f, 0f);
+        if (ay >= az) return new Vector3(0f, d.Y >= 0f ? 1f : -1f, 0f);
+        return new Vector3(0f, 0f, d.Z >= 0f ? 1f : -1f);
+    }
+
     /// <summary>The attitude turned the least so the local axis points along the world direction d (roll about it kept).</summary>
-    static Quaternion Point(Quaternion q, Vector3 axisLocal, Vector3 d)
+    static Quaternion Point(
+Quaternion q, Vector3 axisLocal, Vector3 d)
     {
         if (d.LengthSquared() < 1e-6f) return q;
         Vector3 u = Vector3.Transform(axisLocal, q), b = Vector3.Normalize(d);
@@ -694,6 +827,12 @@ public static class ApText
         ApReason.NoSource => "no goal source",
         ApReason.GoalDone => "goal reached",
         ApReason.BlockOff => "the autopilot block is off, unpowered or damaged",
+        ApReason.TooSlow => "too slow to fly on the wings - needs airspeed",
+        ApReason.NoAir => "no air to fly on the wings",
+        ApReason.NoWaypoints => "no waypoints - type GPS names or coordinates in Route",
+        ApReason.NoTranslation => "not enough thrust across to fly six-axis",
+        ApReason.WrongStyle => "the flight style set does not fit this ship",
+
         _ => "",
     };
 
