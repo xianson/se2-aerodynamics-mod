@@ -164,7 +164,7 @@ public static class EnemySpawn
 {
     public static int Allowed = 1;   // Launch/EnemySpawn.cs
     public static double DespawnMinutes = 10;   // Launch/EnemySpawn.cs
-    public static int MissileKey = 13, BogeyKey = 2, DespawnKey = 14, Modifier = 1;   // Launch/EnemySpawn.cs
+    public static int MissileKey = 9, BogeyKey = 15, DespawnKey = 14, Modifier = 4;   // Launch/EnemySpawn.cs
     public static string MissileBlueprint = "Missile", BogeyBlueprint = "Bogey";   // Launch/EnemySpawn.cs
     public static double MissileDistance = 2000, BogeyDistance = 4000;   // Launch/EnemySpawn.cs
     public static int Direction = 0, MissileSalvo = 1;   // Launch/EnemySpawn.cs
