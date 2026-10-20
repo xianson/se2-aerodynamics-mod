@@ -21,7 +21,7 @@
       "PCU": 25,
       "ConsumedResource": {
         "Type": "bcded093-f5c0-4997-af3a-a6fbd853ad66",
-        "Amount": 0.02
+        "Amount": 1
       },
       "ConsumptionPriority": {
         "Priority": 6

@@ -15,6 +15,7 @@ sealed class PanelLayoutPack : IScenarioPack
     {
         r.Add("panel layout: status, mode buttons, the mode's fields, protection last - mode by mode", true, Layout);
         r.Add("panel layout: every mod panel declares its TypeInfoHolder (the game's member order)", true, Holders);
+        r.Add("block power: it draws a whole kW (the info pane shows int kW), and flies only built, on and supplied", true, Power);
     }
 
     static string Root()
@@ -139,5 +140,23 @@ sealed class PanelLayoutPack : IScenarioPack
             Sim.Check(holders == builds, $"panel holders: {Path.GetFileName(f)} - {builds} model(s), {holders} TypeInfoHolder(s)");
         }
         Sim.Check(n >= 6, $"panel holders: the mod's panels found ({n})");
+    }
+
+    static void Power()
+    {
+        // (the ready rule the block's Working uses: unpowered, off or damaged - ApBlockLink lets go: BlockPack's "block dark")
+        Sim.Check(ApBlockLink.BlockReady(true, true, true, true, false) && !ApBlockLink.BlockReady(true, true, true, false, false)
+            && !ApBlockLink.BlockReady(true, true, false, true, false) && !ApBlockLink.BlockReady(true, false, true, true, false)
+            && ApBlockLink.BlockReady(true, true, true, false, true) && !ApBlockLink.BlockReady(true, true, false, false, true),
+            "block power: ready = built and on and supplied (the harness's ignore-power skips only the supply)");
+        string root = Root();
+        if (root == null) { Sim.Check(false, "block power: the mod's sources found"); return; }
+        foreach (var size in new[] { "Large", "Small" })
+        {
+            string f = Path.Combine(root, "Assets", "Aero", "Autopilot", size, $"Autopilot_{size}_PowerableBlockDefinition.partialdef");
+            var m = File.Exists(f) ? Regex.Match(File.ReadAllText(f), @"""ConsumedResource""\s*:\s*\{[^}]*""Amount""\s*:\s*([0-9.]+)") : Match.Empty;
+            float kw = m.Success ? float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : -1f;
+            Sim.Check(kw >= 1f && kw == MathF.Floor(kw), $"block power: the {size} autopilot draws {kw} kW - a whole kW, so the game's panel shows it (0.05 read as 0kW)");
+        }
     }
 }

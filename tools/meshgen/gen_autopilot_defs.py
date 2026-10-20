@@ -24,13 +24,17 @@ SHARED = "a900"
 KIND, GROUP = G(SHARED, 0x20), G(SHARED, 0x21)
 AERO_SUBCATEGORY = "ae200001-ae00-0000-0002-000000000001"   # ("Aircraft Parts": Assets/Aero/Menu/AeroSubcategory.def)
 
+# THE POWER (kW - the definition's ConsumedResource.Amount is in the panel's unit, kW): 1 kW each. Was 0.05 / 0.02 kW (50 / 20 W):
+# the block did draw it (Block is working), but the game's info pane binds the amounts to an int (ResourceNodeBlockDetailScreen:
+# FormattedTextBlock.Current is int) - "Max Input: 0kW", read as no power (in game, 2026-10-19). Vanilla's smallest draw is 5 kW,
+# the aero gear's 1-5 kW. AeroAutopilotComponent.Working: built, switched on and supplied - unpowered, the autopilot lets go.
 # per size: the vanilla block it looks like (its definitions in the Mod SDK's GameData/Vanilla/Content/Blocks/<folder>)
 SIZES = {
-    "Large": dict(sid="a901", kw=0.05, pcu=50, look="Event Controller (1 m)",
+    "Large": dict(sid="a901", kw=1, pcu=50, look="Event Controller (1 m)",
                   model="41a963b2-eb00-4ff9-99f6-73f66c46191c", breakable="884a02cc-32d8-4aee-a863-42f889bc34d0",
                   icon="{G}ebd17b65-e603-43d9-85d1-a5cbd6cc40df", placer="3f307784-9f66-4733-aa7f-8dc130520674",
                   recipe="f5ae2fd9-7701-42fb-b8de-37a4148a162d"),
-    "Small": dict(sid="a902", kw=0.02, pcu=25, look="Timer (0.5 m)",
+    "Small": dict(sid="a902", kw=1, pcu=25, look="Timer (0.5 m)",
                   model="5a916eba-a37c-42b2-8f8e-96f961770fa3", breakable="2ab9e7be-44a2-43a7-a23a-a179e32c6c58",
                   icon="{G}d7b04087-e064-48c3-999f-7ff49562d4af", placer=None,
                   recipe="6e3ac5b6-0b6a-41c8-b7c0-8743ae3aded8"),

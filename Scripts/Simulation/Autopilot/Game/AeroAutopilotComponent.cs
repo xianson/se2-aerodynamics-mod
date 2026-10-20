@@ -58,8 +58,8 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         {
             if (!_powerLooked) { _powerLooked = true; _power = Entity?.TryGet<PowerableBlockComponent>(); }
             var p = _power;
-            if (p == null) return true;
-            return p.Functional && p.Enabled && (p.Supplied || DevIgnorePower);
+            return p == null ? ApBlockLink.BlockReady(false, false, false, false, DevIgnorePower)
+                : ApBlockLink.BlockReady(true, p.Functional, p.Enabled, p.Supplied, DevIgnorePower);
         }
     }
 

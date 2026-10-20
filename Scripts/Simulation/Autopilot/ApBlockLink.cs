@@ -126,6 +126,11 @@ public sealed class ApBlockLink
         if (fd.Engaged && float.IsFinite(_height) && MathF.Abs(p.HeightM - _height) > 0.05f) { fd.SetHeight(p.HeightM, in s); _height = p.HeightM; }
     }
 
+    /// <summary>The block may fly its grid: built (functional), switched on and supplied with power (the game's PowerableBlockComponent;
+    /// a block without one - none in the content - always may). ignorePower: the harness's override.</summary>
+    public static bool BlockReady(bool hasPower, bool functional, bool enabled, bool supplied, bool ignorePower)
+        => !hasPower || functional && enabled && (supplied || ignorePower);
+
     /// <summary>A level-off asked: the pilot mode begun again next tick (its holds caught again from the flight now).</summary>
     public void Restart() { if (ApPanel.IsPilotMode(_mode)) _mode = ApMode.Off; }
 
