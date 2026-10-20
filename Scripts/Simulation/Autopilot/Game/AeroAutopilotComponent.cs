@@ -118,7 +118,11 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             var b = _status;
             bool ready = Working;
             if (!Autopilot.Enabled) return "Off - not allowed in this world";
-            if (b == null) return ApBlockLink.Status(Panel.Mode, ApReason.None, false, ready, false, float.NaN, ApHeightRef.Ground, ApProt.None);
+            var mode = Panel.Mode;
+            // (no report yet, or the panel's mode changed since the grid's last one - a button just pressed: the terminal reads the
+            //  line once, at the press, before the grid's step has run - the new mode, not the old line: "Hover hold - engaging",
+            //  "Off". Shown one press behind before, 2026-10-19 in game.)
+            if (b == null || b.Mode != mode && !b.Standby) return ApBlockLink.Status(mode, ApReason.None, false, ready, b?.Standby ?? false, float.NaN, Panel.HeightRef, ApProt.None);
             return ApBlockLink.Status(b.Mode, b.Reason, b.Flying, ready, b.Standby, b.HasHeight ? b.HeightM : float.NaN, b.Ref, b.Prot);
         }
     }
