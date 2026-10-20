@@ -1,6 +1,7 @@
 #pragma warning disable CS0649, CS8632, CS1591, CS1573, CS1570, CS1574, CS0419, CS1734
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Keen.Game2.Simulation.WorldObjects.CubeBlocks;
 using Keen.VRage.Core;
 using Keen.VRage.DCS.Annotations;
@@ -77,14 +78,36 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     /// <summary>A whole panel (the save's restore).</summary>
     internal void SetPanel(in ApPanel p) { var c = p.Clamped(); lock (_lock) _panel = c; }
 
+    /// <summary>An edit of the panel (the terminal's setters - the flight pilot's values), clamped, under the lock.</summary>
+    internal delegate void PanelEdit(ref ApPanel p);
+    internal void Edit(PanelEdit e) { if (e == null) return; lock (_lock) { e(ref _panel); _panel = _panel.Clamped(); } Wake(); }
+
+    /// <summary>LEVEL OFF / RECOVER (a button): flight hold with every hold on, caught again from the attitude, height and speed now
+    /// (the grid's step begins the mode again even if it was in it: Restarts).</summary>
+    internal void LevelOff() { lock (_lock) { _panel.Mode = ApMode.FlightHold; _panel.HeadingOn = _panel.AltOn = _panel.SpeedOn = true; _panel.ReturnHome = false; } Interlocked.Increment(ref Restarts); Wake(); }
+    internal int Restarts;
+
+    /// <summary>RETURN (a button): fly back to where a mode was first engaged and loiter there (navigate); again: the route resumed.</summary>
+    internal void ToggleReturn()
+    {
+        lock (_lock)
+        {
+            _panel.ReturnHome = !_panel.ReturnHome;
+            if (_panel.ReturnHome && _panel.Mode != ApMode.Navigate && _panel.Mode != ApMode.Engage) _panel.Mode = ApMode.Navigate;
+        }
+        Wake();
+    }
+
     /// <summary>The grid's step: what the panel should now show (a let-go's mode, the height held).</summary>
     internal void WriteBack(in ApBlockLink.Out o)
     {
-        if (!o.ModeChanged && !o.HeightChanged) return;
+        if (!o.ModeChanged && !o.HeightChanged && !o.HoldsChanged && !o.HomeChanged) return;
         lock (_lock)
         {
             if (o.ModeChanged) _panel.Mode = o.Mode;
             if (o.HeightChanged) _panel.HeightM = o.HeightM;
+            if (o.HoldsChanged) { _panel.HeadingDeg = o.HeadingDeg; _panel.AltM = o.AltM; _panel.SpeedMs = o.SpeedMs; }
+            if (o.HomeChanged) { _panel.HasHome = true; _panel.HomeX = o.Home.X; _panel.HomeY = o.Home.Y; _panel.HomeZ = o.Home.Z; }
         }
     }
 
@@ -94,8 +117,10 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     internal sealed class StatusBox
     {
         public ApMode Mode; public ApReason Reason; public bool Flying, Standby, HasHeight; public float HeightM; public ApHeightRef Ref; public ApProt Prot;
+        /// <summary>A pilot mode flying: its view (the status line built from it).</summary>
+        public bool Pilot; public ApPilotView View;
         public bool Same(StatusBox o) => o != null && o.Mode == Mode && o.Reason == Reason && o.Flying == Flying && o.Standby == Standby
-            && o.HasHeight == HasHeight && MathF.Abs(o.HeightM - HeightM) < 0.05f && o.Ref == Ref && o.Prot == Prot;
+            && o.HasHeight == HasHeight && MathF.Abs(o.HeightM - HeightM) < 0.05f && o.Ref == Ref && o.Prot == Prot && o.Pilot == Pilot && (!Pilot || o.View.Same(in View));
     }
     volatile StatusBox _status;
     StatusBox _spare;
@@ -105,6 +130,21 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     {
         var b = _spare ?? new StatusBox();
         b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = standby; b.HasHeight = hasHeight; b.HeightM = heightM; b.Ref = href; b.Prot = prot;
+        b.Pilot = false;
+        Publish(b);
+    }
+
+    /// <summary>The grid's step: a pilot mode's status (its view).</summary>
+    internal void ReportPilot(ApMode mode, ApReason reason, bool flying, in ApPilotView v)
+    {
+        var b = _spare ?? new StatusBox();
+        b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = false; b.HasHeight = false; b.HeightM = 0f; b.Ref = ApHeightRef.Ground; b.Prot = v.Prot;
+        b.Pilot = flying; b.View = v;
+        Publish(b);
+    }
+
+    void Publish(StatusBox b)
+    {
         var now = _status;
         if (b.Same(now)) { _spare = b; return; }
         _spare = null; _status = b;
@@ -119,6 +159,8 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             bool ready = Working;
             if (!Autopilot.Enabled) return "Off - not allowed in this world";
             if (b == null) return ApBlockLink.Status(Panel.Mode, ApReason.None, false, ready, false, float.NaN, ApHeightRef.Ground, ApProt.None);
+            if (b.Pilot && ready && !b.Standby && b.Mode != ApMode.Off) return b.View.Text();
+
             return ApBlockLink.Status(b.Mode, b.Reason, b.Flying, ready, b.Standby, b.HasHeight ? b.HeightM : float.NaN, b.Ref, b.Prot);
         }
     }
@@ -162,8 +204,8 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         }
     }
 
-    /// <summary>Harness (aeroset AeroAutopilotComponent.DevMode N): every server autopilot block's mode (0 off, 1 hover, 2 height).</summary>
-    public static int DevMode { get => -1; set { lock (All) foreach (var a in All) a.SetMode(value == 1 ? ApMode.HoverHold : value == 2 ? ApMode.HeightHold : ApMode.Off); } }
+    /// <summary>Harness (aeroset AeroAutopilotComponent.DevMode N): every server autopilot block's mode (0 off, 1 hover, 2 height, 3 flight hold, 4 navigate, 5 engage).</summary>
+    public static int DevMode { get => -1; set { lock (All) foreach (var a in All) a.SetMode(value >= 1 && value <= (int)ApMode.Engage ? (ApMode)value : ApMode.Off); } }
 }
 
 public partial class AeroGridComponent

@@ -2,7 +2,8 @@
 using System;
 namespace AeroMod;
 
-// THE PUBLIC API, VERSION 11: the autopilot (Autopilot/: hover hold, height hold, envelope protection) and the flight performance.
+// THE PUBLIC API, VERSIONS 11-12: the autopilot (Autopilot/: hover hold, height hold, envelope protection; 12: the flight pilot -
+// its target, its aim, its mode) and the flight performance.
 // Reads of mod-owned fields only (the server grid's flight director, the stall evaluation's published box) - any thread, no
 // allocation, no exception handling on the way. The ask is queued: the grid's next attitude step engages or lets go.
 public static partial class AeroApi
@@ -35,7 +36,62 @@ public static partial class AeroApi
         return true;
     }
 
+    /// <summary>(version 12) The target the grid's Autopilot block engages when its Target Source is "Api": an entity (a grid, a
+    /// block - its top grid's velocity is used). False: no server grid found for it.</summary>
+    public static bool SetAutopilotTarget(Keen.VRage.DCS.Components.Entity grid, Keen.VRage.DCS.Components.Entity target)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        if (aero == null || !aero.IsServerScene) return false;
+        var t = aero.ApTargetsMade; t.ApiPoint = false; t.ApiEntity = target;
+        return true;
+    }
+
+    /// <summary>(version 12) ... or a point (world) moving at a velocity (world m/s) - extrapolated by the autopilot until set again.</summary>
+    public static bool SetAutopilotTargetPoint(Keen.VRage.DCS.Components.Entity grid, Vector3D position, Vector3 velocity)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        if (aero == null || !aero.IsServerScene) return false;
+        var t = aero.ApTargetsMade; t.ApiEntity = null; t.ApiPos = position; t.ApiVel = velocity; t.ApiPoint = true;
+        return true;
+    }
+
+    /// <summary>(version 12) No API target (the block then waits - patrols its route or loiters).</summary>
+    public static bool ClearAutopilotTarget(Keen.VRage.DCS.Components.Entity grid)
+    {
+        var aero = DesignProbe.ServerAero(grid);
+        if (aero == null || !aero.IsServerScene) return false;
+        var t = aero.ApTargetsMade; t.ApiPoint = false; t.ApiEntity = null;
+        return true;
+    }
+
+    /// <summary>(version 12) THE AIM, for another mod's weapons logic (the autopilot never fires): the angle (deg) between the fixed
+    /// guns' axis (or the nose) and the target's lead point, whether that is inside the block's aim cone (or the miss inside the
+    /// target's size) and the target within the guns' range, the range (m) and the projectile's time of flight (s). False: no
+    /// target being aimed at (not in Engage, no target, aim off, or the behaviour does not aim now).</summary>
+    public static bool TryGetAutopilotAim(Keen.VRage.DCS.Components.Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)
+    {
+        errorDeg = float.NaN; inCone = inRange = false; range = timeOfFlight = 0f;
+        var p = DesignProbe.ServerAero(grid)?.ApPilotNow;
+        if (p == null || !p.AimOn || !float.IsFinite(p.AimErrDeg)) return false;
+        errorDeg = p.AimErrDeg; inCone = p.InCone; inRange = p.InRange; range = p.T.Range; timeOfFlight = p.Tof;
+        return true;
+    }
+
+    /// <summary>(version 12) The flight pilot: its mode (3 flight hold, 4 navigate, 5 engage - ApMode), the style it flies (1 airplane,
+    /// 2 helicopter, 3 six-axis), the behaviour active (ApBehaviour: 1 attack run .. 11 pursuit lag, 12 extend), a target held, and
+    /// the next waypoint's index (-1: loitering). False: no pilot mode flying.</summary>
+    public static bool TryGetAutopilotPilot(Keen.VRage.DCS.Components.Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)
+    {
+        mode = style = behaviour = 0; hasTarget = false; waypoint = -1;
+        var aero = DesignProbe.ServerAero(grid);
+        var p = aero?.ApPilotNow;
+        if (p == null || aero.Fd == null || (aero.Fd.Goals & ApGoal.External) == 0) return false;
+        mode = (int)p.Mode; style = (int)p.Style; behaviour = (int)p.ActiveBh; hasTarget = p.T.Valid; waypoint = p.Loitering ? -1 : p.Wp;
+        return true;
+    }
+
     /// <summary>(version 11) The FLIGHT PERFORMANCE of a flown grid now, from the mod's own whole-ship lift and drag over the angle
+
     /// of attack (the stall evaluation's sweep, a few times a second; Mach and density in) and its thrust: the most load the lift
     /// gives within the stall margin and Autopilot.GLimit (instantaneous, g) and the most its full thrust sustains (g), the level
     /// turn rates at those (rad/s), the drag's deceleration now (m/s2), full thrust less the drag along the path (m/s2), and the

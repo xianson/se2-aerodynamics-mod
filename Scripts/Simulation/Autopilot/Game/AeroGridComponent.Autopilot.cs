@@ -67,6 +67,12 @@ public partial class AeroGridComponent
 
     // the Autopilot block that flies this grid (ApArbiter), its link to the flight director, the panel's write-back
     AeroAutopilotComponent _apCtl; ApBlockLink _apLink; ApBlockLink.Out _apOut; int _apReportIn;
+    // the flight pilot's game senses: its target source, the fixed guns, the route's text resolved (every few seconds), the restarts seen
+    internal ApGameTargets ApTargets; ApGunScan _apGuns; string _apRouteText; long _apRouteNext; int _apRestarts;
+    /// <summary>The flight pilot of the block that flies (null: none) - the API's reads.</summary>
+    internal ApPilot ApPilotNow => _apLink?.Pilot;
+    /// <summary>The target source (made on first use: the grid's step, or another mod's API call).</summary>
+    internal ApGameTargets ApTargetsMade { get { var t = ApTargets; if (t != null) return t; Interlocked.CompareExchange(ref ApTargets, new ApGameTargets(this), null); return ApTargets; } }
 
     /// <summary>The limits the autopilot flies with now: the flying block's panel (the world's caps in), or the defaults (any thread:
     /// a reference read and the block's locked copy).</summary>
@@ -106,6 +112,7 @@ public partial class AeroGridComponent
         if (ctl != null)
         {
             var panel = ctl.Panel;
+            PilotSenses(in wt, ctl, in panel, ref s);
             bool wasEngaged = fd.Engaged;
             _apLink.Before(fd, in panel, ctl.Working, in s, ref _apOut);
             if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
@@ -160,6 +167,31 @@ public partial class AeroGridComponent
         return blocks[ApArbiter.Pick(ready, x, y, z)];
     }
 
+    /// <summary>The flight pilot's senses before the link's step: the guns and the nose (every 3 s), the target source as the panel
+    /// sets it, the route's text resolved (when it changes; every 5 s for markers that move), a level-off asked (the mode begun again).</summary>
+    void PilotSenses(in WorldTransform wt, AeroAutopilotComponent ctl, in ApPanel panel, ref ApSense s)
+    {
+        if (!ApPanel.IsPilotMode(panel.Mode)) return;
+        _apGuns ??= new ApGunScan();
+        _apGuns.Update(this, wt, ctl);
+        s.GunAxis = _apGuns.Axis; s.MuzzleSpeed = _apGuns.Muzzle; s.GunRange = _apGuns.Range;
+        s.Nose = _apGuns.Guns > 0 ? _apGuns.Axis : _apGuns.Nose;
+        var tg = ApTargetsMade;
+        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? "";
+        var pilot = _apLink.Pilot;
+        pilot.Targets = tg;
+
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!ReferenceEquals(panel.Route, _apRouteText) || now >= _apRouteNext)
+        {
+            _apRouteText = panel.Route; _apRouteNext = now + 5 * System.Diagnostics.Stopwatch.Frequency;
+            var grid = Entity;
+            pilot.SetRoute(ApRoute.Parse(panel.Route, name => (ApGps.Find(grid, name, out var p), p)));
+        }
+        int r = Volatile.Read(ref ctl.Restarts);
+        if (r != _apRestarts) { _apRestarts = r; _apLink.Restart(); }
+    }
+
     /// <summary>The blocks' status lines' inputs (four times a second, or at once when the mode changed): the one that flies its
     /// mode, reason and height; the others "standby".</summary>
     void ReportBlocks(AeroAutopilotComponent[] blocks, AeroAutopilotComponent ctl, FlightDirector fd, bool force)
@@ -171,7 +203,13 @@ public partial class AeroGridComponent
         for (int i = 0; i < blocks.Length; i++)
         {
             var b = blocks[i];
-            if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);
+            if (ReferenceEquals(b, ctl) && _apLink != null && ApPanel.IsPilotMode(b.Panel.Mode))
+            {
+                _apLink.Pilot.View(out var v, fd?.Prot ?? ApProt.None);
+                b.ReportPilot(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, in v);
+            }
+            else if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);
+
             else b.Report(b.Panel.Mode, ApReason.None, false, true, false, 0f, b.Panel.HeightRef, ApProt.None);
         }
     }

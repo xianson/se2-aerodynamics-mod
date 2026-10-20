@@ -510,6 +510,28 @@ the ground's normal and rise, the time to impact along the path). Protection app
 `Tests/AutopilotSim` flies them: a pack of scenarios is a class implementing `IScenarioPack` anywhere in that project
 (`Sim.Check`, `Run`, `Ships`, `SimTerrain`, `SimTarget`).
 
+## Version 12
+
+Every earlier member is unchanged. New (2026-10-19): the **flight pilot** - the Autopilot block's Flight Hold, Navigate and
+Engage modes (`Scripts/Simulation/Autopilot/ApPilot.cs`). Its target, its aim and its state. It never fires a weapon: read the
+aim and fire from your own mod.
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool SetAutopilotTarget(Entity grid, Entity target)` | 12 | The target the grid's Autopilot block engages when its Target Source is **API**: an entity (a grid or a block; its top grid's velocity is used). False: no server grid found. |
+| `bool SetAutopilotTargetPoint(Entity grid, Vector3D position, Vector3 velocity)` | 12 | ... or a point (world) moving at a velocity (world m/s). |
+| `bool ClearAutopilotTarget(Entity grid)` | 12 | No API target: the block waits (flies its route, or loiters where it was engaged). |
+| `bool TryGetAutopilotAim(Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)` | 12 | The angle between the fixed guns' axis (or the nose) and the target's lead point (deg), inside the block's aim cone (or the miss inside the target's size), the target inside the guns' range, the range (m) and the shot's time of flight (s). False: nothing aimed at now. |
+| `bool TryGetAutopilotPilot(Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)` | 12 | The mode flying (3 flight hold, 4 navigate, 5 engage), the style (1 airplane, 2 helicopter, 3 six-axis), the behaviour active (1 attack run, 2 attack run U-turn, 3 broadside, 4 circle, 5 hover above, 6 hover below, 7 point at, 8 standoff, 9-11 pursuit lead / pure / lag, 12 extend), a target held, the next waypoint (-1 loitering). False: no pilot mode flying. |
+
+New `reason` values (`TryGetAutopilot`): 16 too slow to fly on the wings, 17 no air, 18 no waypoints, 19 not enough thrust
+across for six-axis, 20 the style set does not fit the ship.
+
+**The lead.** SE2 4.0's projectiles fly straight at the muzzle speed plus the shooter's velocity (no drop:
+`SimulatedProjectileDefinition.IsAffectedByBulletDrop` is never read). The intercept time is iterated against the target's
+velocity and its estimated acceleration. The muzzle speed and range come from the grid's fixed guns (weapon blocks without a
+turret), or the block's Muzzle Speed.
+
 ## Roadmap / gaps
 
 What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).

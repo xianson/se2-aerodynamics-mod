@@ -126,7 +126,11 @@ public sealed class ApBlockLink
         if (fd.Engaged && float.IsFinite(_height) && MathF.Abs(p.HeightM - _height) > 0.05f) { fd.SetHeight(p.HeightM, in s); _height = p.HeightM; }
     }
 
+    /// <summary>A level-off asked: the pilot mode begun again next tick (its holds caught again from the flight now).</summary>
+    public void Restart() { if (ApPanel.IsPilotMode(_mode)) _mode = ApMode.Off; }
+
     /// <summary>After the director's step: its let-go and its held height back to the panel.</summary>
+
     public void After(FlightDirector fd, in ApPanel p, ref Out o)
     {
         // (a pilot mode holds while its external goal does; what it caught at the engage goes to the panel)
