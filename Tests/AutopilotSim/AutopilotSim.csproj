@@ -8,6 +8,7 @@
     <Compile Include="$(Sim)\Autopilot\*.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustAllocator.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorTrim.cs" />
+    <Compile Include="$(Sim)\Propulsion\ThrustVector.cs" />   <!-- (the gimballed nozzles: rockets) -->
     <Compile Include="$(Sim)\Propulsion\HonestHold.cs" />
     <Compile Include="$(Sim)\Propulsion\ReversibleThrust.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
