@@ -40,6 +40,7 @@ sealed class TextsPack : IScenarioPack
         Sim.Check(texts.ContainsKey("AeroModTexts_Probe"), "texts: the probe key ModTexts reads the texts in by (AeroClientHost.ModTextsProbe)");
 
         var need = new SortedDictionary<string, string>(StringComparer.Ordinal);   // key -> where
+        need["AeroModTexts_Probe"] = "AeroClientHost.ModTextsProbe";
         var asm = typeof(ApPanel).Assembly;
         int models = 0, enums = 0;
         foreach (var f in Directory.EnumerateFiles(Path.Combine(root, "Scripts"), "*BlockDetailModel.cs", SearchOption.AllDirectories))
@@ -49,7 +50,7 @@ sealed class TextsPack : IScenarioPack
             foreach (Match m in Regex.Matches(src, @"\[(?:Label|Group|Button)\(""((?:[^""\\]|\\.)*)""\)\]"))
                 need.TryAdd(Regex.Unescape(m.Groups[1].Value), name);
             // (an enum property shown on the panel: each of its values' "<Type>_<Value>" - the game's localized enum names)
-            foreach (Match m in Regex.Matches(src, @"public (\w+) \w+ \{ get"))
+            foreach (Match m in Regex.Matches(src, @"public (\w+) \w+\s*\{\s*get"))
             {
                 var t = asm.GetType("AeroMod." + m.Groups[1].Value);
                 if (t == null || !t.IsEnum) continue;
@@ -73,6 +74,13 @@ sealed class TextsPack : IScenarioPack
         var missing = need.Where(kv => !string.IsNullOrEmpty(kv.Key) && !texts.ContainsKey(kv.Key)).ToList();
         foreach (var kv in missing) Sim.Note($"texts: missing '{kv.Key}' ({kv.Value})");
         Sim.Check(missing.Count == 0, $"texts: all {need.Count} keys in the texts file ({missing.Count} missing: {string.Join(" | ", missing.Take(8).Select(kv => kv.Key))})");
+        // (no key left behind by a rename: each one is looked up by something above)
+        var unused = texts.Keys.Where(k => !need.ContainsKey(k)).ToList();
+        foreach (var k in unused) Sim.Note($"texts: unused '{k}'");
+        Sim.Check(unused.Count == 0, $"texts: every key in the file is used ({unused.Count} unused: {string.Join(" | ", unused.Take(8))})");
+        // (the autopilot's choice names in code - its tooltips - are the texts file's: ApPanelLayout.Names)
+        var differ = ApPanelLayout.Names.Where(kv => !texts.TryGetValue(kv.Key, out var t) || t != kv.Value).Select(kv => kv.Key).ToList();
+        Sim.Check(differ.Count == 0, $"texts: the panel's choice names (ApPanelLayout.Names) are the texts file's ({string.Join(", ", differ)})");
         // (a text never empty: the game's label lookup falls back to the key on an empty text)
         var empty = texts.Where(kv => string.IsNullOrEmpty(kv.Value)).Select(kv => kv.Key).ToList();
         Sim.Check(empty.Count == 0, $"texts: no empty text ({string.Join(", ", empty)})");

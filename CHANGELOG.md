@@ -3,6 +3,19 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - the Autopilot panel, redone
+
+- Panel texts show in game (they were raw keys like "ApBehaviour_Auto"): the mod reads its texts into the game's table once a world.
+- Status first, wrapped. One **Mode** dropdown: Off, Hover, Hold height, Cruise, Follow route, Return home, Follow ship, Attack.
+  A line under it says what the mode does. **Level Off** is the only button. Then only that mode's settings; **Safety limits** last.
+- Renamed: **Fly as** (Detect / Plane / Helicopter / Thruster ship), **Attack movement** (Strafing run, Turn-back run, Circle it,
+  Keep distance, Hover over / under, Chase - gun lead / direct / trailing, Dogfight, Rocket), **Target** (Locked target / GPS /
+  Ship by name / Other mod), **Keep flying when I leave the seat**. Each dropdown: a line for the choice, all choices in its tooltip.
+- **Facing** (Direction of travel / Nose at target / Side at target - left / right) and **Aim priority**: how far the flight gives
+  way to point that face at the target. Movement always wins; the safety limits still clip. Replaces Point At, Broadside and the
+  aim switch - old saves convert (Point At: Keep distance + nose; Broadside: Circle it + a side; aim on: the nose).
+- Toolbar: every mode is still an action; existing toolbars keep working.
+
 ## Unreleased - test spawns (creative / admin)
 
 - **Ctrl+Shift+I** spawns an enemy **missile**, **Ctrl+Shift+O** an enemy **bogey**, **Ctrl+Shift+N** removes them (not

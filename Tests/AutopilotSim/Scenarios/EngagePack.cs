@@ -1,11 +1,13 @@
 using AeroMod;
 
 /// <summary>
-/// THE BEHAVIOURS against a target (SimTarget: straight, turning, weaving, accelerating): attack runs (flyover and U-turn: passes,
-/// their distance, the re-run), broadside (angle, range), circle (radius), pursuit lead / pure / lag (range, aim), hover above,
-/// point at, standoff (range kept as it closes) on the plane, the gun helicopter and the six-axis gunship; the nose on the lead
-/// (aim error, time in the cone); the arbiter's hysteresis; the lead's arithmetic against a flown projectile; the protection
-/// clipping a pursuit of a hard turn; an idle patrol that engages a target when it appears and goes back when it is gone.
+/// THE ATTACK MOVEMENTS against a target (SimTarget: straight, turning, weaving, accelerating): strafing runs (flyover and
+/// turn-back: passes, their distance, the re-run), circle it with a side at the target (angle, range - the old broadside), circle
+/// (radius), chases lead / direct / trailing (range, aim), hover over, keep distance (range kept as it closes; with the nose at a
+/// crossing target - the old point at) on the plane, the gun helicopter and the six-axis gunship; the nose on the lead (aim error,
+/// time in the cone - the facing Nose at its full aim priority, what the old aim switch flew); the arbiter's hysteresis; the
+/// lead's arithmetic against a flown projectile; the protection clipping a chase of a hard turn; an idle patrol that engages a
+/// target when it appears and goes back when it is gone. (The aim priority's own scenarios: FacingPack.)
 /// </summary>
 sealed class EngagePack : IScenarioPack
 {
@@ -13,15 +15,15 @@ sealed class EngagePack : IScenarioPack
     {
         r.Add("engage: attack run (flyover) on a slow target (Plane2) - passes, pass distance, re-run", true, () => AttackRun(false));
         r.Add("engage: attack run U-turn (Plane2) - more passes than the flyover", true, () => AttackRun(true));
-        r.Add("engage: broadside 90 on a slow target (Plane2) - angle and range", true, () => PlaneBroadside());
+        r.Add("engage: circle it, right side at a slow target (Plane2; the old broadside 90) - the target abeam on the right, the range", true, () => PlaneBroadside());
         r.Add("engage: circle a slow target (Plane2) - radius", true, () => PlaneCircle());
         r.Add("engage: pursuit lead vs straight / turning / weaving targets (Plane2) - range, aim, time in cone", true, () => { foreach (var k in new[] { "straight", "turn", "weave" }) PlanePursuit(ApBehaviour.PursuitLead, k); });
         r.Add("engage: pursuit pure and lag (Plane2) - geometry", false, () => { PlanePursuit(ApBehaviour.PursuitPure, "straight"); PlanePursuit(ApBehaviour.PursuitLag, "straight"); });
         r.Add("engage: helicopter standoff vs straight / weaving / accelerating - range kept, nose on the lead", true, () => { foreach (var k in new[] { "straight", "weave", "accelerate" }) Hover(FlightShips.GunHeli(), ApBehaviour.Standoff, k); });
         r.Add("engage: helicopter hover above a moving target", true, () => Hover(FlightShips.GunHeli(), ApBehaviour.HoverAbove, "straight"));
-        r.Add("engage: helicopter point at a crossing target - held, aimed", true, () => Hover(FlightShips.GunHeli(), ApBehaviour.PointAt, "crossing"));
+        r.Add("engage: helicopter keep distance, nose at a crossing target (the old point at) - range, aimed", true, () => Hover(FlightShips.GunHeli(), ApBehaviour.PointAt, "crossing"));
         r.Add("engage: six-axis standoff vs weaving / accelerating - range, nose on the lead", true, () => { foreach (var k in new[] { "weave", "accelerate" }) Hover(FlightShips.SixAxis(), ApBehaviour.Standoff, k); });
-        r.Add("engage: six-axis broadside 90 - the side to the target, the range", true, () => Hover(FlightShips.SixAxis(), ApBehaviour.Broadside, "straight"));
+        r.Add("engage: six-axis circle it, side at the target (the old broadside 90) - the side to the target, the range", true, () => Hover(FlightShips.SixAxis(), ApBehaviour.Broadside, "straight"));
         r.Add("engage: six-axis circle - radius", true, () => Hover(FlightShips.SixAxis(), ApBehaviour.Circle, "slow"));
         r.Add("engage: one-tail helicopter and VTOL standoff (straight)", false, () => { var h = FlightShips.GunHeli(3f, twin: false); Hover(h, ApBehaviour.Standoff, "straight"); var v = Ships.Vtol(); v.GunAxis = -Vector3.UnitZ; v.Muzzle = 700f; v.GunRange = 1200f; Hover(v, ApBehaviour.Standoff, "straight"); });
         r.Add("engage: evasive jinking on a pursuit (Plane2) - it jinks, the range kept, within the limits", true, Jink);
@@ -31,9 +33,13 @@ sealed class EngagePack : IScenarioPack
         r.Add("engage: idle loiter, a target appears (engaged), it is gone (back to the loiter)", true, IdleEngage);
     }
 
+    /// <summary>A panel for movement b (the old Point At / Broadside migrated as a load would: ApPanel.Migrate - Keep distance with the
+    /// nose, Circle it with a side), the facing the nose at full aim priority (the old aim switch's flight) unless said.</summary>
     static ApPanel Cfg(ApBehaviour b, float range, float alt = 100f)
     {
-        var c = ApPanel.Defaults; c.Behaviour = b; c.RangeM = range; c.AltOffsetM = alt; c.HeightRef = ApHeightRef.Inertial; c.MinAglM = 0f; return c;
+        var c = ApPanel.Defaults; c.Behaviour = b; c.RangeM = range; c.AltOffsetM = alt; c.HeightRef = ApHeightRef.Inertial; c.MinAglM = 0f;
+        c.Facing = ApFacing.Nose; c.AimPriority = 1f; c.AngleDeg = 90f;
+        return c.Clamped();
     }
 
     // ── the plane ──
@@ -66,16 +72,18 @@ sealed class EngagePack : IScenarioPack
         var r = FlightPack.PlaneAt("broadside Plane2", "Plane2", 150f);
         if (r == null) { Sim.NoPolar("Plane2"); return; }
         var tgt = SimTarget.Straight(new Vector3D(-2500, 2900, 1500), new Vector3(5f, 0f, 0f)); r.Targets.Add(tgt);
-        var cfg = Cfg(ApBehaviour.Broadside, 2000f); cfg.AngleDeg = 90f;
+        var cfg = Cfg(ApBehaviour.Broadside, 2000f);   // (migrated: Circle it, the right side at the target)
+        Sim.Check(cfg.Behaviour == ApBehaviour.Circle && cfg.Facing == ApFacing.SideRight, $"{r.Name}: the old broadside 90 is Circle it + the right side ({cfg.Behaviour}, {cfg.Facing})");
         var p = FlightPack.Engage(r, cfg, ApMode.Engage, new SimTargetSource { T = tgt });
         r.Fly(60f);
-        float sa = 0f, sr = 0f; int n = 0;
+        float sa = 0f, sr = 0f; int n = 0, right = 0;
         r.Each(rr => { var rel = rr.Rel(tgt); var vh = new Vector3(rr.P.V.X, 0f, rr.P.V.Z); var lh = new Vector3(rel.R.X, 0f, rel.R.Z);
-            float ang = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(vh), Vector3.Normalize(lh)), -1f, 1f)) / ApMath.Deg; sa += (ang - 90f) * (ang - 90f); sr += (rel.Range - 2000f) * (rel.Range - 2000f); n++; });
+            float ang = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(vh), Vector3.Normalize(lh)), -1f, 1f)) / ApMath.Deg; sa += (ang - 90f) * (ang - 90f); sr += (rel.Range - 2000f) * (rel.Range - 2000f); n++;
+            if (Vector3.Dot(lh, Vector3.Cross(vh, Vector3.UnitY)) > 0f) right++; });
         r.Fly(120f);
         float ea = MathF.Sqrt(sa / n), er = MathF.Sqrt(sr / n);
-        Sim.Note($"{r.Name}: angle 90, range 2000 m (turn radius {p.TurnR:F0} m) - angle error RMS {ea:F1} deg, range error RMS {er:F0} m");
-        Sim.Check(ea < 15f && er < 300f, $"{r.Name}: broadside - angle RMS {ea:F1} deg (< 15), range RMS {er:F0} m (< 300)");
+        Sim.Note($"{r.Name}: right side, range 2000 m (turn radius {p.TurnR:F0} m) - the target off the path by 90 deg RMS {ea:F1} deg, range error RMS {er:F0} m, on the right {right * 100 / n} %, the status '{p.FacingNow}' {p.AimErrDeg:F0} deg off");
+        Sim.Check(ea < 15f && er < 300f && right > 0.95f * n, $"{r.Name}: circle it, right side - angle RMS {ea:F1} deg (< 15), range RMS {er:F0} m (< 300), the target on the right {right * 100 / n} % (> 95)");
         Program.LedgerPublic(r, false);
     }
 
@@ -139,7 +147,7 @@ sealed class EngagePack : IScenarioPack
         if (kind == "accelerate") tgt = SimTarget.Accelerate(at, new Vector3(4f, 0f, 0f), 0.8f, 8f, 10f);
         r.Targets.Add(tgt);
         float D = b == ApBehaviour.Circle ? 200f : 250f;
-        var cfg = Cfg(b, D, b == ApBehaviour.HoverAbove ? 60f : 20f); cfg.SpeedMs = 25f; cfg.AngleDeg = 90f; cfg.ConeDeg = 2f;
+        var cfg = Cfg(b, D, b == ApBehaviour.HoverAbove ? 60f : 20f); cfg.SpeedMs = 25f; cfg.ConeDeg = 2f;
         var p = FlightPack.Engage(r, cfg, ApMode.Engage, new SimTargetSource { T = tgt });
         var p0 = r.P.P;
         r.Fly(30f);
@@ -158,7 +166,7 @@ sealed class EngagePack : IScenarioPack
         });
         r.Fly(60f);
         float rms = MathF.Sqrt(sr / n), tic = cone / n, ae = na > 0 ? aim / na : float.NaN, se = side / n;
-        Sim.Note($"{r.Name}: {(b == ApBehaviour.HoverAbove ? $"over the target within {hz:F1} m across, {hv:F1} m in height" : b == ApBehaviour.PointAt ? $"held within {drift:F1} m" : $"range {D} m RMS error {rms:F1} m")}, aim error mean {ae:F1} deg, in the 2 deg cone {tic * 100f:F0} %{(b == ApBehaviour.Broadside ? $", the side off the target by {se:F1} deg mean" : "")}, tilt at most {r.MaxTilt:F1} deg, prot {r.ProtSeen}");
+        Sim.Note($"{r.Name}: {(b == ApBehaviour.HoverAbove ? $"over the target within {hz:F1} m across, {hv:F1} m in height" : $"range {D} m RMS error {rms:F1} m")}, aim error mean {ae:F1} deg, in the 2 deg cone {tic * 100f:F0} %{(b == ApBehaviour.Broadside ? $", the side off the target by {se:F1} deg mean" : "")}, tilt at most {r.MaxTilt:F1} deg, prot {r.ProtSeen}");
         switch (b)
         {
             case ApBehaviour.Standoff:
@@ -170,8 +178,8 @@ sealed class EngagePack : IScenarioPack
             }
 
             case ApBehaviour.HoverAbove: Sim.Check(hz < 6f && hv < 4f, $"{r.Name}: hover above - {hz:F1} m across (< 6), {hv:F1} m in height (< 4)"); break;
-            case ApBehaviour.PointAt: Sim.Check(drift < 6f && tic > 0.6f, $"{r.Name}: point at - held within {drift:F1} m (< 6), {tic * 100f:F0} % in the cone (> 60)"); break;
-            case ApBehaviour.Broadside: Sim.Check(rms < 15f && se < 8f, $"{r.Name}: broadside - range RMS {rms:F1} m (< 15), the side {se:F1} deg off (< 8)"); break;
+            case ApBehaviour.PointAt: Sim.Check(rms < 12f && tic > 0.6f, $"{r.Name}: keep distance, nose at the crossing target - range RMS {rms:F1} m (< 12), {tic * 100f:F0} % in the cone (> 60)"); break;
+            case ApBehaviour.Broadside: Sim.Check(rms < 15f && se < 8f, $"{r.Name}: circle it, side at the target - range RMS {rms:F1} m (< 15), the side {se:F1} deg off (< 8)"); break;
             case ApBehaviour.Circle: Sim.Check(rms < 10f, $"{r.Name}: circle - radius RMS {rms:F1} m (< 10)"); break;
         }
         Program.LedgerPublic(r, false);
@@ -226,7 +234,7 @@ sealed class EngagePack : IScenarioPack
         {
             var c = new ApBhCtx { Style = ApStyle.Airplane, P = ApPanel.Defaults, Speed = 150f, Cruise = 150f, NMax = 3f, T = track, Up = Vector3.UnitY };
 
-            if (arb.Pick(ApBehaviour.Broadside, in c, 1f / 60f) != ApBehaviour.Broadside) other++;
+            if (arb.Pick(ApBehaviour.Circle, in c, 1f / 60f) != ApBehaviour.Circle) other++;
         }
         Sim.Check(other == 0, $"arbiter: a behaviour chosen on the panel holds (with energy to spare) - {other} ticks of another");
     }

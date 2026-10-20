@@ -48,9 +48,11 @@ public struct ApBhCtx
 /// <summary>
 /// THE BEHAVIOURS (From the Depths' attack modes; engine-free): each a parameterised goal (ApNavGoal) from tactical numbers only
 /// - ranges, angles, heights, aggressiveness; the turning circle, the speeds and the g are the ship's own (ApBhCtx: FlightPerf, the
-/// thrust). Attack run (flyover) and its U-turn variant (begin / abort distance, a forced re-run after the re-run time), broadside
-/// (angle and range; 90 circles), circle, hover above / below, point at, standoff (hold the range, back off when it closes),
-/// pursuit lead / pure / lag, and the arbiter's own extend (energy back). Phases are kept here; a new behaviour starts its phase over.
+/// thrust). Attack run (flyover) and its U-turn variant (begin / abort distance, a forced re-run after the re-run time), circle,
+/// hover above / below, standoff (hold the range, back off when it closes), pursuit lead / pure / lag, and the arbiter's own extend
+/// (energy back). Phases are kept here; a new behaviour starts its phase over. (2026-10-20: MOVEMENTS ONLY - where the ship goes; which
+/// face it turns to the target is the panel's Facing, a desire ApPilot.Aim blends in. Point At and Broadside, which were both, are
+/// Standoff and Circle now - ApPanel.Migrate; a circle or a standoff's crossing leg turns the way that keeps a chosen side on the target.)
 /// </summary>
 public sealed class ApBehaviours
 {
@@ -59,9 +61,9 @@ public sealed class ApBehaviours
     /// <summary>Attack runs flown (a pass over the target counted), and passes' closest range (m) - the tests' geometry.</summary>
     public int Runs; public float LastPass = float.PositiveInfinity, PassMin = float.PositiveInfinity;
     ApBehaviour _was = (ApBehaviour)255;
-    int _side = 1; Vector3 _runDir; Vector3D _station; bool _hasStation; float _orbitAng; bool _hasOrbit;
+    int _side = 1; Vector3 _runDir; float _orbitAng; bool _hasOrbit;
 
-    public void Reset() { _was = (ApBehaviour)255; Phase = 0; PhaseTime = RunTime = 0f; _hasStation = _hasOrbit = false; }
+    public void Reset() { _was = (ApBehaviour)255; Phase = 0; PhaseTime = RunTime = 0f; _hasOrbit = false; }
 
     static Vector3 Flat(Vector3 v, Vector3 up) => ApMath.Flat(v, up);
     static Vector3 Unit(Vector3 v, Vector3 fallback) => v.LengthSquared() > 1e-6f ? Vector3.Normalize(v) : fallback;
@@ -70,6 +72,7 @@ public sealed class ApBehaviours
     public void Plan(ApBehaviour b, in ApBhCtx c, float dt, ref ApNavGoal g)
     {
         var T = c.T;
+        if (b == ApBehaviour.PointAt) b = ApBehaviour.Standoff; else if (b == ApBehaviour.Broadside) b = ApBehaviour.Circle;   // (ApPanel.Migrate's: never chosen now)
         if (b != _was) { Begin(b, in c); _was = b; }
         PhaseTime += dt; RunTime += dt;
         bool plane = c.Style == ApStyle.Airplane;
@@ -113,33 +116,8 @@ public sealed class ApBehaviours
                 }
                 break;
             }
-            case ApBehaviour.Broadside:
-            {
-                float th = c.P.AngleDeg;
-                if (plane && MathF.Abs(th - 90f) < 20f)
-                {
-                    // (about 90: circling at the range - the target abeam; the L1 circle holds the radius)
-                    g.Kind = ApNavKind.Circle; g.Point = T.Pos; g.PointVel = T.Vel; g.Radius = MathF.Max(D, 1.3f * c.TurnR); g.Dir = _side;
-                }
-                else if (plane)
-                {
-
-                    // the target held at the broadside angle off the nose, the angle opened when too close, closed when too far
-                    float corr = Math.Clamp((D - range) / MathF.Max(D, 1f), -0.5f, 0.5f) * 90f;
-                    float ang = Math.Clamp(th + corr, 0f, 180f) * ApMath.Deg * _side;
-                    g.Kind = ApNavKind.Course; g.Course = Vector3.Transform(losF, Quaternion.CreateFromAxisAngle(up, -ang));
-                    g.Aim = th < 25f;
-                }
-                else
-                {
-                    // a station at the range on this side, circling when the angle is wide; the side facing the target
-                    Orbit(in c, D, th >= 60f ? 1f : 0f, dt, ref g);
-                    g.Face = Vector3.Transform(losF, Quaternion.CreateFromAxisAngle(up, th * ApMath.Deg * _side));
-                    g.Aim = th < 25f;
-                }
-                break;
-            }
             case ApBehaviour.Circle:
+                _side = SideFor(in c, plane, _side);
                 if (plane) { g.Kind = ApNavKind.Circle; g.Point = T.Pos; g.PointVel = T.Vel; g.Radius = MathF.Max(D, 1.3f * c.TurnR); g.Dir = _side; }
                 else { Orbit(in c, D, 1f, dt, ref g); }
                 break;
@@ -153,17 +131,13 @@ public sealed class ApBehaviours
 
                 break;
             }
-            case ApBehaviour.PointAt:
-                if (plane) goto case ApBehaviour.PursuitPure;
-                if (!_hasStation) { _station = c.Pos; _hasStation = true; }
-                g.Kind = ApNavKind.Point; g.Point = _station; g.Height = c.Height; g.Aim = true;
-                break;
             case ApBehaviour.Standoff:
                 if (plane)
                 {
                     // kite: away when it closes inside the band, in when it is far, across (circling) in the band
                     if (Phase == 0 && range < 0.7f * D) Phase = 1; else if (Phase == 1 && range > D) Phase = 0;
                     if (Phase == 0 && range > 1.3f * D) Phase = 2; else if (Phase == 2 && range < D) Phase = 0;
+                    _side = SideFor(in c, true, _side);
                     if (Phase == 1) { g.Kind = ApNavKind.Course; g.Course = -losF; g.Max = true; }
                     else if (Phase == 2) { g.Kind = ApNavKind.Point; g.Point = T.Pos; g.PointVel = T.Vel; g.Aim = true; }
                     else { g.Kind = ApNavKind.Course; g.Course = Vector3.Transform(losF, Quaternion.CreateFromAxisAngle(up, -90f * ApMath.Deg * _side)); }
@@ -207,8 +181,18 @@ public sealed class ApBehaviours
                 g.Kind = ApNavKind.Point; g.Point = T.Pos; g.PointVel = T.Vel; g.Aim = true;
                 break;
         }
-        if (!plane && g.Kind == ApNavKind.Point && b != ApBehaviour.PointAt && b != ApBehaviour.AttackRun && b != ApBehaviour.AttackRunUTurn && b != ApBehaviour.Broadside) g.Face = losF;
+        if (!plane && g.Kind == ApNavKind.Point && b != ApBehaviour.AttackRun && b != ApBehaviour.AttackRunUTurn) g.Face = losF;
     }
+
+    /// <summary>The way round that keeps the chosen side on the target (the panel's Facing): a plane's circle turning right
+    /// (Dir +1, clockwise from above) has the target on its right; a hover's orbit (Orbit: its tangent is cross(out, up) x -side)
+    /// flies with its right side in at side -1. Any other facing: the side it already turns (Begin).</summary>
+    static int SideFor(in ApBhCtx c, bool plane, int side) => c.P.Facing switch
+    {
+        ApFacing.SideRight => plane ? 1 : -1,
+        ApFacing.SideLeft => plane ? -1 : 1,
+        _ => side,
+    };
 
     /// <summary>A hover's orbit: a station on the circle of radius r about the target at the current bearing, moved round at the
     /// chase speed x share (0: held where it is on the circle).</summary>
@@ -226,7 +210,7 @@ public sealed class ApBehaviours
 
     void Begin(ApBehaviour b, in ApBhCtx c)
     {
-        Phase = 0; PhaseTime = 0f; RunTime = 0f; _hasStation = false; _hasOrbit = false; PassMin = float.PositiveInfinity;
+        Phase = 0; PhaseTime = 0f; RunTime = 0f; _hasOrbit = false; PassMin = float.PositiveInfinity;
         Vector3 up = c.Up;
         Vector3 rel = Flat((Vector3)(c.Pos - c.T.Pos), up), v = Flat(c.Vel, up);
         // (the side: the way the ship already turns round the target - the cross of its velocity and the line to it)
@@ -287,7 +271,7 @@ public sealed class ApArbiterBh
                 bool below = c.THeight < c.Height - 20f, slow = tv < 5f;
                 Try(ApBehaviour.Standoff, 0.6f);
                 Try(ApBehaviour.HoverAbove, below && slow && T.Range < 2f * D ? 0.55f : 0.1f);
-                Try(ApBehaviour.Broadside, c.Style == ApStyle.SixAxis && !slow ? 0.5f : 0.2f);
+                Try(ApBehaviour.Circle, c.Style == ApStyle.SixAxis && !slow ? 0.5f : 0.2f);   // (2026-10-20: was Broadside - a movement and a facing; the facing is the panel's now)
             }
         }
         if (best != Active && (Dwell >= MinDwell || Active == ApBehaviour.Auto)) { if (Active != ApBehaviour.Auto) Switches++; Active = best; Dwell = 0f; }

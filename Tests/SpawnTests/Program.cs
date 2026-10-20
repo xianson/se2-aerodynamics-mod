@@ -210,6 +210,7 @@ static class Program
             Check(p.TargetSrc == ApTargetSrc.Api && p.TargetText == "" && p.TargetFilter == ApTargetFilter.Everything, $"{k}: the target from the API (the player), every relation taken");
             Check(p.Unattended && !p.HasHome && !p.ReturnHome && p.RgSaved == "" && p.DfSaved == "", $"{k}: kept with nobody seated, no return point, no old slot state");
             Check(p.RgNavConst == 4.5f && p.RgLaw == ApGuidanceLaw.AugmentedPN && p.DfSkill == 0.9f && p.RangeM == 1500, $"{k}: the blueprint's own tactical numbers and slot parameters kept");
+            Check(p.Facing == (k == K.Bogey ? ApFacing.Nose : ApFacing.Travel), $"{k}: the facing - a bogey's guns on you (the nose), a missile as it flies ({p.Facing})");
             // the saved form round trip: what the block saves and restores is this panel
             string key = AeroBlockSaveForm.Autopilot(in p);
             Check(AeroBlockSaveForm.TryReadAutopilot(key, out var back), $"{k}: the panel's saved key reads back");

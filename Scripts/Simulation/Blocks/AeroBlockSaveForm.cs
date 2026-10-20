@@ -35,7 +35,7 @@ public static class AeroBlockSaveForm
     /// <summary>The autopilot key's own format (2026-10-19: 2 - the combat slots' and the formation's values appended, 47..67). Every
     /// reader takes any format >= 1 and the values it knows: a format-1 key reads the new ones as their defaults, an older mod
     /// reads a format-2 key's first 47.</summary>
-    public const int AutopilotFormat = 2;
+    public const int AutopilotFormat = 3;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
     public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
     /// <summary>The Enemy switch's owner before, one per grid of the ship (2026-10-19): "aero-enemyprev:1 index owner", its value
@@ -179,7 +179,10 @@ public static class AeroBlockSaveForm
            + " " + ((int)p.RgLaw).ToString(C) + " " + F(p.RgNavConst) + " " + F(p.RgTargetAccelGain) + " " + F(p.RgMaxLatG) + " " + B(p.RgGravityComp)
            + " " + F(p.RgArmM) + " " + F(p.RgTimeoutS)
            + " " + F(p.FmRightM) + " " + F(p.FmUpM) + " " + F(p.FmBackM) + " " + F(p.FmCatchUpMs)
-           + " " + Esc(p.DfSaved) + " " + Esc(p.RgSaved);
+           + " " + Esc(p.DfSaved) + " " + Esc(p.RgSaved)
+           // (format 3, 2026-10-20: 68 the facing, 69 the aim priority, 70 the attack movement Follow ship keeps; Point At / Broadside
+           //  are never written again - Clamped migrates them - and 32 AimOn stays the nose facing for an older reader)
+           + " " + ((int)p.Facing).ToString(C) + " " + F(p.AimPriority) + " " + ((int)p.AttackBh).ToString(C);
 
     /// <summary>One grid's owner before the Enemy switch (index: the entry's number - keys of one map must differ).</summary>
     public static string EnemyPrev(int index, long owner) => EnemyPrevKey + Format + " " + index.ToString(C) + " " + owner.ToString(C);
@@ -251,6 +254,11 @@ public static class AeroBlockSaveForm
         p.RgGravityComp = Bo(59, p.RgGravityComp); p.RgArmM = Fl(60, p.RgArmM); p.RgTimeoutS = Fl(61, p.RgTimeoutS);
         p.FmRightM = Fl(62, p.FmRightM); p.FmUpM = Fl(63, p.FmUpM); p.FmBackM = Fl(64, p.FmBackM); p.FmCatchUpMs = Fl(65, p.FmCatchUpMs);
         p.DfSaved = (66 < w.Length ? Unesc(w[66]) : null) ?? p.DfSaved; p.RgSaved = (67 < w.Length ? Unesc(w[67]) : null) ?? p.RgSaved;
+        // (format 3: the facing - an older key's aim switch is its facing: on, the nose; Point At / Broadside become a movement and a
+        //  facing in Clamped - ApPanel.Migrate)
+        p.Facing = 68 < w.Length ? (ApFacing)I(68, 0) : p.AimOn ? ApFacing.Nose : ApFacing.Travel;
+        p.AimPriority = Fl(69, p.AimPriority);
+        p.AttackBh = (ApBehaviour)I(70, (int)p.AttackBh);
 
         p = p.Clamped();
         return true;

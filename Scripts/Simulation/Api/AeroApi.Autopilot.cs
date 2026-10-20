@@ -67,7 +67,8 @@ public static partial class AeroApi
     /// <summary>(version 12) THE AIM, for another mod's weapons logic (the autopilot never fires): the angle (deg) between the fixed
     /// guns' axis (or the nose) and the target's lead point, whether that is inside the block's aim cone (or the miss inside the
     /// target's size) and the target within the guns' range, the range (m) and the projectile's time of flight (s). False: no
-    /// target being aimed at (not in Engage, no target, aim off, or the behaviour does not aim now).</summary>
+    /// target being aimed at (not in Engage, no target, aim off, or the behaviour does not aim now). 2026-10-20: the panel's Facing -
+    /// the nose (as above), or a side (errorDeg: that side's axis off the target itself; inCone false); the way it flies: false.</summary>
     public static bool TryGetAutopilotAim(Keen.VRage.DCS.Components.Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)
     {
         errorDeg = float.NaN; inCone = inRange = false; range = timeOfFlight = 0f;

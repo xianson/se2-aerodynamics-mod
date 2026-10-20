@@ -66,6 +66,10 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     // ── the panel's writes (the terminal; an API or the harness) ──
     internal void SetMode(ApMode m) { if (!MayEdit()) return; lock (_lock) _panel.Mode = m; Wake(); }
     internal void ToggleMode(ApMode m) { if (!MayEdit()) return; lock (_lock) _panel.Mode = _panel.Mode == m ? ApMode.Off : m; Wake(); }
+    /// <summary>(2026-10-20) The panel's Mode dropdown and the toolbar's mode actions: a choice onto the mode, the return and the
+    /// formation (ApPanel.Choose); toggled: the same choice again - Off.</summary>
+    internal void SetChoice(ApModeChoice c) { if (!MayEdit()) return; lock (_lock) { ApPanel.Choose(ref _panel, c); _panel = _panel.Clamped(); } Wake(); }
+    internal void ToggleChoice(ApModeChoice c) { if (!MayEdit()) return; lock (_lock) { ApPanel.Choose(ref _panel, ApPanel.ChoiceOf(in _panel) == c ? ApModeChoice.Off : c); _panel = _panel.Clamped(); } Wake(); }
     internal void SetHeight(float h) { if (!float.IsFinite(h) || !MayEdit()) return; lock (_lock) _panel.HeightM = Math.Clamp(h, 0f, ApPanel.HeightMax); Wake(); }
     internal void SetHeightRef(ApHeightRef r) { if (!MayEdit()) return; lock (_lock) _panel.HeightRef = r; Wake(); }
     internal void SetHoverSpeed(float v) { if (float.IsFinite(v) && MayEdit()) lock (_lock) _panel.HoverSpeed = Math.Clamp(v, ApPanel.HoverSpeedMin, ApPanel.HoverSpeedMax); }
@@ -210,7 +214,7 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         _spare = null; _status = b;
     }
 
-    /// <summary>The panel's status line ("Hover hold - holding 25.0 m over the ground", "Off - you steered", "Standby - ...").</summary>
+    /// <summary>The panel's status line ("Hover - holding 25.0 m over the ground", "Off - you steered", "Standby - ...").</summary>
     public string Status
     {
         get
@@ -220,9 +224,9 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             if (!Autopilot.Enabled) return "Off - not allowed in this world";
             var mode = Panel.Mode;
             // (no report yet, or the panel's mode changed since the grid's last one - a button just pressed: the terminal reads the
-            //  line once, at the press, before the grid's step has run - the new mode, not the old line: "Hover hold - engaging",
+            //  line once, at the press, before the grid's step has run - the new mode, not the old line: "Hover - engaging",
             //  "Off". Shown one press behind before, 2026-10-19 in game.)
-            if (b == null || b.Mode != mode && !b.Standby) return ApBlockLink.Status(mode, mode == ApMode.Off ? _timeoutReason : ApReason.None, false, ready, b?.Standby ?? false, float.NaN, Panel.HeightRef, ApProt.None);
+            if (b == null || b.Mode != mode && !b.Standby) { var pn = Panel; return ApBlockLink.Status(mode, mode == ApMode.Off ? _timeoutReason : ApReason.None, false, ready, b?.Standby ?? false, float.NaN, pn.HeightRef, ApProt.None, name: ApModes.ChoiceName(ApPanel.ChoiceOf(in pn))); }
             if (b.Pilot && ready && !b.Standby && b.Mode != ApMode.Off) return b.View.Text();
             return ApBlockLink.Status(b.Mode, b.Reason, b.Flying, ready, b.Standby, b.HasHeight ? b.HeightM : float.NaN, b.Ref, b.Prot, b.NoGround);
         }

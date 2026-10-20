@@ -51,6 +51,35 @@ public enum ApGuidanceLaw : byte { ProNav = 0, WhipNav = 1, HybridNav = 2, Quadr
 /// targeting), a GPS marker or coordinates, a grid by name, or another mod (AeroApi).</summary>
 public enum ApTargetSrc : byte { Targeting = 0, Gps = 1, Grid = 2, Api = 3 }
 
+/// <summary>(2026-10-20) FACING - a desire, not a movement (the user: "the facing is like a desire and it's gotta fly how it's gotta
+/// fly; you compromise a little to put the guns on target"): which face of the ship the attack wants on the target, blended into
+/// the movement's attitude by ApPanel.AimPriority within each style's caps (ApPilot.Aim). Movement always wins where they conflict;
+/// the protection still clips. Replaces the Point At / Broadside behaviours and the Aim Nose at Target switch. Appended only.</summary>
+public enum ApFacing : byte
+{
+    /// <summary>The way it flies (the movement's own attitude; no aim).</summary>
+    Travel = 0,
+    /// <summary>The nose - the fixed guns' axis - on the target's lead point.</summary>
+    Nose = 1,
+    /// <summary>The left side at the target (turrets on that side: a broadside); a circle is flown the way that keeps it there.</summary>
+    SideLeft = 2,
+    /// <summary>The right side at the target.</summary>
+    SideRight = 3,
+}
+
+/// <summary>(2026-10-20) THE PANEL'S MODE CHOICE - one dropdown (ApPanel.ChoiceOf / Choose map it onto the saved Mode, ReturnHome and
+/// Behaviour: Follow ship is Engage with the formation, Return home is Navigate with the return asked). Never saved itself.</summary>
+public enum ApModeChoice : byte { Off = 0, Hover = 1, HoldHeight = 2, Cruise = 3, FollowRoute = 4, ReturnHome = 5, FollowShip = 6, Attack = 7 }
+
+/// <summary>(2026-10-20) THE PANEL'S ATTACK MOVEMENT - the behaviours a player picks (ApPanel.MoveOf / BhOf map them onto ApBehaviour,
+/// the saved number): no Point At / Broadside (now Keep distance / Circle it with a Facing), no Extend (the arbiter's), no Formation
+/// (its own mode, Follow ship).</summary>
+public enum ApMove : byte
+{
+    Auto = 0, StrafingRun = 1, TurnBackRun = 2, Circle = 3, KeepDistance = 4, HoverOver = 5, HoverUnder = 6,
+    ChaseLead = 7, ChaseDirect = 8, ChaseTrailing = 9, Dogfight = 10, Rocket = 11,
+}
+
 /// <summary>Which targets the block engages, by the game's own relation between the owners (ApRelations: the turrets' rule,
 /// TargetingGridComponent.IsEligibleTarget). Every source is filtered (a GPS point or an API point has no owner: always taken).
 /// Appended only (the saved number is this).</summary>
@@ -104,8 +133,11 @@ public struct ApPanel
     /// <summary>The target's source, and its text (a GPS name / coordinates, a grid's name).</summary>
     public ApTargetSrc TargetSrc; public string TargetText;
     /// <summary>Nose on the target's lead point (fixed forward guns): on / off, the muzzle speed (m/s; 0: the grid's own guns'), the
-    /// "in cone" angle (deg).</summary>
+    /// "in cone" angle (deg). (2026-10-20: AimOn is Facing == Nose - kept in step by Clamped, saved for older readers and the slots.)</summary>
     public bool AimOn; public float MuzzleSpeed, ConeDeg;
+    /// <summary>(2026-10-20) The facing (a desire), how much the flight compromises for it (0: the path only .. 1: as much as the style's
+    /// caps allow), and the attack movement kept while Follow ship holds Behaviour (Formation) - Attack picks it up again.</summary>
+    public ApFacing Facing; public float AimPriority; public ApBehaviour AttackBh;
     /// <summary>Where a mode was first engaged (the return point; world), and the return asked (Navigate flies there and loiters).</summary>
     public bool HasHome; public double HomeX, HomeY, HomeZ; public bool ReturnHome;
     /// <summary>Which targets it engages (every source).</summary>
@@ -150,7 +182,8 @@ public struct ApPanel
         Style = ApStyle.Auto, HeadingDeg = 0f, HeadingOn = true, AltM = 0f, AltOn = true, VsMs = 10f, SpeedMs = 0f, SpeedOn = true, BankDeg = 45f,
         Route = "", RouteLoop = false, LoiterM = 600f, MinAglM = 60f,
         Behaviour = ApBehaviour.Auto, RangeM = 800f, AbortM = 250f, RerunS = 40f, AngleDeg = 90f, AltOffsetM = 100f, Aggression = 0.5f, Evasive = false,
-        TargetSrc = ApTargetSrc.Targeting, TargetText = "", AimOn = true, MuzzleSpeed = 0f, ConeDeg = 3f,
+        TargetSrc = ApTargetSrc.Targeting, TargetText = "", AimOn = false, MuzzleSpeed = 0f, ConeDeg = 3f,
+        Facing = ApFacing.Travel, AimPriority = 0.5f, AttackBh = ApBehaviour.Auto,
         AvoidOn = true, AvoidS = 4f,
         DfFight = ApFightPref.Auto, DfHeadOn = false, DeckM = 0f, CeilingM = 0f, DfBingoFuelPct = 10f, DfBingoDamagePct = 40f, DfRespectGuns = 0.5f, DfSkill = 0.7f,
         RgLaw = ApGuidanceLaw.ProNav, RgNavConst = 3f, RgTargetAccelGain = 1.5f, RgMaxLatG = 20f, RgGravityComp = true, RgArmM = 50f, RgTimeoutS = 60f,
@@ -165,6 +198,12 @@ public struct ApPanel
         if (p.HeightRef > ApHeightRef.Inertial) p.HeightRef = ApHeightRef.Ground;
         if (p.Style > ApStyle.SixAxis) p.Style = ApStyle.Auto;
         if (p.Behaviour > ApBehaviour.Formation || p.Behaviour == ApBehaviour.Extend) p.Behaviour = ApBehaviour.Auto;   // (Extend: the arbiter's own, never chosen)
+        if (p.Facing > ApFacing.SideRight) p.Facing = ApFacing.Travel;
+        Migrate(ref p);
+        if (p.AttackBh > ApBehaviour.Formation || p.AttackBh == ApBehaviour.Extend || p.AttackBh == ApBehaviour.Formation) p.AttackBh = ApBehaviour.Auto;
+        if (p.Behaviour != ApBehaviour.Formation) p.AttackBh = p.Behaviour;   // (the movement chosen; Follow ship keeps the last one)
+        p.AimOn = p.Facing == ApFacing.Nose;
+        p.AimPriority = float.IsFinite(p.AimPriority) ? Math.Clamp(p.AimPriority, 0f, 1f) : 0.5f;
         if (p.TargetSrc > ApTargetSrc.Api) p.TargetSrc = ApTargetSrc.Targeting;
         if (p.TargetFilter > ApTargetFilter.Everything) p.TargetFilter = ApTargetFilter.Hostile;
         p.HeightM = float.IsFinite(p.HeightM) ? Math.Clamp(p.HeightM, 0f, HeightMax) : 0f;
@@ -198,6 +237,74 @@ public struct ApPanel
     }
     static float Fin(float v, float def, float lo, float hi) => float.IsFinite(v) ? Math.Clamp(v, lo, hi) : def;
     static string Text(string s) => s == null ? "" : s.Length > TextMax ? s.Substring(0, TextMax) : s;
+
+    /// <summary>(2026-10-20) The movements that were also a facing, as the movement and the facing now: Point At - Keep distance with the
+    /// nose at the target; Broadside - Circle it with a side at the target (its angle: under 25 deg the nose - the old broadside aimed
+    /// the nose there -, to 90 the right side, past 90 the left; the old one took the side it was already turning). Idempotent.</summary>
+    public static void Migrate(ref ApPanel p)
+    {
+        if (p.Behaviour == ApBehaviour.PointAt) { p.Behaviour = ApBehaviour.Standoff; p.Facing = ApFacing.Nose; }
+        else if (p.Behaviour == ApBehaviour.Broadside)
+        {
+            p.Behaviour = ApBehaviour.Circle;
+            float a = float.IsFinite(p.AngleDeg) ? p.AngleDeg : 90f;
+            p.Facing = a < 25f ? ApFacing.Nose : a <= 90f ? ApFacing.SideRight : ApFacing.SideLeft;
+        }
+        if (p.AttackBh == ApBehaviour.PointAt) p.AttackBh = ApBehaviour.Standoff;
+        else if (p.AttackBh == ApBehaviour.Broadside) p.AttackBh = ApBehaviour.Circle;
+    }
+
+    /// <summary>The panel's mode choice of a saved panel: a return asked (Navigate / Engage) - Return home; Engage with the formation -
+    /// Follow ship; Engage - Attack.</summary>
+    public static ApModeChoice ChoiceOf(in ApPanel p) => p.Mode switch
+    {
+        ApMode.HoverHold => ApModeChoice.Hover,
+        ApMode.HeightHold => ApModeChoice.HoldHeight,
+        ApMode.FlightHold => ApModeChoice.Cruise,
+        ApMode.Navigate => p.ReturnHome ? ApModeChoice.ReturnHome : ApModeChoice.FollowRoute,
+        ApMode.Engage => p.ReturnHome ? ApModeChoice.ReturnHome : p.Behaviour == ApBehaviour.Formation ? ApModeChoice.FollowShip : ApModeChoice.Attack,
+        _ => ApModeChoice.Off,
+    };
+
+    /// <summary>A mode choice onto the saved panel: the mode, the return (only Return home asks it), the formation (Follow ship; the
+    /// attack movement kept in AttackBh, given back by Attack).</summary>
+    public static void Choose(ref ApPanel p, ApModeChoice c)
+    {
+        p.ReturnHome = c == ApModeChoice.ReturnHome;
+        switch (c)
+        {
+            case ApModeChoice.Hover: p.Mode = ApMode.HoverHold; break;
+            case ApModeChoice.HoldHeight: p.Mode = ApMode.HeightHold; break;
+            case ApModeChoice.Cruise: p.Mode = ApMode.FlightHold; break;
+            case ApModeChoice.FollowRoute: case ApModeChoice.ReturnHome: p.Mode = ApMode.Navigate; break;
+            case ApModeChoice.FollowShip:
+                if (p.Behaviour != ApBehaviour.Formation) p.AttackBh = p.Behaviour;
+                p.Mode = ApMode.Engage; p.Behaviour = ApBehaviour.Formation; break;
+            case ApModeChoice.Attack:
+                if (p.Behaviour == ApBehaviour.Formation) p.Behaviour = p.AttackBh == ApBehaviour.Formation ? ApBehaviour.Auto : p.AttackBh;
+                p.Mode = ApMode.Engage; break;
+            default: p.Mode = ApMode.Off; break;
+        }
+    }
+
+    /// <summary>The panel's attack movement of a behaviour (the old Point At / Broadside as their movements now).</summary>
+    public static ApMove MoveOf(ApBehaviour b) => b switch
+    {
+        ApBehaviour.AttackRun => ApMove.StrafingRun, ApBehaviour.AttackRunUTurn => ApMove.TurnBackRun, ApBehaviour.Circle => ApMove.Circle,
+        ApBehaviour.Broadside => ApMove.Circle, ApBehaviour.Standoff => ApMove.KeepDistance, ApBehaviour.PointAt => ApMove.KeepDistance,
+        ApBehaviour.HoverAbove => ApMove.HoverOver, ApBehaviour.HoverBelow => ApMove.HoverUnder, ApBehaviour.PursuitLead => ApMove.ChaseLead,
+        ApBehaviour.PursuitPure => ApMove.ChaseDirect, ApBehaviour.PursuitLag => ApMove.ChaseTrailing, ApBehaviour.Dogfight => ApMove.Dogfight,
+        ApBehaviour.RocketGuidance => ApMove.Rocket, _ => ApMove.Auto,
+    };
+
+    /// <summary>The behaviour (the saved number) of a panel movement.</summary>
+    public static ApBehaviour BhOf(ApMove m) => m switch
+    {
+        ApMove.StrafingRun => ApBehaviour.AttackRun, ApMove.TurnBackRun => ApBehaviour.AttackRunUTurn, ApMove.Circle => ApBehaviour.Circle,
+        ApMove.KeepDistance => ApBehaviour.Standoff, ApMove.HoverOver => ApBehaviour.HoverAbove, ApMove.HoverUnder => ApBehaviour.HoverBelow,
+        ApMove.ChaseLead => ApBehaviour.PursuitLead, ApMove.ChaseDirect => ApBehaviour.PursuitPure, ApMove.ChaseTrailing => ApBehaviour.PursuitLag,
+        ApMove.Dogfight => ApBehaviour.Dogfight, ApMove.Rocket => ApBehaviour.RocketGuidance, _ => ApBehaviour.Auto,
+    };
 
     /// <summary>The modes the flight pilot flies (ApPilot, an external goal source over the flight director's core).</summary>
     public static bool IsPilotMode(ApMode m) => m == ApMode.FlightHold || m == ApMode.Navigate || m == ApMode.Engage;

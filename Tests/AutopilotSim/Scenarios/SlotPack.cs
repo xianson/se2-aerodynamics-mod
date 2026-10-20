@@ -73,9 +73,9 @@ sealed class SlotPack : IScenarioPack
         var g = f; g.FormErr = 0.4f; string d = g.Text();
         var h = f; h.FormAlong = -60f; h.FormErr = 61f; h.FormOver = true; string e = h.Text();
         Sim.Note($"slot status: '{a}' | '{b}' | '{c}' | '{d}' | '{e}'");
-        Sim.Check(a.StartsWith("Engage (airplane) - Dogfight - merge on Bandit 1.2 km, ahead") && b.StartsWith("Engage (airplane) - Rocket guidance on Bandit 1.2 km"),
+        Sim.Check(a.StartsWith("Attack (plane) - Dogfight - merge on Bandit 1.2 km, ahead") && b.StartsWith("Attack (plane) - Rocket on Bandit 1.2 km"),
             $"slot status: a slot's own words after its name ('{a}'), none without ('{b}')");
-        Sim.Check(c.Contains("Formation on Lead - 12 m from the slot (8 m behind)") && c.Contains("leader 120 m/s") && d.Contains("in the slot") && e.Contains("60 m ahead") && e.Contains("overshoot"),
+        Sim.Check(c.StartsWith("Follow ship (plane) - on Lead - 12 m from the slot (8 m behind)") && c.Contains("leader 120 m/s") && d.Contains("in the slot") && e.Contains("60 m ahead") && e.Contains("overshoot"),
             $"slot status: the formation's slot error, behind / ahead, overshoot ('{c}', '{e}')");
         Sim.Check(!v.Same(in w) && v.Same(in v), "slot status: the view's change test sees the slot's words");
     }

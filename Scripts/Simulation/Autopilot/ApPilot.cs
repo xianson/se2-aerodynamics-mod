@@ -9,8 +9,9 @@ namespace AeroMod;
 /// or round again, the return point; ENGAGE: the arbiter's behaviour on the target, else the route / a loiter) -> the terrain kept
 /// under it (MinAglM over the ground below and ahead) -> the STYLE's executor: AIRPLANE an acceleration (L1 across, TECS's
 /// vertical) flown on the lift with TECS's throttle; HELICOPTER a moving place for the hover's lean (tilt movement: the lift axis
-/// leant toward the motion, its lean and speed limits); SIX-AXIS the same place flown on the thrusters, the nose free -> the AIM
-/// (the gun axis on the target's lead point, Blend of the way; the protection still clips) -> jinking. Every flying number comes
+/// leant toward the motion, its lean and speed limits); SIX-AXIS the same place flown on the thrusters, the nose free -> the FACING
+/// (2026-10-20, a desire: the panel's Facing - the nose on the lead, a side on the target - blended into the movement's attitude by
+/// its Aim Priority within the style's caps; movement wins where they conflict, the protection still clips) -> jinking. Every flying number comes
 /// from the ship (FlightPerf's load and drag, the thrust, the bank limit); the panel gives only tactical ones.
 /// </summary>
 public sealed class ApPilot : IApGoalSource
@@ -59,6 +60,8 @@ public sealed class ApPilot : IApGoalSource
     // ── the readouts (the status line, the API, the tests) ──
     public ApBehaviour ActiveBh; public bool Recovering, Loitering;
     public float AimErrDeg = float.NaN, Tof; public bool AimOn, InCone, InRange;
+    /// <summary>(2026-10-20) The facing flown this tick (Travel: none - AimOn then means a slot's aim report only).</summary>
+    public ApFacing FacingNow;
     public float CrossTrack, RadiusErr, WpDist, Eta, HeightNow, HeightWanted = float.NaN, TurnR, LeadBlend;
     public float HeadingNow, SpeedNow;
     /// <summary>Jinks begun (each a new pseudo-random direction) - diagnostics.</summary>
@@ -80,7 +83,7 @@ public sealed class ApPilot : IApGoalSource
         v.Mode = Mode; v.Style = Style; v.Behaviour = ActiveBh; v.Phase = Bh.Phase; v.Loitering = Loitering; v.Recovering = Recovering; v.Returning = Cfg.ReturnHome;
         v.HasTarget = T.Valid && Mode == ApMode.Engage; v.TargetName = T.Name; v.Range = T.Range;
         v.BearingDeg = T.Valid ? ApCompass.Diff(ApCompass.Heading(T.Los, _upW), HeadingNow) : 0f;
-        v.AimOn = AimOn; v.InCone = InCone; v.InRange = InRange; v.AimErrDeg = AimErrDeg;
+        v.AimOn = AimOn; v.InCone = InCone; v.InRange = InRange; v.AimErrDeg = AimErrDeg; v.Facing = FacingNow;
         v.Wp = Wp; v.WpCount = Cfg.ReturnHome ? 1 : _route.Count; v.WpName = WpName; v.WpDist = WpDist; v.Eta = Eta;
         v.HeadingNow = HeadingNow; v.HeightNow = HeightNow; v.SpeedNow = SpeedNow;
         v.HeadingOn = Cfg.HeadingOn; v.AltOn = Cfg.AltOn; v.SpeedOn = Cfg.SpeedOn;
@@ -232,7 +235,12 @@ public sealed class ApPilot : IApGoalSource
                 {
                     _slotWas = ActiveBh; SlotText = null;
                     if (ActiveBh == ApBehaviour.Formation) Formation.Plan(in c, ApFormationParams.Of(in Cfg), LeastSpeed(in perf), ref goal);
-                    else Bh.Plan(ActiveBh, in c, dt, ref goal);
+                    else
+                    {
+                        Bh.Plan(ActiveBh, in c, dt, ref goal);
+                        // (a hovering ship's heading: the way it travels - the facing, a desire, turns it toward the target in Aim)
+                        if (Style != ApStyle.Airplane) goal.Face = Vector3.Zero;
+                    }
                 }
                 // (the target as an obstacle for the collision avoidance, kept at most half the behaviour's own closest distance - a
                 //  slot's own clearance when it gives one, never under the target's size)
@@ -242,15 +250,18 @@ public sealed class ApPilot : IApGoalSource
                     Fd.HasTargetObstacle = true; Fd.TargetClearMax = float.IsFinite(clear) ? MathF.Max(clear, T.Radius) : ApAvoid.TargetClear(in Cfg, ActiveBh);
                 }
                 h = alt;   // (the target's heights are the altimeter's)
-                // (a helicopter aiming fixed guns: level with the target - it cannot pitch onto it without moving)
-                //  - and its gun's own pitch now (the lean, the trim; filtered) taken in: the height where that line meets the lead)
-                if (Style == ApStyle.Helicopter && goal.Aim && Cfg.AimOn)
+                // (a helicopter aiming fixed guns - the nose facing: level with the target - it cannot pitch onto it without moving)
+                //  - and its gun's own pitch now (the lean, the trim; filtered) taken in: the height where that line meets the lead; the
+                //  aim priority of the way from the movement's height, and only where the movement lets the guns bear - goal.Aim)
+                if (Style == ApStyle.Helicopter && goal.Aim && Cfg.Facing == ApFacing.Nose && Cfg.AimPriority > 0f && !IsSlot(ActiveBh) && ActiveBh != ApBehaviour.Formation)
                 {
                     Vector3 axis = s.GunAxis.LengthSquared() > 0.5f ? s.GunAxis : s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
                     float el = MathF.Asin(Math.Clamp(Vector3.Dot(Vector3.Transform(axis, s.Orient), up), -1f, 1f));
                     _gunEl += (el - _gunEl) * MathF.Min(1f, dt / 1.5f);
                     float flat = ApMath.Flat((Vector3)(T.Pos - s.Pos), up).Length();
-                    goal.Height = c.THeight + Vector3.Dot(T.Vel, up) * Tof - flat * MathF.Tan(Math.Clamp(_gunEl, -0.5f, 0.5f));
+                    float hAim = c.THeight + Vector3.Dot(T.Vel, up) * Tof - flat * MathF.Tan(Math.Clamp(_gunEl, -0.5f, 0.5f));
+                    float hMove = float.IsFinite(goal.Height) ? goal.Height : alt;
+                    goal.Height = hMove + (hAim - hMove) * Cfg.AimPriority;
                 }
 
 
@@ -282,11 +293,17 @@ public sealed class ApPilot : IApGoalSource
         if (direct) { x = SlotOut.Goal; x.LetGo = ApReason.None; if (ActiveBh == ApBehaviour.RocketGuidance) CapLateral(in s, gT, ref x); }
         else if (Style == ApStyle.Airplane) Airplane(in s, up, gT, h, hDem, air, aLatMax, nAvail, perf, ref goal, ref x);
         else Hover(in s, up, h, hDem, chase, ref goal, ref x);
-        // ── the aim (a slot asks for its report, and the nose on the lead or not), jinking (the built-in behaviours) ──
+        // ── the facing (a desire): the built-in movements - the panel's Facing at its Aim Priority; a slot - its aim report, and the nose on
+        //    the lead when it asks and the panel's facing is the nose (the author's call: all of it the caps allow); none for a formation,
+        //    a rocket, a mode without a target. Jinking (the built-in behaviours) ──
         bool slot = IsSlot(ActiveBh) && Mode == ApMode.Engage && T.Valid;
-        bool wantAim = slot ? SlotOut.AimReport || SlotOut.AimNose || (!direct && goal.Aim) : goal.Aim;
-        bool blendAim = slot ? SlotOut.AimNose || (!direct && goal.Aim) : goal.Aim;
-        Aim(in s, up, wantAim, blendAim, ref x);
+        bool engaged = Mode == ApMode.Engage && T.Valid && ActiveBh != ApBehaviour.Formation && ActiveBh != ApBehaviour.RocketGuidance;
+        if (slot)
+        {
+            bool nose = (SlotOut.AimNose || (!direct && goal.Aim)) && Cfg.Facing == ApFacing.Nose;
+            Aim(in s, up, nose ? ApFacing.Nose : ApFacing.Travel, 1f, SlotOut.AimReport || SlotOut.AimNose || (!direct && goal.Aim), ref x);
+        }
+        else Aim(in s, up, engaged ? Cfg.Facing : ApFacing.Travel, Cfg.AimPriority, false, ref x);
         if (Cfg.Evasive && Mode == ApMode.Engage && T.Valid && !slot && ActiveBh != ApBehaviour.Formation) Jink(in s, up, aLatMax, dt, ref x);
         return true;
     }
@@ -496,64 +513,115 @@ public sealed class ApPilot : IApGoalSource
         p = s.Pos + (Vector3D)(ApMath.Flat(rel, up) + up * (hWant - h));
         x.Kind = ApExternalKind.Track; x.Position = p; x.Velocity = v; x.Accel = goal.PointAcc; x.MaxSpeed = MathF.Max(speed, 1f);
         Vector3 face = goal.Face;
-        if (face.LengthSquared() < 1e-6f) face = ApMath.Flat(v, up).LengthSquared() > 9f ? v : ApMath.Flat(rel, up).LengthSquared() > 400f ? rel : Vector3.Zero;
+        // (the way it travels: the place's motion, else the way to the place - FLAT: a six-axis ship points its nose along the heading
+        //  as given (FlightDirector), and the way to a place 750 m up stood it on its tail - FacingPack, 2026-10-20)
+        if (face.LengthSquared() < 1e-6f) face = ApMath.Flat(v, up).LengthSquared() > 9f ? ApMath.Flat(v, up) : ApMath.Flat(rel, up).LengthSquared() > 400f ? ApMath.Flat(rel, up) : Vector3.Zero;
         x.Heading = face;
     }
 
-    /// <summary>The aim report (the lead, the error, in the cone, in range) when wanted; blend: and the nose blended onto the lead
-    /// (the goal's aim fields) - a slot's report alone leaves its goal as it is.</summary>
-    void Aim(in ApSense s, Vector3 up, bool want, bool blend, ref ApExternal x)
+    /// <summary>THE FACING (2026-10-20): the aim report (the lead, the error, in the cone, in range) and the chosen face blended toward
+    /// the target, Aim Priority (p, 0..1) of what the style's caps allow - movement wins where they conflict:
+    ///  - NOSE (fixed guns) on the target's lead point. Airplane: off its flight path only inside a 30 deg window the lift can still
+    ///    fly, within the gun's reach, given back 4..7 s before the target (the pull-out) - Blend = window x p. Helicopter: by yaw
+    ///    (its lift axis is its pitch: tilting it would move it), the heading turned from the way it travels toward the lead by p.
+    ///    Six-axis: the nose anywhere its side thrusters still hold their share of the weight (the elevation clipped) - Blend = p.
+    ///  - SIDE (left / right: turrets, a broadside) on the target itself (turrets lead their own shots). Airplane: by the way it turns
+    ///    round (ApBehaviours.SideFor) - its attitude stays the turn's, no blend. Helicopter: the heading that puts that side on the
+    ///    target, by p. Six-axis: that side's axis onto the target, elevation clipped, Blend = p.
+    ///  - TRAVEL: nothing blended; report: the nose's report alone (a slot's AimReport).
+    /// The protection still clips (the flight director's guard on the attitude this makes).</summary>
+    void Aim(in ApSense s, Vector3 up, ApFacing face, float p, bool report, ref ApExternal x)
     {
-        AimOn = want && T.Valid && (Cfg.AimOn || !blend);
+        FacingNow = T.Valid ? face : ApFacing.Travel;
+        AimOn = T.Valid && (face != ApFacing.Travel || report);
         if (!AimOn) { AimErrDeg = float.NaN; InCone = InRange = false; LeadBlend = 0f; return; }
-        Vector3 axis = s.GunAxis.LengthSquared() > 0.5f ? s.GunAxis : s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
+        p = float.IsFinite(p) ? Math.Clamp(p, 0f, 1f) : 0f;
+        Vector3 gun = s.GunAxis.LengthSquared() > 0.5f ? s.GunAxis : s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
         float u = Cfg.MuzzleSpeed > 0f ? Cfg.MuzzleSpeed : s.MuzzleSpeed;
         ApAim.Lead((Vector3)(T.Pos - s.Pos), T.Vel - s.Vel, T.Acc, Vector3.Zero, u, out Vector3 dir, out Tof);
-        Vector3 gunW = Vector3.Transform(axis, s.Orient);
-        AimErrDeg = ApAim.ErrorDeg(gunW, dir);
+        bool side = face == ApFacing.SideLeft || face == ApFacing.SideRight;
+        Vector3 axis = gun, want = dir;
+        if (side)
+        {
+            Vector3 noseL = s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
+            Vector3 rightL = Vector3.Cross(noseL, _upL);   // (fwd x up: right - the behaviours' convention; -Z, +Y give +X)
+            rightL = rightL.LengthSquared() > 1e-4f ? Vector3.Normalize(rightL) : Vector3.UnitX;
+            axis = face == ApFacing.SideRight ? rightL : -rightL;
+            Vector3 los = (Vector3)(T.Pos - s.Pos);
+            want = los.LengthSquared() > 1e-4f ? Vector3.Normalize(los) : dir;
+        }
+        Vector3 axisW = Vector3.Transform(axis, s.Orient);
+        AimErrDeg = ApAim.ErrorDeg(axisW, want);
         float reach = s.GunRange > 0f ? s.GunRange : MathF.Max(1.5f * Cfg.RangeM, 1500f);
         InRange = T.Range <= reach;
-        InCone = InRange && ApAim.InCone(AimErrDeg, Cfg.ConeDeg, T.Range, T.Radius);
+        InCone = !side && InRange && ApAim.InCone(AimErrDeg, Cfg.ConeDeg, T.Range, T.Radius);
+        if (face == ApFacing.Travel || p <= 0f) { LeadBlend = 0f; return; }   // (the report alone; priority 0: the path only)
         float w;
         if (Style == ApStyle.Airplane)
         {
-            // (the nose off the flight path toward the lead, within a window the lift can still fly - beyond it the path's turn
-            //  brings it round; only inside the gun's reach)
-            Vector3 path = s.AirVel.LengthSquared() > 1f ? Vector3.Transform(Vector3.Normalize(s.AirVel), s.Orient) : gunW;
-            float off = ApAim.ErrorDeg(path, dir);
-            w = Math.Clamp((30f - off) / 15f, 0f, 1f) * (T.Range <= 1.2f * reach ? 1f : 0f);
-            // (and off it before the target: the nose given back to the path from 7 s before reaching it, all of it by 4 s - the pull-out's time)
-            if (T.Closing > 1f) w *= Math.Clamp((T.Range / T.Closing - 4f) / 3f, 0f, 1f);
-
+            if (side) w = 0f;   // (a plane's side: the way it circles - ApBehaviours.SideFor; banking it level onto the target would undo the turn)
+            else
+            {
+                // (the nose off the flight path toward the lead, within a window the lift can still fly - beyond it the path's turn
+                //  brings it round; only inside the gun's reach)
+                Vector3 path = s.AirVel.LengthSquared() > 1f ? Vector3.Transform(Vector3.Normalize(s.AirVel), s.Orient) : axisW;
+                float off = ApAim.ErrorDeg(path, dir);
+                w = Math.Clamp((30f - off) / 15f, 0f, 1f) * (T.Range <= 1.2f * reach ? 1f : 0f);
+                // (and off it before the target: the nose given back to the path from 7 s before reaching it, all of it by 4 s - the pull-out's time)
+                if (T.Closing > 1f) w *= Math.Clamp((T.Range / T.Closing - 4f) / 3f, 0f, 1f);
+            }
+            if (w > 0f) { x.AimAxis = axis; x.AimDir = want; x.Blend = w * p; }
         }
         else if (Style == ApStyle.Helicopter)
         {
-            // (a helicopter yaws onto the lead; it does not pitch onto it - its lift axis is its nose's pitch, tilting it moves the
-            //  ship: the behaviour holds it level with the lead instead - ApPilot.Step - so the nose is on it in height too)
-            w = 0f; if (blend) x.Heading = ApMath.Flat(dir, up);
+            // (a helicopter yaws the face on; it does not pitch onto it - its lift axis is its nose's pitch, tilting it moves the
+            //  ship: for the nose the behaviour holds it level with the lead instead - ApPilot.Step)
+            w = 1f;
+            YawToward(want, up, face, p, ref x);
         }
-
         else
         {
-            // (six-axis: the nose anywhere - but in gravity tilted only as far as its side thrusters still hold their share of the
+            // (six-axis: the face anywhere - but in gravity tilted only as far as its side thrusters still hold their share of the
             //  weight: past it the ship could not hold its place - the elevation clipped, the error reported as it is)
             w = 1f;
             float g = s.Gravity.Length();
-            Vector3 fh = ApMath.Flat(dir, up);
+            Vector3 fh = ApMath.Flat(want, up);
             if (g > 0.01f && fh.LengthSquared() > 1e-6f)
             {
                 Quaternion inv = Quaternion.Inverse(s.Orient); Vector3 uL = Near(Vector3.Transform(up, inv));
-                float side = float.MaxValue;
-                for (int k = 0; k < 6; k++) if (MathF.Abs(C(uL, k % 3)) < 0.5f) side = MathF.Min(side, C(k < 3 ? s.ThrustPos : s.ThrustNeg, k % 3));
-                float elMax = MathF.Asin(Math.Clamp(0.6f * side / MathF.Max(s.Mass * g, 1f), 0f, 1f));
-                float el = Math.Clamp(MathF.Asin(Math.Clamp(Vector3.Dot(dir, up), -1f, 1f)), -elMax, elMax);
-                dir = Vector3.Normalize(fh) * MathF.Cos(el) + up * MathF.Sin(el);
+                float sideF = float.MaxValue;
+                for (int k = 0; k < 6; k++) if (MathF.Abs(C(uL, k % 3)) < 0.5f) sideF = MathF.Min(sideF, C(k < 3 ? s.ThrustPos : s.ThrustNeg, k % 3));
+                float elMax = MathF.Asin(Math.Clamp(0.6f * sideF / MathF.Max(s.Mass * g, 1f), 0f, 1f));
+                float el = Math.Clamp(MathF.Asin(Math.Clamp(Vector3.Dot(want, up), -1f, 1f)), -elMax, elMax);
+                want = Vector3.Normalize(fh) * MathF.Cos(el) + up * MathF.Sin(el);
             }
+            // (its heading turned toward the face first, as a helicopter's: the aim's shortest arc from a heading the other way
+            //  went over the top - a target above and behind stood it on its back, FacingPack 2026-10-20; the blend then the rest)
+            YawToward(want, up, face, p, ref x);
+            x.AimAxis = axis; x.AimDir = want; x.Blend = w * p;
         }
-        LeadBlend = w;
+        LeadBlend = w * p;
+    }
 
-        if (blend) { x.AimAxis = axis; x.AimDir = dir; x.Blend = w; }
+    /// <summary>The heading turned from the way it travels (x.Heading) toward the one that puts the face on 'want' (the nose: its flat
+    /// direction; a side: the heading with that side toward it), by the share p.</summary>
+    static void YawToward(Vector3 want, Vector3 up, ApFacing face, float p, ref ApExternal x)
+    {
+        Vector3 d = ApMath.Flat(want, up);
+        if (d.LengthSquared() < 1e-6f) return;
+        d = Vector3.Normalize(d);
+        Vector3 aimHead = face == ApFacing.SideRight ? Vector3.Cross(up, d) : face == ApFacing.SideLeft ? Vector3.Cross(d, up) : d;
+        x.Heading = TurnToward(ApMath.Flat(x.Heading, up), aimHead, up, p);
+    }
 
+    /// <summary>A flat heading turned toward another by the share p of the angle between them (no heading yet: the other one, or none
+    /// at p 0).</summary>
+    static Vector3 TurnToward(Vector3 from, Vector3 to, Vector3 up, float p)
+    {
+        if (from.LengthSquared() < 1e-6f) return p > 0f ? to : from;
+        from = Vector3.Normalize(from);
+        float ang = MathF.Atan2(Vector3.Dot(Vector3.Cross(from, to), up), Vector3.Dot(from, to));
+        return Vector3.Transform(from, Quaternion.CreateFromAxisAngle(up, ang * p));
     }
 
     void Jink(in ApSense s, Vector3 up, float aLatMax, float dt, ref ApExternal x)

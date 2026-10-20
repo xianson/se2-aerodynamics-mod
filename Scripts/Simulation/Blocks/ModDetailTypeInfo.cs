@@ -25,6 +25,11 @@ namespace AeroMod;
 public static class ModDetailTypeInfo
 {
     public static AccessibleTypeInfo Build<TModel>(string documentation, params string[] properties) where TModel : BlockDetailModel
+        => Build<TModel>(documentation, null, properties);
+
+    /// <summary>The same, with tooltips (2026-10-20): a member's documentation is what the inspector shows on hover (ValuePropertyElement /
+    /// MethodPropertyElement read MembersDocumentation; plain text - the game's XmlToRichTextConverter) - by member name.</summary>
+    public static AccessibleTypeInfo Build<TModel>(string documentation, IReadOnlyDictionary<string, string> tips, params string[] properties) where TModel : BlockDetailModel
     {
         var baseInfo = BlockDetailModel.TypeInfoHolder.Value;
         var accessors = new List<(string Name, IMemberAccessor Accessor)>(BlockDetailModel.TypeInfoHolder.RawAccessors);
@@ -46,6 +51,7 @@ public static class ModDetailTypeInfo
                 var m = typeof(TModel).GetMethod(name, BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
                 if (m == null) throw new ArgumentException($"{typeof(TModel).Name} has no public property or parameterless method {name}");
                 order[m] = next++;
+                if (tips != null && tips.TryGetValue(name, out var mt)) docs[m] = mt;
                 continue;
             }
             IMemberAccessor a;
@@ -59,7 +65,7 @@ public static class ModDetailTypeInfo
 
             accessors.Add((name, a));
             order[p] = next++;
-            docs[p] = null;
+            docs[p] = tips != null && tips.TryGetValue(name, out var tip) ? tip : null;
             var list = new List<Attribute>();
             foreach (var at in p.GetCustomAttributes(true)) if (at is Attribute att) list.Add(att);
             attrs[p] = list;

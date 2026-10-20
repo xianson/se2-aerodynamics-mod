@@ -18,8 +18,15 @@ public static class ApModes
 
     public static string ModeName(ApMode m) => m switch
     {
-        ApMode.HoverHold => "Hover hold", ApMode.HeightHold => "Height hold", ApMode.FlightHold => "Flight hold", ApMode.Navigate => "Navigate",
-        ApMode.Engage => "Engage", _ => "Off",
+        ApMode.HoverHold => "Hover", ApMode.HeightHold => "Hold height", ApMode.FlightHold => "Cruise", ApMode.Navigate => "Follow route",
+        ApMode.Engage => "Attack", _ => "Off",
+    };
+
+    /// <summary>(2026-10-20) The panel's mode choice by name (the Mode dropdown's words).</summary>
+    public static string ChoiceName(ApModeChoice c) => c switch
+    {
+        ApModeChoice.Hover => "Hover", ApModeChoice.HoldHeight => "Hold height", ApModeChoice.Cruise => "Cruise", ApModeChoice.FollowRoute => "Follow route",
+        ApModeChoice.ReturnHome => "Return home", ApModeChoice.FollowShip => "Follow ship", ApModeChoice.Attack => "Attack", _ => "Off",
     };
 
 }
@@ -182,16 +189,16 @@ public sealed class ApBlockLink
         }
     }
 
-    /// <summary>The block's status line: "Hover hold - holding 25.0 m over the ground", "Off - you steered", "Standby - ..." (heightM
+    /// <summary>The block's status line: "Hover - holding 25.0 m over the ground", "Off - you steered", "Standby - ..." (heightM
     /// NaN: no height held yet - climbing on the keys). noGround: the flight director's NoGround - the height held along the
     /// gravity (over the ground) or read from where it engaged (level), said.</summary>
-    public static string Status(ApMode mode, ApReason last, bool flying, bool ready, bool standby, float heightM, ApHeightRef href, ApProt prot, bool noGround = false)
+    public static string Status(ApMode mode, ApReason last, bool flying, bool ready, bool standby, float heightM, ApHeightRef href, ApProt prot, bool noGround = false, string name = null)
     {
         if (standby) return "Standby - another autopilot block flies this ship";
         if (!ready) return "Off - " + (last == ApReason.BlockOff || last == ApReason.None ? "the block is off, unpowered or damaged" : ApText.Say(last));
         if (mode == ApMode.Off) return last == ApReason.None || last == ApReason.TurnedOff ? "Off" : "Off - " + ApText.Say(last);
         string where = href == ApHeightRef.Ground ? " over the ground" : " altitude";
-        string s = ApModes.ModeName(mode) + (!flying ? " - engaging" : float.IsFinite(heightM) ? $" - holding {heightM:F1} m{where}" : noGround ? " - holding its height" : " - on");
+        string s = (name ?? ApModes.ModeName(mode)) + (!flying ? " - engaging" : float.IsFinite(heightM) ? $" - holding {heightM:F1} m{where}" : noGround ? " - holding its height" : " - on");
         if (flying && noGround) s += href == ApHeightRef.Ground ? " · no ground in sight: held along the gravity" : " · no ground found: measured from where it engaged";
         if (prot != ApProt.None) s += " · " + ApText.Prot(prot);
         return s;

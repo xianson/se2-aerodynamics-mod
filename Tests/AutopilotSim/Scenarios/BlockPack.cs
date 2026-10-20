@@ -91,7 +91,7 @@ sealed class BlockPack : IScenarioPack
         load.Fly(12f);
         Sim.Check(load.P.Fd.Engaged && load.P.Panel.Mode == ApMode.HoverHold, $"block load: the saved Hover Hold engaged once the ship could ({load.P.Fd.Goals}, panel {load.P.Panel.Mode})");
         string st = ApBlockLink.Status(ApMode.HoverHold, ApReason.None, true, true, false, 25f, ApHeightRef.Ground, ApProt.None);
-        Sim.Check(st == "Hover hold - holding 25.0 m over the ground", $"block load: the status line ('{st}')");
+        Sim.Check(st == "Hover - holding 25.0 m over the ground", $"block load: the status line ('{st}')");
     }
 
     static void PanelRef()

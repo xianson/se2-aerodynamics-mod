@@ -222,7 +222,7 @@ public static class EnemySpawnRules
     public static bool WantsCruise(Kind k, double setting, double panelSpeed) => k == Kind.Bogey && !(setting > 0) && !(panelSpeed > 0);
 
     /// <summary>THE PANEL a spawned ship flies with: the blueprint's own (its tactical numbers, its slot's parameters, its limits)
-    /// with Engage on, the kind's slot, the target from the API (the player: AeroApi.SetAutopilotTarget), every relation taken
+    /// with Engage on, the kind's slot (a bogey: the nose facing if it had none), the target from the API (the player: AeroApi.SetAutopilotTarget), every relation taken
     /// (the player is the one target named - also before the owner change lands), kept with nobody seated, no return point.
     /// The Enemy switch is not set here (its own step does it and writes it back).</summary>
     public static ApPanel Configure(in ApPanel blueprint, Kind k)
@@ -235,6 +235,8 @@ public static class EnemySpawnRules
         p.Unattended = true;
         p.HasHome = false; p.ReturnHome = false; p.HomeX = p.HomeY = p.HomeZ = 0;
         p.DfSaved = ""; p.RgSaved = "";   // (a fresh fight: no slot state from the blueprint's last one)
+        // (a bogey's guns on you: the dogfight slot's nose aim needs the nose facing - 2026-10-20, a new block faces the way it flies)
+        if (k == Kind.Bogey && p.Facing == ApFacing.Travel) p.Facing = ApFacing.Nose;
         return p.Clamped();
     }
 

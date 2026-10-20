@@ -14,10 +14,11 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `ApPerf.cs` | The flight performance (engine-free): `PerfSamples` (the stall sweep's lift and drag over the angle of attack), `FlightPerf` (load, turn rates, drag, excess thrust, speed after a pull, the angle for a lift) |
 | `ApTypes.cs` | `ApSense` (what the instruments show), `ApCommand` (the seam), the enums, `ApExternal` / `IApGoalSource`, `ApMath`, `LoacMath` (Loac.cs's arithmetic), `SideAuthority` |
 | `ApConfig.cs` | The world's caps and the client readout (`Autopilot.*`; the rest are a new block's panel defaults) and `ApTuning` (the one constant the game and the sim share) |
-| `ApPanel.cs` | The Autopilot block's panel (`ApPanel`, `ApMode`, `ApHeightRef`) and the limits it flies with (`ApLimits.Of`: the panel within the world's caps) |
+| `ApPanel.cs` | The Autopilot block's panel (`ApPanel`, `ApMode`, `ApHeightRef`; the panel's own choices `ApModeChoice` / `ApMove` and their mapping onto the saved fields - `ChoiceOf` / `Choose`, `MoveOf` / `BhOf`; the facing `ApFacing` and the old Point At / Broadside's migration - `Migrate`) and the limits it flies with (`ApLimits.Of`: the panel within the world's caps) |
+| `ApPanelLayout.cs` | What the panel shows per mode (the `[ShowInInspectorWhen]` switches), the line under each dropdown (`*Hint`), the choices' names and tooltips |
 | `ApPilot.cs` | THE FLIGHT PILOT (an external goal source): Flight Hold, Navigate, Engage; the style's executor (airplane: an acceleration - L1 across, TECS vertical - on the lift with TECS's throttle; helicopter: a moving place for the hover's lean; six-axis: the same place on the thrusters, the nose free), the terrain minimum, the aim, jinking, its view (`ApPilotView.cs`: the status line) |
 | `ApNav.cs` | `ApAltimeter` (the height over the engage datum; the planet's centre where the gravity's lines meet), `ApCompass`, `ApL1` (L1 toward a point, a circle; a vector field onto a line flown by a braking course law), `ApTecs`, `ApRoute` (the route's text: GPS names, coordinates) |
-| `ApBehaviours.cs` | The behaviours (attack run, U-turn run, broadside, circle, hover above / below, point at, standoff, pursuit lead / pure / lag, extend) as parameterised goals (`ApNavGoal`), and the arbiter (`ApArbiterBh`: utility scores, hysteresis, dwell) |
+| `ApBehaviours.cs` | The attack movements (strafing run, turn-back run, circle it, hover over / under, keep distance, chase lead / direct / trailing, extend) as parameterised goals - movements only: the facing is the pilot's (`ApPilot.Aim`); a circle turns the way that keeps a chosen side in (`ApNavGoal`), and the arbiter (`ApArbiterBh`: utility scores, hysteresis, dwell) |
 | `ApAim.cs` | The target's track (`ApTargetTrack`: its acceleration estimated), the lead (`ApAim.Lead`: the intercept iterated), the style's detection (`ApStyleDetect`), the target source interface (`IApTargetSource`) |
 | `ApAvoid.cs` | Small collision avoidance (`ApAvoid`, on top of every mode): the closest approach to each obstacle (`ApObstacles`: other grids, asteroids; the target with half its behaviour's closest distance - `TargetClear`) along the velocity now within the look-ahead, a sidestep / pull-up flown through the mode's own command, let go 1 s after |
 | `ApEnemy.cs` | The target filter (`ApRelations`: the game's relation as own / friendly / neutral / hostile, the filter, `ApTargetPicker` - the scan's nearest) and the Enemy switch (`ApEnemy` rules: the world's rule, owner, creative / admin, the lock; `ApEnemySwitch`: ask, step, the saved owner before; `IApOwnership`) |
@@ -33,8 +34,20 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `Game/PlanetHeight.cs` | The planet's height in game (`GamePlanetHeight`): `VoxelPlanetComponent.QuerySurfacePosition` by reflection (a closed delegate per planet), the generated shape at any range; GridTerrain's rays kept for what is near, dug or built |
 | `Game/GridTerrain.cs` | The terrain in game: `IPhysics.CastRay`, synchronous, own buffers (voxel colliders exist only near entities: a miss is "not known") |
 | `Game/AeroAutopilotComponent.cs` | The Autopilot block (server, injected by its prefabs): its panel under a lock, its status line, its step (registered with its own grid, which keeps the list: `AeroGridComponent.ApBlocks`) |
-| `Game/AeroAutopilotBlockDetailModel.cs` | Its terminal: the mode buttons (toolbar actions too), the status line, the setpoints and limits |
+| `Game/AeroAutopilotBlockDetailModel.cs` | Its terminal (2026-10-20): the status (wrapped), one Mode dropdown, Level Off, then only the mode's fields, the safety limits last; every mode a toolbar action (the old method names, off the panel) |
 | `Game/ApToasts.cs` | The autopilot's words to the seated pilot (client toasts) |
+
+## The panel (2026-10-20)
+Status; Mode (Off, Hover, Hold height, Cruise, Follow route, Return home, Follow ship, Attack - `ApModeChoice` over the saved
+Mode / ReturnHome / Behaviour: Follow ship is Engage with the formation, Return home the route's return); Level Off; then the mode's
+fields: "Fly as" (Detect / Plane / Helicopter / Thruster ship), Follow ship's leader and slot, Attack's target, "Attack movement"
+(`ApMove`), "Facing" and "Aim priority", the band; the route; the holds; "Keep flying when I leave the seat"; "Safety limits".
+Each dropdown has a line under it and every choice in its tooltip. FACING IS A DESIRE (`ApFacing`: the way it flies / the nose on the
+lead / a side on the target): `ApPilot.Aim` blends it into the movement's attitude by the aim priority, within each style's caps (a
+plane: the 30 deg window and the pull-out - a side by the circle's direction; a helicopter: yaw; six-axis: anywhere its side
+thrusters hold the weight, the heading turned first); movement wins, the protection clips. Old saves: Point At - Keep distance +
+nose; Broadside - Circle it + a side (its angle: under 25 the nose, to 90 the right, past it the left); the aim switch - the nose
+facing (format 3 of the saved key). Tests: `PanelLayoutPack`, `FacingPack`, `TextsPack`, BlockSaveTests.
 
 ## The pilot modes (2026-10-19)
 The panel's Flight Hold / Navigate / Engage are `ApPilot` on the flight director: the goals `ApPilot.GoalsFor(style)` (a helicopter:

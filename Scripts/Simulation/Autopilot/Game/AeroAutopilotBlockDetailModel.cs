@@ -8,13 +8,17 @@ using Keen.VRage.Library.UI.PropertyInspector.Visibility;
 namespace AeroMod;
 
 /// <summary>
-/// The Autopilot block's terminal - the autopilot's whole control surface (AeroAutopilotComponent): the mode buttons (Hover hold,
-/// Height hold, Flight hold, Navigate, Engage, Level off, Return, Off - toolbar actions too, with hidden Toggle ones: [Button]
-/// methods are what the toolbar takes from a mod panel), the status line, and ONLY the fields of the mode chosen
-/// ([ShowInInspectorWhen] on the Show* switches below): the hover's height and speed; the flight style and holds; the route; the
-/// behaviour's own numbers (the attack run's abort and re-run only for an attack run, the angle only for a broadside), the target's
-/// source, text and filter, the Enemy switch (Engage, or an enemy ship), the aim; then the protection's limits. On / off and power are the game's own panel. Host / single player, as
-/// every mod panel (DetailModelPairing). The status line is read when the panel shows it (a button press refreshes it).
+/// The Autopilot block's terminal - the autopilot's whole control surface (AeroAutopilotComponent). 2026-10-20 redesign (the user:
+/// the old one "doesn't make much sense" - every button labelled twice, eight mode buttons filling the first screen, the mode only a
+/// greyed button, the status cut off, "Behaviour" / "Style" jargon): the STATUS first, its whole text wrapped ([Multiline]); ONE
+/// Mode dropdown (ApModeChoice: Off, Hover, Hold height, Cruise, Follow route, Return home, Follow ship, Attack) with a line saying
+/// what it does; Level Off the one button (a blank row label - the game shows a button's [Label] beside it and its content on it);
+/// then ONLY the chosen mode's fields ([ShowInInspectorWhen] on ApPanelLayout's switches): the hover's height and speed; "Fly as";
+/// Follow ship's leader and slot; Attack's target, movement, facing (a desire, ApFacing) and aim priority, band, Enemy; the route;
+/// the holds; "Keep flying when I leave the seat"; the Safety limits last. Each dropdown has a line under it naming what its choice
+/// does, and every choice with its line in its tooltip (MembersDocumentation). The toolbar keeps every mode as an action (the
+/// methods here, never shown on the panel - ShowNever; their names are what saved toolbars hold). On / off and power are the game's
+/// own panel. Host / single player, as every mod panel (DetailModelPairing). The status line is read when the panel shows it.
 /// </summary>
 [BlockDetailProvider]
 [BlockDetailDisplayMode(DisplayMode.Controls)]
@@ -23,34 +27,52 @@ namespace AeroMod;
 public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
 {
     // THE ORDER ON THE PANEL (the inspector sorts by it - ModDetailTypeInfo; the [Button] methods placed by name too): the status,
-    // the mode buttons, the chosen mode's fields top down, what it does unattended, the protection last. The switches and the
-    // toolbar's hidden toggles after (never shown). Tests/AutopilotSim PanelLayoutPack reads this list and checks it mode by mode.
+    // the mode, Level Off, the chosen mode's fields top down, unattended, the safety limits last. The switches and the toolbar's
+    // actions after (never shown). Tests/AutopilotSim PanelLayoutPack reads this list and checks it mode by mode.
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroAutopilotBlockDetailModel>(
-        "Autopilot: hover, height and flight holds, GPS navigation and target behaviours for this ship, with envelope protection.",
+        "Autopilot: hover, hold a height, cruise, follow a route or a ship, return home, attack - with safety limits.", Tips(),
         nameof(Status),
-        nameof(HoverHold), nameof(HeightHold), nameof(FlightHold), nameof(Navigate), nameof(Engage), nameof(LevelOff), nameof(Return), nameof(AutopilotOff),
+        nameof(Mode), nameof(ModeHint), nameof(LevelOffNow),
         nameof(HeightM), nameof(OverGround), nameof(HoverSpeed),
-        nameof(Style), nameof(HeadingOn), nameof(HeadingDeg), nameof(AltOn), nameof(AltM), nameof(AltOverGround), nameof(VsMs),
-        nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg), nameof(MinAglM),
-        nameof(Route), nameof(RouteLoop), nameof(LoiterM),
-        nameof(Behaviour), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AngleDeg), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
+        nameof(Style), nameof(StyleHint), nameof(HeadingOn), nameof(HeadingDeg),
+        nameof(TargetSrc), nameof(TargetHint), nameof(TargetText), nameof(TargetFilter),
+        nameof(AttackMove), nameof(MoveHint), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
         nameof(DfFight), nameof(DfHeadOn), nameof(DfRespectGuns), nameof(DfSkill), nameof(DfBingoFuelPct), nameof(DfBingoDamagePct),
         nameof(RgLaw), nameof(RgNavConst), nameof(RgTargetAccelGain), nameof(RgMaxLatG), nameof(RgGravityComp), nameof(RgArmM), nameof(RgTimeoutS),
-        nameof(FmRightM), nameof(FmUpM), nameof(FmBackM), nameof(FmCatchUpMs), nameof(DeckM), nameof(CeilingM),
-        nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
+        nameof(FmRightM), nameof(FmUpM), nameof(FmBackM), nameof(FmCatchUpMs),
+        nameof(Facing), nameof(FacingHint), nameof(AimPriority), nameof(MuzzleSpeed), nameof(ConeDeg),
+        nameof(DeckM), nameof(CeilingM),
         nameof(Enemy), nameof(EnemyText),
+        nameof(Route), nameof(RouteLoop), nameof(LoiterM),
+        nameof(AltOn), nameof(AltM), nameof(AltOverGround), nameof(VsMs), nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg), nameof(MinAglM),
         nameof(Unattended),
         nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(AvoidOn), nameof(AvoidS),
-        nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
-        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
-        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw), nameof(ShowNever),
-        nameof(ToggleHoverHold), nameof(ToggleHeightHold), nameof(ToggleFlightHold), nameof(ToggleNavigate), nameof(ToggleEngage));
+        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowHolds), nameof(ShowRoute), nameof(ShowLoiter), nameof(ShowTarget),
+        nameof(ShowEngage), nameof(ShowAttack), nameof(ShowTargetText), nameof(ShowAim), nameof(ShowFacing), nameof(ShowAimPriority),
+        nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowNever),
+        nameof(HoverHold), nameof(HeightHold), nameof(FlightHold), nameof(Navigate), nameof(ReturnHome), nameof(FollowShip), nameof(Engage),
+        nameof(LevelOff), nameof(Return), nameof(AutopilotOff),
+        nameof(ToggleHoverHold), nameof(ToggleHeightHold), nameof(ToggleFlightHold), nameof(ToggleNavigate), nameof(ToggleFollowShip), nameof(ToggleEngage));
     /// <summary>The game's member-order lookup (MemberReference.DeclarationOrder asks AccessibleTypeIndexer, which finds a type's
     /// info by its nested TypeInfoHolder.Value): without it every member here sorted as -1, in no stable order - the panel came
     /// out shuffled (protection first) with the buttons last, below the fold (in game, 2026-10-19). ModDetailTypeInfo.</summary>
     public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+
+    /// <summary>The tooltips (the game shows a member's documentation on hover): every dropdown's choices with their lines.</summary>
+    static System.Collections.Generic.Dictionary<string, string> Tips() => new()
+    {
+        [nameof(Mode)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.ModeHint, (ApModeChoice[])Enum.GetValues(typeof(ApModeChoice))),
+        [nameof(Style)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.StyleHint, (ApStyle[])Enum.GetValues(typeof(ApStyle))),
+        [nameof(AttackMove)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.MoveHint, (ApMove[])Enum.GetValues(typeof(ApMove))),
+        [nameof(Facing)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.FacingHint, (ApFacing[])Enum.GetValues(typeof(ApFacing))),
+        [nameof(TargetSrc)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.TargetHint, (ApTargetSrc[])Enum.GetValues(typeof(ApTargetSrc))),
+        [nameof(AimPriority)] = "How much the flight gives way to turn the chosen face onto the target. 0: the movement only. 1: as far as the ship can while it still flies the movement.",
+        [nameof(LevelOffNow)] = "Recover: wings level, then cruise on the heading, altitude and speed it has now.",
+        [nameof(Unattended)] = "On: the autopilot keeps flying when nobody is in the seat. Off: it lets go when you leave.",
+        [nameof(Protection)] = "Keeps the flight inside the ship's limits: the g limit, a margin from the stall, the terrain floor.",
+    };
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroAutopilotComponent _ap;
@@ -61,25 +83,36 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     void Edit(AeroAutopilotComponent.PanelEdit e) { _ap?.Edit(e); Changed(); }
 
     [Label("Status")]
+    [Multiline]
     [ReadOnlyInInspector]
     public string Status => _ap?.Status ?? "";
 
+    // ── the mode: one dropdown, a line saying what it does, Level Off ──
+    [Label("Mode")]
+    public ApModeChoice Mode { get => ApPanel.ChoiceOf(P); set { _ap?.SetChoice(value); Changed(); } }
+
+    [Label(" ")] [Multiline] [ReadOnlyInInspector]
+    public string ModeHint => ApPanelLayout.ModeHint(ApPanel.ChoiceOf(P));
+
+    /// <summary>Level off / recover - the one button (its row label blank: the game shows the label beside a button and its content
+    /// on it). Not a toolbar action itself: the toolbar's is LevelOff, below.</summary>
+    [Label(" ")] [Button("Level Off")] [NoToolbarAction]
+    public void LevelOffNow() { _ap?.LevelOff(); Changed(); }
+
     // ── what is shown: the fields of the mode chosen only ──
-    [HideInInspector] public bool CanHover => _ap != null && P.Mode != ApMode.HoverHold;
-    [HideInInspector] public bool CanHeight => _ap != null && P.Mode != ApMode.HeightHold;
-    [HideInInspector] public bool CanFlight => _ap != null && P.Mode != ApMode.FlightHold;
-    [HideInInspector] public bool CanNavigate => _ap != null && P.Mode != ApMode.Navigate;
-    [HideInInspector] public bool CanEngage => _ap != null && P.Mode != ApMode.Engage;
-    [HideInInspector] public bool CanOff => _ap != null && P.Mode != ApMode.Off;
     [HideInInspector] public bool ShowHover => ApPanelLayout.ShowHover(P);
     [HideInInspector] public bool ShowPilot => ApPanelLayout.ShowPilot(P);
     [HideInInspector] public bool ShowFlight => ApPanelLayout.ShowFlight(P);
+    [HideInInspector] public bool ShowHolds => ApPanelLayout.ShowHolds(P);
     [HideInInspector] public bool ShowRoute => ApPanelLayout.ShowRoute(P);
+    [HideInInspector] public bool ShowLoiter => ApPanelLayout.ShowLoiter(P);
+    [HideInInspector] public bool ShowTarget => ApPanelLayout.ShowTarget(P);
     [HideInInspector] public bool ShowEngage => ApPanelLayout.ShowEngage(P);
     [HideInInspector] public bool ShowAttack => ApPanelLayout.ShowAttack(P);
-    [HideInInspector] public bool ShowBroadside => ApPanelLayout.ShowBroadside(P);
     [HideInInspector] public bool ShowTargetText => ApPanelLayout.ShowTargetText(P);
     [HideInInspector] public bool ShowAim => ApPanelLayout.ShowAim(P);
+    [HideInInspector] public bool ShowFacing => ApPanelLayout.ShowFacing(P);
+    [HideInInspector] public bool ShowAimPriority => ApPanelLayout.ShowAimPriority(P);
     [HideInInspector] public bool ShowHeading => ApPanelLayout.ShowHeading(P);
     [HideInInspector] public bool ShowAlt => ApPanelLayout.ShowAlt(P);
     [HideInInspector] public bool ShowAltRef => ApPanelLayout.ShowAltRef(P);
@@ -93,60 +126,12 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool ShowFormation => ApPanelLayout.ShowFormation(P);
     [HideInInspector] public bool ShowBand => ApPanelLayout.ShowBand(P);
     [HideInInspector] public bool ShowTargetFilter => ApPanelLayout.ShowTargetFilter(P);
-    [HideInInspector] public bool ShowAimSw => ApPanelLayout.ShowAimSw(P);
-    /// <summary>The toolbar's hidden toggles: the game shows every public button method on the panel (HideInInspector is not read
-    /// for a method - TerminalInspectorViewModel.InjectInspectable), so a switch that is never true keeps them off it (the toolbar
-    /// lists them all the same: BlockDetailProviderIndexer.IsButtonEligible). In game, 2026-10-20: they showed at the bottom.</summary>
+    /// <summary>The toolbar's actions: the game shows every public button method on the panel (HideInInspector is not read for a
+    /// method - TerminalInspectorViewModel.InjectInspectable), so a switch that is never true keeps them off it (the toolbar lists
+    /// them all the same: BlockDetailProviderIndexer.IsButtonEligible). In game, 2026-10-20: the toggles showed at the bottom.</summary>
     [HideInInspector] public bool ShowNever => ApPanelLayout.ShowNever;
 
-    // ── the modes ──
-    [Label("Hover Hold")] [Button(null)] [WritableInInspectorWhen("CanHover", WritableWhen.True)]
-    public void HoverHold() { _ap?.SetMode(ApMode.HoverHold); Changed(); }
-
-    [Label("Height Hold")] [Button(null)] [WritableInInspectorWhen("CanHeight", WritableWhen.True)]
-    public void HeightHold() { _ap?.SetMode(ApMode.HeightHold); Changed(); }
-
-    [Label("Flight Hold")] [Button(null)] [WritableInInspectorWhen("CanFlight", WritableWhen.True)]
-    public void FlightHold() { _ap?.SetMode(ApMode.FlightHold); Changed(); }
-
-    [Label("Navigate")] [Button(null)] [WritableInInspectorWhen("CanNavigate", WritableWhen.True)]
-    public void Navigate() { _ap?.SetMode(ApMode.Navigate); Changed(); }
-
-    [Label("Engage")] [Button(null)] [WritableInInspectorWhen("CanEngage", WritableWhen.True)]
-    public void Engage() { _ap?.SetMode(ApMode.Engage); Changed(); }
-
-    /// <summary>Level off / recover: flight hold, every hold caught from the flight now.</summary>
-    [Label("Level Off")] [Button(null)]
-    public void LevelOff() { _ap?.LevelOff(); Changed(); }
-
-    /// <summary>Back to where a mode was first engaged, a loiter there; again: the route resumed.</summary>
-    [Label("Return")] [Button(null)]
-    public void Return() { _ap?.ToggleReturn(); Changed(); }
-
-    [Label("Autopilot Off")] [Button(null)] [WritableInInspectorWhen("CanOff", WritableWhen.True)]
-    public void AutopilotOff() { _ap?.SetMode(ApMode.Off); Changed(); }
-
-    [Label("Toggle Hover Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
-    public void ToggleHoverHold() { _ap?.ToggleMode(ApMode.HoverHold); Changed(); }
-
-    [Label("Toggle Height Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
-    public void ToggleHeightHold() { _ap?.ToggleMode(ApMode.HeightHold); Changed(); }
-
-    [Label("Toggle Flight Hold")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
-    public void ToggleFlightHold() { _ap?.ToggleMode(ApMode.FlightHold); Changed(); }
-
-    [Label("Toggle Navigate")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
-    public void ToggleNavigate() { _ap?.ToggleMode(ApMode.Navigate); Changed(); }
-
-    [Label("Toggle Engage")] [Button(null)] [HideInInspector] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
-    public void ToggleEngage() { _ap?.ToggleMode(ApMode.Engage); Changed(); }
-
-    // ── the flight style (the pilot modes) ──
-    /// <summary>Auto: from the ship (wings - airplane; one lift axis - helicopter; thrust every way - six-axis).</summary>
-    [Label("Flight Style")] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
-    public ApStyle Style { get => P.Style; set => Edit((ref ApPanel p) => p.Style = value); }
-
-    // ── hover / height hold ──
+    // ── hover / hold height ──
     /// <summary>The height held: engaging catches the ship's own (shown here); a new number flies it there.</summary>
     [Slider(null)] [Range<float>(0f, 5000f, RangeMode.InIn)] [Label("Height (m)")] [Increment(1f, 10f, 100f)] [ShowInInspectorWhen("ShowHover", ShowWhen.True)]
     public float HeightM { get => P.HeightM; set { _ap?.SetHeight(value); Changed(); } }
@@ -159,55 +144,46 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(ApPanel.HoverSpeedMin, ApPanel.HoverSpeedMax, RangeMode.InIn)] [Label("Hover Speed (m/s)")] [Increment(1f, 5f, 10f)] [ShowInInspectorWhen("ShowHover", ShowWhen.True)]
     public float HoverSpeed { get => P.HoverSpeed; set => _ap?.SetHoverSpeed(value); }
 
-    // ── the holds ──
+    // ── how it flies (the flight pilot's modes) ──
+    [Label("Fly as")] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
+    public ApStyle Style { get => P.Style; set => Edit((ref ApPanel p) => p.Style = value); }
+
+    [Label(" ")] [Multiline] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
+    public string StyleHint => ApPanelLayout.StyleHint(P.Style);
+
     [Label("Heading Hold")] [ShowInInspectorWhen("ShowFlight", ShowWhen.True)]
     public bool HeadingOn { get => P.HeadingOn; set => Edit((ref ApPanel p) => p.HeadingOn = value); }
 
     [Slider(null)] [Range<float>(0f, 359f, RangeMode.InIn)] [Label("Heading (deg)")] [Increment(1f, 5f, 45f)] [ShowInInspectorWhen("ShowHeading", ShowWhen.True)]
     public float HeadingDeg { get => P.HeadingDeg; set => Edit((ref ApPanel p) => p.HeadingDeg = value); }
 
-    [Label("Altitude Hold")] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
-    public bool AltOn { get => P.AltOn; set => Edit((ref ApPanel p) => p.AltOn = value); }
+    // ── the target (Follow ship's leader, Attack's target) ──
+    [Label("Target")] [ShowInInspectorWhen("ShowTarget", ShowWhen.True)]
+    public ApTargetSrc TargetSrc { get => P.TargetSrc; set => Edit((ref ApPanel p) => p.TargetSrc = value); }
 
-    [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Altitude (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
-    public float AltM { get => P.AltM; set => Edit((ref ApPanel p) => p.AltM = value); }
+    [Label(" ")] [Multiline] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowTarget", ShowWhen.True)]
+    public string TargetHint => ApPanelLayout.TargetHint(P.TargetSrc);
 
-    /// <summary>The altitude's reference (the same setting as the hover's Height Over Ground): over the ground under the ship, or level.</summary>
-    [Label("Altitude Over Ground")] [ShowInInspectorWhen("ShowAltRef", ShowWhen.True)]
-    public bool AltOverGround { get => OverGround; set => OverGround = value; }
+    [Label("Target (GPS / ship name)")] [ShowInInspectorWhen("ShowTargetText", ShowWhen.True)]
+    public string TargetText { get => P.TargetText; set => Edit((ref ApPanel p) => p.TargetText = value ?? ""); }
 
-    [Slider(null)] [Range<float>(ApPanel.VsMin, 100f, RangeMode.InIn)] [Label("Climb Rate (m/s)")] [Increment(0.5f, 5f, 20f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
-    public float VsMs { get => P.VsMs; set => Edit((ref ApPanel p) => p.VsMs = value); }
+    /// <summary>Which targets it takes, by the game's own relation (the turrets' rule): hostile only; also neutral (another
+    /// player, a neutral NPC); everything but this ship.</summary>
+    [Label("Target Filter")] [ShowInInspectorWhen("ShowTargetFilter", ShowWhen.True)]
+    public ApTargetFilter TargetFilter { get => P.TargetFilter; set => Edit((ref ApPanel p) => p.TargetFilter = value); }
 
-    [Label("Speed Hold")] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
-    public bool SpeedOn { get => P.SpeedOn; set => Edit((ref ApPanel p) => p.SpeedOn = value); }
+    // ── Attack: the movement ──
+    [Label("Attack movement")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    public ApMove AttackMove
+    {
+        get { var p = P; return ApPanel.MoveOf(p.Behaviour == ApBehaviour.Formation ? p.AttackBh : p.Behaviour); }
+        set => Edit((ref ApPanel p) => { p.Behaviour = ApPanel.BhOf(value); p.AttackBh = p.Behaviour; });
+    }
 
-    /// <summary>Through the air (an airplane); over the ground, and the most it chases at (a helicopter, six-axis). 0: as engaged.</summary>
-    [Slider(null)] [Range<float>(0f, 1000f, RangeMode.InIn)] [Label("Speed (m/s)")] [Increment(1f, 10f, 50f)] [ShowInInspectorWhen("ShowSpeed", ShowWhen.True)]
-    public float SpeedMs { get => P.SpeedMs; set => Edit((ref ApPanel p) => p.SpeedMs = value); }
+    [Label(" ")] [Multiline] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    public string MoveHint => ApPanelLayout.MoveHint(AttackMove);
 
-    [Slider(null)] [Range<float>(ApPanel.BankMin, ApPanel.BankMax, RangeMode.InIn)] [Label("Bank Limit (deg)")] [Increment(1f, 5f, 15f)] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
-    public float BankDeg { get => P.BankDeg; set => Edit((ref ApPanel p) => p.BankDeg = value); }
-
-    // ── the route ──
-    /// <summary>GPS marker names or coordinates ("x y z"), separated by ';' or new lines.</summary>
-    [Label("Route (GPS names)")] [ShowInInspectorWhen("ShowRoute", ShowWhen.True)]
-    public string Route { get => P.Route; set => Edit((ref ApPanel p) => p.Route = value ?? ""); }
-
-    [Label("Loop Route")] [ShowInInspectorWhen("ShowRoute", ShowWhen.True)]
-    public bool RouteLoop { get => P.RouteLoop; set => Edit((ref ApPanel p) => p.RouteLoop = value); }
-
-    [Slider(null)] [Range<float>(ApPanel.LoiterMin, 5000f, RangeMode.InIn)] [Label("Loiter Radius (m)")] [Increment(10f, 100f, 500f)] [ShowInInspectorWhen("ShowRoute", ShowWhen.True)]
-    public float LoiterM { get => P.LoiterM; set => Edit((ref ApPanel p) => p.LoiterM = value); }
-
-    [Slider(null)] [Range<float>(0f, 1000f, RangeMode.InIn)] [Label("Terrain Minimum (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
-    public float MinAglM { get => P.MinAglM; set => Edit((ref ApPanel p) => p.MinAglM = value); }
-
-    // ── the behaviour ──
-    [Label("Behaviour")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
-    public ApBehaviour Behaviour { get => P.Behaviour; set => Edit((ref ApPanel p) => p.Behaviour = value == ApBehaviour.Extend ? ApBehaviour.Auto : value); }
-
-    /// <summary>The attack run's begin distance, the standoff range, the orbit radius, the broadside range, the gun range of a pursuit.</summary>
+    /// <summary>The strafing run's begin distance, the range kept, the circle's radius, the chase's gun range.</summary>
     [Slider(null)] [Range<float>(ApPanel.RangeMin, 10000f, RangeMode.InIn)] [Label("Range (m)")] [Increment(10f, 100f, 500f)] [ShowInInspectorWhen("ShowTactics", ShowWhen.True)]
     public float RangeM { get => P.RangeM; set => Edit((ref ApPanel p) => p.RangeM = value); }
 
@@ -217,11 +193,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(ApPanel.RerunMin, 300f, RangeMode.InIn)] [Label("Re-run Time (s)")] [Increment(1f, 5f, 30f)] [ShowInInspectorWhen("ShowAttack", ShowWhen.True)]
     public float RerunS { get => P.RerunS; set => Edit((ref ApPanel p) => p.RerunS = value); }
 
-    /// <summary>0 nose on, 90 circling (the target abeam).</summary>
-    [Slider(null)] [Range<float>(0f, 180f, RangeMode.InIn)] [Label("Broadside Angle (deg)")] [Increment(1f, 5f, 15f)] [ShowInInspectorWhen("ShowBroadside", ShowWhen.True)]
-    public float AngleDeg { get => P.AngleDeg; set => Edit((ref ApPanel p) => p.AngleDeg = value); }
-
-    /// <summary>Over the target (+) or under it (-): the attack run's, the orbit's, the hover above / below's height.</summary>
+    /// <summary>Over the target (+) or under it (-): the strafing run's, the circle's, the hover over / under's height.</summary>
     [Slider(null)] [Range<float>(-2000f, 2000f, RangeMode.InIn)] [Label("Height Over Target (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowTactics", ShowWhen.True)]
     public float AltOffsetM { get => P.AltOffsetM; set => Edit((ref ApPanel p) => p.AltOffsetM = value); }
 
@@ -263,7 +235,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(0f, ApPanel.AccelGainMax, RangeMode.InIn)] [Label("Target Accel Gain")] [Increment(0.05f, 0.25f, 0.5f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
     public float RgTargetAccelGain { get => P.RgTargetAccelGain; set => Edit((ref ApPanel p) => p.RgTargetAccelGain = value); }
 
-    /// <summary>The most lateral load the guidance may ask (the protection clips further).</summary>
+    /// <summary>The most lateral load the guidance may ask (the safety limits clip further).</summary>
     [Slider(null)] [Range<float>(ApPanel.LatGMin, 60f, RangeMode.InIn)] [Label("Max Lateral g")] [Increment(0.5f, 1f, 5f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
     public float RgMaxLatG { get => P.RgMaxLatG; set => Edit((ref ApPanel p) => p.RgMaxLatG = value); }
 
@@ -277,7 +249,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(0f, 600f, RangeMode.InIn)] [Label("Let-go Timeout (s)")] [Increment(1f, 10f, 60f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
     public float RgTimeoutS { get => P.RgTimeoutS; set => Edit((ref ApPanel p) => p.RgTimeoutS = value); }
 
-    // ── FORMATION: the slot in the leader's frame (the leader: the target source's grid) ──
+    // ── FOLLOW SHIP: the slot in the leader's frame (the leader: the target) ──
     [Slider(null)] [Range<float>(-500f, 500f, RangeMode.InIn)] [Label("Slot Right (m)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
     public float FmRightM { get => P.FmRightM; set => Edit((ref ApPanel p) => p.FmRightM = value); }
 
@@ -291,38 +263,15 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(0f, 200f, RangeMode.InIn)] [Label("Catch-up Speed (m/s)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
     public float FmCatchUpMs { get => P.FmCatchUpMs; set => Edit((ref ApPanel p) => p.FmCatchUpMs = value); }
 
-    // ── the altitude band (every Engage behaviour's height keeps it; the dogfight slot reads it too) ──
-    [Slider(null)] [Range<float>(0f, ApPanel.DeckMax, RangeMode.InIn)] [Label("Hard Deck (m over ground)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
-    public float DeckM { get => P.DeckM; set => Edit((ref ApPanel p) => p.DeckM = value); }
+    // ── Attack: the facing (a desire) ──
+    [Label("Facing")] [ShowInInspectorWhen("ShowFacing", ShowWhen.True)]
+    public ApFacing Facing { get => P.Facing; set => Edit((ref ApPanel p) => p.Facing = value); }
 
-    [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Combat Ceiling (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
-    public float CeilingM { get => P.CeilingM; set => Edit((ref ApPanel p) => p.CeilingM = value); }
+    [Label(" ")] [Multiline] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowFacing", ShowWhen.True)]
+    public string FacingHint => ApPanelLayout.FacingHint(P.Facing);
 
-    // ── the target and the aim ──
-    /// <summary>Targeting: what the cockpit locked, else what the turrets see. GPS: a marker's name or coordinates. Grid: a grid's
-    /// name. API: another mod's.</summary>
-    [Label("Target Source")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
-    public ApTargetSrc TargetSrc { get => P.TargetSrc; set => Edit((ref ApPanel p) => p.TargetSrc = value); }
-
-    [Label("Target (GPS / grid name)")] [ShowInInspectorWhen("ShowTargetText", ShowWhen.True)]
-    public string TargetText { get => P.TargetText; set => Edit((ref ApPanel p) => p.TargetText = value ?? ""); }
-
-    /// <summary>Which targets it takes, by the game's own relation (the turrets' rule): hostile only; also neutral (another
-    /// player, a neutral NPC); everything but this ship.</summary>
-    [Label("Target Filter")] [ShowInInspectorWhen("ShowTargetFilter", ShowWhen.True)]
-    public ApTargetFilter TargetFilter { get => P.TargetFilter; set => Edit((ref ApPanel p) => p.TargetFilter = value); }
-
-    /// <summary>ENEMY: this ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Off: back to its owner.
-    /// Who may: the world's Autopilot.EnemyRule; an enemy ship's panel: creative or an admin only.</summary>
-    [Label("Enemy (hostile NPC)")] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
-    public bool Enemy { get => _ap != null && _ap.GridIsEnemy; set { _ap?.AskEnemy(value); Changed(); } }
-
-    [Label("Enemy Status")] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
-    public string EnemyText => _ap?.EnemyText ?? "";
-
-    /// <summary>The nose (the fixed guns' axis) on the target's lead point - the protection still clips.</summary>
-    [Label("Aim Nose at Target")] [ShowInInspectorWhen("ShowAimSw", ShowWhen.True)]
-    public bool AimOn { get => P.AimOn; set => Edit((ref ApPanel p) => p.AimOn = value); }
+    [Slider(null)] [Range<float>(0f, 1f, RangeMode.InIn)] [Label("Aim priority")] [Increment(0.05f, 0.1f, 0.25f)] [ShowInInspectorWhen("ShowAimPriority", ShowWhen.True)]
+    public float AimPriority { get => P.AimPriority; set => Edit((ref ApPanel p) => p.AimPriority = value); }
 
     /// <summary>0: the grid's own fixed guns' projectile speed.</summary>
     [Slider(null)] [Range<float>(0f, 5000f, RangeMode.InIn)] [Label("Muzzle Speed (m/s)")] [Increment(10f, 50f, 250f)] [ShowInInspectorWhen("ShowAim", ShowWhen.True)]
@@ -331,8 +280,64 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(ApPanel.ConeMin, 20f, RangeMode.InIn)] [Label("Aim Cone (deg)")] [Increment(0.1f, 0.5f, 2f)] [ShowInInspectorWhen("ShowAim", ShowWhen.True)]
     public float ConeDeg { get => P.ConeDeg; set => Edit((ref ApPanel p) => p.ConeDeg = value); }
 
-    // ── the protection ──
-    [Label("Envelope Protection")]
+    // ── the altitude band (every attack movement's height keeps it; the dogfight slot reads it too) ──
+    [Slider(null)] [Range<float>(0f, ApPanel.DeckMax, RangeMode.InIn)] [Label("Hard Deck (m over ground)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
+    public float DeckM { get => P.DeckM; set => Edit((ref ApPanel p) => p.DeckM = value); }
+
+    [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Combat Ceiling (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
+    public float CeilingM { get => P.CeilingM; set => Edit((ref ApPanel p) => p.CeilingM = value); }
+
+    /// <summary>ENEMY: this ship becomes the game's hostile NPC's - its turrets and its Attack fight players. Off: back to its owner.
+    /// Who may: the world's Autopilot.EnemyRule; an enemy ship's panel: creative or an admin only.</summary>
+    [Label("Enemy (hostile NPC)")] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
+    public bool Enemy { get => _ap != null && _ap.GridIsEnemy; set { _ap?.AskEnemy(value); Changed(); } }
+
+    [Label("Enemy Status")] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
+    public string EnemyText => _ap?.EnemyText ?? "";
+
+    // ── the route (Follow route; Attack's patrol while there is no target) ──
+    /// <summary>GPS marker names or coordinates ("x y z"), separated by ';' or new lines.</summary>
+    [Label("Route (GPS names)")] [ShowInInspectorWhen("ShowRoute", ShowWhen.True)]
+    public string Route { get => P.Route; set => Edit((ref ApPanel p) => p.Route = value ?? ""); }
+
+    [Label("Loop Route")] [ShowInInspectorWhen("ShowRoute", ShowWhen.True)]
+    public bool RouteLoop { get => P.RouteLoop; set => Edit((ref ApPanel p) => p.RouteLoop = value); }
+
+    [Slider(null)] [Range<float>(ApPanel.LoiterMin, 5000f, RangeMode.InIn)] [Label("Loiter Radius (m)")] [Increment(10f, 100f, 500f)] [ShowInInspectorWhen("ShowLoiter", ShowWhen.True)]
+    public float LoiterM { get => P.LoiterM; set => Edit((ref ApPanel p) => p.LoiterM = value); }
+
+    // ── the holds ──
+    [Label("Altitude Hold")] [ShowInInspectorWhen("ShowHolds", ShowWhen.True)]
+    public bool AltOn { get => P.AltOn; set => Edit((ref ApPanel p) => p.AltOn = value); }
+
+    [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Altitude (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
+    public float AltM { get => P.AltM; set => Edit((ref ApPanel p) => p.AltM = value); }
+
+    /// <summary>The altitude's reference (the same setting as the hover's Height Over Ground): over the ground under the ship, or level.</summary>
+    [Label("Altitude Over Ground")] [ShowInInspectorWhen("ShowAltRef", ShowWhen.True)]
+    public bool AltOverGround { get => OverGround; set => OverGround = value; }
+
+    [Slider(null)] [Range<float>(ApPanel.VsMin, 100f, RangeMode.InIn)] [Label("Climb Rate (m/s)")] [Increment(0.5f, 5f, 20f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
+    public float VsMs { get => P.VsMs; set => Edit((ref ApPanel p) => p.VsMs = value); }
+
+    [Label("Speed Hold")] [ShowInInspectorWhen("ShowHolds", ShowWhen.True)]
+    public bool SpeedOn { get => P.SpeedOn; set => Edit((ref ApPanel p) => p.SpeedOn = value); }
+
+    /// <summary>Through the air (a plane); over the ground, and the most it chases at (a helicopter, a thruster ship). 0: as engaged.</summary>
+    [Slider(null)] [Range<float>(0f, 1000f, RangeMode.InIn)] [Label("Speed (m/s)")] [Increment(1f, 10f, 50f)] [ShowInInspectorWhen("ShowSpeed", ShowWhen.True)]
+    public float SpeedMs { get => P.SpeedMs; set => Edit((ref ApPanel p) => p.SpeedMs = value); }
+
+    [Slider(null)] [Range<float>(ApPanel.BankMin, ApPanel.BankMax, RangeMode.InIn)] [Label("Bank Limit (deg)")] [Increment(1f, 5f, 15f)] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
+    public float BankDeg { get => P.BankDeg; set => Edit((ref ApPanel p) => p.BankDeg = value); }
+
+    [Slider(null)] [Range<float>(0f, 1000f, RangeMode.InIn)] [Label("Terrain Minimum (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowPilot", ShowWhen.True)]
+    public float MinAglM { get => P.MinAglM; set => Edit((ref ApPanel p) => p.MinAglM = value); }
+
+    [Label("Keep flying when I leave the seat")]
+    public bool Unattended { get => P.Unattended; set => _ap?.SetUnattended(value); }
+
+    // ── the safety limits ──
+    [Label("Safety limits")]
     public bool Protection { get => P.Protection; set => _ap?.SetProtection(value); }
 
     [Slider(null)] [Range<float>(ApPanel.GLimitMin, ApPanel.GLimitMax, RangeMode.InIn)] [Label("G Limit")] [Increment(0.1f, 0.5f, 1f)]
@@ -348,7 +353,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     public bool LookAhead { get => P.LookAhead; set => _ap?.SetLookAhead(value); }
 
     /// <summary>Other grids, asteroids and the target: a sidestep or a pull-up when the closest approach along the velocity now
-    /// would come too near (every mode; through the same protection).</summary>
+    /// would come too near (every mode; through the same safety limits).</summary>
     [Label("Collision Avoidance")]
     public bool AvoidOn { get => P.AvoidOn; set => Edit((ref ApPanel p) => p.AvoidOn = value); }
 
@@ -356,15 +361,65 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Slider(null)] [Range<float>(ApPanel.AvoidSMin, ApPanel.AvoidSMax, RangeMode.InIn)] [Label("Avoidance Look-Ahead (s)")] [Increment(0.5f, 1f, 2f)] [ShowInInspectorWhen("ShowAvoidS", ShowWhen.True)]
     public float AvoidS { get => P.AvoidS; set => Edit((ref ApPanel p) => p.AvoidS = value); }
 
-    [Label("Keep Mode Unattended")]
-    public bool Unattended { get => P.Unattended; set => _ap?.SetUnattended(value); }
+    // ── THE TOOLBAR'S ACTIONS (never on the panel: ShowNever). Their method names are what saved toolbars hold - kept from the old
+    //    panel's buttons (HoverHold .. AutopilotOff, the Toggle* ones); the labels are the new names. ──
+    [Label("Hover")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void HoverHold() { _ap?.SetChoice(ApModeChoice.Hover); Changed(); }
+
+    [Label("Hold height")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void HeightHold() { _ap?.SetChoice(ApModeChoice.HoldHeight); Changed(); }
+
+    [Label("Cruise")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void FlightHold() { _ap?.SetChoice(ApModeChoice.Cruise); Changed(); }
+
+    [Label("Follow route")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void Navigate() { _ap?.SetChoice(ApModeChoice.FollowRoute); Changed(); }
+
+    [Label("Return home")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ReturnHome() { _ap?.SetChoice(ApModeChoice.ReturnHome); Changed(); }
+
+    [Label("Follow ship")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void FollowShip() { _ap?.SetChoice(ApModeChoice.FollowShip); Changed(); }
+
+    [Label("Attack")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void Engage() { _ap?.SetChoice(ApModeChoice.Attack); Changed(); }
+
+    /// <summary>Level off / recover: cruise, every hold caught from the flight now.</summary>
+    [Label("Level Off")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void LevelOff() { _ap?.LevelOff(); Changed(); }
+
+    /// <summary>Back to where a mode was first engaged, a loiter there; again: what it flew before resumed.</summary>
+    [Label("Toggle return home")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void Return() { _ap?.ToggleReturn(); Changed(); }
+
+    [Label("Autopilot Off")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void AutopilotOff() { _ap?.SetChoice(ApModeChoice.Off); Changed(); }
+
+    [Label("Toggle hover")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleHoverHold() { _ap?.ToggleChoice(ApModeChoice.Hover); Changed(); }
+
+    [Label("Toggle hold height")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleHeightHold() { _ap?.ToggleChoice(ApModeChoice.HoldHeight); Changed(); }
+
+    [Label("Toggle cruise")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleFlightHold() { _ap?.ToggleChoice(ApModeChoice.Cruise); Changed(); }
+
+    [Label("Toggle follow route")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleNavigate() { _ap?.ToggleChoice(ApModeChoice.FollowRoute); Changed(); }
+
+    [Label("Toggle follow ship")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleFollowShip() { _ap?.ToggleChoice(ApModeChoice.FollowShip); Changed(); }
+
+    [Label("Toggle attack")] [Button(null)] [ShowInInspectorWhen("ShowNever", ShowWhen.True)]
+    public void ToggleEngage() { _ap?.ToggleChoice(ApModeChoice.Attack); Changed(); }
 
     static readonly string[] _notify =
     {
-        nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
-        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
-        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw), nameof(ShowNever),
+        nameof(Status), nameof(Mode), nameof(ModeHint), nameof(StyleHint), nameof(TargetHint), nameof(MoveHint), nameof(FacingHint), nameof(AttackMove),
+        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowHolds), nameof(ShowRoute), nameof(ShowLoiter), nameof(ShowTarget),
+        nameof(ShowEngage), nameof(ShowAttack), nameof(ShowTargetText), nameof(ShowAim), nameof(ShowFacing), nameof(ShowAimPriority),
+        nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowNever),
         nameof(Enemy), nameof(EnemyText),
         nameof(HeightM), nameof(OverGround), nameof(AltOverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };

@@ -93,7 +93,7 @@ Start from `ApSlotOut.None` (that's what `Step` receives): nothing asked, the th
 | `LetGo` | Not `None`: the behaviour lets go with this reason. Ones you'll use: `Bingo`, `TimedOut`, `LostTarget`, `NotImplemented`, `GoalDone`. The status line says it (`ApText.Say`). |
 | `Status` | Your words for the status line ("Dogfight - *Status* on X 1.2 km"). Keep a cached string; don't build one per tick. |
 | `AimReport` | Ask for the pilot's aim report against the target's lead each tick (`ApPilot.AimErrDeg` / `InCone` / `InRange`, `AeroApi.TryGetAutopilotAim`). |
-| `AimNose` | ... and blend the nose onto the lead, as the built-in behaviours do (a nav goal, or a direct goal without its own aim). |
+| `AimNose` | ... and blend the nose onto the lead, as the built-in behaviours do (a nav goal, or a direct goal without its own aim) - while the panel's Facing is the nose (2026-10-20: a new block faces the way it flies; a spawned bogey gets the nose), all of it the caps allow (the panel's Aim Priority is the built-in movements'). |
 | `TargetClearM` | The clearance avoidance keeps from the target (m). NaN: half the range. A slot that rams sets it small. It's never below the target's own size. |
 
 The core also caps Rocket Guidance's direct goal at the panel's **Max Lateral g**: a Lift goal's `Load`, and an Accel goal's part
@@ -128,7 +128,7 @@ Rocket Guidance (`ApRocketParams`, `c.Rocket`), shown when Behaviour = Rocket Gu
 | Let-go Timeout (s) | `RgTimeoutS` | `TimeoutS` | 0..600 / 60 (0 off; a value only) |
 
 Both slots also get the target fields: **Target Source** (`TargetSrc`), **Target (GPS / grid name)** (`TargetText`) and **Target Filter**
-(`TargetFilter`). Dogfight also gets the aim fields (`AimOn`, `MuzzleSpeed`, `ConeDeg`). Read those from `c.Panel`.
+(`TargetFilter`). Dogfight also gets the aim fields (`Facing` - `AimOn` is `Facing == Nose` -, `AimPriority`, `MuzzleSpeed`, `ConeDeg`). Read those from `c.Panel`.
 
 ## Adding a panel field
 

@@ -118,7 +118,7 @@ static class Program
                 var q = ApPanel.Defaults; q.Mode = m; q.HeightRef = hr;
                 Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(q), out var q2) && q2.Mode == m && q2.HeightRef == hr, $"autopilot mode {m}, reference {hr} round trip");
             }
-        Check(AeroBlockSaveForm.Autopilot(ApPanel.Defaults).StartsWith("aero-autopilot:2 0 0 0 10 1 3 3 15 1 1 "), $"autopilot defaults key: '{AeroBlockSaveForm.Autopilot(ApPanel.Defaults)}'");
+        Check(AeroBlockSaveForm.Autopilot(ApPanel.Defaults).StartsWith("aero-autopilot:3 0 0 0 10 1 3 3 15 1 1 "), $"autopilot defaults key: '{AeroBlockSaveForm.Autopilot(ApPanel.Defaults)}'");
         // the flight pilot's values (appended 2026-10-19): every one round-trips; texts with spaces, '%', ';' and line breaks intact;
         // an older key (the first 11 values) reads the pilot's defaults
         {
@@ -134,12 +134,53 @@ static class Program
                   && g.AngleDeg == f.AngleDeg && g.AltOffsetM == f.AltOffsetM && g.Aggression == f.Aggression && g.Evasive && g.TargetSrc == f.TargetSrc && !g.AimOn
                   && g.MuzzleSpeed == f.MuzzleSpeed && g.ConeDeg == f.ConeDeg && g.HasHome && g.HomeX == f.HomeX && g.HomeY == f.HomeY && g.HomeZ == f.HomeZ && g.ReturnHome
                   && g.Route == f.Route && g.TargetText == f.TargetText, $"autopilot flight pilot round trip: '{key}'");
-            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 68, $"autopilot: one line, 67 values after the format ({key.Split(' ').Length - 1})");
+            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 71, $"autopilot: one line, 70 values after the format ({key.Split(' ').Length - 1})");
             Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 4 0 0 10 1 3 3 15 1 1", out var old) && old.Mode == ApMode.Navigate && old.Style == ApStyle.Auto && old.Route == ""
-                  && old.RangeM == ApPanel.Defaults.RangeM && old.AimOn, "autopilot: a key of the first release reads the pilot's defaults");
+                  && old.RangeM == ApPanel.Defaults.RangeM && !old.AimOn && old.Facing == ApFacing.Travel && old.AimPriority == 0.5f, "autopilot: a key of the first release reads the pilot's defaults");
             Check(AeroBlockSaveForm.TryReadAutopilot(key.Replace(" 3 ", " 99 "), out var bad) && AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 5 0 0 10 1 3 3 15 1 1 9 NaN 1 -5 1 0 99999 1 0 1 0 0 77", out var bad2)
                   && bad2.Style == ApStyle.Auto && bad2.HeadingDeg == 0f && bad2.AltM == 0f && bad2.SpeedMs == ApPanel.SpeedMax && bad2.BankDeg == ApPanel.BankMin && bad2.Behaviour == ApBehaviour.Auto,
                   "autopilot: the pilot's unknown style / behaviour read as auto, NaN and out-of-range numbers clamped");
+        }
+        // THE FACING (format 3, 2026-10-20, appended 68..70: the facing, the aim priority, the movement Follow ship keeps): round trip;
+        // an older key's aim switch is its facing (on: the nose); Point At / Broadside read as their movement and facing (ApPanel.Migrate);
+        // Engage with the formation reads as Follow ship and Attack gives the movement back
+        {
+            foreach (ApFacing fc in Enum.GetValues(typeof(ApFacing)))
+            {
+                var f = ApPanel.Defaults; f.Mode = ApMode.Engage; f.Behaviour = ApBehaviour.Circle; f.Facing = fc; f.AimPriority = 0.35f;
+                string k = AeroBlockSaveForm.Autopilot(f);
+                Check(k.StartsWith("aero-autopilot:3 ") && AeroBlockSaveForm.TryReadAutopilot(k, out var g) && g.Facing == fc && g.AimPriority == 0.35f && g.AimOn == (fc == ApFacing.Nose)
+                      && g.Behaviour == ApBehaviour.Circle, $"autopilot facing {fc} round trip: '{k}'");
+            }
+            var fs = ApPanel.Defaults; fs.Behaviour = ApBehaviour.PursuitLead; ApPanel.Choose(ref fs, ApModeChoice.FollowShip); fs = fs.Clamped();
+            Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(fs), out var fs2) && ApPanel.ChoiceOf(in fs2) == ApModeChoice.FollowShip && fs2.AttackBh == ApBehaviour.PursuitLead,
+                  "autopilot: Follow ship round trip, the attack movement it keeps saved");
+            // (a format-2 key: the panel as the last release wrote it - the facing and the priority absent)
+            string Old(ApPanel q) => string.Join(' ', AeroBlockSaveForm.Autopilot(q).Split(' ').Take(68)).Replace("aero-autopilot:3 ", "aero-autopilot:2 ");
+            var o = ApPanel.Defaults; o.Mode = ApMode.Engage; o.Behaviour = ApBehaviour.PursuitPure;
+            // (value 32 is the aim switch: an old key wrote 1 for it on; 23 the behaviour, 27 the broadside angle)
+            string[] w = Old(o).Split(' '); w[32] = "1"; string kOn = string.Join(' ', w);
+            w[32] = "0"; string kOff = string.Join(' ', w);
+            Check(AeroBlockSaveForm.TryReadAutopilot(kOn, out var on) && on.Facing == ApFacing.Nose && on.AimOn && on.AimPriority == 0.5f && on.Behaviour == ApBehaviour.PursuitPure,
+                  $"autopilot: a format-2 key with the aim switch on reads the nose facing ({on.Facing}): '{kOn}'");
+            Check(AeroBlockSaveForm.TryReadAutopilot(kOff, out var off) && off.Facing == ApFacing.Travel && !off.AimOn, $"autopilot: a format-2 key with the aim switch off reads the way it flies ({off.Facing})");
+            w[23] = ((int)ApBehaviour.PointAt).ToString();
+            Check(AeroBlockSaveForm.TryReadAutopilot(string.Join(' ', w), out var pa) && pa.Behaviour == ApBehaviour.Standoff && pa.Facing == ApFacing.Nose && ApPanel.MoveOf(pa.Behaviour) == ApMove.KeepDistance,
+                  $"autopilot: an old Point At reads Keep distance with the nose at the target ({pa.Behaviour}, {pa.Facing})");
+            foreach (var (ang, want) in new[] { (90f, ApFacing.SideRight), (60f, ApFacing.SideRight), (120f, ApFacing.SideLeft), (10f, ApFacing.Nose) })
+            {
+                w[23] = ((int)ApBehaviour.Broadside).ToString(); w[27] = ang.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Check(AeroBlockSaveForm.TryReadAutopilot(string.Join(' ', w), out var bs) && bs.Behaviour == ApBehaviour.Circle && bs.Facing == want && ApPanel.MoveOf(bs.Behaviour) == ApMove.Circle,
+                      $"autopilot: an old Broadside at {ang} deg reads Circle it with {want} ({bs.Behaviour}, {bs.Facing})");
+            }
+            w[23] = ((int)ApBehaviour.Formation).ToString();
+            string kF = string.Join(' ', w);
+            Check(AeroBlockSaveForm.TryReadAutopilot(kF, out var fm) && fm.Mode == ApMode.Engage && ApPanel.ChoiceOf(in fm) == ApModeChoice.FollowShip,
+                  $"autopilot: an old Engage + Formation reads Follow ship ({ApPanel.ChoiceOf(in fm)})");
+            ApPanel.Choose(ref fm, ApModeChoice.Attack); fm = fm.Clamped();
+            Check(fm.Mode == ApMode.Engage && fm.Behaviour == ApBehaviour.Auto && ApPanel.ChoiceOf(in fm) == ApModeChoice.Attack, $"autopilot: and Attack from there flies Auto (no movement kept from before: {fm.Behaviour})");
+            var mig = ApPanel.Defaults; mig.Behaviour = ApBehaviour.PointAt; mig = mig.Clamped(); var again = mig.Clamped();
+            Check(again.Behaviour == mig.Behaviour && again.Facing == mig.Facing, "autopilot: the migration is idempotent (Clamped twice)");
         }
         // the target filter and the Enemy toggle (2026-10-19, appended 42..44): round trip; an older key (41 values) reads hostile
         // only, no enemy; an unknown filter reads hostile only; the owner before kept exactly (an identity's 64-bit number)
@@ -172,7 +213,7 @@ static class Program
                 foreach (var b in new[] { ApBehaviour.Dogfight, ApBehaviour.RocketGuidance, ApBehaviour.Formation })
                 {
                     s.Behaviour = b; string k2 = AeroBlockSaveForm.Autopilot(s);
-                    Check(k2.StartsWith("aero-autopilot:2 ") && AeroBlockSaveForm.TryReadAutopilot(k2, out var t) && t.Behaviour == b && t.DfFight == s.DfFight && t.DfHeadOn && t.DeckM == s.DeckM && t.CeilingM == s.CeilingM
+                    Check(k2.StartsWith("aero-autopilot:3 ") && AeroBlockSaveForm.TryReadAutopilot(k2, out var t) && t.Behaviour == b && t.DfFight == s.DfFight && t.DfHeadOn && t.DeckM == s.DeckM && t.CeilingM == s.CeilingM
                           && t.DfBingoFuelPct == s.DfBingoFuelPct && t.DfBingoDamagePct == s.DfBingoDamagePct && t.DfRespectGuns == s.DfRespectGuns && t.DfSkill == s.DfSkill
                           && t.RgLaw == s.RgLaw && t.RgNavConst == s.RgNavConst && t.RgTargetAccelGain == s.RgTargetAccelGain && t.RgMaxLatG == s.RgMaxLatG && !t.RgGravityComp
                           && t.RgArmM == s.RgArmM && t.RgTimeoutS == s.RgTimeoutS && t.FmRightM == s.FmRightM && t.FmUpM == s.FmUpM && t.FmBackM == s.FmBackM && t.FmCatchUpMs == s.FmCatchUpMs
