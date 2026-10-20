@@ -28,10 +28,15 @@ string GameDataDir = Path.Combine(Path.GetDirectoryName(SE2Dir.TrimEnd('\\', '/'
 if (args.Length < 1)
 {
     Console.Error.WriteLine("Usage: VrbReader <blueprint-dir-or-vrb> [--json] [--sim]");
-    Console.Error.WriteLine("  --json  Output block data as JSON to stdout");
-    Console.Error.WriteLine("  --sim   Run flight sim and generate HTML report+playback");
+    Console.Error.WriteLine("       VrbReader --occupancy [contentcache.vrb]");
+    Console.Error.WriteLine("  --json       Output block data as JSON to stdout");
+    Console.Error.WriteLine("  --sim        Run flight sim and generate HTML report+playback");
+    Console.Error.WriteLine("  --occupancy  Every block model's occupied cells (the game's content cache) as JSON to stdout");
     return 1;
 }
+bool occupancyMode = args[0] == "--occupancy";
+if (occupancyMode)
+    args = new[] { args.Length > 1 ? args[1] : Path.Combine(GameDataDir, "contentcache.vrb") };
 
 string path = args[0];
 bool outputJson = args.Contains("--json");
@@ -66,6 +71,16 @@ try
         "VRage.DCS.dll", "VRage.Game.dll", "Game2.Simulation.dll", "VRage.Physics.dll",
         "VRage.Scripting.dll"
     }.Select(d => Path.Combine(SE2Dir, d)).Where(File.Exists).Select(Assembly.LoadFrom).ToList();
+    if (occupancyMode)
+    {
+        // (the content cache holds every asset kind's blobs - animation, render, audio...: their types must resolve. Not
+        //  the whole folder: the editor / content pipeline need assemblies the game does not ship, WinForms, ...)
+        foreach (var d in OccupancyAssemblies)
+        {
+            var p = Path.Combine(SE2Dir, d);
+            if (File.Exists(p)) assemblies.Add(Assembly.LoadFrom(p));
+        }
+    }
     MetadataManager.Instance.PushContext(assemblies);
     // (the game's file system, bare: a toolbar tile's icon is a ResourceHandle, registered in the content cache as it is
     //  read - without one every blueprint with a toolbar failed. Only the cache: nothing is read from disk)
@@ -78,6 +93,8 @@ try
         fsi.InitAppData(new Keen.VRage.Library.Filesystem.RootPathSetup());
         fsi.InitTemp(new Keen.VRage.Library.Filesystem.RootPathSetup(), skipInitAppDataTemp: true);
     }
+
+    if (occupancyMode) return Occupancy.Dump(vrbPath);
 
     // ══════════════════════════════════════════════════════════════════
     //  DESERIALIZE VRB
@@ -351,4 +368,14 @@ catch (Exception ex)
         inner = inner.InnerException;
     }
     return 1;
+}
+
+static partial class Program
+{
+    /// <summary>--occupancy: the assemblies the content cache's blob types live in (beyond the blueprint reader's).</summary>
+    static readonly string[] OccupancyAssemblies = {
+        "VRage.Animation.dll", "VRage.Animation.Client.dll", "VRage.Render.dll", "VRage.Audio.dll", "VRage.Client.dll",
+        "VRage.Game.Client.dll", "VRage.Physics.Client.dll", "VRage.UI.dll", "VRage.UI.Shared.dll", "VRage.Voxels.dll",
+        "VRage.Multiplayer.dll", "VRage.AI.dll", "Game2.Game.dll", "Game2.Client.dll",
+    };
 }

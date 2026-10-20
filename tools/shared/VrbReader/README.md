@@ -4,9 +4,19 @@ Deserializes a blueprint with the game's own serializer (no game launch) and pri
 
 ```
 VrbReader <blueprint dir | grid.json.vrb> [--json] [--sim]
-  --json   blocks as JSON on stdout (def GUID, pos, orient) - the input of tools/gridgen/bp2boxes.py, bp2struct.py, bpinfo.py
-  --sim    run the Aero.Core flight sim, write an HTML report
+VrbReader --occupancy [contentcache.vrb]
+  --json        blocks as JSON on stdout (def GUID, pos, orient) - the input of tools/gridgen/bp2boxes.py, bp2struct.py, bpinfo.py
+  --sim         run the Aero.Core flight sim, write an HTML report
+  --occupancy   every block model's occupied cells as the game generated them (the GeneratedBlockData blobs of the
+                content cache; default: the game's Vanilla contentcache.vrb), JSON on stdout:
+                { "<model guid>": { "path", "bounds", "groups": [[min xyz, max xyz]...], "cells" } } - inclusive 0.25 m
+                cells, local frame. tools/gridgen/gamedefs.py builds its block index from it.
 ```
+
+`--occupancy` loads more of the game's assemblies (`OccupancyAssemblies` in `Program.cs`: the content cache holds every
+asset kind's blobs and their types must resolve). Not the whole folder: the editor / content-pipeline DLLs need
+`VRage.Plugin.Editor`, which the game does not ship. A new blob type in a game update ("Missing type ...") means one more
+assembly in that list.
 
 ## Build
 
