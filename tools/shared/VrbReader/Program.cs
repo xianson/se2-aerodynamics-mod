@@ -22,8 +22,8 @@ using Block = Aero.Core.Grids.Block;
 using Grid = Aero.Core.Grids.Grid;
 using Vector3I = Aero.Core.Math.Vector3I;
 
-const string SE2Dir = @"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2";
-const string GameDataDir = @"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData\Vanilla\Content";
+string SE2Dir = GameAssemblies.GameDir;
+string GameDataDir = Path.Combine(Path.GetDirectoryName(SE2Dir.TrimEnd('\\', '/'))!, "GameData", "Vanilla", "Content");
 
 if (args.Length < 1)
 {

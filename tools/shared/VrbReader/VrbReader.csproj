@@ -9,38 +9,49 @@
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>
 
+  <!-- The game's DLLs: compiled against, never copied (Private=false). At run time GameAssemblies.cs resolves every one
+       from the installed game, so a game update needs no rebuild unless an API it uses changed. (Copies in bin/ went
+       stale with each update and then clashed with the game's own: FileLoadException 0x80131040 on 4.0.0.3151.)
+       Another install: dotnet build -p:SE2Dir=<...\Game2> (baked in as the run-time default; SE2_GAME_DIR overrides). -->
   <PropertyGroup>
-    <SE2Dir>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</SE2Dir>
+    <SE2Dir Condition="'$(SE2Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</SE2Dir>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SE2Dir</_Parameter1>
+      <_Parameter2>$(SE2Dir)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="VRage.Library">
       <HintPath>$(SE2Dir)\VRage.Library.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="VRage.Core">
       <HintPath>$(SE2Dir)\VRage.Core.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="VRage.Core.Game">
       <HintPath>$(SE2Dir)\VRage.Core.Game.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="VRage.DCS">
       <HintPath>$(SE2Dir)\VRage.DCS.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Game2.Simulation">
       <HintPath>$(SE2Dir)\Game2.Simulation.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="VRage.Game">
       <HintPath>$(SE2Dir)\VRage.Game.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="VRage.Physics">
       <HintPath>$(SE2Dir)\VRage.Physics.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
   </ItemGroup>
 

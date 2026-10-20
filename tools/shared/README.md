@@ -8,6 +8,7 @@ Aerodynamics Mod's own; this folder serves the Orbital Mod too.
 | `ModCheck/` | the game's script compile + whitelist analyzers, offline (`ModCheck.csproj`, ~5 s) and the game's exact verdict (`gameverdict.sh`); `warnings.sh` lists dead-code warnings the pragmas hide. See `ModCheck/README.md`. |
 | `build_mod_content.py` | compiles a mod's `Assets` into its `Content` with the game's own builder (stand-in Vanilla project, texconv from the Mod SDK). `python tools/shared/build_mod_content.py "<mod dir>"` |
 | `Publish/` | `stage.py` (stage a script mod for the Workshop) and `Uploader/` (dry run unless approved). See `Publish/README.md`. |
+| `VrbReader/` | a blueprint's `grid.json.vrb` read offline with the game's serializer (`--json` feeds `tools/gridgen/bp2boxes.py`). See `VrbReader/README.md`. |
 | `launch-se2.bat` | Steam's launch options for SE2: `"<this folder>\launch-se2.bat" %command%` - adds the dev args from one file. |
 | `se2-launch-args.example.txt` | the template of that file; the real one is personal and gitignored. |
 
