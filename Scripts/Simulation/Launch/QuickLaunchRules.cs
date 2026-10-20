@@ -114,13 +114,14 @@ public static class QuickLaunchRules
     // ── the binding (client settings QuickLaunch.Key / QuickLaunch.Modifier) ──
 
     /// <summary>The modifier held as the binding wants: 0 none (no Ctrl, Shift or Alt held - so Ctrl+T bound elsewhere never
-    /// also fires a bare T), 1 Ctrl, 2 Shift, 3 Alt.</summary>
+    /// also fires a bare T), 1 Ctrl, 2 Shift, 3 Alt, 4 Ctrl+Shift (2026-10-20: the test spawn keys' default).</summary>
     public static bool ModifierHeld(int modifier, bool ctrl, bool shift, bool alt) => modifier switch
     {
         0 => !ctrl && !shift && !alt,
         1 => ctrl,
         2 => shift,
         3 => alt,
+        4 => ctrl && shift,
         _ => false,
     };
 
@@ -129,7 +130,7 @@ public static class QuickLaunchRules
     {
         if (key < 1 || key > 26) return "off";
         string k = ((char)('A' + key - 1)).ToString();
-        return modifier switch { 1 => "Ctrl+" + k, 2 => "Shift+" + k, 3 => "Alt+" + k, _ => k };
+        return modifier switch { 1 => "Ctrl+" + k, 2 => "Shift+" + k, 3 => "Alt+" + k, 4 => "Ctrl+Shift+" + k, _ => k };
     }
 
     // ── the key's press and the asks (QuickLaunch.cs; here so Tests/QuickLaunchTests can play key sequences) ──

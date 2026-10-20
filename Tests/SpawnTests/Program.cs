@@ -4,8 +4,8 @@ using AeroMod;
 using K = AeroMod.EnemySpawnRules.Kind;
 using V = AeroMod.EnemySpawnRules.Verdict;
 
-// Offline checks for Launch/EnemySpawnRules.cs - the TEST SPAWNS (2026-10-20: Ctrl+M an enemy missile, Ctrl+B an enemy bogey, both
-// from a blueprint with an Autopilot block, going for the player; Ctrl+N removes them) - the Enemy switch's test-spawn path
+// Offline checks for Launch/EnemySpawnRules.cs - the TEST SPAWNS (2026-10-20: Ctrl+Shift+I an enemy missile, Ctrl+Shift+O an enemy bogey, both
+// from a blueprint with an Autopilot block, going for the player; Ctrl+Shift+N removes them) - the Enemy switch's test-spawn path
 // (ApEnemySwitch.RequestSpawned over a mocked world), the panel a spawned block gets through its saved form, and a scan of the
 // engine side for the rules it must keep (server thread, async spawn, the API target, the keys' edges, no client entity in the
 // ask). Exit 0 = all pass.
@@ -75,7 +75,7 @@ static class Program
     static void Keys()
     {
         Console.WriteLine("[the keys]");
-        Check(EnemySpawnRules.BindingText(13, 1) == "Ctrl+M" && EnemySpawnRules.BindingText(2, 1) == "Ctrl+B" && EnemySpawnRules.BindingText(14, 1) == "Ctrl+N", "Ctrl+M / Ctrl+B / Ctrl+N read as such");
+        Check(EnemySpawnRules.BindingText(9, 4) == "Ctrl+Shift+I" && EnemySpawnRules.BindingText(15, 4) == "Ctrl+Shift+O" && EnemySpawnRules.BindingText(14, 4) == "Ctrl+Shift+N", "Ctrl+Shift+I / O / N read as such");
         Check(EnemySpawnRules.BindingText(0, 1) == "off" && EnemySpawnRules.BindingText(13, 3) == "Alt+M", "off, and a rebinding");
         // one press per key press, never while held, never a press not seen up first (QuickLaunchRules.KeyEdge, shared)
         var e = new QuickLaunchRules.KeyEdge();
@@ -83,6 +83,8 @@ static class Program
         Check(!e.Step(false, true) && e.Step(true, true) && !e.Step(true, true) && !e.Step(true, true), "up, then down with Ctrl: one press; held: no more");
         Check(!e.Step(false, false) && !e.Step(true, false) && !e.Step(true, true), "down without its modifier uses the press (adding Ctrl to a held M is no press)");
         Check(QuickLaunchRules.ModifierHeld(1, true, false, false) && !QuickLaunchRules.ModifierHeld(1, false, false, false), "Ctrl wanted: Ctrl held");
+        Check(QuickLaunchRules.ModifierHeld(4, true, true, false) && !QuickLaunchRules.ModifierHeld(4, true, false, false) && !QuickLaunchRules.ModifierHeld(4, false, true, false),
+              "Ctrl+Shift wanted: both held, not one alone");
     }
 
     static void Names()
@@ -280,6 +282,24 @@ static class Program
         while (d != null && !File.Exists(Path.Combine(d.FullName, "Scripts", "Simulation", "Launch", "EnemySpawn.cs"))) d = d.Parent;
         return d?.FullName ?? throw new Exception("no Scripts/Simulation/Launch/EnemySpawn.cs above " + AppContext.BaseDirectory);
     }
+    /// <summary>The default keys' letters bound by no vanilla control (the installed game's ActionControlMapping.def): a vanilla binding
+    /// fires whatever other modifiers are held (VRage.Input CompositeInputControl: its own modifiers only) - Ctrl+M opened the map
+    /// (M), Ctrl+B the blueprints. Skipped (said) without the game installed.</summary>
+    static void VanillaClash(string cl)
+    {
+        string def = Path.Combine(Environment.GetEnvironmentVariable("SE2_GAME_DATA") ?? @"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData",
+            "Vanilla", "Content", "MainMenuData", "Input", "ActionControlMapping.def");
+        if (!File.Exists(def)) { Console.WriteLine("  (skipped: no " + def + ")"); return; }
+        var used = new HashSet<string>(Regex.Matches(File.ReadAllText(def), @"""Keyboard::([A-Z])""").Select(m => m.Groups[1].Value));
+        var m = Regex.Match(cl, @"public static int MissileKey = (\d+), BogeyKey = (\d+), DespawnKey = (\d+)");
+        foreach (int i in new[] { 1, 2, 3 })
+        {
+            int k = m.Success ? int.Parse(m.Groups[i].Value) : 0;
+            string letter = k >= 1 && k <= 26 ? ((char)('A' + k - 1)).ToString() : "?";
+            Check(letter != "?" && !used.Contains(letter), $"the default spawn key {letter}: no vanilla control binds it (vanilla binds {string.Concat(used.OrderBy(x => x))})");
+        }
+    }
+
     static string Src(params string[] p) => File.ReadAllText(Path.Combine(new[] { Root(), "Scripts", "Simulation" }.Concat(p).ToArray()));
     static string Body(string src, string start)
     {
@@ -294,7 +314,8 @@ static class Program
     {
         Console.WriteLine("[the engine side]");
         string cl = Src("Launch", "EnemySpawn.cs"), srv = Src("Launch", "EnemySpawn.Server.cs");
-        Check(Regex.IsMatch(cl, @"public static int MissileKey = 13, BogeyKey = 2, DespawnKey = 14, Modifier = 1;"), "the default keys: Ctrl+M, Ctrl+B, Ctrl+N");
+        Check(Regex.IsMatch(cl, @"public static int MissileKey = 9, BogeyKey = 15, DespawnKey = 14, Modifier = 4;"), "the default keys: Ctrl+Shift+I, Ctrl+Shift+O, Ctrl+Shift+N");
+        VanillaClash(cl);
         Check(Regex.IsMatch(cl, @"public static string MissileBlueprint = ""Missile"", BogeyBlueprint = ""Bogey"";") && Regex.IsMatch(cl, @"public static double MissileDistance = 2000, BogeyDistance = 4000;"), "the default blueprints and distances");
         string ask = Body(cl, "internal sealed class Ask");
         Check(ask.Length > 0 && !Regex.IsMatch(ask, @"\bEntity\s+\w+\s*[;,]") && ask.Contains("IdentityId Who"), "the ask names only who asks, the blueprint's builders and the choices (no client entity)");

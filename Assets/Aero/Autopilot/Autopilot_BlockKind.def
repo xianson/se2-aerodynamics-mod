@@ -8,7 +8,7 @@
   "$Value": {
     "Guid": "ae200001-ae00-a900-0020-000000000001",
     "Name": "Autopilot",
-    "Description": "Flight computer: hover hold and height hold for its ship, with envelope protection - set in its control panel.",
+    "Description": "Flies its ship for you: hover, hold a height, cruise, follow a GPS route or another ship, return home, or attack a target. Set it in its control panel.",
     "OrderingPriority": 0,
     "BlockGroups": [
       {

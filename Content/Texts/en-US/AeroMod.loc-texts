@@ -150,7 +150,6 @@
   "Ducted Fan (Octagonal)": "Ducted Fan (Octagonal)",
   "Ducted Fan (Square)": "Ducted Fan (Square)",
   "Ducted Fans": "Ducted Fans",
-  "Flight computer: hover hold and height hold for its ship, with envelope protection - set in its control panel.": "Flight computer: hover hold and height hold for its ship, with envelope protection - set in its control panel.",
   "Helicopter Rotor": "Helicopter Rotor",
   "Helicopter Rotors": "Helicopter Rotors",
   "Landing gear on a wheel that folds away: the leg swings forward into its bay, the wheel with it.": "Landing gear on a wheel that folds away: the leg swings forward into its bay, the wheel with it.",
@@ -167,5 +166,6 @@
   "Turboprops": "Turboprops",
   "Two leaves that split open to brake in the air - with the parking brake (P).": "Two leaves that split open to brake in the air - with the parking brake (P).",
   "Wheeled Landing Gear": "Wheeled Landing Gear",
-  "AeroModTexts_Probe": "Aerodynamics Mod"
+  "AeroModTexts_Probe": "Aerodynamics Mod",
+  "Flies its ship for you: hover, hold a height, cruise, follow a GPS route or another ship, return home, or attack a target. Set it in its control panel.": "Flies its ship for you: hover, hold a height, cruise, follow a GPS route or another ship, return home, or attack a target. Set it in its control panel."
 }

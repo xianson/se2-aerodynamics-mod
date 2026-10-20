@@ -350,7 +350,7 @@ public static partial class AeroSettings
             "Who may switch an Autopilot block's Enemy toggle on: its ship becomes a hostile NPC's (the game's own) - its turrets and its Engage fight players. Only the ship's owner can, and only creative or an admin can switch it back or change an enemy ship's panel.")
             .Ui("Enemy ships from autopilot blocks", GAutopilot, Basic, choices: new[] { "Off", "Creative or admin", "Everyone" });
 
-        // ── test spawn (2026-10-20: Ctrl+M an enemy missile, Ctrl+B an enemy bogey - Launch/EnemySpawn.cs; the server reads these) ──
+        // ── test spawn (2026-10-20: Ctrl+Shift+I an enemy missile, Ctrl+Shift+O an enemy bogey - Launch/EnemySpawn.cs; the server reads these) ──
         I("Spawn.Allowed", "world", 0, 2, false, () => EnemySpawn.Allowed, v => EnemySpawn.Allowed = (int)v,
             "Who may spawn TEST enemies with the test spawn keys (an enemy missile / bogey from a blueprint, going for the player). Off: nobody in this world.")
             .Ui("Test enemy spawns", GSpawnHost, Basic, choices: new[] { "Off", "Creative or admin", "Everyone" });
@@ -481,9 +481,9 @@ public static partial class AeroSettings
         I("QuickLaunch.Key", "client", 0, 26, false, () => QuickLaunch.Key, v => QuickLaunch.Key = (int)v,
             "The quick launch key (seated, in creative worlds that allow it): a letter, with the modifier below. Off: no key.")
             .Ui("Quick launch key", GControls, Basic, choices: QuickLaunchRules.KeyChoices());
-        I("QuickLaunch.Modifier", "client", 0, 3, false, () => QuickLaunch.Modifier, v => QuickLaunch.Modifier = (int)v,
+        I("QuickLaunch.Modifier", "client", 0, 4, false, () => QuickLaunch.Modifier, v => QuickLaunch.Modifier = (int)v,
             "Held with the quick launch key. None: the key alone, with no Ctrl, Shift or Alt held.")
-            .Ui("Quick launch modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
+            .Ui("Quick launch modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt", "Ctrl+Shift" });
 
         // ── test spawn (this player's keys and choices; the world's Spawn.Allowed decides) ──
         I("Spawn.MissileKey", "client", 0, 26, false, () => EnemySpawn.MissileKey, v => EnemySpawn.MissileKey = (int)v,
@@ -495,9 +495,9 @@ public static partial class AeroSettings
         I("Spawn.DespawnKey", "client", 0, 26, false, () => EnemySpawn.DespawnKey, v => EnemySpawn.DespawnKey = (int)v,
             "Removes every spawned test ship (tagged ' [aero test]' in its name), with the modifier below. Off: no key.")
             .Ui("Remove test ships key", GSpawn, Basic, choices: QuickLaunchRules.KeyChoices());
-        I("Spawn.Modifier", "client", 0, 3, false, () => EnemySpawn.Modifier, v => EnemySpawn.Modifier = (int)v,
+        I("Spawn.Modifier", "client", 0, 4, false, () => EnemySpawn.Modifier, v => EnemySpawn.Modifier = (int)v,
             "Held with the test spawn keys. None: the key alone, with no Ctrl, Shift or Alt held.")
-            .Ui("Test spawn modifier", GSpawn, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
+            .Ui("Test spawn modifier", GSpawn, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt", "Ctrl+Shift" });
         T("Spawn.MissileBlueprint", "client", () => EnemySpawn.MissileBlueprint, v => EnemySpawn.MissileBlueprint = v, EnemySpawnRules.NameRule,
             "The blueprint the missile key spawns: its name in your Blueprints folder (it needs an Autopilot block).")
             .Ui("Missile blueprint", GSpawn, Hidden);

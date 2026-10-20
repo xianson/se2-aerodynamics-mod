@@ -673,8 +673,8 @@ public static partial class AeroApi
     // ── test spawns (version 14) ──
 
     /// <summary>(version 14) Ask for a TEST SPAWN as its keys do (Launch/EnemySpawn.cs; creative or an admin by default -
-    /// Spawn.Allowed): 0 an enemy missile (Spawn.MissileBlueprint, Ctrl+M), 1 an enemy bogey (Spawn.BogeyBlueprint, Ctrl+B), 2 every
-    /// test ship removed (Ctrl+N) - the key's own checks (the binding, not while typing) skipped, the server's all kept. The next
+    /// Spawn.Allowed): 0 an enemy missile (Spawn.MissileBlueprint, Ctrl+Shift+I), 1 an enemy bogey (Spawn.BogeyBlueprint, Ctrl+Shift+O), 2 every
+    /// test ship removed (Ctrl+Shift+N) - the key's own checks (the binding, not while typing) skipped, the server's all kept. The next
     /// client frame asks (the blueprint is loaded first); the answer is the player's toast (and EnemySpawn.Status). Client, any
     /// thread; no lock.</summary>
     public static void RequestTestSpawn(int kind) => EnemySpawn.DevAsk(kind);

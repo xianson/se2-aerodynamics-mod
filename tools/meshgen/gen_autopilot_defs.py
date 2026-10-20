@@ -83,7 +83,7 @@ def main():
     gd.definition(os.path.join(root, "Autopilot_BlockKind.def"), {"$Bundles": gd.B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
         "$Value": {"Guid": KIND, "Name": "Autopilot",
-                   "Description": "Flight computer: hover hold and height hold for its ship, with envelope protection - set in its control panel.",
+                   "Description": "Flies its ship for you: hover, hold a height, cruise, follow a GPS route or another ship, return home, or attack a target. Set it in its control panel.",
                    "OrderingPriority": 0, "BlockGroups": [{"Key": G(SHARED, 0x22), "Value": GROUP}]}}, KIND, False)
     gd.definition(os.path.join(root, "Autopilot_BlockGroup.def"), {"$Bundles": gd.B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",

@@ -5,7 +5,7 @@ namespace AeroMod;
 /// <summary>
 /// TEST SPAWNS' DECISIONS (engine-free: Tests/SpawnTests; the engine side is EnemySpawn.cs - the keys, the blueprint's load, the
 /// answer - and EnemySpawn.Server.cs - the server's spawn). 2026-10-20, approved by the user: a creative / admin TEST feature like
-/// quick launch - Ctrl+M spawns an enemy "missile" that goes for you, Ctrl+B an enemy "bogey" fighter. Plumbing only: a blueprint
+/// quick launch - Ctrl+Shift+I spawns an enemy "missile" that goes for you, Ctrl+Shift+O an enemy "bogey" fighter. Plumbing only: a blueprint
 /// by name, made the game's hostile NPC's through the Autopilot block's own Enemy switch, its panel set to Engage with the
 /// author's slot (Rocket Guidance / Dogfight) and the player as its API target, launched at a speed. No guidance or dogfight
 /// logic here - that is the author's (ApRocketGuidance.cs / ApDogfight.cs).
@@ -246,7 +246,7 @@ public static class EnemySpawnRules
 
     // ── the keys (client settings Spawn.MissileKey / BogeyKey / DespawnKey, one modifier Spawn.Modifier) ──
 
-    /// <summary>A binding as the player reads it ("Ctrl+M"; key 0: "off").</summary>
+    /// <summary>A binding as the player reads it ("Ctrl+Shift+I"; key 0: "off").</summary>
     public static string BindingText(int key, int modifier) => QuickLaunchRules.BindingText(key, modifier);
 
     static bool IsFinite(Vector3D v) => double.IsFinite(v.X) && double.IsFinite(v.Y) && double.IsFinite(v.Z);

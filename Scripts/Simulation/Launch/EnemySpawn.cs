@@ -16,8 +16,10 @@ using Keen.VRage.Library.Localization;
 namespace AeroMod;
 
 /// <summary>
-/// TEST SPAWNS (2026-10-20, a creative / admin test feature approved by the user, like quick launch): Ctrl+M spawns an enemy
-/// "missile" that goes for you, Ctrl+B an enemy "bogey" fighter, Ctrl+N removes every test ship. Each is a BLUEPRINT by name from
+/// TEST SPAWNS (2026-10-20, a creative / admin test feature approved by the user, like quick launch): Ctrl+Shift+I spawns an enemy
+/// "missile" that goes for you, Ctrl+Shift+O an enemy "bogey" fighter, Ctrl+Shift+N removes every test ship (2026-10-20: was Ctrl+M /
+/// Ctrl+B / Ctrl+N - the game's M opened the map and Ctrl+B the blueprints: a vanilla binding fires whatever modifiers are held
+/// besides its own, so only I, N and O - no vanilla binding at all, ActionControlMapping.def - are clear; Tests/SpawnTests checks it). Each is a BLUEPRINT by name from
 /// your Blueprints folder (Spawn.MissileBlueprint "Missile", Spawn.BogeyBlueprint "Bogey") that has an Autopilot block. The server
 /// (EnemySpawn.Server.cs) spawns it Spawn.MissileDistance / Spawn.BogeyDistance away (Spawn.Direction: random, behind, ahead, a
 /// side - by your heading), at your height, out of the ground and clear of grids; turns the whole construct into the game's hostile
@@ -41,8 +43,8 @@ public static partial class EnemySpawn
     public static int Allowed = 1;
     /// <summary>World: spawned test ships removed after this many minutes (0: never).</summary>
     public static double DespawnMinutes = 10;
-    /// <summary>Client: the keys (0 off, 1..26 A..Z) and their one modifier (0 none, 1 Ctrl, 2 Shift, 3 Alt).</summary>
-    public static int MissileKey = 13, BogeyKey = 2, DespawnKey = 14, Modifier = 1;
+    /// <summary>Client: the keys (0 off, 1..26 A..Z) and their one modifier (0 none, 1 Ctrl, 2 Shift, 3 Alt, 4 Ctrl+Shift).</summary>
+    public static int MissileKey = 9, BogeyKey = 15, DespawnKey = 14, Modifier = 4;
     /// <summary>Client: the blueprints (their folder names under Blueprints).</summary>
     public static string MissileBlueprint = "Missile", BogeyBlueprint = "Bogey";
     /// <summary>Client: how far (m), where (EnemySpawnRules.Dir), how many missiles, how fast (m/s; 0: its own / cruise).</summary>

@@ -5,7 +5,8 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 ## Unreleased - test spawns (creative / admin)
 
-- **Ctrl+M** spawns an enemy **missile**, **Ctrl+B** an enemy **bogey**, **Ctrl+N** removes them. Each is a blueprint from your
+- **Ctrl+Shift+I** spawns an enemy **missile**, **Ctrl+Shift+O** an enemy **bogey**, **Ctrl+Shift+N** removes them (not
+  M / B: the game's M opens the map and Ctrl+B the blueprints whatever else is held). Each is a blueprint from your
   Blueprints folder ("Missile", "Bogey"; settings `Spawn.MissileBlueprint` / `Spawn.BogeyBlueprint`) with an Autopilot block.
 - It appears 2000 m / 4000 m away (random, behind, ahead or a side), at your height, out of the ground and clear of grids;
   1..8 missiles per press.
