@@ -430,6 +430,19 @@ public sealed class ApPilot : IApGoalSource
         {
             case ApNavKind.Point:
                 aLat = goal.Line ? ApL1.Line(s.Pos, vg, up, goal.From, goal.Point, l1, aLatMax, out CrossTrack) : ApL1.Toward(s.Pos, vg, up, goal.Point, l1, aLatMax);
+                if (ActiveBh == ApBehaviour.Formation && Mode == ApMode.Engage)
+                {
+                    // (the slot's own turn fed forward: L1 alone toward a moving point turns only once the point has moved off the
+                    //  nose - a wingman 9 deg behind its leader's 30 deg-bank turn ended 180 m outside the slot; ApFormation.TurnFeed of it,
+                    //  the L1 point being on the curved path already - Tests/AutopilotSim FormationPack)
+                    Vector3 vh = ApMath.Flat(vg, up);
+                    if (vh.LengthSquared() > 1f)
+                    {
+                        Vector3 rt = Vector3.Normalize(Vector3.Cross(vh, up));
+                        float a = Math.Clamp(Vector3.Dot(aLat, rt) + ApFormation.TurnFeed * Vector3.Dot(goal.PointAcc, rt), -aLatMax, aLatMax);
+                        aLat = rt * a;
+                    }
+                }
                 break;
             case ApNavKind.Circle:
                 // (a moving centre: flown in its frame - the velocity relative to it)
@@ -448,6 +461,7 @@ public sealed class ApPilot : IApGoalSource
         float hdot = Vector3.Dot(s.Vel, up) - (overGround && Fd != null && Fd.Ground.HasGround ? Fd.Ground.GroundRate : 0f);
         float vDem = goal.Max ? float.NaN : goal.Speed;
         float vs = _terrainUp ? MathF.Max(Cfg.VsMs, 0.4f * air) : Cfg.VsMs;
+        if (ActiveBh == ApBehaviour.Formation) vs = MathF.Max(vs, MathF.Abs(Vector3.Dot(Formation.SlotVel, up)) + 3f);   // (the leader's climb, and some to close)
         Tecs.Step(h, hdot, hDem, vs, air, vDem, thrust, drag, s.Mass, gT, aVertMax, s.Dt > 0f ? s.Dt : 1f / 60f, out float aVert, out float thr);
         x.Kind = ApExternalKind.Accel; x.Accel = aLat + up * aVert; x.Throttle = goal.Max ? 1f : thr;
     }

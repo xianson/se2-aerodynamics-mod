@@ -24,7 +24,8 @@ public struct ApFormationParams
 /// at the slot's place predicted LeadSeconds ahead along the leader's curved path (it rolls out on the leader's track, not cuts
 /// across it); the height the slot's. OVERSHOOT (ahead of the slot by more than OvershootM and still pulling ahead at the least
 /// speed): the aim point pushed out to the slot's side by up to a turn radius - a longer path drops it back - until it is within
-/// a third of that again.
+/// a third of that again. The slot's turn is fed forward on top of L1 (TurnFeed) and its climb into the height (TECS's time
+/// constant ahead) - a wingman follows a turning, climbing leader rather than chasing where the slot was.
 /// Readouts (status line, API, tests): the slot error (m) split along / across / up the leader's frame, the closure, overshooting.
 /// </summary>
 public sealed class ApFormation
@@ -32,6 +33,14 @@ public sealed class ApFormation
     /// <summary>Airplane: the slot's place predicted this far ahead for the steering (s; the L1 point), the least speed share of the
     /// leader's while dropping back, the closure's share of the drag's deceleration it plans with, the near closure gain (1/s).</summary>
     public const float LeadSeconds = 2.5f, MinShare = 0.6f, DecelShare = 0.6f, NearGain = 0.15f;
+    /// <summary>Airplane: the share of the slot's own lateral acceleration (its turn) fed forward on top of L1 (ApPilot.Airplane) -
+    /// part of it is in the L1 point already, predicted on the curved path: 0.7 flew a leader's 30 deg-bank turn within 8 m RMS,
+    /// 1 overturned to 25, none lagged it to 150 (2026-10-20, Tests/AutopilotSim FormationPack).</summary>
+    public const float TurnFeed = 0.7f;
+    /// <summary>Airplane: the closure speed's damping - the share of the ship's own closure (its speed along the leader's path over
+    /// the slot's) taken off the closure asked: 0.5 - straight RMS 10 -> 2 m, the catch-up 33 -> 39 s (1: 52 s; 2.5: never inside
+    /// 15 m for 3 s; 2026-10-20, FormationPack).</summary>
+    public const float CloseDamp = 0.5f;
     /// <summary>Under this leader speed (m/s) its heading is held, not read from its velocity.</summary>
     public const float HeadingSpeed = 3f;
 
@@ -92,6 +101,13 @@ public sealed class ApFormation
             float d = -Along;
             close = -MathF.Min(p.CatchUpMs, MathF.Min(MathF.Sqrt(2f * DecelShare * dec * d), NearGain * d + 0.02f * d * d / MathF.Max(vs, 1f)));
         }
+        // (the height led by the slot's own climb: TECS flies the height's error over its time constant - a climbing leader was
+        //  followed THeight x its climb rate low, 60 m at 10 m/s; the pilot lets the climb rate past the panel's - ApPilot.Airplane)
+        g.Height = hSlot + Vector3.Dot(SlotVel, up) * ApTecs.THeight;
+        // (damped by the closure it already has: the speed asked less its excess over the slot's along the path - the position's P
+        //  alone through TECS's speed loop and its throttle integral held a +-13 m, 15 s limit cycle behind a straight leader)
+        float have = Vector3.Dot(c.Vel, Fwd) - vs;
+        close = Math.Clamp(close - CloseDamp * have, -p.CatchUpMs, p.CatchUpMs);
         float vLeast = MathF.Max(MinShare * vs, vMin);
         g.Speed = MathF.Max(vs + close, vLeast); Closure = g.Speed - vs;
         // overshoot: ahead past OvershootM at the least speed - the path widened to drop back
