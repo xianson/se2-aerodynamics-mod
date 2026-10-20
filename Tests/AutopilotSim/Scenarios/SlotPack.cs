@@ -19,6 +19,8 @@ sealed class SlotPack : IScenarioPack
     {
         foreach (var b in new[] { ApBehaviour.Dogfight, ApBehaviour.RocketGuidance })
         {
+            // (only while the author has not written it: once Implemented, the slot flies - its own scenarios test it)
+            if (b == ApBehaviour.Dogfight ? ApDogfight.Implemented : ApRocketGuidance.Implemented) { Sim.Note($"slot refused {b}: skipped - implemented"); continue; }
             var run = new Run($"slot refused {b}", FlightShips.SixAxis());
             var tgt = SimTarget.Straight(new Vector3D(300, 200, 0), Vector3.Zero); run.Targets.Add(tgt);
             var p = ApPanel.Defaults; p.Mode = ApMode.Engage; p.Behaviour = b;
