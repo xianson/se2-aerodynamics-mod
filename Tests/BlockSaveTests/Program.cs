@@ -73,6 +73,11 @@ static class Program
         }
         finally { CultureInfo.CurrentCulture = was; }
         Check(AeroBlockSaveForm.TryReadThrust("aero-thrust:1 7", out float tc) && tc == 1f, "thrust clamped to 1");
+        // a thruster's gimbal cone (2026-10-20): format 2 only with one; read back, clamped 0..15; a format-1 key has none
+        Check(AeroBlockSaveForm.Thrust(0.25f, 0f) == "aero-thrust:1 0.25" && AeroBlockSaveForm.Thrust(0.5f, 6.5f) == "aero-thrust:2 0.5 6.5", $"thrust with a gimbal: '{AeroBlockSaveForm.Thrust(0.5f, 6.5f)}'");
+        Check(AeroBlockSaveForm.TryReadThrust("aero-thrust:2 0.5 6.5", out float tf, out float tg) && tf == 0.5f && tg == 6.5f && AeroBlockSaveForm.TryReadThrust("aero-thrust:2 0.5 6.5", out float tf1) && tf1 == 0.5f, "thrust format 2 read back, and by the old reader");
+        Check(AeroBlockSaveForm.TryReadThrust("aero-thrust:1 0.3", out _, out tg) && tg == 0f && AeroBlockSaveForm.TryReadThrust("aero-thrust:2 0.3 40", out _, out tg) && tg == GimbalLimits.MaxDeg
+            && AeroBlockSaveForm.TryReadThrust("aero-thrust:2 0.3 -2", out _, out tg) && tg == 0f, "the gimbal: none in format 1, clamped 0..15");
 
         // refusals: another tag, too few values, format 0 / not a number, NaN, null
         bool b1, b2, b3; float f1, f2;

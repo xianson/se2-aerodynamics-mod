@@ -4,8 +4,9 @@ using AeroMod;
 /// UNPILOTED ROCKETS AS AUTOPILOT VEHICLES (navigation only): a 150 kg finned rocket, one motor on a gimbal (ThrustVector), no gyros -
 /// the flight director's attitude goal held from launch (the gimbal alone at first, the fins as the speed builds) through a gust;
 /// the same without the gimbal (fins alone) for contrast; the
-/// gimbal's arithmetic (the torque asked given within its cone, a roll it cannot give left). The ledger every tick (the gimbal
-/// within its cone and rate).
+/// gimbal's arithmetic (the torque asked given within its cone, a roll it cannot give left); gust rejection in flight with the
+/// solid nozzle's gimbal as the game sets it (its default cone - GimbalLimits - and rate), a narrower cone, the fins alone. The
+/// ledger every tick (the gimbal within its cone and rate).
 /// </summary>
 sealed class RocketPack : IScenarioPack
 {
@@ -14,6 +15,7 @@ sealed class RocketPack : IScenarioPack
         r.Add("rocket: thrust vectoring - the torque asked within the cone, the rest left; the reach", true, Arithmetic);
         r.Add("rocket: attitude held from launch through a gust - gimbal and fins (no gyros)", true, () => Hold(true));
         r.Add("rocket: the same with the fins alone (no gimbal) - departs at launch, for contrast", true, () => Hold(false));
+        r.Add("rocket: gust rejection in flight - the nozzle's default cone (5 deg, 30 deg/s) vs 2 deg vs the fins alone", true, Gusts);
     }
 
     sealed class AttitudeSource : IApGoalSource
@@ -36,6 +38,42 @@ sealed class RocketPack : IScenarioPack
         var slow = new ThrustVector.Nozzle[] { new() { Pos = new Vector3(0f, 0f, 2f), Dir = -Vector3.UnitZ, Thrust = 5000f, MaxRad = 5f * ApMath.Deg, RateRad = 30f * ApMath.Deg } };
         ThrustVector.Solve(new Vector3(5000f, 0f, 0f), slow, 1, 1f / 60f, out _, out _);
         Sim.Check(MathF.Abs(slow[0].Deflect.Length() - 0.5f * ApMath.Deg) < 1e-4f, $"tvc: the rate - 0.5 deg in a tick at 30 deg/s ({slow[0].Deflect.Length() / ApMath.Deg:F3})");
+    }
+
+    /// <summary>Climbing at 60 deg (launched 6 s before, held): a 30 m/s (1 - cos) side gust over 1.5 s, then a second the other
+    /// way; the attitude's worst departure and the time back within 1 deg - with the solid nozzle's gimbal as the game sets it
+    /// (GimbalLimits.DefaultDeg, ThrustVector.DefaultRateDeg), a 2 deg cone, and the fins alone.</summary>
+    static void Gusts()
+    {
+        var res = new List<(string what, float before, float worst, float back, float tvc)>();
+        foreach (float cone in new[] { GimbalLimits.DefaultDeg, 2f, 0f })
+        {
+            var s = Rockets.Finned(gimbalDeg: cone, name: $"rocket gust cone {cone:0}");
+            var r = Launch($"rocket gust {(cone > 0f ? $"gimbal {cone:0} deg + fins" : "fins alone")}", s, 60f);
+            var want = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 60f * ApMath.Deg);
+            var src = new AttitudeSource { Q = want };
+            var sn = r.P.SenseNow();
+            Sim.Check(r.P.Fd.Engage(ApGoal.External, in sn, out var why, src), $"{r.Name}: engaged ({why})");
+            r.Air.Gusts.Add((6f, 1.5f, new Vector3(30f, 0f, 0f)));
+            r.Air.Gusts.Add((10f, 1.5f, new Vector3(-30f, 0f, 0f)));
+            float worst = 0f, lastOut = 6f, tvc = 0f, before = 0f;
+            r.Each(rr =>
+            {
+                if (rr.P.Time < 6f) { if (rr.P.Time > 4f) before = MathF.Max(before, ApMath.Angle(rr.P.Q, want) / ApMath.Deg); return; }
+                float e = ApMath.Angle(rr.P.Q, want) / ApMath.Deg;
+                worst = MathF.Max(worst, e); if (e > 1f) lastOut = rr.P.Time;
+                tvc = MathF.Max(tvc, rr.P.LastTvcT.Length());
+            });
+            r.Fly(16f);
+            float back = MathF.Max(0f, lastOut - 11.5f);   // (the second gust over at 11.5 s; 4.5: never back within 1 deg)
+            res.Add((r.Name, before, worst, back, tvc));
+            Sim.Note($"{r.Name}: {before:F2} deg off before; two 30 m/s side gusts - the attitude at most {worst:F2} deg off, within 1 deg {back:F1} s after the second passed; gimbal torque at most {tvc:F0} N m; {r.P.V.Length():F0} m/s");
+            Program.LedgerPublic(r, true);
+        }
+        var (g5, g2, fins) = (res[0], res[1], res[2]);
+        Sim.Check(g5.before < 0.5f && g5.worst < 3f && g5.back < 2f && g5.tvc > 0f, $"rocket gust: the default gimbal rejects the gusts - held ({g5.before:F2} deg) before, at most {g5.worst:F2} deg (< 3) in them, within 1 deg {g5.back:F1} s after (< 2)");
+        Sim.Check(g2.before < 0.5f && g2.worst > g5.worst, $"rocket gust: a 2 deg cone holds the climb but not the gusts as well - {g2.worst:F2} deg vs {g5.worst:F2} (the cone is the authority)");
+        Sim.Check(fins.before > 5f, $"rocket gust: the fins alone never held the climb ({fins.before:F1} deg off before the gusts) - the gimbal is what holds it");
     }
 
     static Run Launch(string name, SimShip s, float pitchDeg)

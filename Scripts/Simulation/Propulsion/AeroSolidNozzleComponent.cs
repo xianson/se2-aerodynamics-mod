@@ -88,6 +88,11 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
     float _steerFrac = 1f; int _steerFresh;
     /// <summary>A steer older than this (ticks) is dropped: the motor goes back to its base (aero off, a far grid stepped slowly).</summary>
     public const int SteerTicks = 3;
+    /// <summary>THRUST VECTORING (2026-10-20; ThrustVectorGame, ThrustVector): its panel's "Thrust Vectoring" switch and "Gimbal Cone
+    /// (deg)" - lit and on, the attitude law swivels its thrust within the cone (at ThrustVector.DefaultRateDeg) for any ship's
+    /// attitude control; saved with the block. GimbalDeflect: its deflection now (local rad, across its push - ThrustTorque's).</summary>
+    public bool GimbalOn; public float GimbalDeg = GimbalLimits.DefaultDeg;
+    internal Vector3 GimbalDeflect;
 
     void IInSceneListener.OnAddedToScene()
     {
@@ -293,7 +298,9 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         var aero = _gridAero;
         float t = ThrustNow;
         if (aero == null || !(t > 0f) || Entity == null) return;
-        aero.PublishBlockLoad(Entity, PushLocal * t, PosLocal, Vector3.Zero, true);
+        // (swivelled: its thrust along the deflected axis - the side force the gimbal gives is this block's load too)
+        Vector3 push = GimbalOn && GimbalDeflect != Vector3.Zero ? ThrustVector.Pushed(PushLocal, GimbalDeflect) : PushLocal;
+        aero.PublishBlockLoad(Entity, push * t, PosLocal, Vector3.Zero, true);
     }
 
     /// <summary>ThrustTorque: the attitude allocator's share of full (0.5..1) for this lit nozzle - its override from its next step.
@@ -366,7 +373,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
                 sb.Append(n).Append(" solid nozzles");
                 foreach (var z in All)
                     if (z._server)
-                        sb.Append($" | {z.Row?.Name ?? "?"} {z.Motor.Phase} level {z.PowerLevel:F2} stack {z.StackCount} (live {z.StackLive}, nozzles {z.Sharers}{(z._partner != null ? ", partner" : "")}) factor {z.StackFactor:F2} propellant {z.StackPropellant:F0}/{z.StackFull:F0} kg burn left {z.BurnTimeLeft:F1} s p {z.PressureRatio:F2} full {z.FullThrust:F0} base {z.BaseThrust:F0} cmd {z.CommandThrust:F0} N (steer {(z._steerFresh > 0 ? "on" : "off")}) override want {z.TargetOverride:F3} has {z.OverrideNow:F3} thrust {z.ThrustNow:F0} N fuel duty {z.FuelDutyNow:F3} burned {z.BurnTicks} of {z.FireTicks} firing ticks{(z._bufLooked && z._buf == null ? " (no buffer: the game's flat burn)" : "")}");
+                        sb.Append($" | {z.Row?.Name ?? "?"} {z.Motor.Phase} level {z.PowerLevel:F2} stack {z.StackCount} (live {z.StackLive}, nozzles {z.Sharers}{(z._partner != null ? ", partner" : "")}) factor {z.StackFactor:F2} propellant {z.StackPropellant:F0}/{z.StackFull:F0} kg burn left {z.BurnTimeLeft:F1} s p {z.PressureRatio:F2} full {z.FullThrust:F0} base {z.BaseThrust:F0} cmd {z.CommandThrust:F0} N (steer {(z._steerFresh > 0 ? "on" : "off")}, gimbal {(z.GimbalOn ? $"on {z.GimbalDeg:F1} deg, at {z.GimbalDeflect.Length() / ApMath.Deg:F2}" : "off")}) override want {z.TargetOverride:F3} has {z.OverrideNow:F3} thrust {z.ThrustNow:F0} N fuel duty {z.FuelDutyNow:F3} burned {z.BurnTicks} of {z.FireTicks} firing ticks{(z._bufLooked && z._buf == null ? " (no buffer: the game's flat burn)" : "")}");
             }
             return sb.ToString();
         }

@@ -9,8 +9,9 @@ namespace AeroMod;
 /// and a little less along d. The attitude law asks for a torque; Solve gives the deflections that come nearest it (the least
 /// squares of every nozzle's side force for the torque, the smallest deflection among equals), each clipped to its cone and its
 /// rate, and returns the force and torque that ARE applied (the thrust's change, nothing else). Reach: the torque the cones can
-/// give per local axis - the attitude law's planning. Any thruster can be one (the solid rocket nozzles' "Gimbal" setting in game;
-/// a SimShip's gimbals offline).
+/// give per local axis - the attitude law's planning. Any thruster can be one: in game ThrustVectorGame (the solid rocket nozzles'
+/// "Thrust Vectoring" switch and cone, a thruster's gimbal cone - AeroThrustSettingsComponent.GimbalDeg) in ThrustTorque's law;
+/// offline a SimShip's gimbals.
 /// </summary>
 public static class ThrustVector
 {
@@ -99,6 +100,13 @@ public static class ThrustVector
             Vector3 f = ang > 1e-7f ? z.Deflect / ang * (z.Thrust * MathF.Sin(ang)) - z.Dir * (z.Thrust * (1f - MathF.Cos(ang))) : Vector3.Zero;
             force += f; torque += Vector3.Cross(z.Pos, f);
         }
+    }
+
+    /// <summary>The unit push of a nozzle along 'dir' deflected by 'deflect' (across dir; |deflect| the angle, rad).</summary>
+    public static Vector3 Pushed(Vector3 dir, Vector3 deflect)
+    {
+        float a = deflect.Length();
+        return a > 1e-7f ? dir * MathF.Cos(a) + deflect / a * MathF.Sin(a) : dir;
     }
 
     /// <summary>The deflection moved from 'now' toward 'want' at most rate x dt (rad).</summary>

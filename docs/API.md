@@ -550,12 +550,20 @@ they refuse, "this behaviour is not written yet", reason 22). `TryGetAutopilotPi
 | Member | Since | What it does |
 |---|---|---|
 | `bool TryGetAutopilotSlot(Entity grid, out int behaviour, out string status, out float slotError, out float slotAlong)` | 13 | In Engage with a target: the active behaviour (13 dogfight, 14 rocket guidance, 15 formation, or a built-in one's number), the combat slot's own status text ("" none), the formation's slot error (m) and its part along the leader's path (m, + behind the slot; NaN when not in formation). False: not in Engage with a target. |
+| `bool SetThrusterGimbal(Entity grid, int index, float coneDeg)` | 13 | **Thrust vectoring**: the cone (deg, 0..15; 0 = a fixed thruster) the attitude control may swivel the `index`-th thruster of `GetThrusters`' list within. Saved with the block. False: no server grid, the index out of range, or a thruster without the mod's settings. |
+| `bool TryGetThrustVectoring(Entity grid, out int gimbals, out Vector3 torqueLocal, out float maxDeflectionDeg)` | 13 | Last tick: the gimballed actuators flown (lit solid nozzles with Thrust Vectoring on, thrusters with a cone), the torque they gave (grid-local N m) and the largest deflection now (deg). False: no server grid. |
 
 New `reason` values (`TryGetAutopilot`): 21 the ship never took the mode up, 22 the behaviour is not written yet, 23 bingo
 (fuel or damage), 24 the behaviour timed out, 25 the target was lost.
 
 **Formation's leader** is any grid the block's Target Source picks (Grid by name is the usual; the API's `SetAutopilotTarget`
 too) - the Target Filter does not apply to it.
+
+**Thrust vectoring** is attitude control only, for any ship. The attitude control asks the gimbals for what the thrusters and
+gyros leave of its need. Each gimbal stays within its cone and turns at most 30 deg/s. With nothing holding an attitude, it goes
+back to straight. Solid rocket nozzles have their own panel fields (**Thrust Vectoring**, **Gimbal Cone (deg)**, 0.5..15, default
+5). They swivel only while lit. The force a gimbal gives is its own thrust's change: a side force and a little less along its
+axis. Server only.
 
 ## Roadmap / gaps
 

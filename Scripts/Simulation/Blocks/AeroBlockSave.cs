@@ -148,8 +148,8 @@ public partial class AeroThrustSettingsComponent
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
         string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.ThrustKey);
-        if (!AeroBlockSaveForm.TryReadThrust(key, out float f)) return;
-        AttitudeFraction = f;
+        if (!AeroBlockSaveForm.TryReadThrust(key, out float f, out float gim)) return;
+        AttitudeFraction = f; GimbalDeg = gim;
         RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KThrust, key);
         // (the client scene's copy of this block: given the value by position once both are in their scenes, unless its
         //  own builder brought it - AeroSurfaceSaved.ApplyPending drops the entry for a client-scene source)
@@ -163,7 +163,7 @@ public partial class AeroThrustSettingsComponent
     {
         float f = AttitudeFraction;
         if (!Changed && Server) f = ChangedClientCopy(f);
-        string key = f != DefaultAttitudeFraction ? AeroBlockSaveForm.Thrust(f) : null;
+        string key = f != DefaultAttitudeFraction || GimbalDeg > 0f ? AeroBlockSaveForm.Thrust(f, GimbalDeg) : null;
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KThrust, key);
     }
 
@@ -207,16 +207,16 @@ public partial class AeroSolidNozzleComponent
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
         string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.SolidNozzleKey);
-        if (!AeroBlockSaveForm.TryReadSolidNozzle(key, out bool lit, out float level)) return;
-        RestoredLit = lit; RestoredLevel = level;
+        if (!AeroBlockSaveForm.TryReadSolidNozzle(key, out bool lit, out float level, out bool gimbal, out float cone)) return;
+        RestoredLit = lit; RestoredLevel = level; GimbalOn = gimbal; GimbalDeg = cone;
         AeroBlockSave.CountRestored(AeroBlockSave.KSolidNozzle, key);
     }
 
-    // (only while it burns; the client copy - injected with the same builder - writes nothing)
+    // (only while it burns or its thrust vectoring is off the default; the client copy - injected with the same builder - writes nothing)
     [Keen.VRage.DCS.Annotations.Serializer]
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
     {
-        string key = AeroBlockSaveForm.SolidNozzle(SolidRocket.SavedLit(Motor.Phase), Motor.Level);
+        string key = _server ? AeroBlockSaveForm.SolidNozzle(SolidRocket.SavedLit(Motor.Phase), Motor.Level, GimbalOn, GimbalDeg) : null;
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KSolidNozzle, key);
     }
 }

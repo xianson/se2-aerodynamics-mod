@@ -52,6 +52,17 @@ public partial class AeroThrustBlockDetailModel : BlockDetailModel
                 _settings.AttitudeFraction = Math.Clamp(value, 0f, 1f);
         }
     }
+
+    /// <summary>Thrust vectoring (2026-10-20): the most this thruster swivels for the attitude law (deg; 0 fixed).</summary>
+    [Slider(null)]
+    [Range<float>(0f, GimbalLimits.MaxDeg, RangeMode.InIn)]
+    [Label("Gimbal Cone (deg) - 0 fixed")]
+    [Increment(0.5f, 1f, 5f)]
+    public float GimbalDeg
+    {
+        get => _settings?.GimbalDeg ?? 0f;
+        set { if (_settings != null) _settings.GimbalDeg = GimbalLimits.Thruster(value); }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────

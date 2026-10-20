@@ -445,12 +445,19 @@ static class Program
         string tt = File.ReadAllText(Path.Combine(sim, "Propulsion", "ThrustTorque.cs"));
         Check(tt.Contains("if (solid && aero.IsServerScene) gameF -= solidF;") && tt.Contains("if (solid) rotorReaction += solidTau - steerTau;") && tt.Contains("offsetTorque += rotorReaction + steerTau;"),
               "ThrustTorque: the rockets' thrust out of the shared thrust (server); an unlit-for-steering one's torque an outside torque, a lit one's in the solve's slots - all applied");
+        // THRUST VECTORING (2026-10-20): the gimbals collected after the game's share, their reach in the aware law's plan, asked for
+        // what the thrusters and the gyros left of the need (the sim's plant the same order - Tests/AutopilotSim Plant.cs), applied
+        Check(tt.Contains("int tvcN = ThrustVectorGame.Collect(aero, com, thrusters, dirs, f0, n, steerN);") && tt.Contains("+ ThrustVectorGame.Reach(aero);")
+              && tt.Contains("Vector3 ask = rep.Aware ? tauNeed - (torque - rotorReaction) - rep.GyroTorque : solved ? tauTarget - (torque - rotorReaction) : Vector3.Zero;")
+              && tt.Contains("AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, tvW, tvT, dt);"),
+              "ThrustTorque: the gimbals in the attitude law - collected, planned with, asked for what the thrusters and gyros left, applied");
         string noz = File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroSolidNozzleComponent.cs"));
         Check(noz.Contains("n.Motor.Phase == SolidRocket.Phase.Lit && n.ThrustNow > 0f"), "the attitude solve takes a nozzle only when it is LIT and thrusting (never before ignition)");
         // THE STRUCTURE (2026-10-17): the nozzle's whole thrust (the game's override on it now: base + steering) at its block, every
         // server tick it thrusts, as an engine; the thruster loads hold the cache's thrusters only (never a nozzle) - once
-        Check(noz.IndexOf("PublishLoad();", StringComparison.Ordinal) > noz.IndexOf("if (!_server) return;", StringComparison.Ordinal) && noz.IndexOf("if (!_server) return;", StringComparison.Ordinal) > 0 && noz.Contains("aero.PublishBlockLoad(Entity, PushLocal * t, PosLocal, Vector3.Zero, true);") && noz.Contains("float t = ThrustNow;"),
-              "the nozzle publishes its thrust now (ThrustNow: base + steering) along its push at its block, every server tick, isEngine");
+        Check(noz.IndexOf("PublishLoad();", StringComparison.Ordinal) > noz.IndexOf("if (!_server) return;", StringComparison.Ordinal) && noz.IndexOf("if (!_server) return;", StringComparison.Ordinal) > 0 && noz.Contains("aero.PublishBlockLoad(Entity, push * t, PosLocal, Vector3.Zero, true);") && noz.Contains("float t = ThrustNow;")
+              && noz.Contains("Vector3 push = GimbalOn && GimbalDeflect != Vector3.Zero ? ThrustVector.Pushed(PushLocal, GimbalDeflect) : PushLocal;"),
+              "the nozzle publishes its thrust now (ThrustNow: base + steering) along its push - swivelled by its gimbal (2026-10-20) - at its block, every server tick, isEngine");
         string ss = File.ReadAllText(Path.Combine(sim, "Structure", "Server", "StructureServer.cs"));
         int thr = ss.IndexOf("for (int i = 0; i < _thrusterCache.Count && i < ns", StringComparison.Ordinal);
         Check(thr > 0 && ss.IndexOf("L.ThrF0.Add(", StringComparison.Ordinal) > thr && !ss.Contains("AeroSolidNozzleComponent"),
@@ -538,6 +545,18 @@ static class Program
         Check(AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:1 1 0.2", out _, out lv) && lv == 0.5f && AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:1 1 junk", out _, out lv) && lv == 1f, "a level under the floor reads 0.5, an unreadable one 1");
         Check(AeroBlockSaveForm.SolidNozzle(false, 0.7f) == null && AeroBlockSaveForm.SolidNozzle(true, 0f) == AeroBlockSaveForm.SolidNozzleKey + "1 1 1", "idle: no key; a level never latched: saved as 1");
         Check(AeroBlockSaveForm.TryReadSolidNozzle(k, out bool lit2) && lit2, "the old reader still reads the new key");
+        // THRUST VECTORING (2026-10-20): its switch and cone - format 2 only off the default (off, 5 deg), then also while idle
+        Check(AeroBlockSaveForm.SolidNozzle(true, 0.7f, false, GimbalLimits.DefaultDeg) == AeroBlockSaveForm.SolidNozzleKey + "1 1 0.7", "gimbal at the default: the format-1 key as before");
+        string g = AeroBlockSaveForm.SolidNozzle(false, 1f, true, 8f);
+        Check(g == AeroBlockSaveForm.SolidNozzleKey + "2 0 1 1 8" && AeroBlockSaveForm.TryReadSolidNozzle(g, out bool gl, out float glv, out bool gon, out float gc) && !gl && glv == 1f && gon && gc == 8f,
+            $"gimbal on at 8 deg, idle: saved and read back ('{g}')");
+        string g2 = AeroBlockSaveForm.SolidNozzle(true, 0.6f, false, 12f);
+        Check(AeroBlockSaveForm.TryReadSolidNozzle(g2, out gl, out glv, out gon, out gc) && gl && glv == 0.6f && !gon && gc == 12f, $"lit at 60 %, gimbal off with a 12 deg cone kept ('{g2}')");
+        Check(AeroBlockSaveForm.TryReadSolidNozzle(g, out bool oldLit, out float oldLv) && !oldLit && oldLv == 1f, "the level reader reads a format-2 key (idle: not restored lit)");
+        Check(AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:1 1 0.8", out _, out _, out gon, out gc) && !gon && gc == GimbalLimits.DefaultDeg, "a format-1 key: the gimbal off at 5 deg");
+        Check(AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:2 0 1 1 99", out _, out _, out gon, out gc) && gon && gc == GimbalLimits.MaxDeg
+            && AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:2 0 1 1 0", out _, out _, out _, out gc) && gc == GimbalLimits.MinDeg
+            && AeroBlockSaveForm.TryReadSolidNozzle("aero-solidnozzle:2 0 1 1 NaN", out _, out _, out gon, out gc) && !gon && gc == GimbalLimits.DefaultDeg, "the cone clamped 0.5..15; unreadable: off at the default");
         Check(!SolidRocket.SavedLit(SolidRocket.Phase.Idle) && !SolidRocket.SavedLit(SolidRocket.Phase.Clearing) && SolidRocket.SavedLit(SolidRocket.Phase.Enabling) && SolidRocket.SavedLit(SolidRocket.Phase.Lit),
               "saved as burning: lit or switched on to light - not idle, not while the player's override is being cleared");
         // a burn continuing after load keeps its level: the motor restored Lit with the level read back holds it

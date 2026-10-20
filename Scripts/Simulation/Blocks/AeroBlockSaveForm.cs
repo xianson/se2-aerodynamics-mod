@@ -15,7 +15,10 @@ namespace AeroMod;
 /// <item>airbrake: "aero-airbrake:1 maxOpening" (deg)</item>
 /// <item>thruster: "aero-thrust:1 attitudeFraction" (0..1; written only off the default 0.5)</item>
 /// <item>solid rocket nozzle: "aero-solidnozzle:1 lit level" (1; written only while it burns; level: its power level 0.5..1,
-/// latched at ignition - a key without one reads 1)</item>
+/// latched at ignition - a key without one reads 1); format 2 (2026-10-20) appends "gimbal cone" (1/0, deg) - written so only when
+/// its thrust vectoring is off the default (off, 5 deg), then also while not burning (lit 0)</item>
+/// <item>thruster format 2 (2026-10-20): "aero-thrust:2 attitudeFraction gimbalCone" (deg; 0 none) - written when either is off its
+/// default</item>
 /// <item>rotor / prop blades (rotor strikes, 2026-10-17): "aero-blades:1 health" (0..1, 0 = broken; written only below 1 - whole
 /// blades carry no key)</item>
 /// <item>autopilot (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead unattended" + the flight
@@ -95,29 +98,47 @@ public static class AeroBlockSaveForm
     }
 
     public static string Thrust(float attitudeFraction) => ThrustKey + Format + " " + F(attitudeFraction);
+    /// <summary>... with a gimbal cone (deg, 0 none; format 2 - format 1 when none).</summary>
+    public static string Thrust(float attitudeFraction, float gimbalDeg)
+        => gimbalDeg > 0f ? ThrustKey + "2 " + F(attitudeFraction) + " " + F(GimbalLimits.Thruster(gimbalDeg)) : Thrust(attitudeFraction);
 
-    public static bool TryReadThrust(string key, out float attitudeFraction)
+    public static bool TryReadThrust(string key, out float attitudeFraction) => TryReadThrust(key, out attitudeFraction, out _);
+
+    /// <summary>... and its gimbal cone (deg; 0 when the key has none).</summary>
+    public static bool TryReadThrust(string key, out float attitudeFraction, out float gimbalDeg)
     {
-        attitudeFraction = 0f;
+        attitudeFraction = 0f; gimbalDeg = 0f;
         string[] w = Values(key, ThrustKey, 1);
         if (w == null || !Float(w[1], out attitudeFraction)) return false;
         attitudeFraction = Math.Clamp(attitudeFraction, 0f, 1f);
+        if (w.Length > 2 && Float(w[2], out float g)) gimbalDeg = GimbalLimits.Thruster(g);
         return true;
     }
 
-    /// <summary>A solid rocket nozzle that is burning, and its power level (null when not burning: the default).</summary>
-    public static string SolidNozzle(bool lit, float level = 1f) => lit ? SolidNozzleKey + Format + " 1 " + F(SolidRocket.LevelOr1(level)) : null;
+    /// <summary>A solid rocket nozzle that is burning, and its power level; its thrust vectoring when off the default (format 2).
+    /// Null when neither: the default.</summary>
+    public static string SolidNozzle(bool lit, float level = 1f, bool gimbal = false, float coneDeg = GimbalLimits.DefaultDeg)
+    {
+        bool g = gimbal || coneDeg != GimbalLimits.DefaultDeg;
+        if (!lit && !g) return null;
+        string k = SolidNozzleKey + (g ? "2" : Format.ToString(C)) + " " + B(lit) + " " + F(SolidRocket.LevelOr1(level));
+        return g ? k + " " + B(gimbal) + " " + F(GimbalLimits.Cone(coneDeg)) : k;
+    }
 
     public static bool TryReadSolidNozzle(string key, out bool lit) => TryReadSolidNozzle(key, out lit, out _);
 
     /// <summary>... and its power level (0.5..1; 1 when the key has none - saved before levels, 2026-10-17).</summary>
-    public static bool TryReadSolidNozzle(string key, out bool lit, out float level)
+    public static bool TryReadSolidNozzle(string key, out bool lit, out float level) => TryReadSolidNozzle(key, out lit, out level, out _, out _);
+
+    /// <summary>... and its thrust vectoring (off, 5 deg when the key has none - format 1).</summary>
+    public static bool TryReadSolidNozzle(string key, out bool lit, out float level, out bool gimbal, out float coneDeg)
     {
-        lit = false; level = 1f;
+        lit = false; level = 1f; gimbal = false; coneDeg = GimbalLimits.DefaultDeg;
         string[] w = Values(key, SolidNozzleKey, 1);
         if (w == null) return false;
         lit = w[1] == "1";
         if (w.Length > 2 && Float(w[2], out float l)) level = SolidRocket.LevelOr1(l);
+        if (w.Length > 4 && Float(w[4], out float c)) { gimbal = w[3] == "1"; coneDeg = GimbalLimits.Cone(c); }
         return true;
     }
 

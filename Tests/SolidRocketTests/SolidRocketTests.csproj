@@ -7,6 +7,7 @@
        tanks, the ports at each size's own scale, the mount faces, the menu group). -->
   <ItemGroup>
     <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />
+    <Compile Include="$(Sim)\Propulsion\GimbalLimits.cs" />
     <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
     <Compile Include="$(Sim)\Propulsion\LookRetry.cs" />
     <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />

@@ -13,6 +13,7 @@
     <Compile Include="$(Sim)\Dev\AeroBlockSaveDevForm.cs" />   <!-- (the harness's set / dump text: DevForm()) -->
     <!-- (the solid nozzle's key clamps its power level with SolidRocket.LevelOr1: one floor, the law's) -->
     <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />
+    <Compile Include="$(Sim)\Propulsion\GimbalLimits.cs" />
     <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
     <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />
     <Reference Include="$(Game2)\VRage.DCS.dll" Private="false" />
