@@ -24,6 +24,29 @@ public static class ApModes
 
 }
 
+/// <summary>
+/// A MODE THAT NEVER ENGAGES, timed out (engine-free; the block's own server step runs it). The block's panel says a mode; the
+/// grid's autopilot step reports what it flies. If that step never reports the mode flying - a wreck with no thruster or gyro
+/// left: the grid's attitude job (and the autopilot's step in it) does not run for it - the panel went on saying "Hover hold -
+/// engaging" forever (in game 2026-10-19, two wrecked grids). After TimeoutTicks of the same mode not flown: true once (the
+/// block puts its panel back to Off, the reason said: ApReason.NoResponse). A standby block (another one flies) never times out.
+/// </summary>
+public sealed class ApEngageWatch
+{
+    /// <summary>10 s of the block's steps (60 a second) - past the link's load grace (ApBlockLink.LoadGraceSeconds) twice over.</summary>
+    public const int TimeoutTicks = 600;
+    ApMode _mode; int _ticks;
+    /// <summary>One block step: the panel's mode, whether the grid's last report flies that mode, whether the block stands by.</summary>
+    public bool Step(ApMode panel, bool flyingIt, bool standby)
+    {
+        if (panel != _mode) { _mode = panel; _ticks = 0; }
+        if (panel == ApMode.Off || flyingIt || standby) { _ticks = 0; return false; }
+        if (++_ticks < TimeoutTicks) return false;
+        _ticks = 0;
+        return true;
+    }
+}
+
 /// <summary>Which of a grid's Autopilot blocks flies it: the first WORKING one that is switched on, in a fixed order (the lowest
 /// block position: x, then y, then z - the same after a save and load, whatever order the blocks came in); the others stand by.</summary>
 public static class ApArbiter
@@ -157,14 +180,16 @@ public sealed class ApBlockLink
     }
 
     /// <summary>The block's status line: "Hover hold - holding 25.0 m over the ground", "Off - you steered", "Standby - ..." (heightM
-    /// NaN: no height held yet - climbing on the keys).</summary>
-    public static string Status(ApMode mode, ApReason last, bool flying, bool ready, bool standby, float heightM, ApHeightRef href, ApProt prot)
+    /// NaN: no height held yet - climbing on the keys). noGround: the flight director's NoGround - the height held along the
+    /// gravity (over the ground) or read from where it engaged (level), said.</summary>
+    public static string Status(ApMode mode, ApReason last, bool flying, bool ready, bool standby, float heightM, ApHeightRef href, ApProt prot, bool noGround = false)
     {
         if (standby) return "Standby - another autopilot block flies this ship";
         if (!ready) return "Off - " + (last == ApReason.BlockOff || last == ApReason.None ? "the block is off, unpowered or damaged" : ApText.Say(last));
         if (mode == ApMode.Off) return last == ApReason.None || last == ApReason.TurnedOff ? "Off" : "Off - " + ApText.Say(last);
         string where = href == ApHeightRef.Ground ? " over the ground" : " altitude";
-        string s = ApModes.ModeName(mode) + (!flying ? " - engaging" : float.IsFinite(heightM) ? $" - holding {heightM:F1} m{where}" : " - on");
+        string s = ApModes.ModeName(mode) + (!flying ? " - engaging" : float.IsFinite(heightM) ? $" - holding {heightM:F1} m{where}" : noGround ? " - holding its height" : " - on");
+        if (flying && noGround) s += href == ApHeightRef.Ground ? " · no ground in sight: held along the gravity" : " · no ground found: measured from where it engaged";
         if (prot != ApProt.None) s += " · " + ApText.Prot(prot);
         return s;
     }

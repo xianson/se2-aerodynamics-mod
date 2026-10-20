@@ -170,20 +170,22 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     // ── the status line (the grid's step writes its inputs; the terminal builds the text when it reads it) ──
     internal sealed class StatusBox
     {
-        public ApMode Mode; public ApReason Reason; public bool Flying, Standby, HasHeight; public float HeightM; public ApHeightRef Ref; public ApProt Prot;
+        public ApMode Mode; public ApReason Reason; public bool Flying, Standby, HasHeight, NoGround; public float HeightM; public ApHeightRef Ref; public ApProt Prot;
         /// <summary>A pilot mode flying: its view (the status line built from it).</summary>
         public bool Pilot; public ApPilotView View;
         public bool Same(StatusBox o) => o != null && o.Mode == Mode && o.Reason == Reason && o.Flying == Flying && o.Standby == Standby
-            && o.HasHeight == HasHeight && MathF.Abs(o.HeightM - HeightM) < 0.05f && o.Ref == Ref && o.Prot == Prot && o.Pilot == Pilot && (!Pilot || o.View.Same(in View));
+            && o.HasHeight == HasHeight && o.NoGround == NoGround && MathF.Abs(o.HeightM - HeightM) < 0.05f && o.Ref == Ref && o.Prot == Prot && o.Pilot == Pilot && (!Pilot || o.View.Same(in View));
     }
     volatile StatusBox _status;
+    readonly ApEngageWatch _engage = new();
+    ApReason _timeoutReason;
     StatusBox _spare;
 
     /// <summary>The grid's step: the status's inputs (a new box only when they changed - no garbage per tick).</summary>
-    internal void Report(ApMode mode, ApReason reason, bool flying, bool standby, bool hasHeight, float heightM, ApHeightRef href, ApProt prot)
+    internal void Report(ApMode mode, ApReason reason, bool flying, bool standby, bool hasHeight, float heightM, ApHeightRef href, ApProt prot, bool noGround = false)
     {
         var b = _spare ?? new StatusBox();
-        b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = standby; b.HasHeight = hasHeight; b.HeightM = heightM; b.Ref = href; b.Prot = prot;
+        b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = standby; b.HasHeight = hasHeight; b.HeightM = heightM; b.Ref = href; b.Prot = prot; b.NoGround = noGround;
         b.Pilot = false;
         Publish(b);
     }
@@ -192,7 +194,7 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     internal void ReportPilot(ApMode mode, ApReason reason, bool flying, in ApPilotView v)
     {
         var b = _spare ?? new StatusBox();
-        b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = false; b.HasHeight = false; b.HeightM = 0f; b.Ref = ApHeightRef.Ground; b.Prot = v.Prot;
+        b.Mode = mode; b.Reason = reason; b.Flying = flying; b.Standby = false; b.HasHeight = false; b.NoGround = false; b.HeightM = 0f; b.Ref = ApHeightRef.Ground; b.Prot = v.Prot;
         b.Pilot = flying; b.View = v;
         Publish(b);
     }
@@ -216,9 +218,9 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             // (no report yet, or the panel's mode changed since the grid's last one - a button just pressed: the terminal reads the
             //  line once, at the press, before the grid's step has run - the new mode, not the old line: "Hover hold - engaging",
             //  "Off". Shown one press behind before, 2026-10-19 in game.)
-            if (b == null || b.Mode != mode && !b.Standby) return ApBlockLink.Status(mode, ApReason.None, false, ready, b?.Standby ?? false, float.NaN, Panel.HeightRef, ApProt.None);
+            if (b == null || b.Mode != mode && !b.Standby) return ApBlockLink.Status(mode, mode == ApMode.Off ? _timeoutReason : ApReason.None, false, ready, b?.Standby ?? false, float.NaN, Panel.HeightRef, ApProt.None);
             if (b.Pilot && ready && !b.Standby && b.Mode != ApMode.Off) return b.View.Text();
-            return ApBlockLink.Status(b.Mode, b.Reason, b.Flying, ready, b.Standby, b.HasHeight ? b.HeightM : float.NaN, b.Ref, b.Prot);
+            return ApBlockLink.Status(b.Mode, b.Reason, b.Flying, ready, b.Standby, b.HasHeight ? b.HeightM : float.NaN, b.Ref, b.Prot, b.NoGround);
         }
     }
 
@@ -243,7 +245,17 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             if (!ReferenceEquals(aero, a._aero)) { a._aero?.RemoveApBlock(a); a._aero = aero; aero?.AddApBlock(a); }
         }
         // (a mode on the panel keeps its grid's attitude step awake - a parked ship's quiet path skips it otherwise)
-        if (a._aero != null && a.Panel.Mode != ApMode.Off) a._aero.ApBlockWants = true;
+        var mode = a.Panel.Mode;
+        if (a._aero != null && mode != ApMode.Off) a._aero.ApBlockWants = true;
+        // (a mode the grid's step never takes up - a wreck's: back to Off, said - ApEngageWatch)
+        if (mode != ApMode.Off) a._timeoutReason = ApReason.None;
+        var st = a._status;
+        if (a._engage.Step(mode, st != null && st.Mode == mode && st.Flying, st != null && st.Standby))
+        {
+            a._timeoutReason = a.Working ? ApReason.NoResponse : ApReason.BlockOff;
+            a.WriteBack(new ApBlockLink.Out { ModeChanged = true, Mode = ApMode.Off, Reason = a._timeoutReason });
+            Log.Default?.Info($"[AERO] autopilot block: {ApModes.ModeName(mode)} never engaged in {ApEngageWatch.TimeoutTicks / 60} s - back to Off ({ApText.Say(a._timeoutReason)})");
+        }
         a.EnemyStep(now);
     }
 

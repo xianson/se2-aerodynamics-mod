@@ -49,6 +49,10 @@ public sealed class FlightDirector
     public IApGoalSource Source { get; private set; }
     /// <summary>The height hold's reference (set at engage from Autopilot.HoldAboveGround).</summary>
     public ApHeightRef HeightRef { get; private set; } = ApHeightRef.Ground;
+    /// <summary>The height held has no ground under it now: over the ground (Ground) - none in sight (the rays and the planet's
+    /// height both miss): the height is held along the gravity, where it was over the last ground seen; level (Inertial) - no
+    /// ground was known for its datum: it reads from where the ship was (until a ground is seen). The status line says so.</summary>
+    public bool NoGround { get; private set; }
     /// <summary>The hover's lift axis (local unit: the side with the most thrust) - the lean is of this axis.</summary>
     public Vector3 LiftAxis => _upL;
     /// <summary>The flight performance now (FlightPerf.Evaluate over ApSense.Perf, each tick it is given; Valid false: none) - for
@@ -100,7 +104,9 @@ public sealed class FlightDirector
     // the ground held (Ground reference)
     Vector3D _hold; bool _holdH, _holdV; float _holdAgl = -1f; bool _aglPending;
     // the level altitude's datum (Inertial: the ground under the ship where the height hold was engaged) and its up
-    Vector3D _datum; Vector3 _upDatum = Vector3.UnitY;
+    Vector3D _datum; Vector3 _upDatum = Vector3.UnitY; bool _datumUnknown;
+    // the last ground seen under the ship (a point on it: the hold's filtered height below the ship) - the no-ground fallback's base
+    Vector3D _lastGround; bool _hasLastGround;
     // the integrals: the horizontal acceleration (world m/s2), its smoothed command, the vertical key (share)
     Vector3 _aI, _aF, _vRamp; float _uI;
     // the attitude goal's target
@@ -184,7 +190,7 @@ public sealed class FlightDirector
             }
         }
         if (source != null) Source = source;
-        if ((Goals & ~ApGoal.External) == 0) Ground.Reset();
+        if ((Goals & ~ApGoal.External) == 0) { Ground.Reset(); _hasLastGround = false; }
         Goals |= goals;
         Reason = ApReason.None; _upset = _cantHold = 0f; _wasPiloted = s.Piloted; _dampWanted = false;
         Guard.Reset();
@@ -214,7 +220,17 @@ public sealed class FlightDirector
         h = MathF.Max(0f, h);
         Vector3 upW = s.Gravity.LengthSquared() > 1e-4f ? -Vector3.Normalize(s.Gravity) : _upDatum;
         if (!_holdV) CatchHeight(s.Pos, upW);
-        if (HeightRef == ApHeightRef.Ground) { _holdAgl = h; _aglPending = false; return; }
+        if (HeightRef == ApHeightRef.Ground)
+        {
+            _holdAgl = h; _aglPending = false;
+            // (the same height along the gravity too - what is flown while no ground is in sight: over the ground known now, the
+            //  last seen, or the planet's; none: over the datum. In game 2026-10-19 a typed height with the ground out of the rays'
+            //  reach changed the panel's number and nothing else.)
+            Vector3D ug = upW;
+            double baseUp = GroundUp(in s, upW, out double g) ? g : Vector3D.Dot(_datum, ug);
+            _hold += ug * (baseUp + h - Vector3D.Dot(_hold, ug));
+            return;
+        }
         Vector3D u = _upDatum;
         _hold += u * (h - Vector3D.Dot(_hold - _datum, u));
     }
@@ -235,8 +251,28 @@ public sealed class FlightDirector
     /// <summary>The level altitude's datum: the ground under the ship now (ApSense.Agl; none found: where it is).</summary>
     void CatchDatum(in ApSense s, Vector3 upW)
     {
-        float agl = s.Agl;   // (the ground ray straight down - fresh at an engage, when the watch has not looked yet)
-        _upDatum = upW; _datum = s.Pos - (Vector3D)(upW * MathF.Max(0f, float.IsFinite(agl) ? agl : 0f));
+        // (the ground under the ship: the rays, the planet's height, the last seen - none: where it is, said on the status line
+        //  and caught again when a ground is seen. In game 2026-10-19: "holding 0.0 m altitude" at 130 m, the ground past the rays.)
+        _upDatum = upW;
+        Vector3D u = upW;
+        if (GroundUp(in s, upW, out double g)) { _datum = s.Pos - u * Math.Max(0.0, Vector3D.Dot(s.Pos, u) - g); _datumUnknown = false; }
+        else { _datum = s.Pos; _datumUnknown = true; }
+    }
+
+    /// <summary>The ground's height along the up under the ship now (world, along upW): the watch's filtered height, the ground
+    /// ray (ApSense.Agl), the terrain asked straight down (the planet's height reaches far), the last ground seen. False: none.</summary>
+    bool GroundUp(in ApSense s, Vector3 upW, out double groundUp)
+    {
+        Vector3D u = upW;
+        double pu = Vector3D.Dot(s.Pos, u);
+        groundUp = 0;
+        // (the watch's and the last ground's only while engaged: at an engage they may be an older flight's, elsewhere)
+        if (Engaged && Ground.HasGround && Ground.AglHold >= 0f) { groundUp = pu - Ground.AglHold; return true; }
+        if (s.Agl >= 0f && float.IsFinite(s.Agl)) { groundUp = pu - s.Agl; return true; }
+        if (Terrain != null && Terrain.Below(s.Pos, -upW, TerrainWatch.BelowReachLong, out float h, out _) && float.IsFinite(h))
+        { groundUp = pu - Math.Max(0f, h - s.Belly); return true; }
+        if (Engaged && _hasLastGround) { groundUp = Vector3D.Dot(_lastGround, u); return true; }
+        return false;
     }
 
     /// <summary>Let go of some goals (all: every one), saying why.</summary>
@@ -252,7 +288,7 @@ public sealed class FlightDirector
     public void Step(in ApSense s, ref ApCommand c)
     {
         c = default;
-        Prot = ApProt.None;
+        Prot = ApProt.None; NoGround = false;
         if (!Engaged) { UpdateReadout(); return; }
         if (!s.Lim.Enabled) { Disengage(ApReason.NotAllowed); UpdateReadout(); return; }
         // (the pilot left and the world wants the mode with them; seated, they switched the dampeners off - the hover needs them)
@@ -301,6 +337,12 @@ public sealed class FlightDirector
         _vPrev = s.Vel; _hasVPrev = true;
         Ground.Step(Terrain, s.Pos, s.Vel, _aMeas, g > 1e-2f ? -upW : -Vector3.UnitY, s.Belly, dt);
         float agl = Ground.HasGround ? Ground.Agl : s.Agl, aglHold = Ground.HasGround ? Ground.AglHold : s.Agl;
+        if (aglHold >= 0f && g > 1e-2f)
+        {
+            _lastGround = s.Pos - (Vector3D)(upW * aglHold); _hasLastGround = true;
+            // (a level hold engaged with no ground known: its datum now, the height held kept - the panel's number becomes real)
+            if (_datumUnknown) { _upDatum = upW; _datum = _lastGround; _datumUnknown = false; }
+        }
         float sink = -Vector3.Dot(s.Vel, upW);
         if (agl > s.Lim.FloorM + 2f) _floorArmed = true;
         bool floor = s.Lim.Protection && s.Lim.FloorM > 0f && _floorArmed && agl >= 0f
@@ -481,8 +523,13 @@ public sealed class FlightDirector
                 if (!_holdV && MathF.Abs(vz) < 0.3f) { CatchHeight(s.Pos, upW); if (overGround) _holdAgl = aglHold; }   // (caught here; the place keeps its own)
                 if (_holdV)
                 {
+                    bool overHeld = overGround && _holdAgl >= 0f && !_aglPending;
+                    // (over the ground: the height held kept along the gravity too, at the ground under the ship now - so when the
+                    //  ground goes out of sight the hold goes on at that height, no jump to where it was caught)
+                    if (overHeld) { Vector3D u = upW; _hold += u * (Vector3D.Dot(s.Pos, u) - aglHold + _holdAgl - Vector3D.Dot(_hold, u)); }
                     // (over the ground: the filtered height under the ship; with no ground found, along the gravity)
-                    float eh = overGround && _holdAgl >= 0f && !_aglPending ? _holdAgl - aglHold : (float)Vector3D.Dot(_hold - s.Pos, (Vector3D)upW);
+                    float eh = overHeld ? _holdAgl - aglHold : (float)Vector3D.Dot(_hold - s.Pos, (Vector3D)upW);
+                    NoGround = HeightRef == ApHeightRef.Ground ? !overGround : _datumUnknown;
                     // (over the ground: the terrain's rise under the ship fed forward - it follows the slope, not chases it)
                     float ff = overGround && Ground.HasGround ? Ground.GroundRate : 0f;
                     climb = Math.Clamp(eh * 0.5f + ff, -s.Lim.ClimbRate - MathF.Abs(ff), s.Lim.ClimbRate + MathF.Abs(ff));
@@ -890,13 +937,21 @@ public static class ApText
         ApReason.NoWaypoints => "no waypoints - type GPS names or coordinates in Route",
         ApReason.NoTranslation => "not enough thrust across to fly six-axis",
         ApReason.WrongStyle => "the flight style set does not fit this ship",
+        ApReason.NoResponse => "the ship never took it up - no working thrusters or gyros to fly it",
 
         _ => "",
     };
 
     /// <summary>The toast for a refusal / a let-go / an engage.</summary>
     public static string Refused(ApReason r) => "Autopilot: can't engage - " + Say(r);
-    public static string Off(ApReason r) => r == ApReason.TurnedOff ? "Autopilot off" : "Autopilot off - " + Say(r);
+    /// <param name="still">The goals still held after the let-go (steering drops the hover, the height stays): said, not "off".</param>
+    public static string Off(ApReason r, ApGoal still = ApGoal.None)
+    {
+        if ((still & (ApGoal.Height | ApGoal.Hover)) == ApGoal.Height)   // (in game 2026-10-19: "Autopilot off - you steered" with height hold on)
+            return "Hover off - " + Say(r) + " (height hold on)";
+        if (still != ApGoal.None) return "Autopilot: " + Say(r) + " (still on)";
+        return r == ApReason.TurnedOff ? "Autopilot off" : "Autopilot off - " + Say(r);
+    }
     public static string Engaged(ApGoal goals, ApHeightRef href = ApHeightRef.Ground)
         => (goals & ApGoal.Hover) != 0 ? ((goals & ApGoal.Height) != 0 ? (href == ApHeightRef.Ground ? "Autopilot: hover hold (place, height over the ground)" : "Autopilot: hover hold (place, height)") : "Autopilot: hover hold (place)")
          : (goals & ApGoal.Height) != 0 ? (href == ApHeightRef.Ground ? "Autopilot: height hold over the ground" : "Autopilot: height hold") : "Autopilot on";

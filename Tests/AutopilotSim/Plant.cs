@@ -120,6 +120,8 @@ sealed class Plant
     /// <summary>The ground (the plant stands on it; the autopilot sees it through its ITerrainQuery).</summary>
     /// <summary>The limits flown with (a panel's: ApLimits.Of); null the static defaults.</summary>
     public ApLimits? LimOverride;
+    /// <summary>The ground ray's reach (ApSense.Agl: -1 past it, as the game's - the voxel colliders are built near the ship only).</summary>
+    public float AglReach = float.PositiveInfinity;
     public SimTerrain Terrain { get => _terrain; set { _terrain = value ?? SimTerrain.Flat(); Fd.Terrain = _terrain; } }
     /// <summary>The ground's height under the ship now.</summary>
     public double GroundY => _terrain.H(P.X, P.Z);
@@ -155,7 +157,7 @@ sealed class Plant
         if (NoiseVel > 0f) s.Vel += Gauss3(NoiseVel);
         if (NoisePos > 0f) s.Pos += (Vector3D)Gauss3(NoisePos);
         if (NoiseDeg > 0f) { var e = Gauss3(NoiseDeg * ApMath.Deg); s.Orient = Quaternion.Normalize(Q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(e + new Vector3(1e-6f)), e.Length())); }
-        s.Agl = Agl;
+        s.Agl = Agl <= AglReach ? Agl : -1f;   // (the game's ground ray reaches only so far: GroundHeight)
         // the side maxima (MaxThrustData.Regular: every thruster's live maximum on the side the game books it)
         Vector3 pos = Vector3.Zero, neg = Vector3.Zero;
         for (int i = 0; i < _n; i++)

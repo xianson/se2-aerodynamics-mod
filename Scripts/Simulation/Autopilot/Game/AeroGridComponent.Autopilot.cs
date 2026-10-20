@@ -215,7 +215,7 @@ public partial class AeroGridComponent
                 v.Refused = ApTargets?.Refused;   // (a target the filter refused: "no target - ... is neutral")
                 b.ReportPilot(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, in v);
             }
-            else if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);
+            else if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None, fd != null && fd.NoGround);
 
             else b.Report(b.Panel.Mode, ApReason.None, false, true, false, 0f, b.Panel.HeightRef, ApProt.None);
         }
@@ -254,7 +254,8 @@ public partial class AeroGridComponent
     {
         if (why == ApReason.None || (!force && why == _apSaid)) return;
         _apSaid = why;
-        if (piloted) ApNotes.Say(ApText.Off(why));
+        var fd = Fd;
+        if (piloted) ApNotes.Say(ApText.Off(why, fd != null && fd.Engaged ? fd.Goals : ApGoal.None));
     }
 
     /// <summary>Engage, the pilot told what is held or why not.</summary>

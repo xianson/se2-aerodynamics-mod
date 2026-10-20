@@ -17,6 +17,9 @@ public enum ApReason : byte
     /// <summary>(16..) The flight pilot (2026-10-19): an airplane needs airspeed (and air) to fly on its wings; a route needs a
     /// waypoint; six-axis flight needs thrust across the main axis; the style asked does not fit the ship.</summary>
     TooSlow, NoAir, NoWaypoints, NoTranslation, WrongStyle,
+    /// <summary>(21) A mode chosen on the block and the ship's autopilot step never took it up (ApEngageWatch: a wreck with no
+    /// thruster or gyro left - the grid's attitude step does not run for it).</summary>
+    NoResponse,
 }
 
 /// <summary>What the envelope protection changed this tick (several at once).</summary>
