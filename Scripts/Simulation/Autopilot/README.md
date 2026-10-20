@@ -20,6 +20,10 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `ApAim.cs` | The target's track (`ApTargetTrack`: its acceleration estimated), the lead (`ApAim.Lead`: the intercept iterated), the style's detection (`ApStyleDetect`), the target source interface (`IApTargetSource`) |
 | `ApAvoid.cs` | Small collision avoidance (`ApAvoid`, on top of every mode): the closest approach to each obstacle (`ApObstacles`: other grids, asteroids; the target with half its behaviour's closest distance - `TargetClear`) along the velocity now within the look-ahead, a sidestep / pull-up flown through the mode's own command, let go 1 s after |
 | `ApEnemy.cs` | The target filter (`ApRelations`: the game's relation as own / friendly / neutral / hostile, the filter, `ApTargetPicker` - the scan's nearest) and the Enemy switch (`ApEnemy` rules: the world's rule, owner, creative / admin, the lock; `ApEnemySwitch`: ask, step, the saved owner before; `IApOwnership`) |
+| `ApFormation.cs` | FORMATION (Engage behaviour 15): a slot right / up / back in the leader's frame, the leader only observed (`ApMotionTrack`); hovering styles hold it as a moving place, an airplane flies L1 at the slot ahead on the leader's curved path with its turn fed forward (`TurnFeed`), the height led by its climb, the closure damped (`CloseDamp`), an overshoot widened out |
+| `ApSlots.cs`, `ApDogfight.cs`, `ApRocketGuidance.cs` | THE COMBAT SLOTS (Engage behaviours 13, 14): `ApSlotCtx` (everything a slot gets each step), `ApSlotOut` (a nav goal or a direct goal, throttle, let-go, status, aim report), the panel's values (`ApDogfightParams`, `ApRocketParams`); the two logic files are the author's - **`AUTHORING.md`**: what to write, every input and output, every panel field, adding one, testing |
+| `ApTrack.cs` | `ApMotionTrack`: any entity's position, velocity, acceleration, turn rate and energy from its observed positions alone (a fading-memory filter), with confidence and age |
+| `ApLift.cs` | The lift goal's arithmetic (`ApExternalKind.Lift`): a lift vector from / to a path acceleration, a bank's lift direction |
 | `ApBlockLink.cs` | The block and the flight director in step (`ApBlockLink`: a mode chosen engages, a let-go / the held height written back, the block dark lets go), the modes as goals (`ApModes`), which block flies (`ApArbiter`), the status line |
 | `Game/AeroGridComponent.Autopilot.cs` | Per grid: the server's flight director each tick before ThrustTorque (`AutopilotStep` from `AeroSimJob.AttitudeJob`), its instruments (`ApSenseNow`), the keys written in place (`ControlData.Movement`), the record (`ThrustTorque.ApPub`) - the client copy flies the same target and hands the server the pilot's keys and steering |
 | `Game/ApGameSense.cs` | The target in game (`ApGameTargets`: the grid's `TargetingGridComponent` - locked, priority, nearest; a GPS marker; a grid by name; the API's), GPS markers (`ApGps`: the owner's, then every player's), the fixed guns (`ApGunScan`: their axis, muzzle speed, range; the nose without guns: the block's front) |
@@ -63,7 +67,10 @@ targets; aim and time in the cone; the arbiter; the lead against a flown shot; t
 `PilotBlockPack.cs` (the panel through the link; the saved form), `EnemyPack.cs` (the relations by the game's rule, mocked; the
 filter; the Enemy switch's rules and state over a mocked world; an enemy chasing the player, a drone's filter), `PlanetTerrainPack.cs`
 (the planet's height mocked: the query, TerrainWatch's reach, a cliff flown with the rays alone and with the planet), `AvoidPack.cs`
-(the closest approach; a parked ship and an asteroid on a route, a six-axis route, an attack run that would ram, a hover's sidestep).
+(the closest approach; a parked ship and an asteroid on a route, a six-axis route, an attack run that would ram, a hover's sidestep),
+`FormationPack.cs` (a leader in Flight Hold and one or two wingmen in every style: catch-up, the leader's turn and climb, the slot
+error's RMS), `SlotPack.cs` (the slots' integration), `RocketPack.cs` (a finned rocket's attitude held by its gimbal and fins).
+Several ships in one run: `Tests/AutopilotSim/Flight.cs`; the author's own packs: `Tests/AutopilotSim/UserScenarios/`.
 
 `Tests/AutopilotSim` (in the gate; `-- full` the sweeps): the real core and protection over the game's thrust law and the
 mod's allocator / rotor trim / attitude law, on the dumped H25 helicopter (1.5x / 2.5x / 3x, one and two tails), VTOLs, and

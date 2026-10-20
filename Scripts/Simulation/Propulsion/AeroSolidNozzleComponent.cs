@@ -51,12 +51,15 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
     public const int RecheckTicks = 120, GeoTicks = 30, AirTicks = 10;
     /// <summary>Harness (aeroset AeroSolidNozzleComponent.DevIgnite n): a new positive value asks every server nozzle to ignite.</summary>
     public static int DevIgnite;
+    /// <summary>Harness (aeroset AeroSolidNozzleComponent.DevGimbal x): a new value x &gt; 0 turns every server nozzle's thrust
+    /// vectoring on at a cone of x deg (clamped 0.5..15), x &lt; 0 off (0: nothing) - the in-game check without the panel.</summary>
+    public static float DevGimbal;
 
     public SolidRocketBlocks.Row Row;
     internal SolidRocket.Motor Motor;
     internal bool RestoredLit; internal float RestoredLevel = 1f;   // (from the block's saved data: AeroBlockSave)
     bool _server; LookRetry _look;
-    int _devSeen, _stackVersion = -1, _recheckIn, _geoIn, _airIn;
+    int _devSeen, _stackVersion = -1, _recheckIn, _geoIn, _airIn; float _devGimbalSeen;
     readonly List<AeroSolidSegmentComponent> _stack = new(), _cands = new();
     SolidRocket.Geo _geo;
     /// <summary>The nozzle at the far end of its stack (SolidRocket.OtherEnd; null: none) - when it is lit too, they share the factor.</summary>
@@ -177,7 +180,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
             if (!_look.Done) return;
             ThrustPower = Row.Thrust * (1f + SolidRocketBlocks.VacuumBoost) * SolidRocket.MaxStackFactor;   // (the definition's: gen_propulsor_defs.py)
             if (RestoredLit) { Motor.Phase = SolidRocket.Phase.Lit; Motor.Level = SolidRocket.LevelOr1(RestoredLevel); }   // (a burning motor saved: burning again at its level - the game restored its switch and override)
-            _devSeen = DevIgnite;
+            _devSeen = DevIgnite; _devGimbalSeen = DevGimbal;
         }
         if (Row == null || _cb == null) return;
         if (--_geoIn <= 0)
@@ -200,6 +203,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         PublishLoad();
 
         if (DevIgnite != _devSeen) { _devSeen = DevIgnite; if (DevIgnite > 0) Motor.Request = true; }
+        if (DevGimbal != _devGimbalSeen) { _devGimbalSeen = DevGimbal; if (DevGimbal > 0f) { GimbalOn = true; GimbalDeg = GimbalLimits.Cone(DevGimbal); } else if (DevGimbal < 0f) GimbalOn = false; }
         int ver = System.Threading.Volatile.Read(ref AeroSolidSegmentComponent.Version);
         if (ver != _stackVersion || --_recheckIn <= 0) Rebuild(ver);
         float total; int live;

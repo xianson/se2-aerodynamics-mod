@@ -83,8 +83,26 @@ was flown in game for this release. The commit hashes are on the integration bra
   gusts, noise, lag, mass changes, engine-out, and the block's panel through the same link the game runs (engage, refusal,
   let-go written back, typed height, reference switch, block dark, a saved mode at load, arbitration); a ledger proves every
   tick's forces come from real actuators. In the gate.
+- **Formation** (Engage behaviour): a slot right / up / back of a leader grid (any grid the Target Source picks, the filter
+  not applied), the leader's motion from its observed positions only. Offline, a leader in Flight Hold turning 90 deg and
+  climbing, one or two wingmen: airplane caught the slot in 39 s, 5.6 m RMS in a 30 deg-bank turn (worst 12), 5.0 m in a 200 m
+  climb, 2.2 m straight; helicopter 0.9 / 1.8 / 0.7 m; six-axis 0.4 / 1.5 / 0.2 m. An airplane wingman feeds the slot's turn
+  forward, leads its climb and damps its closure (before: 180 m outside the turn, 60 m low in the climb, a +-13 m surge).
+- **Dogfight** and **Rocket Guidance** (Engage behaviours 13, 14) with their panel values (preferred fight, head-on, bingo
+  fuel / damage, hard deck, ceiling, skill; guidance law, navigation constant, target-acceleration gain, lateral g cap, gravity
+  compensation, arm distance, timeout) - the logic is the author's (`Scripts/Simulation/Autopilot/AUTHORING.md`).
+- **For behaviours:** a lift-vector goal (`ApExternalKind.Lift`), an observed-motion track of any entity (`ApMotionTrack`),
+  corner speed, turn rates and specific excess power (`FlightPerf`). `AeroApi` 13: `TryGetAutopilotSlot`.
+- **Thrust vectoring:** a solid rocket nozzle's Thrust Vectoring switch and Gimbal Cone (0.5..15 deg, default 5; saved) - lit,
+  the ship's attitude control swivels its thrust (30 deg/s) for what the thrusters and gyros leave; any thruster can be given
+  a cone (`AeroApi.SetThrusterGimbal`; `TryGetThrustVectoring`). Real thrust only: its side force and moment. Offline, a 150 kg
+  finned rocket climbing at 60 deg through two 30 m/s side gusts stays within 0.95 deg (a 2 deg cone: 9.3; fins alone never
+  hold the climb). The nozzle mesh does not swivel.
+- **Offline simulator, several ships:** `Tests/AutopilotSim` `Flight` (each ship any mode, goal source, block or none; another
+  ship as a target), metric hooks (min / max / RMS / mean), CSV columns of a scenario's own, and `UserScenarios/` for the
+  author's packs.
 - Not tested in game yet: the block, its panel and toolbar actions, the readout, the toasts, an unattended hover after the
-  pilot leaves and after a reload, the terrain rays.
+  pilot leaves and after a reload, the terrain rays, formation, the slots, thrust vectoring.
 
 ## 1.0.4 - saving fixed on SE2 4.0
 

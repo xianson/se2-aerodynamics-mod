@@ -55,8 +55,12 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
     or another mod. Works on unpiloted ships (NPC-style).
   - **Collision avoidance:** steps aside or pulls up from other ships, asteroids and its own target (every mode).
   - **Target filter:** hostile only, + neutral, or everything - the game's own relation, as turrets judge it.
+  - **Formation:** holds a slot beside any leader grid, piloted or not. Airplane, helicopter or six-axis.
+  - **Dogfight** and **Rocket Guidance:** Engage behaviours with their own panel values.
   - **Enemy:** makes the ship - with everything on its rotors, hinges and pistons - the game's hostile NPC's: its turrets
     and Engage fight players. Off gives each part back to its owner. World setting: off / creative or admin (default) / everyone; an enemy's panel is creative or admin only.
+
+- **Thrust vectoring:** solid rocket nozzles swivel within a cone to steer any ship (the nozzle's Thrust Vectoring switch).
 
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
