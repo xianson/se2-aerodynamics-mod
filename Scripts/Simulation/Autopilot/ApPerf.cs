@@ -58,6 +58,17 @@ public struct ApPerf
     public float NormalAccelMax;
     /// <summary>The drag's deceleration now and at AlphaMax (m/s2), and full thrust less the drag now along the path (m/s2).</summary>
     public float DragDecelNow, DragDecelAtMax, ExcessAccel;
+
+    // ── (2026-10-19) the energy-manoeuvrability numbers: what a turn costs and where the ship turns best ──
+    /// <summary>SPECIFIC EXCESS POWER now (m/s: (thrust - drag) V / W - the climb rate the excess thrust would give, or the energy
+    /// height's rate; negative: losing energy).</summary>
+    public float Ps;
+    /// <summary>CORNER SPEED (m/s): the slowest speed the lift at AlphaMax reaches the g limit - below it the turn is lift-limited,
+    /// above it g-limited; the highest instantaneous turn rate is flown here (TurnRateCorner, rad/s).</summary>
+    public float CornerSpeed, TurnRateCorner;
+    /// <summary>What the at-speed queries scale from (FlightPerf.*At): the samples' speed (m/s), the stall cap from the samples' flow
+    /// (rad), the load limit (g), the gravity (m/s2), the full thrust along the path (N), the mass (kg).</summary>
+    public float SpeedRef, ThetaMax, GLimit, G, Thrust, Mass;
 }
 
 /// <summary>The flight performance's arithmetic over PerfSamples (engine-free, allocation-free).</summary>
@@ -114,14 +125,72 @@ public static class FlightPerf
         float thrust = ApMath.Along(s.ThrustPos, s.ThrustNeg, p.Flow);
         r.DragDecelNow = DragAt(p, since) / s.Mass; r.DragDecelAtMax = DragAt(p, thetaMax) / s.Mass;
         r.ExcessAccel = (thrust - DragAt(p, since)) / s.Mass;
-        // sustained: the highest lift whose drag the full thrust still meets (walked up to the cap)
-        float nS = 0f;
-        for (int i = 0; i < p.Count && p.Theta[i] <= thetaMax; i++) if (p.Drag[i] <= thrust) nS = MathF.Max(nS, p.Lift[i] / weight);
-        r.NSust = MathF.Min(nS, r.NInst);
+        // sustained: the highest lift whose drag the full thrust still meets (walked up to the cap, between samples)
+        r.NSust = MathF.Min(SustainedLift(p, thetaMax, thrust, 1f) / weight, r.NInst);
         r.TurnRateInst = r.NInst > 1f ? g * MathF.Sqrt(r.NInst * r.NInst - 1f) / v : 0f;
         r.TurnRateSust = r.NSust > 1f ? g * MathF.Sqrt(r.NSust * r.NSust - 1f) / v : 0f;
+        r.SpeedRef = v; r.ThetaMax = thetaMax; r.GLimit = s.Lim.GLimit; r.G = g; r.Thrust = thrust; r.Mass = s.Mass;
+        r.Ps = r.ExcessAccel * v / MathF.Max(g, 1e-3f);
+        // (the corner: n(V) = NAtAlphaMax (V / Vref)^2 reaches the limit)
+        r.CornerSpeed = r.NAtAlphaMax > 1e-3f ? v * MathF.Sqrt(r.GLimit / r.NAtAlphaMax) : float.PositiveInfinity;
+        r.TurnRateCorner = float.IsFinite(r.CornerSpeed) && r.GLimit > 1f ? g * MathF.Sqrt(r.GLimit * r.GLimit - 1f) / r.CornerSpeed : 0f;
         r.Valid = q0 > 0f;
         return r;
+    }
+
+    /// <summary>The most lift (N, at the samples' speed x qs) whose drag (x qs) the thrust (N) still meets, at angles up to thetaMax -
+    /// the lift and drag curves walked up together, the crossing interpolated. qs: the dynamic pressure over the samples' (the
+    /// forces scale with it).</summary>
+    static float SustainedLift(PerfSamples p, float thetaMax, float thrust, float qs)
+    {
+        float best = 0f;
+        for (int i = 0; i < p.Count && p.Theta[i] <= thetaMax; i++)
+        {
+            float d = p.Drag[i] * qs, l = p.Lift[i] * qs;
+            if (d <= thrust) { best = MathF.Max(best, l); continue; }
+            // (the drag passed the thrust between i-1 and i: the lift where they cross)
+            if (i > 0 && p.Drag[i - 1] * qs <= thrust)
+            {
+                float d0 = p.Drag[i - 1] * qs, f = (thrust - d0) / MathF.Max(d - d0, 1e-3f);
+                best = MathF.Max(best, p.Lift[i - 1] * qs + (l - p.Lift[i - 1] * qs) * f);
+            }
+        }
+        // (the cap between samples: the lift there when its drag is met)
+        if (p.Count > 0 && thetaMax < p.Theta[p.Count - 1] && DragAt(p, thetaMax) * qs <= thrust) best = MathF.Max(best, LiftAt(p, thetaMax) * qs);
+        return best;
+    }
+
+    // ── AT ANOTHER SPEED (the same air, the same thrust; the forces scaled with the dynamic pressure - Mach not in): the
+    //    energy-manoeuvrability chart's numbers for any goal source to plan with ──
+
+    /// <summary>The instantaneous load (g) at speed v: the lift at AlphaMax scaled by (v / SpeedRef)^2, within the g limit.</summary>
+    public static float NInstAt(in ApPerf r, float v) => !r.Valid ? 0f : MathF.Min(r.NAtAlphaMax * (v * v) / MathF.Max(r.SpeedRef * r.SpeedRef, 1f), r.GLimit);
+
+    /// <summary>The level turn rate (rad/s) at speed v and load n.</summary>
+    public static float TurnRate(in ApPerf r, float v, float n) => n > 1f && v > 1f ? r.G * MathF.Sqrt(n * n - 1f) / v : 0f;
+
+    /// <summary>The instantaneous turn rate (rad/s) at speed v.</summary>
+    public static float TurnRateInstAt(in ApPerf r, float v) => TurnRate(in r, v, NInstAt(in r, v));
+
+    /// <summary>The sustained load (g) at speed v: the most lift whose drag the full thrust meets there (within NInstAt).</summary>
+    public static float NSustAt(PerfSamples p, in ApPerf r, float v)
+    {
+        if (!r.Valid || p == null || p.Count < 4) return 0f;
+        float qs = v * v / MathF.Max(r.SpeedRef * r.SpeedRef, 1f);
+        return MathF.Min(SustainedLift(p, r.ThetaMax, r.Thrust, qs) / MathF.Max(r.Mass * r.G, 1e-3f), NInstAt(in r, v));
+    }
+
+    /// <summary>The sustained turn rate (rad/s) at speed v.</summary>
+    public static float TurnRateSustAt(PerfSamples p, in ApPerf r, float v) => TurnRate(in r, v, NSustAt(p, in r, v));
+
+    /// <summary>SPECIFIC EXCESS POWER (m/s) at speed v pulling load n (g): (thrust x throttle - the drag at the lift that load
+    /// needs there) v / W. n 1: level flight; NaN when not known.</summary>
+    public static float PsAt(PerfSamples p, in ApPerf r, float v, float n, float throttle = 1f)
+    {
+        if (!r.Valid || p == null || p.Count < 4) return float.NaN;
+        float qs = v * v / MathF.Max(r.SpeedRef * r.SpeedRef, 1f), w = r.Mass * r.G;
+        float th = ThetaFor(p, n * w / MathF.Max(qs, 1e-3f), p.Theta[p.Count - 1]);
+        return (r.Thrust * Math.Clamp(throttle, 0f, 1f) - DragAt(p, th) * qs) * v / MathF.Max(w, 1e-3f);
     }
 
     /// <summary>The speed after 'seconds' (m/s) pulling load n (g) at a throttle (0..1 of the thrust along the path), the path

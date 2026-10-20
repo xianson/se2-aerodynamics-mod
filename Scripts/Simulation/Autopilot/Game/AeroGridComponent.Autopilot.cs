@@ -58,7 +58,8 @@ public partial class AeroGridComponent
     // client: the matched record, its recheck, the pilot's steering sum and last reticle
     ThrustTorque.Published _apRec; long _apRecheck, _apSteerAt; float _apSteer; Quaternion _apLastReticle; bool _apHadReticle;
 
-    /// <summary>The attitude job's autopilot step (AeroSimJob.AttitudeJob, before ThrustTorque.Apply).</summary>
+    /// <summary>The autopilot's step: the server copy from the attitude job (AeroSimJob.AttitudeJob, before ThrustTorque.Apply); the
+    /// client copy (ClientAp) from the client's frame job (AeroEntryFxComponent.EntryJob) - the attitude job runs in the server scene only.</summary>
     internal void AutopilotStep(in WorldTransform wt)
     {
         if (IsServerScene) ServerAp(wt);
@@ -67,6 +68,14 @@ public partial class AeroGridComponent
 
     // the Autopilot block that flies this grid (ApArbiter), its link to the flight director, the panel's write-back
     AeroAutopilotComponent _apCtl; ApBlockLink _apLink; ApBlockLink.Out _apOut; int _apReportIn;
+    // the flight pilot's game senses: its target source, the fixed guns, the route's text resolved (every few seconds), the restarts seen
+    internal ApGameTargets ApTargets; ApGunScan _apGuns; ApGameObstacles _apObs; ApShipScan _apShip; string _apRouteText; long _apRouteNext; int _apRestarts;
+    /// <summary>The flight pilot of the block that flies (null: none) - the API's reads.</summary>
+    internal ApPilot ApPilotNow => _apLink?.Pilot;
+    /// <summary>The Autopilot block that flies this grid (null: none chosen yet) - the API's reads.</summary>
+    internal AeroAutopilotComponent ApCtlNow => _apCtl;
+    /// <summary>The target source (made on first use: the grid's step, or another mod's API call).</summary>
+    internal ApGameTargets ApTargetsMade { get { var t = ApTargets; if (t != null) return t; Interlocked.CompareExchange(ref ApTargets, new ApGameTargets(this), null); return ApTargets; } }
 
     /// <summary>The limits the autopilot flies with now: the flying block's panel (the world's caps in), or the defaults (any thread:
     /// a reference read and the block's locked copy).</summary>
@@ -91,7 +100,7 @@ public partial class AeroGridComponent
         }
         var s = ApSenseNow(wt, fd);
         s.Lim = ctl != null ? ApLimits.Of(ctl.Panel) : ApLimits.Defaults;
-        if (fd == null && (ask >= 0 || ctl != null)) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = _apTerrain; }
+        if (fd == null && (ask >= 0 || ctl != null)) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = new CombinedTerrain(_apTerrain, new PlanetTerrainQuery(new GamePlanetHeight())); }
         if (ctlChanged)
         {
             // (the block that flew is gone, dark or outranked: let go - a dark one's panel back to Off, as a lone block's, so it
@@ -103,9 +112,13 @@ public partial class AeroGridComponent
             _apCtl = ctl; _apLink = ctl != null ? new ApBlockLink() : null;
         }
         if (fd == null) return;
+        // (the obstacles for the collision avoidance: a flying autopilot's, every 10th tick - ApGameObstacles)
+        if (s.Lim.Avoid && fd.Engaged) { _apObs ??= new ApGameObstacles(); _apObs.Update(this, in s, ApTargets?.TargetTop); fd.Obstacles = _apObs.Set; }
+        else fd.Obstacles = null;
         if (ctl != null)
         {
             var panel = ctl.Panel;
+            PilotSenses(in wt, ctl, in panel, ref s);
             bool wasEngaged = fd.Engaged;
             _apLink.Before(fd, in panel, ctl.Working, in s, ref _apOut);
             if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
@@ -160,6 +173,36 @@ public partial class AeroGridComponent
         return blocks[ApArbiter.Pick(ready, x, y, z)];
     }
 
+    /// <summary>The flight pilot's senses before the link's step: the guns and the nose (every 3 s), the target source as the panel
+    /// sets it, the route's text resolved (when it changes; every 5 s for markers that move), a level-off asked (the mode begun again).</summary>
+    void PilotSenses(in WorldTransform wt, AeroAutopilotComponent ctl, in ApPanel panel, ref ApSense s)
+    {
+        if (!ApPanel.IsPilotMode(panel.Mode)) return;
+        _apGuns ??= new ApGunScan();
+        _apGuns.Update(this, wt, ctl);
+        s.GunAxis = _apGuns.Axis; s.MuzzleSpeed = _apGuns.Muzzle; s.GunRange = _apGuns.Range;
+        s.Nose = _apGuns.Guns > 0 ? _apGuns.Axis : _apGuns.Nose;
+        var tg = ApTargetsMade;
+        // (a formation's leader is any grid the source picks - your own: the filter does not apply)
+        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? ""; tg.Filter = panel.Behaviour == ApBehaviour.Formation && panel.Mode == ApMode.Engage ? ApTargetFilter.Everything : panel.TargetFilter;
+        var pilot = _apLink.Pilot;
+        pilot.Targets = tg;
+
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!ReferenceEquals(panel.Route, _apRouteText) || now >= _apRouteNext)
+        {
+            _apRouteText = panel.Route; _apRouteNext = now + 5 * System.Diagnostics.Stopwatch.Frequency;
+            var grid = Entity;
+            pilot.SetRoute(ApRoute.Parse(panel.Route, name => (ApGps.Find(grid, name, out var p), p)));
+        }
+        // (the ship's fuel and integrity for the combat slots: Engage only, every 2 s)
+        _apShip ??= new ApShipScan();
+        _apShip.Update(Entity, panel.Mode == ApMode.Engage);
+        s.HasShipStatus = _apShip.Known; s.FuelShare = _apShip.Fuel; s.IntegrityShare = _apShip.Integrity;
+        int r = Volatile.Read(ref ctl.Restarts);
+        if (r != _apRestarts) { _apRestarts = r; _apLink.Restart(); }
+    }
+
     /// <summary>The blocks' status lines' inputs (four times a second, or at once when the mode changed): the one that flies its
     /// mode, reason and height; the others "standby".</summary>
     void ReportBlocks(AeroAutopilotComponent[] blocks, AeroAutopilotComponent ctl, FlightDirector fd, bool force)
@@ -171,7 +214,14 @@ public partial class AeroGridComponent
         for (int i = 0; i < blocks.Length; i++)
         {
             var b = blocks[i];
-            if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);
+            if (ReferenceEquals(b, ctl) && _apLink != null && ApPanel.IsPilotMode(b.Panel.Mode))
+            {
+                _apLink.Pilot.View(out var v, fd?.Prot ?? ApProt.None);
+                v.Refused = ApTargets?.Refused;   // (a target the filter refused: "no target - ... is neutral")
+                b.ReportPilot(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, in v);
+            }
+            else if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None, fd != null && fd.NoGround);
+
             else b.Report(b.Panel.Mode, ApReason.None, false, true, false, 0f, b.Panel.HeightRef, ApProt.None);
         }
     }
@@ -209,7 +259,8 @@ public partial class AeroGridComponent
     {
         if (why == ApReason.None || (!force && why == _apSaid)) return;
         _apSaid = why;
-        if (piloted) ApNotes.Say(ApText.Off(why));
+        var fd = Fd;
+        if (piloted) ApNotes.Say(ApText.Off(why, fd != null && fd.Engaged ? fd.Goals : ApGoal.None));
     }
 
     /// <summary>Engage, the pilot told what is held or why not.</summary>
@@ -247,6 +298,7 @@ public partial class AeroGridComponent
         s.Gravity = HonestHold.Enabled && AeroSwitch.Enabled ? g * GridPhysics.GravityScale : g;
         s.GravityTrue = g * GridPhysics.GravityScale;   // (what the body falls with: the engine's multiplier always)
         s.Agl = GroundHeight;
+        if (data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out var bbR)) s.Radius = bbR.BoundingBox.HalfExtents.Length();   // (the collision avoidance's size)
         if (data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var mt)) { s.ThrustPos = mt.Regular.Positive; s.ThrustNeg = mt.Regular.Negative; }
         s.Dampeners = data.Has<DampeningData>();
         // (the translation authority per side: the thrusters' arms and maxima as the attitude law last had them)
@@ -283,7 +335,7 @@ public partial class AeroGridComponent
             Vector3 r = Vector3.Max(rep.Reach + new Vector3(rep.CyclicReach), new Vector3(1f));
             s.CtrlShare = MathF.Max(MathF.Abs(rep.Need.X) / r.X, MathF.Max(MathF.Abs(rep.Need.Y) / r.Y, MathF.Abs(rep.Need.Z) / r.Z));
         }
-        s.AirVel = WorldTransform.TransformDirectionInv(LastAirVel, wt); s.Density = LastDensity;
+        s.AirVel = WorldTransform.TransformDirectionInv(LastAirVel, wt); s.Density = LastDensity; s.SpeedOfSound = LastSoundSpeed;
         // the stall and the predicted loss of control (the structure's background evaluation, a few times a second)
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         if (now - Volatile.Read(ref StallStamp) < f * 3 / 2)
@@ -336,7 +388,7 @@ public partial class AeroGridComponent
     internal void ForgetAutopilot()
     {
         if (_apWasEngaged) { Interlocked.Decrement(ref ApEngaged); _apWasEngaged = false; }
-        ApFlying = false; _apTerrain?.Release(); _apTerrain = null; Fd = null;
+        ApFlying = false; _apTerrain?.Release(); _apTerrain = null; _apObs?.Release(); _apObs = null; Fd = null;
         _apCtl = null; _apLink = null;   // (back in a scene: its block's panel engages its mode again, as at a load)
     }
 }

@@ -468,7 +468,7 @@ Every earlier member is unchanged. New (2026-10-19): the **autopilot** (hover ho
 
 | Member | Since | What it does |
 |---|---|---|
-| `bool TryGetAutopilot(Entity grid, out int goals, out int protections, out int reason, out string readout)` | 11 | The grid's autopilot: the goals it holds (bits: 1 attitude, 2 hover, 4 position, 8 height, 16 an external goal source), the protections in force this tick (bits: 1 lean limit, 2 thrust limit, 4 stall limit, 8 g limit, 16 control limit - the predicted loss of control, 32 overspeed, 64 terrain floor, 128 full thrust - low energy, 256 terrain ahead), why it last let go or refused (`reason`, below; 0 none) and its readout (`"AP HOVER POS AGL · FLOOR"`, `""` off). False: never engaged on this grid, or no server grid found for it. Any thread, no lock. |
+| `bool TryGetAutopilot(Entity grid, out int goals, out int protections, out int reason, out string readout)` | 11 | The grid's autopilot: the goals it holds (bits: 1 attitude, 2 hover, 4 position, 8 height, 16 an external goal source), the protections in force this tick (bits: 1 lean limit, 2 thrust limit, 4 stall limit, 8 g limit, 16 control limit - the predicted loss of control, 32 overspeed, 64 terrain floor, 128 full thrust - low energy, 256 terrain ahead, 512 collision avoidance), why it last let go or refused (`reason`, below; 0 none) and its readout (`"AP HOVER POS AGL · FLOOR"`, `""` off). False: never engaged on this grid, or no server grid found for it. Any thread, no lock. |
 | `bool RequestAutopilot(Entity grid, int goals)` | 11 | Asks the grid's autopilot for exactly these goals (the bits above; 0: all off), as the Autopilot block's buttons do (Hover Hold is 2 \| 8, Height Hold is 8). The world's `Autopilot.*` settings and the autopilot's own checks apply; a refusal sets `reason`. An Autopilot block on the grid keeps its own panel: a mode chosen there, or the block going dark, replaces the ask. Queued for the grid's next simulation step. False: no server grid found (a client grid not paired yet - ask again a tick later). |
 | `bool TryGetFlightPerformance(Entity grid, out float nInstant, out float nSustained, out float turnRateInstant, out float turnRateSustained, out float dragDecel, out float excessAccel, out float alphaMaxDeg)` | 11 | What a flown grid can do now, from the mod's own whole-ship lift and drag over the angle of attack (the stall evaluation's sweep - the force table's faces and the wings, Mach and density in - a few times a second) and its thrust: the most load the lift gives within the stall margin and the g limit (the flying Autopilot block's; g of the real weight) and the most its full thrust sustains, the level turn rates at those (rad/s), the drag's deceleration now (m/s2), full thrust less the drag along the path (m/s2), the most nose-up the flow may turn before the stall margin (deg). False: not evaluated (under 20 m/s, thin air, or a grid nobody flies). |
 
@@ -509,6 +509,61 @@ reads the flight performance (`FlightDirector.Perf`, `FlightPerf.Evaluate(sense.
 the ground's normal and rise, the time to impact along the path). Protection applies to every source. Offline,
 `Tests/AutopilotSim` flies them: a pack of scenarios is a class implementing `IScenarioPack` anywhere in that project
 (`Sim.Check`, `Run`, `Ships`, `SimTerrain`, `SimTarget`).
+
+## Version 12
+
+Every earlier member is unchanged. New (2026-10-19): the **flight pilot** - the Autopilot block's Flight Hold, Navigate and
+Engage modes (`Scripts/Simulation/Autopilot/ApPilot.cs`). Its target, its aim and its state. It never fires a weapon: read the
+aim and fire from your own mod.
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool SetAutopilotTarget(Entity grid, Entity target)` | 12 | The target the grid's Autopilot block engages when its Target Source is **API**: an entity (a grid or a block; its top grid's velocity is used). False: no server grid found. |
+| `bool SetAutopilotTargetPoint(Entity grid, Vector3D position, Vector3 velocity)` | 12 | ... or a point (world) moving at a velocity (world m/s). |
+| `bool ClearAutopilotTarget(Entity grid)` | 12 | No API target: the block waits (flies its route, or loiters where it was engaged). |
+| `bool TryGetAutopilotAim(Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)` | 12 | The angle between the fixed guns' axis (or the nose) and the target's lead point (deg), inside the block's aim cone (or the miss inside the target's size), the target inside the guns' range, the range (m) and the shot's time of flight (s). False: nothing aimed at now. |
+| `bool TryGetAutopilotPilot(Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)` | 12 | The mode flying (3 flight hold, 4 navigate, 5 engage), the style (1 airplane, 2 helicopter, 3 six-axis), the behaviour active (1 attack run, 2 attack run U-turn, 3 broadside, 4 circle, 5 hover above, 6 hover below, 7 point at, 8 standoff, 9-11 pursuit lead / pure / lag, 12 extend; since 13: 13 dogfight, 14 rocket guidance, 15 formation), a target held, the next waypoint (-1 loitering). False: no pilot mode flying. |
+| `bool TryGetAutopilotEnemy(Entity grid, out bool enemy, out int targetFilter)` | 12 | The grid's Autopilot block: the grid is an **enemy** now (the game's hostile NPC owns it - the switch flips the whole ship: every grid on its rotors, hinges and pistons - by the block's Enemy switch or otherwise: its turrets and Engage fight players) and the block's **Target Filter** (0 hostile only, 1 hostile + neutral, 2 everything). The switch is the panel's (the world's `Autopilot.EnemyRule`, the owner checks); to change ownership yourself call the game's `OwnershipSessionComponent.TryTransferToNPC`. False: no Autopilot block. |
+
+**The target filter** applies to every source, with the game's own relation (`TargetingGridComponent.IsEligibleTarget`,
+the turrets' rule: `IRelations.GetRelationFromOwners` - hostile when exactly one owner is the hostile NPC; no owner: only a
+`PriorityTargetComponent`): hostile; neutral is not hostile and not the same owner or faction (`IFactions.InSameFaction`).
+The Targeting source's lists are hostile already; with them empty (no turret) or a wider filter, the block scans every 2 s for
+the nearest grid (5+ blocks) or player character within 4 km (never its own owner's). A named grid or an API entity the
+filter refuses is no target ("no target - X is neutral"); a GPS or API point is always taken.
+
+New `reason` values (`TryGetAutopilot`): 16 too slow to fly on the wings, 17 no air, 18 no waypoints, 19 not enough thrust
+across for six-axis, 20 the style set does not fit the ship.
+
+**The lead.** SE2 4.0's projectiles fly straight at the muzzle speed plus the shooter's velocity (no drop:
+`SimulatedProjectileDefinition.IsAffectedByBulletDrop` is never read). The intercept time is iterated against the target's
+velocity and its estimated acceleration. The muzzle speed and range come from the grid's fixed guns (weapon blocks without a
+turret), or the block's Muzzle Speed.
+
+## Version 13
+
+Every earlier member is unchanged. New (2026-10-19): the Engage behaviours **Formation** (15: follow a leader grid in a slot
+right / up / back in its own frame - its motion estimated from its observed positions) and two combat **slots** whose logic
+the mod's author writes (13 **Dogfight**, 14 **Rocket Guidance** - `Scripts/Simulation/Autopilot/AUTHORING.md`; until written
+they refuse, "this behaviour is not written yet", reason 22). `TryGetAutopilotPilot`'s behaviour takes these numbers too.
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool TryGetAutopilotSlot(Entity grid, out int behaviour, out string status, out float slotError, out float slotAlong)` | 13 | In Engage with a target: the active behaviour (13 dogfight, 14 rocket guidance, 15 formation, or a built-in one's number), the combat slot's own status text ("" none), the formation's slot error (m) and its part along the leader's path (m, + behind the slot; NaN when not in formation). False: not in Engage with a target. |
+| `bool SetThrusterGimbal(Entity grid, int index, float coneDeg)` | 13 | **Thrust vectoring**: the cone (deg, 0..15; 0 = a fixed thruster) the attitude control may swivel the `index`-th thruster of `GetThrusters`' list within. Saved with the block. False: no server grid, the index out of range, or a thruster without the mod's settings. |
+| `bool TryGetThrustVectoring(Entity grid, out int gimbals, out Vector3 torqueLocal, out float maxDeflectionDeg)` | 13 | Last tick: the gimballed actuators flown (lit solid nozzles with Thrust Vectoring on, thrusters with a cone), the torque they gave (grid-local N m) and the largest deflection now (deg). False: no server grid. |
+
+New `reason` values (`TryGetAutopilot`): 21 the ship never took the mode up, 22 the behaviour is not written yet, 23 bingo
+(fuel or damage), 24 the behaviour timed out, 25 the target was lost.
+
+**Formation's leader** is any grid the block's Target Source picks (Grid by name is the usual; the API's `SetAutopilotTarget`
+too) - the Target Filter does not apply to it.
+
+**Thrust vectoring** is attitude control only, for any ship. The attitude control asks the gimbals for what the thrusters and
+gyros leave of its need. Each gimbal stays within its cone and turns at most 30 deg/s. With nothing holding an attitude, it goes
+back to straight. Solid rocket nozzles have their own panel fields (**Thrust Vectoring**, **Gimbal Cone (deg)**, 0.5..15, default
+5). They swivel only while lit. The force a gimbal gives is its own thrust's change: a side force and a little less along its
+axis. Server only.
 
 ## Roadmap / gaps
 
@@ -618,6 +673,7 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Autopilot.Unattended` | world | bool | true |  | Allow unattended autopilot · Autopilot · basic | *(Unreleased)* A ship with nobody seated may keep its autopilot mode (a helicopter left in hover hold holds its hover); each block's "Keep Mode Unattended" chooses within it. Off: it lets go when the pilot leaves. |
 | `Autopilot.MaxLeanDeg` | world | float | 20 | 2..45 | Hover: most lean · Autopilot · advanced | *(Unreleased)* The most a hover leans to move or hold its place (deg). |
 | `Autopilot.ClimbRate` | world | float | 4 | 0.5..20 | Hover: climb rate · Autopilot · advanced | *(Unreleased)* The climb / descent rate the up / down keys ask for in hover or height hold, and the most it climbs or sinks to a new height (m/s). |
+| `Autopilot.EnemyRule` | world | int | 1 | 0..2 | Enemy ships from autopilot blocks · Autopilot · basic | *(Unreleased)* Who may switch an Autopilot block's Enemy toggle on (0 off, 1 creative or admin, 2 everyone): its ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Only the ship's owner can; only creative or an admin can switch it back or change an enemy ship's panel. |
 | `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
 | `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
 | `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |

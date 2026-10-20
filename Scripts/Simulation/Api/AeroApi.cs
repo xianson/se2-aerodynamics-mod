@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 11;   // (11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 13;   // (13: the combat slots and the formation - TryGetAutopilotSlot, behaviours 13..15 in TryGetAutopilotPilot; thrust vectoring - SetThrusterGimbal, TryGetThrustVectoring; 12: the flight pilot - SetAutopilotTarget, SetAutopilotTargetPoint, ClearAutopilotTarget, TryGetAutopilotAim, TryGetAutopilotPilot, TryGetAutopilotEnemy; 11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -486,6 +486,32 @@ public static partial class AeroApi
             effectiveness?.Add(t.Settings != null ? t.Settings.JetFactor : 1f);   // (as applied: the factor in its maximum now; 1 with the curve lifted)
         }
         return n;
+    }
+
+    /// <summary>(version 13) THRUST VECTORING: the cone (deg, 0..15; 0 a fixed thruster) the attitude law may swivel the index-th
+    /// thruster of GetThrusters' list within - generic attitude control (ThrustTorque: what the thrusters and gyros leave of the
+    /// law's need, within the cone at 30 deg/s). Saved with the block. A solid rocket nozzle's is on its own panel (Thrust
+    /// Vectoring, Gimbal Cone). False: no server grid here, the index out of range, or a thruster without the mod's settings.</summary>
+    public static bool SetThrusterGimbal(Keen.VRage.DCS.Components.Entity grid, int index, float coneDeg)
+    {
+        var aero = AeroOf(grid);
+        if (aero == null || !aero.IsServerScene) return false;
+        ThrusterInfo[] cache = aero.ThrusterSnap;
+        if (index < 0 || index >= cache.Length || cache[index].Settings == null) return false;
+        cache[index].Settings.GimbalDeg = GimbalLimits.Thruster(coneDeg);
+        return true;
+    }
+
+    /// <summary>(version 13) The grid's thrust vectoring last tick: the gimballed actuators flown (lit nozzles with it on, thrusters
+    /// with a cone), the torque they gave (grid-local N m) and the largest deflection now (deg). False: no server grid here.</summary>
+    public static bool TryGetThrustVectoring(Keen.VRage.DCS.Components.Entity grid, out int gimbals, out Vector3 torqueLocal, out float maxDeflectionDeg)
+    {
+        gimbals = 0; torqueLocal = Vector3.Zero; maxDeflectionDeg = 0f;
+        var aero = AeroOf(grid);
+        if (aero == null || !aero.IsServerScene) return false;
+        var r = aero.LastThrust;
+        gimbals = r.GimbalCount; torqueLocal = r.GimbalTorque; maxDeflectionDeg = r.GimbalMaxDeg;
+        return true;
     }
 
     // ── change counters (version 3): cache what you read, read again when a counter moves ──

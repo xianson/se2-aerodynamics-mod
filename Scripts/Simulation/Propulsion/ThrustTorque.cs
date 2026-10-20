@@ -59,7 +59,10 @@ public static class ThrustTorque
         /// <summary>The helicopter rotors' cyclic reach (N m about the in-plane axes; 0: none) - the autopilot's tilt authority.</summary>
         public float CyclicReach;
         /// <summary>The thrust torque the offset-thrust assist took away this frame (local N m; zero at Assists.OffsetThrust 1).</summary>
-        public Vector3 AssistRemoved; }
+        public Vector3 AssistRemoved;
+        /// <summary>THRUST VECTORING (2026-10-20, ThrustVectorGame): the gimballed actuators flown this tick, the torque and force they
+        /// gave (local - the thrust's own change, applied with the rest), the largest deflection now (deg).</summary>
+        public int GimbalCount; public Vector3 GimbalTorque, GimbalForce; public float GimbalMaxDeg; }
 
     /// <summary>
     /// AERO-AWARE ATTITUDE (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but they don't
@@ -282,6 +285,9 @@ public static class ThrustTorque
         // its propulsor writes the cap into the rotor's maximum (applied from its next write)
         if (RotorCyclic.Has(aero, n)) RotorCyclic.Limit(aero, data, in mass, arms, dirs, caps, anyRev ? rev : null, n, dt);
         Vector3 offsetTorque = ThrustAllocator.GameShare(gameF, arms, dirs, caps, cap, f0, n, anyRev ? side : null);
+        // THRUST VECTORING (2026-10-20, ThrustVectorGame): the lit solid nozzles with their gimbal on and the thrusters with a cone -
+        // their reach in the attitude law's plan, asked after the thrusters and the gyros for what is still missing (below)
+        int tvcN = ThrustVectorGame.Collect(aero, com, thrusters, dirs, f0, n, steerN);
         // THE CYCLIC'S TRIM (RotorTrim, 2026-10-18): the rotors' reach and plane at the game's share, the thrusters' own torque
         // there (+ the lit rockets' at their thrust now) for it to answer - unless the ship rests on something (Resting) or its
         // rotors' axes differ (the cyclic then as before: the ask alone, given first). Before, the cyclic answered only the
@@ -318,7 +324,7 @@ public static class ThrustTorque
             if (aware)
             {
                 // the aero-aware law: all it needs (the air's torque answered); the thrusters asked for what the gyros cannot give
-                rep.Reach = gyroReach + ThrusterReach(aero, n) + SolidReach(aero, com, steerN); rep.Target = target; rep.HasTarget = true;
+                rep.Reach = gyroReach + ThrusterReach(aero, n) + SolidReach(aero, com, steerN) + ThrustVectorGame.Reach(aero); rep.Target = target; rep.HasTarget = true;
                 // (the autopilot flying a rotorcraft: the law plans its braking with part of the cyclic's reach too - CyclicPlanShare;
                 //  without it a large tilt was paced by the gyros and thrusters alone and the hover's outer loops chased it into a
                 //  limit cycle, sideways flight on a single tail - Tests/AutopilotSim. A pilot's target: as before)
@@ -450,6 +456,23 @@ public static class ThrustTorque
             var extraW = rep.AttitudePriority > 0f ? WorldTransform.TransformDirection(extraForce, wt) : Vector3.Zero;
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, extraW, torque, dt);
             aero.LastExtraForceWorld = extraW;   // (the structure's contact balance: StructureContacts)
+        }
+        // THE GIMBALS (ThrustVectorGame): what the thrusters, the cyclic and the gyros left of the law's need (the aware law), or of
+        // the solve's target (a rate pilot, a steered grid without the aware law - as the thrusters are asked); nothing flying the
+        // attitude: back to straight at their rate. Their force is the thrust's own change, its moment theirs - applied like the rest
+        if (tvcN > 0)
+        {
+            ThrustVectorGame.Refresh(aero, dirs, use);
+            Vector3 ask = rep.Aware ? tauNeed - (torque - rotorReaction) - rep.GyroTorque : solved ? tauTarget - (torque - rotorReaction) : Vector3.Zero;
+            ThrustVectorGame.Solve(aero, ask, dt, out Vector3 tvF, out Vector3 tvT, out rep.GimbalMaxDeg);
+            rep.GimbalCount = tvcN; rep.GimbalTorque = tvT; rep.GimbalForce = tvF;
+            if (rep.Aware) rep.Delivered += tvT;
+            if (ApplyForces && (tvT.LengthSquared() > 0f || tvF.LengthSquared() > 0f))
+            {
+                var tvW = WorldTransform.TransformDirection(tvF, wt);
+                AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, tvW, tvT, dt);
+                aero.LastExtraForceWorld += tvW;
+            }
         }
         // The flames: each thruster's share, published for the client copy to show - the controller's sharing while it
         // steers, the game's own otherwise (free, rate input: the gyros turn it), so a flame is never handed back mid-flight.

@@ -26,7 +26,13 @@ public partial class AeroThrustSettingsComponent : Component, IInSceneListener
     public float AttitudeFraction = DefaultAttitudeFraction;
     public const float DefaultAttitudeFraction = 0.5f;
     /// <summary>Off a new thruster's (only those are saved).</summary>
-    public bool Changed => AttitudeFraction != DefaultAttitudeFraction;
+    public bool Changed => AttitudeFraction != DefaultAttitudeFraction || GimbalDeg > 0f;
+    /// <summary>THRUST VECTORING (2026-10-20; ThrustVectorGame): the most this thruster swivels off its axis for the attitude law
+    /// (deg; 0 - the default - none: a fixed thruster). Set by AeroApi.SetThrusterGimbal (or the thruster panel's slider, while that
+    /// panel is off - AeroThrustBlockDetailModel); saved with the block ("aero-thrust:2 fraction cone"). GimbalDeflect: its
+    /// deflection now (local rad, across its push - ThrustTorque's, server copy).</summary>
+    public float GimbalDeg;
+    internal Vector3 GimbalDeflect;
     /// <summary>In the server scene (the client scene's copy of the same block is not).</summary>
     internal bool Server = true;
     /// <summary>A client-scene copy's place, read by its own scene's step (AeroSurfaceSaved.ClientStep, under All's lock): what

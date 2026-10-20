@@ -254,6 +254,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     internal Vector3[] _sArm = Array.Empty<Vector3>(), _sDir = Array.Empty<Vector3>();
     internal float[] _sCap = Array.Empty<float>(), _sLo = Array.Empty<float>(), _sF0 = Array.Empty<float>(), _sF = Array.Empty<float>(), _sPrev = Array.Empty<float>(), _sY = Array.Empty<float>();
     internal bool[] _sRev = Array.Empty<bool>();
+    /// <summary>ThrustTorque: this grid's gimballed actuators this tick (ThrustVectorGame.Collect - the solid nozzle or the thruster's
+    /// index each came from; grown only) and their count.</summary>
+    internal ThrustVector.Nozzle[] _tvc = Array.Empty<ThrustVector.Nozzle>(); internal AeroSolidNozzleComponent[] _tvcSolid = Array.Empty<AeroSolidNozzleComponent>();
+    internal int[] _tvcThr = Array.Empty<int>(); internal int _tvcN;
     internal bool IsServerScene = true;
     static readonly System.Collections.Generic.HashSet<string> _scenesSeen = new();
     internal int _rcsWarmGen = -1;

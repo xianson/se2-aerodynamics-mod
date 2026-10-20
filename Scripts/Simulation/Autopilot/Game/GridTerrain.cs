@@ -14,8 +14,9 @@ namespace AeroMod;
 /// THE GAME'S LIMIT (SE2 4.0, decompiled VRage.Physics / VRage.Voxels): voxel colliders exist only near entities - built around
 /// them, ahead of a moving one along its velocity (VoxelPhysicsComponent: a prediction margin of 40 voxels and a lead time) - so a
 /// ray reaching far past that finds nothing to hit even where there is ground: "nothing found" is "not known", never "clear"
-/// (TerrainWatch treats a miss as no ground - the height hold falls back to the gravity's). The planet's analytic surface
-/// (VoxelPlanetComponent.QuerySurfacePosition) is in VRage.Voxels, which mods cannot reference.
+/// (TerrainWatch treats a miss as no ground - the height hold falls back to the gravity's). Beyond them: the planet's analytic
+/// surface (VoxelPlanetComponent.QuerySurfacePosition, by reflection - PlanetHeight.cs), joined with these rays in CombinedTerrain
+/// (the nearer answer: the rays see grids and what was dug or built, the planet its generated shape at any range).
 /// </summary>
 internal sealed class GridTerrain : ITerrainQuery
 {

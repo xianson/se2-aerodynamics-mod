@@ -33,6 +33,7 @@ static class Ships
         if (surfPerQ.HasValue) air.SurfPerQ = surfPerQ.Value;
         var s = new SimShip { Name = $"{polar} (polar)", Mass = air.Mass, I = air.I, PlanetG = 9.81f, Gm = 2f, Air = air, Gyro = new Vector3(gyro), Bottom = 3f };
         s.Add("engine", Vector3.Zero, air.Nose, tw * air.Mass * 9.81f * 2f);
+        s.Nose = air.Nose; s.GunAxis = air.Nose; s.Muzzle = 900f; s.GunRange = 1500f;
         return s;
     }
 

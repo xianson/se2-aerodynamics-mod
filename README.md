@@ -43,6 +43,25 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   10 m/s and it stops where you let go) or just the height. A helicopter left hovering keeps hovering, also after a
   reload. Protected against stalls, overload, loss of control and the ground; it flies only through the ship's real
   controls.
+  - **Flight Hold:** heading (or wings level), altitude with a climb rate, speed. **Level Off** recovers and holds.
+  - **Navigate:** a route of GPS markers or coordinates, once (then a loiter) or round; terrain kept under it. **Return**
+    flies back to where you engaged.
+  - **Engage:** From the Depths' attack modes on a target - attack run, U-turn run, broadside, circle, hover above / below,
+    point at, standoff, pursuit lead / pure / lag, optional jinking. Auto picks one.
+  - **Flies like the ship:** airplane (banks to turn), helicopter (leans toward the motion) or six-axis (thrusters, the
+    nose free) - detected, or set on the panel.
+  - **Aims fixed guns:** the nose on the target's lead point; aim error and "in cone" for weapon mods. It never fires.
+  - **Target:** what you locked (or what the turrets see, else the nearest within 4 km), a GPS marker, a grid by name,
+    or another mod. Works on unpiloted ships (NPC-style).
+  - **Collision avoidance:** steps aside or pulls up from other ships, asteroids and its own target (every mode).
+  - **Target filter:** hostile only, + neutral, or everything - the game's own relation, as turrets judge it.
+  - **Formation:** holds a slot beside any leader grid, piloted or not. Airplane, helicopter or six-axis.
+  - **Dogfight** and **Rocket Guidance:** Engage behaviours with their own panel values.
+  - **Enemy:** makes the ship - with everything on its rotors, hinges and pistons - the game's hostile NPC's: its turrets
+    and Engage fight players. Off gives each part back to its owner. World setting: off / creative or admin (default) / everyone; an enemy's panel is creative or admin only.
+
+- **Thrust vectoring:** solid rocket nozzles swivel within a cone to steer any ship (the nozzle's Thrust Vectoring switch).
+
 - **Flight assists** (off by default; Settings > Mods > Flight assists): presets Realistic / Assisted / Forgiving.
   - Stall protection in manual flight: fly-by-wire limits on your steering. No physics change.
   - Gentler stall and more control bite past it. Changes physics.

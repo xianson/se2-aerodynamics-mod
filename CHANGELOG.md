@@ -3,7 +3,49 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
-## Unreleased - the Autopilot block (hover hold, height hold, envelope protection)
+## Unreleased - the Autopilot block (hover hold, height hold, flight in the air, target behaviours)
+
+- **Flight Hold** (the Autopilot block's panel; also Level Off): heading hold or wings level, altitude hold with a climb
+  rate, speed hold - each on or off; engaging catches what the ship has. TECS flies height and speed together (the most
+  climb is the excess thrust's). Plane2: 90 deg turn with no overshoot (2 deg in 22 s), height within 4 m; +300 m in 37 s
+  with speed held within 1.1 m/s; +30 m/s with height within 5 m. Level Off from a 50 deg bank, 20 deg dive: 39 m lost.
+- **Navigate:** GPS marker names or coordinates, once (then a loiter at the end) or round; **Return** to the engage point;
+  the terrain minimum kept along the path. Plane2 in a 15 m/s crosswind: a 90 deg corner caught with 103 m past the line
+  (turn radius 970 m), then within 9 m; a 1500 m loiter within 22 m RMS; 250 m hills at 150 m asked (100 m minimum), never under 195 m - over the ground the ground's rise is in the climb, and terrain climbs as hard as the excess thrust allows.
+- **Engage** (From the Depths' attack modes on a target): attack run (begin / abort distance, re-run time), attack run
+  U-turn, broadside (angle, range; 90 circles), circle, hover above / below, point at, standoff, pursuit lead / pure /
+  lag, jinking. Auto picks one (utility scores with hysteresis: 1 switch in 60 s across a boundary). Tactical numbers only -
+  the turn, the speeds and the g are the ship's own.
+- **Flight styles**, detected or set: airplane, helicopter (tilt movement - the hover's lean toward the motion), six-axis
+  (thrusters every way, the nose free).
+- **Nose on the target's lead** for fixed forward guns (their axis, muzzle speed and range read from the grid's weapon
+  blocks; SE2 4.0 shots fly straight): aim error and "in cone" on the status line and the API. Pursuit on Plane2: 100 % of
+  the time in a 2 deg cone at 480..510 m (straight, turning and weaving targets); six-axis standoff: 100 %; a helicopter
+  aims by yaw and by height (25..100 % against a weaving target).
+- **Target:** the grid's own targeting (locked, else priority, else nearest seen by the turrets), a GPS marker, a grid
+  by name, or another mod (`AeroApi` 12: `SetAutopilotTarget`, `TryGetAutopilotAim`, ...). Runs unpiloted.
+- **Collision avoidance** (on by default; panel: on / off and a look-ahead, 4 s): other grids, asteroids and its own target
+  - when the closest approach along the velocity now would come too near, a sidestep or a pull-up through the mode's own
+  flying (every mode); no path planning. Plane2 at 150 m/s past a ship parked on its route: 17 m clear (off: it hits),
+  back on the line after; a 120 m asteroid (8 s look-ahead): 13 m clear; an attack run with a 5 m abort distance: 5.5 m
+  clear (off: it rams); a hover steps aside from a drifting ship and comes back within 0.6 m.
+- **Terrain at any range on planets:** the autopilot reads the planet's own height (its generated surface) as well as the
+  ground rays, which see only near the ship: it looks 6 km ahead and 20 km down. A 300 m cliff at 300 m/s is seen 2970 m
+  off (the rays alone: 360 m); Plane2 navigating at 150 m into a 400 m cliff climbs from 1.1 km before it and keeps 146 m
+  (the rays alone: it flies into it). Dug holes and placed voxels are still the rays' only.
+- **Target Filter:** hostile only (default) / hostile + neutral / everything, on every target source, by the game's own
+  relation (the turrets' rule). With no turret, or a wider filter, the block finds the nearest target within 4 km itself.
+  A refused named grid says why ("no target - X is neutral").
+- **Enemy** switch (Engage): the whole ship - every grid on its rotors, hinges and pistons (the game's own "ship") - becomes
+  the game's hostile NPC's (as encounter ships are): its turrets, subgrid turrets too, and its Engage fight players; off gives
+  each grid back to its own owner (saved with the block, per grid). A grid joined later turns hostile too; one detached
+  stays as it is. Refused when a joined grid belongs to someone else. Docked ships (connectors) are not part of it. World setting `Autopilot.EnemyRule`: off /
+  creative or admin (default) / everyone; only the owner switches it on; switching it off and editing an enemy's panel:
+  creative or admin. An enemy ship follows the game's NPC rules (no fuel used, the NPC grid cleanup limit). `AeroApi` 12:
+  `TryGetAutopilotEnemy`.
+- The panel shows only the chosen mode's fields. Every refusal and let-go says why ("too slow to fly on the wings",
+  "no waypoints", ...). Saved with the block.
+
 
 - **Autopilot block** (Aircraft Parts; a stand-in look for now: the vanilla Event Controller, 1 m, and Timer, 0.5 m): its
   control panel is the autopilot. **Hover Hold** holds the ship's place and height - your movement keys fly it at up to its
@@ -41,8 +83,26 @@ was flown in game for this release. The commit hashes are on the integration bra
   gusts, noise, lag, mass changes, engine-out, and the block's panel through the same link the game runs (engage, refusal,
   let-go written back, typed height, reference switch, block dark, a saved mode at load, arbitration); a ledger proves every
   tick's forces come from real actuators. In the gate.
+- **Formation** (Engage behaviour): a slot right / up / back of a leader grid (any grid the Target Source picks, the filter
+  not applied), the leader's motion from its observed positions only. Offline, a leader in Flight Hold turning 90 deg and
+  climbing, one or two wingmen: airplane caught the slot in 39 s, 5.6 m RMS in a 30 deg-bank turn (worst 12), 5.0 m in a 200 m
+  climb, 2.2 m straight; helicopter 0.9 / 1.8 / 0.7 m; six-axis 0.4 / 1.5 / 0.2 m. An airplane wingman feeds the slot's turn
+  forward, leads its climb and damps its closure (before: 180 m outside the turn, 60 m low in the climb, a +-13 m surge).
+- **Dogfight** and **Rocket Guidance** (Engage behaviours 13, 14) with their panel values (preferred fight, head-on, bingo
+  fuel / damage, hard deck, ceiling, skill; guidance law, navigation constant, target-acceleration gain, lateral g cap, gravity
+  compensation, arm distance, timeout) - the logic is the author's (`Scripts/Simulation/Autopilot/AUTHORING.md`).
+- **For behaviours:** a lift-vector goal (`ApExternalKind.Lift`), an observed-motion track of any entity (`ApMotionTrack`),
+  corner speed, turn rates and specific excess power (`FlightPerf`). `AeroApi` 13: `TryGetAutopilotSlot`.
+- **Thrust vectoring:** a solid rocket nozzle's Thrust Vectoring switch and Gimbal Cone (0.5..15 deg, default 5; saved) - lit,
+  the ship's attitude control swivels its thrust (30 deg/s) for what the thrusters and gyros leave; any thruster can be given
+  a cone (`AeroApi.SetThrusterGimbal`; `TryGetThrustVectoring`). Real thrust only: its side force and moment. Offline, a 150 kg
+  finned rocket climbing at 60 deg through two 30 m/s side gusts stays within 0.95 deg (a 2 deg cone: 9.3; fins alone never
+  hold the climb). The nozzle mesh does not swivel.
+- **Offline simulator, several ships:** `Tests/AutopilotSim` `Flight` (each ship any mode, goal source, block or none; another
+  ship as a target), metric hooks (min / max / RMS / mean), CSV columns of a scenario's own, and `UserScenarios/` for the
+  author's packs.
 - Not tested in game yet: the block, its panel and toolbar actions, the readout, the toasts, an unattended hover after the
-  pilot leaves and after a reload, the terrain rays.
+  pilot leaves and after a reload, the terrain rays, formation, the slots, thrust vectoring.
 
 ### Control surfaces past the stall
 

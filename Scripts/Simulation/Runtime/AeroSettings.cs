@@ -336,6 +336,9 @@ public static partial class AeroSettings
         F("Autopilot.ClimbRate", "world", 0.5, 20, false, () => Autopilot.ClimbRate, v => Autopilot.ClimbRate = (float)v,
             "Hover / height hold: the climb and descent rate the up and down keys ask for, and the most it climbs or sinks to a new height (m/s).")
             .Ui("Hover: climb rate", GAutopilot, Advanced, "m/s", 0.5);
+        I("Autopilot.EnemyRule", "world", 0, 2, false, () => (int)Autopilot.EnemyRule, v => Autopilot.EnemyRule = (ApEnemyRule)(int)v,
+            "Who may switch an Autopilot block's Enemy toggle on: its ship becomes a hostile NPC's (the game's own) - its turrets and its Engage fight players. Only the ship's owner can, and only creative or an admin can switch it back or change an enemy ship's panel.")
+            .Ui("Enemy ships from autopilot blocks", GAutopilot, Basic, choices: new[] { "Off", "Creative or admin", "Everyone" });
 
         // ── performance (the host's) ──
         F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,

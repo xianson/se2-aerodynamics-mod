@@ -7,12 +7,69 @@ namespace AeroMod;
 public enum ApHeightRef : byte { Ground, Inertial }
 
 /// <summary>The Autopilot block's mode choice (its panel). Later modes append (the saved number is this).</summary>
-public enum ApMode : byte { Off = 0, HoverHold = 1, HeightHold = 2 }
+public enum ApMode : byte
+{
+    Off = 0, HoverHold = 1, HeightHold = 2,
+    /// <summary>The flight holds (2026-10-19): heading (or wings level), altitude with a climb / descent rate, speed - each on or off.</summary>
+    FlightHold = 3,
+    /// <summary>GPS navigation: the route (once, then a loiter at its end; or round and round), the terrain kept under it.</summary>
+    Navigate = 4,
+    /// <summary>The target's behaviours (From the Depths' attack modes): patrol / loiter until there is a target, then engage it.</summary>
+    Engage = 5,
+}
+
+/// <summary>How the ship flies (auto-detected from its thrust and lift; the panel may set it): bank-to-turn on its wings, lean the
+/// lift axis toward the motion (a helicopter's tilt movement), or translate on thrusters in any direction, the nose free.</summary>
+public enum ApStyle : byte { Auto = 0, Airplane = 1, Helicopter = 2, SixAxis = 3 }
+
+/// <summary>The behaviour relative to the target (From the Depths' set; Auto: the arbiter picks the best for the ship and the
+/// situation). Appended only (the saved number is this).</summary>
+public enum ApBehaviour : byte
+{
+    Auto = 0, AttackRun = 1, AttackRunUTurn = 2, Broadside = 3, Circle = 4, HoverAbove = 5, HoverBelow = 6, PointAt = 7, Standoff = 8,
+    PursuitLead = 9, PursuitPure = 10, PursuitLag = 11,
+    /// <summary>(internal: the arbiter's energy recovery - fly away fast, then turn back in)</summary>
+    Extend = 12,
+    /// <summary>(2026-10-19) THE DOGFIGHT SLOT (ApDogfight.cs - the author's): air combat against another aircraft. Its decision
+    /// logic is not written yet: chosen, it refuses ("not written yet"); Auto never picks it until ApDogfight.Implemented.</summary>
+    Dogfight = 13,
+    /// <summary>(2026-10-19) THE ROCKET-GUIDANCE SLOT (ApRocketGuidance.cs - the author's): an unpiloted rocket grid steered onto
+    /// the target. Not written yet: as Dogfight.</summary>
+    RocketGuidance = 14,
+    /// <summary>(2026-10-19) FORMATION: the target (the leader - any grid the target source picks) followed in a slot right / up /
+    /// back in its own frame (from its observed motion), its speed and heading matched, catch-up and overshoot handled.</summary>
+    Formation = 15,
+}
+
+/// <summary>The dogfight slot's preferred fight (a value the author's logic reads: ApDogfightParams.Fight). Appended only.</summary>
+public enum ApFightPref : byte { Auto = 0, Angles = 1, Energy = 2 }
+
+/// <summary>The rocket-guidance slot's law (a value the author's logic switches on: ApRocketParams.Law). Appended only.</summary>
+public enum ApGuidanceLaw : byte { ProNav = 0, WhipNav = 1, HybridNav = 2, QuadraticIntercept = 3, AugmentedPN = 4, Pursuit = 5 }
+
+/// <summary>Where the target comes from: the grid's own targeting (what the pilot locked; else the nearest the turrets see - vanilla
+/// targeting), a GPS marker or coordinates, a grid by name, or another mod (AeroApi).</summary>
+public enum ApTargetSrc : byte { Targeting = 0, Gps = 1, Grid = 2, Api = 3 }
+
+/// <summary>Which targets the block engages, by the game's own relation between the owners (ApRelations: the turrets' rule,
+/// TargetingGridComponent.IsEligibleTarget). Every source is filtered (a GPS point or an API point has no owner: always taken).
+/// Appended only (the saved number is this).</summary>
+public enum ApTargetFilter : byte
+{
+    /// <summary>What the game's turrets would shoot at (IRelations: Hostile).</summary>
+    Hostile = 0,
+    /// <summary>... and neutral: not hostile, not yours, not your faction's (another player, a neutral NPC).</summary>
+    HostileNeutral = 1,
+    /// <summary>Anything but this ship itself (a named grid may be your own).</summary>
+    Everything = 2,
+}
 
 /// <summary>
-/// THE AUTOPILOT BLOCK'S PANEL (engine-free): what the player sets on the block - the mode, the height and its reference, the hover
-/// speed, the protection's limits, what it does unattended - its limits (ApLimits.Of) and goals (ApModes), saved with the block
-/// (AeroBlockSaveForm.Autopilot). Engine-free and dependency-light: Tests/BlockSaveTests compiles it with ApConfig.cs.
+/// THE AUTOPILOT BLOCK'S PANEL (engine-free): what the player sets on the block - the mode, the flight style, the holds, the route,
+/// the behaviour and its tactical numbers, the target source, the aim, the protection's limits, what it does unattended - its
+/// limits (ApLimits.Of) and goals (ApModes / ApPilot), saved with the block (AeroBlockSaveForm.Autopilot). Engine-free and
+/// dependency-light: Tests/BlockSaveTests compiles it with ApConfig.cs. Only tactical numbers - never a turning circle, a gain or
+/// a top speed: those come from the ship's physics (FlightPerf, the attitude law's reach).
 /// </summary>
 public struct ApPanel
 {
@@ -28,8 +85,61 @@ public struct ApPanel
     /// <summary>Keep the mode with nobody seated (within the world's Autopilot.Unattended).</summary>
     public bool Unattended;
 
+    // ── 2026-10-19: flight in the air ──
+    public ApStyle Style;
+    /// <summary>The flight holds: heading (deg, 0 north, clockwise) on / off (off: wings level), altitude (m, in HeightRef) on / off,
+    /// the climb / descent rate to a new altitude (m/s), the speed (m/s through the air; a helicopter's: over the ground) on / off,
+    /// the most bank (deg).</summary>
+    public float HeadingDeg; public bool HeadingOn;
+    public float AltM; public bool AltOn; public float VsMs;
+    public float SpeedMs; public bool SpeedOn;
+    public float BankDeg;
+    /// <summary>The route: GPS marker names or coordinates, ';' / ',' / new line between (ApRoute.Parse); round and round or once
+    /// (then a loiter at its end); the loiter's radius (m); the lowest it flies over the terrain along the path (m).</summary>
+    public string Route; public bool RouteLoop; public float LoiterM; public float MinAglM;
+    /// <summary>The behaviour and its tactical numbers: the main distance (m: the attack run's begin, the standoff, the orbit's
+    /// radius, the broadside range, the pursuit's gun range), the attack run's abort distance (m) and its re-run time (s), the
+    /// broadside angle (deg: 0 nose on, 90 circling), the height over (under) the target (m), the aggressiveness (0..1), jinking.</summary>
+    public ApBehaviour Behaviour; public float RangeM, AbortM, RerunS, AngleDeg, AltOffsetM, Aggression; public bool Evasive;
+    /// <summary>The target's source, and its text (a GPS name / coordinates, a grid's name).</summary>
+    public ApTargetSrc TargetSrc; public string TargetText;
+    /// <summary>Nose on the target's lead point (fixed forward guns): on / off, the muzzle speed (m/s; 0: the grid's own guns'), the
+    /// "in cone" angle (deg).</summary>
+    public bool AimOn; public float MuzzleSpeed, ConeDeg;
+    /// <summary>Where a mode was first engaged (the return point; world), and the return asked (Navigate flies there and loiters).</summary>
+    public bool HasHome; public double HomeX, HomeY, HomeZ; public bool ReturnHome;
+    /// <summary>Which targets it engages (every source).</summary>
+    public ApTargetFilter TargetFilter;
+    /// <summary>The ENEMY toggle (2026-10-19): this block made its grid a hostile NPC's (the game's own NPC owner - its turrets and
+    /// Engage fight players); the grid's owner before (an identity's number; 0 none known), given back when it is switched off.</summary>
+    public bool Enemy; public long EnemyPrevOwner;
+    /// <summary>Collision avoidance (ApAvoid) on every mode, and its look-ahead (s: the closest approach along the velocity now).</summary>
+    public bool AvoidOn; public float AvoidS;
+
+    // ── 2026-10-19: the combat slots' parameters (ApDogfightParams / ApRocketParams carry them to the author's logic; nothing in
+    //    the core acts on them but the altitude band - DeckM / CeilingM - which every Engage behaviour's height keeps) ──
+    /// <summary>Dogfight: the preferred fight, head-on passes allowed, the hard deck (m over the ground; 0 off) and the combat
+    /// ceiling (m in the pilot's altimeter; 0 off), bingo at this fuel (%) / this much of the ship's integrity lost (%; 0 off),
+    /// how far it respects the enemy's guns (0..1), its skill (0..1). (Its aggressiveness is the panel's Aggression.)</summary>
+    public ApFightPref DfFight; public bool DfHeadOn; public float DeckM, CeilingM, DfBingoFuelPct, DfBingoDamagePct, DfRespectGuns, DfSkill;
+    /// <summary>Rocket guidance: the law, the navigation constant, the target-acceleration gain, the most lateral g (also clipped by
+    /// the protection), gravity compensation, the arm distance (m), the let-go / self-destruct timeout (s; 0 off).</summary>
+    public ApGuidanceLaw RgLaw; public float RgNavConst, RgTargetAccelGain, RgMaxLatG; public bool RgGravityComp; public float RgArmM, RgTimeoutS;
+    /// <summary>Formation: the slot right / up / back of the leader in its own frame (m), the most speed over the leader's it
+    /// closes a gap at (m/s).</summary>
+    public float FmRightM, FmUpM, FmBackM, FmCatchUpMs;
+    /// <summary>The slots' own saved state (ApDogfightState.Save / ApRocketState.Save - "" none; written back by the link).</summary>
+    public string DfSaved, RgSaved;
+
     public const float HeightMax = 20000f, HoverSpeedMin = 1f, HoverSpeedMax = 50f, GLimitMin = 1.5f, GLimitMax = 15f,
         AoaMarginMin = 0f, AoaMarginMax = 15f, FloorMin = 0f, FloorMax = 500f;
+    public const float AltMax = 50000f, VsMin = 0.5f, VsMax = 200f, SpeedMax = 3000f, BankMin = 5f, BankMax = 80f, LoiterMin = 10f, LoiterMax = 20000f,
+        MinAglMax = 3000f, RangeMin = 5f, RangeMax = 50000f, AbortMin = 5f, AbortMax = 20000f, RerunMin = 5f, RerunMax = 600f, AltOffsetMax = 10000f,
+        MuzzleMax = 20000f, ConeMin = 0.1f, ConeMax = 45f;
+    public const int TextMax = 2000;
+    public const float AvoidSMin = 1f, AvoidSMax = 15f;
+    public const float DeckMax = 5000f, CeilingMax = 50000f, NavConstMin = 1f, NavConstMax = 8f, AccelGainMax = 3f, LatGMin = 1f, LatGMax = 100f,
+        ArmMax = 20000f, TimeoutMax = 3600f, SlotMax = 2000f, CatchUpMax = 500f;
 
     /// <summary>A new block's panel: off, the static defaults (Autopilot.*).</summary>
     public static ApPanel Defaults => new ApPanel
@@ -37,22 +147,60 @@ public struct ApPanel
         Mode = ApMode.Off, HeightM = 0f, HeightRef = Autopilot.HoldAboveGround ? ApHeightRef.Ground : ApHeightRef.Inertial,
         HoverSpeed = Autopilot.HoverSpeed, Protection = Autopilot.Protection, GLimit = Autopilot.GLimit, AoaMarginDeg = Autopilot.AoaMarginDeg,
         FloorM = Autopilot.FloorM, LookAhead = Autopilot.LookAhead, Unattended = true,
+        Style = ApStyle.Auto, HeadingDeg = 0f, HeadingOn = true, AltM = 0f, AltOn = true, VsMs = 10f, SpeedMs = 0f, SpeedOn = true, BankDeg = 45f,
+        Route = "", RouteLoop = false, LoiterM = 600f, MinAglM = 60f,
+        Behaviour = ApBehaviour.Auto, RangeM = 800f, AbortM = 250f, RerunS = 40f, AngleDeg = 90f, AltOffsetM = 100f, Aggression = 0.5f, Evasive = false,
+        TargetSrc = ApTargetSrc.Targeting, TargetText = "", AimOn = true, MuzzleSpeed = 0f, ConeDeg = 3f,
+        AvoidOn = true, AvoidS = 4f,
+        DfFight = ApFightPref.Auto, DfHeadOn = false, DeckM = 0f, CeilingM = 0f, DfBingoFuelPct = 10f, DfBingoDamagePct = 40f, DfRespectGuns = 0.5f, DfSkill = 0.7f,
+        RgLaw = ApGuidanceLaw.ProNav, RgNavConst = 3f, RgTargetAccelGain = 1.5f, RgMaxLatG = 20f, RgGravityComp = true, RgArmM = 50f, RgTimeoutS = 60f,
+        FmRightM = 30f, FmUpM = 0f, FmBackM = 30f, FmCatchUpMs = 30f, DfSaved = "", RgSaved = "",
     };
 
     /// <summary>Every number in its range, every choice known (a hand-edited or older save).</summary>
     public ApPanel Clamped()
     {
         var p = this;
-        if (p.Mode > ApMode.HeightHold) p.Mode = ApMode.Off;
+        if (p.Mode > ApMode.Engage) p.Mode = ApMode.Off;
         if (p.HeightRef > ApHeightRef.Inertial) p.HeightRef = ApHeightRef.Ground;
+        if (p.Style > ApStyle.SixAxis) p.Style = ApStyle.Auto;
+        if (p.Behaviour > ApBehaviour.Formation || p.Behaviour == ApBehaviour.Extend) p.Behaviour = ApBehaviour.Auto;   // (Extend: the arbiter's own, never chosen)
+        if (p.TargetSrc > ApTargetSrc.Api) p.TargetSrc = ApTargetSrc.Targeting;
+        if (p.TargetFilter > ApTargetFilter.Everything) p.TargetFilter = ApTargetFilter.Hostile;
         p.HeightM = float.IsFinite(p.HeightM) ? Math.Clamp(p.HeightM, 0f, HeightMax) : 0f;
         p.HoverSpeed = Fin(p.HoverSpeed, Autopilot.HoverSpeed, HoverSpeedMin, HoverSpeedMax);
         p.GLimit = Fin(p.GLimit, Autopilot.GLimit, GLimitMin, GLimitMax);
         p.AoaMarginDeg = Fin(p.AoaMarginDeg, Autopilot.AoaMarginDeg, AoaMarginMin, AoaMarginMax);
         p.FloorM = Fin(p.FloorM, Autopilot.FloorM, FloorMin, FloorMax);
+        var d = Defaults;
+        p.HeadingDeg = float.IsFinite(p.HeadingDeg) ? ((p.HeadingDeg % 360f) + 360f) % 360f : 0f;
+        p.AltM = Fin(p.AltM, 0f, 0f, AltMax); p.VsMs = Fin(p.VsMs, d.VsMs, VsMin, VsMax); p.SpeedMs = Fin(p.SpeedMs, 0f, 0f, SpeedMax);
+        p.BankDeg = Fin(p.BankDeg, d.BankDeg, BankMin, BankMax);
+        p.LoiterM = Fin(p.LoiterM, d.LoiterM, LoiterMin, LoiterMax); p.MinAglM = Fin(p.MinAglM, d.MinAglM, 0f, MinAglMax);
+        p.RangeM = Fin(p.RangeM, d.RangeM, RangeMin, RangeMax); p.AbortM = Fin(p.AbortM, d.AbortM, AbortMin, AbortMax);
+        p.RerunS = Fin(p.RerunS, d.RerunS, RerunMin, RerunMax); p.AngleDeg = Fin(p.AngleDeg, d.AngleDeg, 0f, 180f);
+        p.AltOffsetM = Fin(p.AltOffsetM, d.AltOffsetM, -AltOffsetMax, AltOffsetMax); p.Aggression = Fin(p.Aggression, d.Aggression, 0f, 1f);
+        p.MuzzleSpeed = Fin(p.MuzzleSpeed, 0f, 0f, MuzzleMax); p.ConeDeg = Fin(p.ConeDeg, d.ConeDeg, ConeMin, ConeMax);
+        p.Route = Text(p.Route); p.TargetText = Text(p.TargetText);
+        p.AvoidS = Fin(p.AvoidS, d.AvoidS, AvoidSMin, AvoidSMax);
+        if (p.DfFight > ApFightPref.Energy) p.DfFight = ApFightPref.Auto;
+        if (p.RgLaw > ApGuidanceLaw.Pursuit) p.RgLaw = ApGuidanceLaw.ProNav;
+        p.DeckM = Fin(p.DeckM, 0f, 0f, DeckMax); p.CeilingM = Fin(p.CeilingM, 0f, 0f, CeilingMax);
+        p.DfBingoFuelPct = Fin(p.DfBingoFuelPct, d.DfBingoFuelPct, 0f, 100f); p.DfBingoDamagePct = Fin(p.DfBingoDamagePct, d.DfBingoDamagePct, 0f, 100f);
+        p.DfRespectGuns = Fin(p.DfRespectGuns, d.DfRespectGuns, 0f, 1f); p.DfSkill = Fin(p.DfSkill, d.DfSkill, 0f, 1f);
+        p.RgNavConst = Fin(p.RgNavConst, d.RgNavConst, NavConstMin, NavConstMax); p.RgTargetAccelGain = Fin(p.RgTargetAccelGain, d.RgTargetAccelGain, 0f, AccelGainMax);
+        p.RgMaxLatG = Fin(p.RgMaxLatG, d.RgMaxLatG, LatGMin, LatGMax); p.RgArmM = Fin(p.RgArmM, d.RgArmM, 0f, ArmMax); p.RgTimeoutS = Fin(p.RgTimeoutS, d.RgTimeoutS, 0f, TimeoutMax);
+        p.FmRightM = Fin(p.FmRightM, d.FmRightM, -SlotMax, SlotMax); p.FmUpM = Fin(p.FmUpM, d.FmUpM, -SlotMax, SlotMax); p.FmBackM = Fin(p.FmBackM, d.FmBackM, -SlotMax, SlotMax);
+        p.FmCatchUpMs = Fin(p.FmCatchUpMs, d.FmCatchUpMs, 0f, CatchUpMax);
+        p.DfSaved = Text(p.DfSaved); p.RgSaved = Text(p.RgSaved);
+        if (!(double.IsFinite(p.HomeX) && double.IsFinite(p.HomeY) && double.IsFinite(p.HomeZ))) { p.HasHome = false; p.HomeX = p.HomeY = p.HomeZ = 0; }
         return p;
     }
     static float Fin(float v, float def, float lo, float hi) => float.IsFinite(v) ? Math.Clamp(v, lo, hi) : def;
+    static string Text(string s) => s == null ? "" : s.Length > TextMax ? s.Substring(0, TextMax) : s;
+
+    /// <summary>The modes the flight pilot flies (ApPilot, an external goal source over the flight director's core).</summary>
+    public static bool IsPilotMode(ApMode m) => m == ApMode.FlightHold || m == ApMode.Navigate || m == ApMode.Engage;
 }
 
 /// <summary>
@@ -61,7 +209,9 @@ public struct ApPanel
 /// </summary>
 public struct ApLimits
 {
-    public bool Enabled, Unattended, Protection, LookAhead, HoldAboveGround;
+    public bool Enabled, Unattended, Protection, LookAhead, HoldAboveGround, Avoid;
+    /// <summary>The collision avoidance's look-ahead (s).</summary>
+    public float AvoidS;
     public float MaxLeanDeg, HoverSpeed, ClimbRate, GLimit, AoaMarginDeg, FloorM;
 
     /// <summary>The static defaults (Autopilot.*) - the offline sim's, and a block with no saved panel yet.</summary>
@@ -70,6 +220,7 @@ public struct ApLimits
         Enabled = Autopilot.Enabled, Unattended = Autopilot.Unattended, Protection = Autopilot.Protection, LookAhead = Autopilot.LookAhead,
         HoldAboveGround = Autopilot.HoldAboveGround, MaxLeanDeg = Autopilot.MaxLeanDeg, HoverSpeed = Autopilot.HoverSpeed,
         ClimbRate = Autopilot.ClimbRate, GLimit = Autopilot.GLimit, AoaMarginDeg = Autopilot.AoaMarginDeg, FloorM = Autopilot.FloorM,
+        Avoid = true, AvoidS = 4f,
     };
 
     /// <summary>A block's panel within the world's caps: the world's switch and its unattended permission, its lean and climb caps;
@@ -85,6 +236,7 @@ public struct ApLimits
             GLimit = Math.Clamp(p.GLimit, ApPanel.GLimitMin, ApPanel.GLimitMax),
             AoaMarginDeg = Math.Clamp(p.AoaMarginDeg, ApPanel.AoaMarginMin, ApPanel.AoaMarginMax),
             FloorM = Math.Clamp(p.FloorM, ApPanel.FloorMin, ApPanel.FloorMax),
+            Avoid = p.AvoidOn, AvoidS = p.AvoidS,
         };
     }
 }

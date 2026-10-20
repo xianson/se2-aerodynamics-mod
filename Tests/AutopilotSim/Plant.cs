@@ -58,7 +58,14 @@ sealed class SimShip
     public float PlanetG = 9.81f, Gm = 2f; public bool Honest = true;
     /// <summary>Height of the centre of mass over the ship's lowest point (m): it stands on the ground there.</summary>
     public float Bottom = 2f;
+    /// <summary>The ship's radius (m; 0: from its thrusters' reach) - ApSense.Radius.</summary>
+    public float Radius;
+    /// <summary>The nose (local), the fixed guns' axis (local; zero none), their muzzle speed (m/s) and range (m).</summary>
+    public Vector3 Nose = -Vector3.UnitZ, GunAxis; public float Muzzle, GunRange;
     public Thr Add(string name, Vector3 pos, Vector3 dir, float cap, bool rev = false) { var t = new Thr(name, pos, dir, cap, rev); T.Add(t); return t; }
+    /// <summary>(2026-10-19) Gimballed thrusters (ThrustVector): the thruster's index, its cone (deg) and rate (deg/s).</summary>
+    public readonly List<(int Thr, float MaxDeg, float RateDeg)> Gimbals = new();
+    public void Gimbal(int thr, float maxDeg, float rateDeg = ThrustVector.DefaultRateDeg) => Gimbals.Add((thr, maxDeg, rateDeg));
 }
 
 /// <summary>A violation the ledger found (every tick: torques and forces only from the actuators, within their limits).</summary>
@@ -93,6 +100,8 @@ sealed class Plant
     // disturbances
     public float NoiseVel, NoisePos, NoiseDeg, LagSeconds; public Random Rng = new(1);
     public float StallEvalHz = 4f;
+    /// <summary>The ship's fuel and integrity as the instruments show them (ApSense.HasShipStatus; a scenario sets them).</summary>
+    public bool ShipStatus; public float Fuel = float.NaN, Integrity = 1f;
     /// <summary>ThrustTorque's aware law plans its braking with the rotors' cyclic reach too while the autopilot flies (CyclicPlanShare of it).</summary>
     public bool PlanWithCyclic = true;
     public readonly Ledger Book = new();
@@ -110,6 +119,11 @@ sealed class Plant
     public float TailSideForce;   // (the anti-torque tail's X force this tick, N: the translating tendency's)
 
     int _n; Vector3[] _arms, _dirs, _proj; float[] _caps, _f, _f0, _prev, _y, _side, _capDir = new float[6]; bool[] _rev; float _armSq; bool _warm;
+    ThrustVector.Nozzle[] _gim = Array.Empty<ThrustVector.Nozzle>(); Vector3[] _gimPrev = Array.Empty<Vector3>();
+    /// <summary>The gimbals now (their deflections) and the torque they gave last tick (local N m).</summary>
+    public ThrustVector.Nozzle[] GimbalState => _gim; public Vector3 LastTvcT;
+    /// <summary>The gimbals' reach at their thrusters' last forces (the attitude law's planning, the instruments' AttAccel).</summary>
+    Vector3 GimbalReach() { if (_gim.Length == 0) return Vector3.Zero; for (int j = 0; j < _gim.Length; j++) _gim[j].Thrust = MathF.Max(0f, _f[S.Gimbals[j].Thr]); return ThrustVector.Reach(_gim, _gim.Length); }
     ReversibleThrust.State[] _st;
     Vector3 _lastLawW, _lastDemand, _lagTau;
     float _evalClock;
@@ -122,6 +136,10 @@ sealed class Plant
     public Plant(SimShip s) { S = s; Rebuild(); Fd.Terrain = _terrain; }
     SimTerrain _terrain = SimTerrain.Flat();
     /// <summary>The ground (the plant stands on it; the autopilot sees it through its ITerrainQuery).</summary>
+    /// <summary>The limits flown with (a panel's: ApLimits.Of); null the static defaults.</summary>
+    public ApLimits? LimOverride;
+    /// <summary>The ground ray's reach (ApSense.Agl: -1 past it, as the game's - the voxel colliders are built near the ship only).</summary>
+    public float AglReach = float.PositiveInfinity;
     public SimTerrain Terrain { get => _terrain; set { _terrain = value ?? SimTerrain.Flat(); Fd.Terrain = _terrain; } }
     /// <summary>The ground's height under the ship now.</summary>
     public double GroundY => _terrain.H(P.X, P.Z);
@@ -138,6 +156,8 @@ sealed class Plant
         _armSq = 0f;
         for (int i = 0; i < _n; i++) { var t = S.T[i]; _dirs[i] = t.Dir; _arms[i] = Vector3.Cross(t.Pos, t.Dir); _rev[i] = t.Rev; _armSq += t.Pos.LengthSquared(); }
         _warm = false;
+        _gim = new ThrustVector.Nozzle[S.Gimbals.Count]; _gimPrev = new Vector3[S.Gimbals.Count];
+        for (int j = 0; j < S.Gimbals.Count; j++) { var gb = S.Gimbals[j]; var t = S.T[gb.Thr]; _gim[j] = new ThrustVector.Nozzle { Pos = t.Pos, Dir = t.Dir, MaxRad = gb.MaxDeg * ApMath.Deg, RateRad = gb.RateDeg * ApMath.Deg }; }
     }
 
     public float TiltDeg => MathF.Acos(Math.Clamp(Vector3.Transform(Vector3.UnitY, Q).Y, -1f, 1f)) / ApMath.Deg;
@@ -151,12 +171,13 @@ sealed class Plant
     // ── the instruments: what the autopilot may know (with the scenario's sensor noise) ──
     ApSense Sense(float dt)
     {
-        var s = new ApSense { Lim = ApLimits.Defaults, Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
+        var s = new ApSense { Lim = LimOverride ?? ApLimits.Defaults, Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
         s.Orient = Q; s.AngVel = W; s.Pos = P; s.Vel = V;
+        s.Radius = S.Radius > 0f ? S.Radius : S.T.Count > 0 ? S.T.Max(t => t.Pos.Length()) + 1f : 2f * S.Bottom;   // (the collision avoidance's size)
         if (NoiseVel > 0f) s.Vel += Gauss3(NoiseVel);
         if (NoisePos > 0f) s.Pos += (Vector3D)Gauss3(NoisePos);
         if (NoiseDeg > 0f) { var e = Gauss3(NoiseDeg * ApMath.Deg); s.Orient = Quaternion.Normalize(Q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(e + new Vector3(1e-6f)), e.Length())); }
-        s.Agl = Agl;
+        s.Agl = Agl <= AglReach ? Agl : -1f;   // (the game's ground ray reaches only so far: GroundHeight)
         // the side maxima (MaxThrustData.Regular: every thruster's live maximum on the side the game books it)
         Vector3 pos = Vector3.Zero, neg = Vector3.Zero;
         for (int i = 0; i < _n; i++)
@@ -168,7 +189,7 @@ sealed class Plant
         SideAuthority.Of(_arms, _dirs, _caps, _rev, _n, out s.SidePos, out s.SideNeg);
         // the attitude law's authority about the lean axes (X, Z for a +Y lift axis): gyros + thrusters + the cyclic, over I
         // (AttAccelPlan: without the cyclic - what the law plans its braking with, the game's ApSenseNow the same)
-        Vector3 reach = S.Gyro + ThrusterReach() + new Vector3(LastCycReach, 0f, LastCycReach) + 0.75f * S.Air.SurfaceReach(0.5f * Rho * AirLocal().LengthSquared());
+        Vector3 reach = S.Gyro + ThrusterReach() + new Vector3(LastCycReach, 0f, LastCycReach) + 0.75f * S.Air.SurfaceReach(0.5f * Rho * AirLocal().LengthSquared()) + GimbalReach();
         s.AttAccel = MathF.Min(reach.X / S.I.X, reach.Z / S.I.Z);
         Vector3 plan = reach - new Vector3(LastCycReach, 0f, LastCycReach);
         s.AttAccelPlan = MathF.Min(plan.X / S.I.X, plan.Z / S.I.Z);
@@ -177,6 +198,8 @@ sealed class Plant
         s.StallFresh = _stallFresh; s.StallState = _stallState; s.StallMarginDeg = _stallMargin; s.StallLiftInUse = _stallInUse; s.StallG = _stallG; s.LiftDir = _liftDir; s.StallFlow = _stallFlow; s.Perf = _stallFresh ? _perf : null;
         s.LoacFresh = _loacFresh; s.LoacProbe = _loacProbe; s.LoacHere = _loacHere; s.LoacProbeAt = _loacAt;
         s.SpeedLimit = SpeedLimit;
+        s.Nose = S.Nose; s.GunAxis = S.GunAxis; s.MuzzleSpeed = S.Muzzle; s.GunRange = S.GunRange;
+        s.SpeedOfSound = 340f; s.HasShipStatus = ShipStatus; s.FuelShare = Fuel; s.IntegrityShare = Integrity;
         return s;
     }
     float _lastErr, _lastShare;
@@ -321,7 +344,7 @@ sealed class Plant
         {
             Mode = pilotFly ? "pilot target (aero-aware)" : "autopilot (aero-aware)";
             ThrustAllocator.RateCommand(Q, flyTarget, W, 1.2f, 0.8f, 0.3f, 0.002f, 0.002f, out Vector3 err);
-            Vector3 reach = S.Gyro + ThrusterReach() + 0.75f * sReach;
+            Vector3 reach = S.Gyro + ThrusterReach() + 0.75f * sReach + GimbalReach();
             if (PlanWithCyclic && Cmd.Flying && S.Rotor >= 0) reach += ApTuning.CyclicPlanShare * cycReach * (Vector3.One - Vector3.Abs(axis));   // (ThrustTorque.CyclicPlanShare: the autopilot's law plans with the cyclic too)
             Vector3 d = (aeroT + surfT) * inv;
             Vector3 acc = ThrustAllocator.AttitudeAccel(err, W - d * dt, reach * inv, aeroT * inv, 0.002f, 0.002f);
@@ -363,6 +386,15 @@ sealed class Plant
         Vector3 given = S.Rotor >= 0 ? RotorTrim.Give(cycAsk, thrTau, plan, axis, cycReach, trim) : Vector3.Zero;
         if (aware) tauNeed += plan - given;
         Vector3 gyroT = aware ? Vector3.Clamp(tauNeed - thrTau, -S.Gyro, S.Gyro) : Vector3.Clamp(-W * S.I / 0.3f, -S.Gyro, S.Gyro);
+        // (THRUST VECTORING: the gimballed nozzles give what the thrusters and gyros left of the need - ThrustVector, the cone and the
+        //  rate theirs; unflown: back to straight at their rate)
+        Vector3 tvcF = Vector3.Zero, tvcT = Vector3.Zero;
+        if (_gim.Length > 0)
+        {
+            for (int j = 0; j < _gim.Length; j++) { _gimPrev[j] = _gim[j].Deflect; _gim[j].Thrust = MathF.Max(0f, _f[S.Gimbals[j].Thr]); }
+            ThrustVector.Solve(aware ? tauNeed - thrTau - gyroT : Vector3.Zero, _gim, _gim.Length, dt, out tvcF, out tvcT);
+            LastTvcT = tvcT;
+        }
         Vector3 extra = prio > 0f ? total - gameF : Vector3.Zero;
         Vector3 tilt = S.Rotor >= 0 ? RotorTrim.TiltForce(given, axis, _f0[S.Rotor], S.HubH, cycReach, sinT) : Vector3.Zero;
         _lastLawW = extra + tilt;
@@ -378,6 +410,7 @@ sealed class Plant
         }
         if (MathF.Abs(gyroT.X) > S.Gyro.X * 1.0001f + 1e-3f || MathF.Abs(gyroT.Y) > S.Gyro.Y * 1.0001f + 1e-3f || MathF.Abs(gyroT.Z) > S.Gyro.Z * 1.0001f + 1e-3f) Book.Fail("gyros past their reach", Time);
         if (S.Gyro.Length() > 0f) Book.MaxGyroShare = Math.Max(Book.MaxGyroShare, MathF.Max(MathF.Abs(gyroT.X) / MathF.Max(S.Gyro.X, 1e-6f), MathF.Max(MathF.Abs(gyroT.Y) / MathF.Max(S.Gyro.Y, 1e-6f), MathF.Abs(gyroT.Z) / MathF.Max(S.Gyro.Z, 1e-6f))));
+        if (_gim.Length > 0) for (int j = 0; j < _gim.Length; j++) { float dl = (_gim[j].Deflect - _gimPrev[j]).Length(); if (_gim[j].Deflect.Length() > _gim[j].MaxRad * 1.0001f + 1e-5f || dl > _gim[j].RateRad / 60f * 1.0001f + 1e-5f) Book.Fail($"gimbal {j} past its cone or rate ({_gim[j].Deflect.Length() / ApMath.Deg:F2} deg, {dl / ApMath.Deg * 60f:F1} deg/s)", Time); }
         if (S.Rotor >= 0)
         {
             if (RotorTrim.InPlane(given, axis).Length() > cycReach * 1.0001f + 1f) Book.Fail("cyclic past its reach", Time);
@@ -387,11 +420,11 @@ sealed class Plant
         if (extra.LengthSquared() > 1f && prio <= 0f) Book.Fail("a thrust change with no attitude priority", Time);
         if (surfT.X > sReach.X + 1f || surfT.X < -sReach.X - 1f || surfT.Y > sReach.Y + 1f || surfT.Y < -sReach.Y - 1f || surfT.Z > sReach.Z + 1f || surfT.Z < -sReach.Z - 1f) Book.Fail("control surfaces past their reach", Time);
         // (an actuator lag: the control torque reaches the ship through a first-order lag - a rotor's spool, a slow gyro)
-        Vector3 ctrl = thrTau - shareTau + given + gyroT;
+        Vector3 ctrl = thrTau - shareTau + given + gyroT + tvcT;
         if (LagSeconds > 0f) { _lagTau += (ctrl - _lagTau) * MathF.Min(1f, dt / LagSeconds); ctrl = _lagTau; }
         Vector3 torque = shareTau + reaction + ctrl;
         // 7. the step: the game's thrust, the attitude law's force changes (a real thrust change, the tilt), the gravity it gets
-        Vector3 a = (applied + extra + tilt) / m + gravApplied;
+        Vector3 a = (applied + extra + tilt + tvcF) / m + gravApplied;
         V += Vector3.Transform(a, Q) * dt;
         W += (torque - Vector3.Cross(W, S.I * W)) * inv * dt;
         Q = Quaternion.Normalize(Q + Q * new Quaternion(W * (0.5f * dt), 0f));
@@ -423,5 +456,8 @@ sealed class Plant
     {
         if (o.ModeChanged) { Panel.Mode = o.Mode; LastPanelReason = o.Reason; PanelWrites++; }
         if (o.HeightChanged) { Panel.HeightM = o.HeightM; PanelWrites++; }
+        if (o.HoldsChanged) { Panel.HeadingDeg = o.HeadingDeg; Panel.AltM = o.AltM; Panel.SpeedMs = o.SpeedMs; PanelWrites++; }
+        if (o.HomeChanged) { Panel.HasHome = true; Panel.HomeX = o.Home.X; Panel.HomeY = o.Home.Y; Panel.HomeZ = o.Home.Z; PanelWrites++; }
+        if (o.SlotSavedChanged) { if (o.DfSaved != null) Panel.DfSaved = o.DfSaved; if (o.RgSaved != null) Panel.RgSaved = o.RgSaved; PanelWrites++; }
     }
 }

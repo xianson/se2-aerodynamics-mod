@@ -24,6 +24,8 @@ public partial class AeroGearBlockDetailModel : BlockDetailModel
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroGearBlockDetailModel>(
         "Retractable gear: extend or retract it; Airshock softens the touchdown.", nameof(CanExtend), nameof(CanRetract), nameof(Airshock));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+    /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroGearComponent _gear;

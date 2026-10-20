@@ -14,6 +14,15 @@ public enum ApReason : byte
     NeedsDampeners, NoSource, GoalDone,
     /// <summary>The controlling Autopilot block was switched off, lost its power, was damaged or removed (15).</summary>
     BlockOff,
+    /// <summary>(16..) The flight pilot (2026-10-19): an airplane needs airspeed (and air) to fly on its wings; a route needs a
+    /// waypoint; six-axis flight needs thrust across the main axis; the style asked does not fit the ship.</summary>
+    TooSlow, NoAir, NoWaypoints, NoTranslation, WrongStyle,
+    /// <summary>(21) A mode chosen on the block and the ship's autopilot step never took it up (ApEngageWatch: a wreck with no
+    /// thruster or gyro left - the grid's attitude step does not run for it).</summary>
+    NoResponse,
+    /// <summary>(22..) The combat slots (2026-10-19): a behaviour whose logic is not written yet (ApDogfight / ApRocketGuidance not
+    /// Implemented, or its Step declined); bingo (fuel or damage); its timeout; the target lost - let-go reasons a slot returns.</summary>
+    NotImplemented, Bingo, TimedOut, LostTarget,
 }
 
 /// <summary>What the envelope protection changed this tick (several at once).</summary>
@@ -39,6 +48,8 @@ public enum ApProt : ushort
     LowEnergy = 128,
     /// <summary>Terrain ahead within the time to turn away (the look ahead along the path): climbing / pulling up.</summary>
     Terrain = 256,
+    /// <summary>Another grid, an asteroid or the target within the look-ahead's closest approach: a sidestep or a pull-up (ApAvoid).</summary>
+    Avoid = 512,
 }
 
 /// <summary>
@@ -58,6 +69,8 @@ public struct ApSense
     /// <summary>The gravity the body falls with when nothing holds it (world m/s2: the planet's x the engine's multiplier) - an
     /// external acceleration goal is flown against it; and how far the ship reaches below its centre of mass (m: its belly).</summary>
     public Vector3 GravityTrue; public float Belly;
+    /// <summary>The ship's own radius (m: half its bounds' diagonal) - the collision avoidance's size (0: not known).</summary>
+    public float Radius;
     /// <summary>Height over the ground (m; negative: no ground found).</summary>
     public float Agl;
     /// <summary>The thrusters' maxima per local side (N, as magnitudes: the game's MaxThrustData.Regular).</summary>
@@ -94,6 +107,16 @@ public struct ApSense
     public bool LoacFresh; public float LoacProbe, LoacHere; public Quaternion LoacProbeAt;
     /// <summary>The speed limit (m/s; 0 none) - the world's, or the ship's own design limit.</summary>
     public float SpeedLimit;
+    /// <summary>The ship's nose (local unit; zero: not known - the cockpit's forward, -Z) and its fixed forward guns (2026-10-19): their
+    /// common firing axis (local unit; zero: none found), their projectile's muzzle speed (m/s; 0 unknown) and range (m; 0 unknown).
+    /// SE2 4.0's projectiles fly straight (no drop) at the muzzle speed plus the shooter's velocity.</summary>
+    public Vector3 Nose, GunAxis; public float MuzzleSpeed, GunRange;
+    /// <summary>(2026-10-19) The speed of sound where the ship is (m/s; 0 not known) - Mach for the combat slots.</summary>
+    public float SpeedOfSound;
+    /// <summary>(2026-10-19) The ship's state (HasShipStatus: read - in game every 2 s in Engage): its fuel (0..1 of the tanks'
+    /// capacity; NaN: no tanks) and its integrity (0..1: the blocks' integrity now over what the ship had when the mode was
+    /// engaged - destroyed blocks count as lost).</summary>
+    public bool HasShipStatus; public float FuelShare, IntegrityShare;
 }
 
 /// <summary>
@@ -193,6 +216,12 @@ public enum ApExternalKind : byte
     Accel,
     /// <summary>An attitude to fly (world), with a throttle.</summary>
     Attitude,
+    /// <summary>(2026-10-19) A LIFT VECTOR: the lift (normal acceleration) pointed along Lift (world unit, made across the flight
+    /// path) at Load g of the real weight (NaN: the most the protection gives now), with a throttle (NaN: the speed held - the drag
+    /// met). Flown on the wings (the roll about the path, the angle of attack for that lift: LiftFlight), the direction kept when
+    /// the load is clipped (stall, g limit, the predicted loss of control - the protection as for every goal); no lift to fly with
+    /// (slow, no air - a rocket): the main thrust pointed to give that sideways push. ApLift: from / to a path acceleration.</summary>
+    Lift,
 }
 
 /// <summary>An external goal for one tick (navigation legs, formation keeping, a landing pad - later items; their protection, the
@@ -205,6 +234,17 @@ public struct ApExternal
     public Quaternion Attitude;
     /// <summary>The throttle along the main thrust (0..1; NaN: the autopilot's own for Accel, the pilot's for Attitude).</summary>
     public float Throttle;
+    /// <summary>(2026-10-19) Track: the heading the nose is turned to (world; zero: the one held), the most speed the gap is closed at
+    /// (m/s; 0: the hover speed), the place's own acceleration (Accel, fed forward). A Track without the hover goal is flown
+    /// SIX-AXIS: translated on the movement keys, no lean, the attitude level on the heading (or aimed).</summary>
+    public Vector3 Heading; public float MaxSpeed;
+    /// <summary>AIM (any kind): this local axis turned toward this world direction - the share Blend (0 none .. 1 all) of the way
+    /// from the attitude the goal flies (the lift's, the hover's lean, six-axis level) to the aimed one; the protection still clips.</summary>
+    public Vector3 AimAxis, AimDir; public float Blend;
+    /// <summary>(2026-10-19) Lift: the lift's direction (world unit; its part across the path is used) and the load (g; NaN: the most).</summary>
+    public Vector3 Lift; public float Load;
+    /// <summary>Why the source let go when its Step returns false (None: GoalDone) - a behaviour's own reason (ApReason).</summary>
+    public ApReason LetGo;
 }
 
 /// <summary>An external goal source, asked every tick while ApGoal.External is held. False: done (the goal lets go: GoalDone).</summary>
