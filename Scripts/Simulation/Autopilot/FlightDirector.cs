@@ -37,6 +37,14 @@ public sealed class FlightDirector
     /// <summary>The terrain it sees (null: only ApSense.Agl, the ground ray straight down) and its look at it each tick.</summary>
     public ITerrainQuery Terrain;
     public readonly TerrainWatch Ground = new TerrainWatch();
+    /// <summary>The obstacles around the ship (null: none known) and the collision avoidance's look at them each tick (ApAvoid).</summary>
+    public ApObstacles Obstacles;
+    public readonly ApAvoid Avoid = new ApAvoid();
+    /// <summary>The clearance the avoidance keeps from the TARGET at most (m): half the behaviour's abort distance (the goal source
+    /// sets it; +inf: the plain clearance).</summary>
+    public float TargetClearMax = float.PositiveInfinity;
+    /// <summary>The goal source's target as an obstacle this tick (set by the source each tick it has one; cleared after the step).</summary>
+    public ApObstacle TargetObstacle; public bool HasTargetObstacle;
     /// <summary>The external goal source (ApGoal.External): a mission, a formation slot, a landing pad, a navigation leg.</summary>
     public IApGoalSource Source { get; private set; }
     /// <summary>The height hold's reference (set at engage from Autopilot.HoldAboveGround).</summary>
@@ -300,6 +308,41 @@ public sealed class FlightDirector
         float tti = s.Lim.LookAhead ? Ground.Tti : float.PositiveInfinity;   // (the look ahead switched off: the floor alone)
         bool aheadHover = s.Lim.Protection && (hover || height) && tti < TtiHover;
 
+        // ── collision avoidance: the closest approach to each obstacle along the velocity now; a sidestep / pull-up through the
+        //    mode's own command (an acceleration, a track's place, the hover's speed) - the protection below as for any goal ──
+        bool sixGoal = ext && _ext.Kind == ApExternalKind.Track && !hover, flyGoal = ext && _ext.Kind == ApExternalKind.Accel;
+        bool anyObs = (Obstacles != null && Obstacles.Count > 0) || HasTargetObstacle;
+        if (s.Lim.Avoid && anyObs && (hover || height || sixGoal || flyGoal))
+        {
+            float aMax = flyGoal ? MathF.Max(1f, s.Lim.GLimit - 1f) * MathF.Max(g, 1f) * 0.6f
+                : sixGoal ? (SixAccel > 0f ? SixAccel : 2f)
+                : MathF.Max(g, 1f) * MathF.Tan(MathF.Min(s.Lim.MaxLeanDeg, 60f) * ApMath.Deg) * 0.8f;
+            Avoid.React = flyGoal ? 1.2f : 0.3f;
+            Avoid.Step(Obstacles, in TargetObstacle, HasTargetObstacle, s.Pos, s.Vel, s.Radius, s.Lim.AvoidS, aMax, TargetClearMax, upW, agl, dt);
+        }
+        else if (Avoid.Active) Avoid.Reset();
+        HasTargetObstacle = false;
+        bool avoid = Avoid.Active && Avoid.Accel > 0f;
+        if (avoid)
+        {
+            prot |= ApProt.Avoid;
+            float vOut = MathF.Min(Avoid.Accel * MathF.Max(Avoid.Tca, 1f), 40f);
+            if (ext && _ext.Kind == ApExternalKind.Track)
+            {
+                // (the place moved out by the shortfall and a margin, its velocity by the push over the time to the approach)
+                _ext.Position += (Vector3D)(Avoid.Dir * (Avoid.Short + 2f * ApAvoid.Margin));
+                _ext.Velocity += Avoid.Dir * vOut;
+            }
+            else if (flyGoal)
+            {
+                // (the goal's own pull against it taken out - a height hold would sink it back into the obstacle - the push added,
+                //  and no aim blended in while it lasts: the nose follows the path out, not the target)
+                float opp = Vector3.Dot(_ext.Accel, Avoid.Dir);
+                if (opp < 0f) _ext.Accel -= Avoid.Dir * opp;
+                _ext.Accel += Avoid.Dir * Avoid.Accel; _ext.Blend = 0f;
+            }
+        }
+
         Vector3 move = Vector3.Zero; bool setMove = false, sixAxis = false;
         if (hover || height)
         {
@@ -341,6 +384,18 @@ public sealed class FlightDirector
                     {
                         Vector3 e = ApMath.Flat((Vector3)(_hold - s.Pos), upW);
                         vCmd = ApMath.ClampLen(e * kp, s.Lim.HoverSpeed);
+                    }
+                }
+                // (an obstacle: no closer toward it, the sidestep's speed added - a track's place was moved instead)
+                if (avoid && !track)
+                {
+                    Vector3 dh = ApMath.Flat(Avoid.Dir, upW);
+                    if (dh.LengthSquared() > 1e-4f)
+                    {
+                        dh = Vector3.Normalize(dh);
+                        float into = -Vector3.Dot(vCmd, dh);
+                        if (into > 0f) vCmd += dh * into;
+                        vCmd += dh * MathF.Min(Avoid.Accel * MathF.Max(Avoid.Tca, 1f), s.Lim.HoverSpeed);
                     }
                 }
                 // (terrain ahead: no closer toward it - the speed toward the hit taken out; the climb below)
@@ -436,6 +491,8 @@ public sealed class FlightDirector
                     _cantHold = eh > CantHoldM && sink > 0.2f && lowEnergy ? _cantHold + dt : 0f;
                 }
             }
+            if (avoid && !track && Vector3.Dot(Avoid.Dir, upW) > 0.2f)
+            { climb = MathF.Max(climb, Vector3.Dot(Avoid.Dir, upW) * MathF.Min(Avoid.Accel * MathF.Max(Avoid.Tca, 1f), 2f * s.Lim.ClimbRate)); vActive = true; }
             if (floor || aheadHover)
             {
                 climb = MathF.Max(climb, MathF.Max(1f, s.Lim.ClimbRate) * (aheadHover ? 1.5f : 1f)); vActive = true;
@@ -798,6 +855,7 @@ public static class ApText
     public static string Prot(ApProt p)
     {
         if ((p & ApProt.Terrain) != 0) return "TERRAIN";
+        if ((p & ApProt.Avoid) != 0) return "AVOID";
         if ((p & ApProt.Floor) != 0) return "FLOOR";
         if ((p & ApProt.LowEnergy) != 0) return "FULL THRUST";
         if ((p & ApProt.Loac) != 0) return "CONTROL LIMIT";

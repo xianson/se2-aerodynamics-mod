@@ -50,11 +50,13 @@ internal sealed class ApGameTargets : IApTargetSource
     public const double ScanRange = 4000.0;
     /// <summary>A grid of fewer blocks is debris to the scan (every grid has an owner in 4.0 - a loose block too).</summary>
     public const int ScanMinBlocks = 5;
+    /// <summary>The target's top entity now (null none) - the obstacle scan leaves it out (the goal source adds it with its own clearance).</summary>
+    public volatile Entity TargetTop;
     public ApGameTargets(AeroGridComponent aero) { _aero = aero; }
 
     public bool Get(in ApSense s, out ApTargetFix f)
     {
-        f = default;
+        f = default; TargetTop = null;
         var grid = _aero.Entity;
         if (grid == null) return false;
         Entity e = null;
@@ -148,6 +150,7 @@ internal sealed class ApGameTargets : IApTargetSource
         f.Radius = bb.HasValue ? (float)(bb.Value.Max - bb.Value.Min).Length() * 0.5f : 5f;
         GridPhysics.TryGetVelocity(top.Data, out f.Vel, out _);
         if (!ReferenceEquals(e, _found)) { _found = e; _name = NameOf(top); }
+        TargetTop = top;
         f.Name = _name; f.Id = e.GetHashCode(); f.Valid = true;
         return true;
     }

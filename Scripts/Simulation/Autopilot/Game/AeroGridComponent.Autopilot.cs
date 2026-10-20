@@ -68,7 +68,7 @@ public partial class AeroGridComponent
     // the Autopilot block that flies this grid (ApArbiter), its link to the flight director, the panel's write-back
     AeroAutopilotComponent _apCtl; ApBlockLink _apLink; ApBlockLink.Out _apOut; int _apReportIn;
     // the flight pilot's game senses: its target source, the fixed guns, the route's text resolved (every few seconds), the restarts seen
-    internal ApGameTargets ApTargets; ApGunScan _apGuns; string _apRouteText; long _apRouteNext; int _apRestarts;
+    internal ApGameTargets ApTargets; ApGunScan _apGuns; ApGameObstacles _apObs; string _apRouteText; long _apRouteNext; int _apRestarts;
     /// <summary>The flight pilot of the block that flies (null: none) - the API's reads.</summary>
     internal ApPilot ApPilotNow => _apLink?.Pilot;
     /// <summary>The Autopilot block that flies this grid (null: none chosen yet) - the API's reads.</summary>
@@ -111,6 +111,9 @@ public partial class AeroGridComponent
             _apCtl = ctl; _apLink = ctl != null ? new ApBlockLink() : null;
         }
         if (fd == null) return;
+        // (the obstacles for the collision avoidance: a flying autopilot's, every 10th tick - ApGameObstacles)
+        if (s.Lim.Avoid && fd.Engaged) { _apObs ??= new ApGameObstacles(); _apObs.Update(this, in s, ApTargets?.TargetTop); fd.Obstacles = _apObs.Set; }
+        else fd.Obstacles = null;
         if (ctl != null)
         {
             var panel = ctl.Panel;
@@ -288,6 +291,7 @@ public partial class AeroGridComponent
         s.Gravity = HonestHold.Enabled && AeroSwitch.Enabled ? g * GridPhysics.GravityScale : g;
         s.GravityTrue = g * GridPhysics.GravityScale;   // (what the body falls with: the engine's multiplier always)
         s.Agl = GroundHeight;
+        if (data.TryGet<Keen.VRage.Core.Game.Data.BoundingBoxData>(out var bbR)) s.Radius = bbR.BoundingBox.HalfExtents.Length();   // (the collision avoidance's size)
         if (data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var mt)) { s.ThrustPos = mt.Regular.Positive; s.ThrustNeg = mt.Regular.Negative; }
         s.Dampeners = data.Has<DampeningData>();
         // (the translation authority per side: the thrusters' arms and maxima as the attitude law last had them)
@@ -374,7 +378,7 @@ public partial class AeroGridComponent
     internal void ForgetAutopilot()
     {
         if (_apWasEngaged) { Interlocked.Decrement(ref ApEngaged); _apWasEngaged = false; }
-        ApFlying = false; _apTerrain?.Release(); _apTerrain = null; Fd = null;
+        ApFlying = false; _apTerrain?.Release(); _apTerrain = null; _apObs?.Release(); _apObs = null; Fd = null;
         _apCtl = null; _apLink = null;   // (back in a scene: its block's panel engages its mode again, as at a load)
     }
 }

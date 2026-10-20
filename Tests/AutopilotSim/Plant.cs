@@ -58,6 +58,8 @@ sealed class SimShip
     public float PlanetG = 9.81f, Gm = 2f; public bool Honest = true;
     /// <summary>Height of the centre of mass over the ship's lowest point (m): it stands on the ground there.</summary>
     public float Bottom = 2f;
+    /// <summary>The ship's radius (m; 0: from its thrusters' reach) - ApSense.Radius.</summary>
+    public float Radius;
     /// <summary>The nose (local), the fixed guns' axis (local; zero none), their muzzle speed (m/s) and range (m).</summary>
     public Vector3 Nose = -Vector3.UnitZ, GunAxis; public float Muzzle, GunRange;
     public Thr Add(string name, Vector3 pos, Vector3 dir, float cap, bool rev = false) { var t = new Thr(name, pos, dir, cap, rev); T.Add(t); return t; }
@@ -116,6 +118,8 @@ sealed class Plant
     public Plant(SimShip s) { S = s; Rebuild(); Fd.Terrain = _terrain; }
     SimTerrain _terrain = SimTerrain.Flat();
     /// <summary>The ground (the plant stands on it; the autopilot sees it through its ITerrainQuery).</summary>
+    /// <summary>The limits flown with (a panel's: ApLimits.Of); null the static defaults.</summary>
+    public ApLimits? LimOverride;
     public SimTerrain Terrain { get => _terrain; set { _terrain = value ?? SimTerrain.Flat(); Fd.Terrain = _terrain; } }
     /// <summary>The ground's height under the ship now.</summary>
     public double GroundY => _terrain.H(P.X, P.Z);
@@ -145,8 +149,9 @@ sealed class Plant
     // ── the instruments: what the autopilot may know (with the scenario's sensor noise) ──
     ApSense Sense(float dt)
     {
-        var s = new ApSense { Lim = ApLimits.Defaults, Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
+        var s = new ApSense { Lim = LimOverride ?? ApLimits.Defaults, Dt = dt, Mass = S.Mass, Gravity = HoldGravity, GravityTrue = Gravity * S.Gm, Belly = S.Bottom, Dampeners = Damp, Piloted = Piloted, PilotMove = Piloted ? PilotKeys : Vector3.Zero, PilotSteerDeg = PilotSteerDeg };
         s.Orient = Q; s.AngVel = W; s.Pos = P; s.Vel = V;
+        s.Radius = S.Radius > 0f ? S.Radius : S.T.Count > 0 ? S.T.Max(t => t.Pos.Length()) + 1f : 2f * S.Bottom;   // (the collision avoidance's size)
         if (NoiseVel > 0f) s.Vel += Gauss3(NoiseVel);
         if (NoisePos > 0f) s.Pos += (Vector3D)Gauss3(NoisePos);
         if (NoiseDeg > 0f) { var e = Gauss3(NoiseDeg * ApMath.Deg); s.Orient = Quaternion.Normalize(Q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(e + new Vector3(1e-6f)), e.Length())); }

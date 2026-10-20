@@ -98,6 +98,8 @@ public struct ApPanel
     /// <summary>The ENEMY toggle (2026-10-19): this block made its grid a hostile NPC's (the game's own NPC owner - its turrets and
     /// Engage fight players); the grid's owner before (an identity's number; 0 none known), given back when it is switched off.</summary>
     public bool Enemy; public long EnemyPrevOwner;
+    /// <summary>Collision avoidance (ApAvoid) on every mode, and its look-ahead (s: the closest approach along the velocity now).</summary>
+    public bool AvoidOn; public float AvoidS;
 
     public const float HeightMax = 20000f, HoverSpeedMin = 1f, HoverSpeedMax = 50f, GLimitMin = 1.5f, GLimitMax = 15f,
         AoaMarginMin = 0f, AoaMarginMax = 15f, FloorMin = 0f, FloorMax = 500f;
@@ -105,6 +107,7 @@ public struct ApPanel
         MinAglMax = 3000f, RangeMin = 5f, RangeMax = 50000f, AbortMin = 5f, AbortMax = 20000f, RerunMin = 5f, RerunMax = 600f, AltOffsetMax = 10000f,
         MuzzleMax = 20000f, ConeMin = 0.1f, ConeMax = 45f;
     public const int TextMax = 2000;
+    public const float AvoidSMin = 1f, AvoidSMax = 15f;
 
     /// <summary>A new block's panel: off, the static defaults (Autopilot.*).</summary>
     public static ApPanel Defaults => new ApPanel
@@ -116,6 +119,7 @@ public struct ApPanel
         Route = "", RouteLoop = false, LoiterM = 600f, MinAglM = 60f,
         Behaviour = ApBehaviour.Auto, RangeM = 800f, AbortM = 250f, RerunS = 40f, AngleDeg = 90f, AltOffsetM = 100f, Aggression = 0.5f, Evasive = false,
         TargetSrc = ApTargetSrc.Targeting, TargetText = "", AimOn = true, MuzzleSpeed = 0f, ConeDeg = 3f,
+        AvoidOn = true, AvoidS = 4f,
     };
 
     /// <summary>Every number in its range, every choice known (a hand-edited or older save).</summary>
@@ -143,6 +147,7 @@ public struct ApPanel
         p.AltOffsetM = Fin(p.AltOffsetM, d.AltOffsetM, -AltOffsetMax, AltOffsetMax); p.Aggression = Fin(p.Aggression, d.Aggression, 0f, 1f);
         p.MuzzleSpeed = Fin(p.MuzzleSpeed, 0f, 0f, MuzzleMax); p.ConeDeg = Fin(p.ConeDeg, d.ConeDeg, ConeMin, ConeMax);
         p.Route = Text(p.Route); p.TargetText = Text(p.TargetText);
+        p.AvoidS = Fin(p.AvoidS, d.AvoidS, AvoidSMin, AvoidSMax);
         if (!(double.IsFinite(p.HomeX) && double.IsFinite(p.HomeY) && double.IsFinite(p.HomeZ))) { p.HasHome = false; p.HomeX = p.HomeY = p.HomeZ = 0; }
         return p;
     }
@@ -159,7 +164,9 @@ public struct ApPanel
 /// </summary>
 public struct ApLimits
 {
-    public bool Enabled, Unattended, Protection, LookAhead, HoldAboveGround;
+    public bool Enabled, Unattended, Protection, LookAhead, HoldAboveGround, Avoid;
+    /// <summary>The collision avoidance's look-ahead (s).</summary>
+    public float AvoidS;
     public float MaxLeanDeg, HoverSpeed, ClimbRate, GLimit, AoaMarginDeg, FloorM;
 
     /// <summary>The static defaults (Autopilot.*) - the offline sim's, and a block with no saved panel yet.</summary>
@@ -168,6 +175,7 @@ public struct ApLimits
         Enabled = Autopilot.Enabled, Unattended = Autopilot.Unattended, Protection = Autopilot.Protection, LookAhead = Autopilot.LookAhead,
         HoldAboveGround = Autopilot.HoldAboveGround, MaxLeanDeg = Autopilot.MaxLeanDeg, HoverSpeed = Autopilot.HoverSpeed,
         ClimbRate = Autopilot.ClimbRate, GLimit = Autopilot.GLimit, AoaMarginDeg = Autopilot.AoaMarginDeg, FloorM = Autopilot.FloorM,
+        Avoid = true, AvoidS = 4f,
     };
 
     /// <summary>A block's panel within the world's caps: the world's switch and its unattended permission, its lean and climb caps;
@@ -183,6 +191,7 @@ public struct ApLimits
             GLimit = Math.Clamp(p.GLimit, ApPanel.GLimitMin, ApPanel.GLimitMax),
             AoaMarginDeg = Math.Clamp(p.AoaMarginDeg, ApPanel.AoaMarginMin, ApPanel.AoaMarginMax),
             FloorM = Math.Clamp(p.FloorM, ApPanel.FloorMin, ApPanel.FloorMax),
+            Avoid = p.AvoidOn, AvoidS = p.AvoidS,
         };
     }
 }

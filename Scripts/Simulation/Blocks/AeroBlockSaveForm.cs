@@ -141,7 +141,9 @@ public static class AeroBlockSaveForm
            + " " + B(p.HasHome) + " " + p.HomeX.ToString("R", C) + " " + p.HomeY.ToString("R", C) + " " + p.HomeZ.ToString("R", C) + " " + B(p.ReturnHome)
            + " " + Esc(p.Route) + " " + Esc(p.TargetText)
            // (2026-10-19, appended: 42 the target filter, 43 the enemy toggle, 44 the grid's owner before it - an identity's number)
-           + " " + ((int)p.TargetFilter).ToString(C) + " " + B(p.Enemy) + " " + p.EnemyPrevOwner.ToString(C);
+           + " " + ((int)p.TargetFilter).ToString(C) + " " + B(p.Enemy) + " " + p.EnemyPrevOwner.ToString(C)
+           // (45 the collision avoidance on, 46 its look-ahead s)
+           + " " + B(p.AvoidOn) + " " + F(p.AvoidS);
 
     /// <summary>A text as one space-free value: "s" then the text with '%', spaces, tabs and line breaks as %25 %20 %09 %0A %0D.</summary>
     public static string Esc(string t)
@@ -195,6 +197,7 @@ public static class AeroBlockSaveForm
         p.Route = (40 < w.Length ? Unesc(w[40]) : null) ?? p.Route; p.TargetText = (41 < w.Length ? Unesc(w[41]) : null) ?? p.TargetText;
         p.TargetFilter = (ApTargetFilter)I(42, (int)p.TargetFilter); p.Enemy = Bo(43, p.Enemy);
         p.EnemyPrevOwner = 44 < w.Length && long.TryParse(w[44], NumberStyles.Integer, C, out long prev) ? prev : p.EnemyPrevOwner;
+        p.AvoidOn = Bo(45, p.AvoidOn); p.AvoidS = Fl(46, p.AvoidS);
 
         p = p.Clamped();
         return true;

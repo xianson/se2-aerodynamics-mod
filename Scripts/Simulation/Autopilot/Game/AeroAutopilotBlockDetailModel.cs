@@ -26,14 +26,14 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         "Autopilot: hover, height and flight holds, GPS navigation and target behaviours for this ship, with envelope protection.",
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
         nameof(Style),
         nameof(HeightM), nameof(OverGround), nameof(HoverSpeed),
         nameof(HeadingOn), nameof(HeadingDeg), nameof(AltOn), nameof(AltM), nameof(VsMs), nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg),
         nameof(Route), nameof(RouteLoop), nameof(LoiterM), nameof(MinAglM),
         nameof(Behaviour), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AngleDeg), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
         nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(Enemy), nameof(EnemyText), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
-        nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(Unattended));
+        nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(AvoidOn), nameof(AvoidS), nameof(Unattended));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
 
     [Keen.VRage.DCS.Annotations.Component]
@@ -68,6 +68,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool ShowAlt => ApPanel.IsPilotMode(P.Mode) && P.AltOn;
     [HideInInspector] public bool ShowSpeed => ApPanel.IsPilotMode(P.Mode) && P.SpeedOn;
     /// <summary>The Enemy switch: in Engage while the world allows it, and always on an enemy ship (so it can be switched back).</summary>
+    [HideInInspector] public bool ShowAvoidS => P.AvoidOn;
     [HideInInspector] public bool ShowEnemy => _ap != null && ((P.Mode == ApMode.Engage && Autopilot.EnemyRule != ApEnemyRule.Off) || _ap.GridIsEnemy);
 
     // ── the modes ──
@@ -247,6 +248,15 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Label("Terrain Look-Ahead")]
     public bool LookAhead { get => P.LookAhead; set => _ap?.SetLookAhead(value); }
 
+    /// <summary>Other grids, asteroids and the target: a sidestep or a pull-up when the closest approach along the velocity now
+    /// would come too near (every mode; through the same protection).</summary>
+    [Label("Collision Avoidance")]
+    public bool AvoidOn { get => P.AvoidOn; set => Edit((ref ApPanel p) => p.AvoidOn = value); }
+
+    /// <summary>How far ahead it looks for a closest approach (s).</summary>
+    [Slider(null)] [Range<float>(ApPanel.AvoidSMin, ApPanel.AvoidSMax, RangeMode.InIn)] [Label("Avoidance Look-Ahead (s)")] [Increment(0.5f, 1f, 2f)] [ShowInInspectorWhen("ShowAvoidS", ShowWhen.True)]
+    public float AvoidS { get => P.AvoidS; set => Edit((ref ApPanel p) => p.AvoidS = value); }
+
     [Label("Keep Mode Unattended")]
     public bool Unattended { get => P.Unattended; set => _ap?.SetUnattended(value); }
 
@@ -254,7 +264,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     {
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
         nameof(Enemy), nameof(EnemyText),
         nameof(HeightM), nameof(OverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };

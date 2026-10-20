@@ -24,6 +24,11 @@ was flown in game for this release. The commit hashes are on the integration bra
   aims by yaw and by height (25..100 % against a weaving target).
 - **Target:** the grid's own targeting (locked, else priority, else nearest seen by the turrets), a GPS marker, a grid
   by name, or another mod (`AeroApi` 12: `SetAutopilotTarget`, `TryGetAutopilotAim`, ...). Runs unpiloted.
+- **Collision avoidance** (on by default; panel: on / off and a look-ahead, 4 s): other grids, asteroids and its own target
+  - when the closest approach along the velocity now would come too near, a sidestep or a pull-up through the mode's own
+  flying (every mode); no path planning. Plane2 at 150 m/s past a ship parked on its route: 17 m clear (off: it hits),
+  back on the line after; a 120 m asteroid (8 s look-ahead): 13 m clear; an attack run with a 5 m abort distance: 5.5 m
+  clear (off: it rams); a hover steps aside from a drifting ship and comes back within 0.6 m.
 - **Terrain at any range on planets:** the autopilot reads the planet's own height (its generated surface) as well as the
   ground rays, which see only near the ship: it looks 6 km ahead and 20 km down. A 300 m cliff at 300 m/s is seen 2970 m
   off (the rays alone: 360 m); Plane2 navigating at 150 m into a 400 m cliff climbs from 1.1 km before it and keeps 146 m

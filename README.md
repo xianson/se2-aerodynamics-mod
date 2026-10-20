@@ -53,6 +53,7 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   - **Aims fixed guns:** the nose on the target's lead point; aim error and "in cone" for weapon mods. It never fires.
   - **Target:** what you locked (or what the turrets see, else the nearest within 4 km), a GPS marker, a grid by name,
     or another mod. Works on unpiloted ships (NPC-style).
+  - **Collision avoidance:** steps aside or pulls up from other ships, asteroids and its own target (every mode).
   - **Target filter:** hostile only, + neutral, or everything - the game's own relation, as turrets judge it.
   - **Enemy:** makes the ship the game's hostile NPC's - its turrets and Engage fight players. Off gives it back to its
     owner. World setting: off / creative or admin (default) / everyone; an enemy's panel is creative or admin only.

@@ -42,6 +42,8 @@ public enum ApProt : ushort
     LowEnergy = 128,
     /// <summary>Terrain ahead within the time to turn away (the look ahead along the path): climbing / pulling up.</summary>
     Terrain = 256,
+    /// <summary>Another grid, an asteroid or the target within the look-ahead's closest approach: a sidestep or a pull-up (ApAvoid).</summary>
+    Avoid = 512,
 }
 
 /// <summary>
@@ -61,6 +63,8 @@ public struct ApSense
     /// <summary>The gravity the body falls with when nothing holds it (world m/s2: the planet's x the engine's multiplier) - an
     /// external acceleration goal is flown against it; and how far the ship reaches below its centre of mass (m: its belly).</summary>
     public Vector3 GravityTrue; public float Belly;
+    /// <summary>The ship's own radius (m: half its bounds' diagonal) - the collision avoidance's size (0: not known).</summary>
+    public float Radius;
     /// <summary>Height over the ground (m; negative: no ground found).</summary>
     public float Agl;
     /// <summary>The thrusters' maxima per local side (N, as magnitudes: the game's MaxThrustData.Regular).</summary>

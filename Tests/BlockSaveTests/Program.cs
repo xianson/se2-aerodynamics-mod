@@ -129,7 +129,7 @@ static class Program
                   && g.AngleDeg == f.AngleDeg && g.AltOffsetM == f.AltOffsetM && g.Aggression == f.Aggression && g.Evasive && g.TargetSrc == f.TargetSrc && !g.AimOn
                   && g.MuzzleSpeed == f.MuzzleSpeed && g.ConeDeg == f.ConeDeg && g.HasHome && g.HomeX == f.HomeX && g.HomeY == f.HomeY && g.HomeZ == f.HomeZ && g.ReturnHome
                   && g.Route == f.Route && g.TargetText == f.TargetText, $"autopilot flight pilot round trip: '{key}'");
-            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 45, $"autopilot: one line, 44 values after the format ({key.Split(' ').Length - 1})");
+            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 47, $"autopilot: one line, 46 values after the format ({key.Split(' ').Length - 1})");
             Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 4 0 0 10 1 3 3 15 1 1", out var old) && old.Mode == ApMode.Navigate && old.Style == ApStyle.Auto && old.Route == ""
                   && old.RangeM == ApPanel.Defaults.RangeM && old.AimOn, "autopilot: a key of the first release reads the pilot's defaults");
             Check(AeroBlockSaveForm.TryReadAutopilot(key.Replace(" 3 ", " 99 "), out var bad) && AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 5 0 0 10 1 3 3 15 1 1 9 NaN 1 -5 1 0 99999 1 0 1 0 0 77", out var bad2)
@@ -151,6 +151,9 @@ static class Program
             k41 = string.Join(' ', k41.Split(' ').Take(42));   // (the key as the first pilot release wrote it)
             Check(AeroBlockSaveForm.TryReadAutopilot(k41, out var o41) && o41.TargetFilter == ApTargetFilter.Hostile && !o41.Enemy && o41.EnemyPrevOwner == 0 && o41.Route == "a b",
                   $"autopilot: a key without the filter / enemy reads hostile only, no enemy: '{k41}'");
+            var av = ApPanel.Defaults; av.AvoidOn = false; av.AvoidS = 7.5f;
+            Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(av), out var av2) && !av2.AvoidOn && av2.AvoidS == 7.5f, "autopilot: collision avoidance off, 7.5 s round trip");
+            Check(AeroBlockSaveForm.TryReadAutopilot(k41, out var av3) && av3.AvoidOn && av3.AvoidS == ApPanel.Defaults.AvoidS, "autopilot: an older key reads the avoidance on, its default look-ahead");
             var f9 = ApPanel.Defaults; string k9 = AeroBlockSaveForm.Autopilot(f9); var w9 = k9.Split(' '); w9[42] = "9"; w9[44] = "x";
             Check(AeroBlockSaveForm.TryReadAutopilot(string.Join(' ', w9), out var o9) && o9.TargetFilter == ApTargetFilter.Hostile && o9.EnemyPrevOwner == 0,
                   "autopilot: an unknown filter reads hostile only, a bad owner number none");

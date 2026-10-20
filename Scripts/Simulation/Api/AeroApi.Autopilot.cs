@@ -11,7 +11,7 @@ public static partial class AeroApi
     /// <summary>(version 11) The grid's autopilot: the goals it holds (bits: 1 attitude, 2 hover, 4 position, 8 height, 16 an
     /// external goal source), the protections in force this tick (bits: 1 lean limit, 2 thrust limit, 4 stall limit, 8 g limit,
     /// 16 control limit - the predicted loss of control, 32 overspeed, 64 terrain floor, 128 full thrust - low energy, 256 terrain
-    /// ahead), why it last let go or refused (0 none; 15: the Autopilot block went dark - see docs/API.md), and its readout ("AP HOVER POS AGL · FLOOR", "" off).
+    /// ahead, 512 collision avoidance), why it last let go or refused (0 none; 15: the Autopilot block went dark - see docs/API.md), and its readout ("AP HOVER POS AGL · FLOOR", "" off).
     /// False: no autopilot on this grid (never engaged) or no server grid found for it.</summary>
     public static bool TryGetAutopilot(Keen.VRage.DCS.Components.Entity grid, out int goals, out int protections, out int reason, out string readout)
     {

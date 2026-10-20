@@ -192,6 +192,12 @@ public sealed class ApPilot : IApGoalSource
                     TurnR = TurnR, Height = alt, Time = _time, T = T, THeight = Alt.Height(T.Pos, up), Decel = perf.Valid ? perf.DragDecelNow : 1f, NMax = perf.Valid ? perf.NAtAlphaMax : 0f };
                 ActiveBh = Arb.Pick(Cfg.Behaviour, in c, dt);
                 Bh.Plan(ActiveBh, in c, dt, ref goal);
+                // (the target as an obstacle for the collision avoidance, kept at most half the behaviour's own closest distance)
+                if (Fd != null)
+                {
+                    Fd.TargetObstacle = new ApObstacle { Pos = T.Pos, Vel = T.Vel, Radius = MathF.Max(1f, T.Radius), Target = true };
+                    Fd.HasTargetObstacle = true; Fd.TargetClearMax = ApAvoid.TargetClear(in Cfg, ActiveBh);
+                }
                 h = alt;   // (the target's heights are the altimeter's)
                 // (a helicopter aiming fixed guns: level with the target - it cannot pitch onto it without moving)
                 //  - and its gun's own pitch now (the lean, the trim; filtered) taken in: the height where that line meets the lead)
