@@ -116,20 +116,22 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
 
     // ── the ENEMY toggle (ApEnemySwitch's rules and state; the game's ownership: ApEnemyOwnership) ──
     readonly ApEnemySwitch _enemy = new();
+    readonly object _enemyLock = new();   // (the switch's Prev: the block's step writes it, the save reads it)
     ApEnemyOwnership _own;
     long _enemyLook;
+    internal readonly List<(Entity grid, long owner)> _enemyLoaded = new();
     ApEnemyOwnership Own() { var o = _own ??= new ApEnemyOwnership(); o.Block = Entity; return o; }
 
     /// <summary>The block's grid is the game's hostile NPC's now (the block's job reads it every second; the panel shows it).</summary>
     internal bool GridIsEnemy => _enemy.GridIsEnemy;
     /// <summary>The panel may be changed by whoever asks now: any ship that is not an enemy; an enemy's by creative or an admin.</summary>
-    bool MayEdit() => !_enemy.GridIsEnemy || _enemy.MayEdit(Own());
+    bool MayEdit() { if (!_enemy.GridIsEnemy) return true; lock (_enemyLock) return _enemy.MayEdit(Own()); }
     /// <summary>The panel's Enemy switch: checked now (the words at once), done by the block's next server step.</summary>
-    internal void AskEnemy(bool on) => _enemy.Request(on, Own(), Autopilot.EnemyRule);
+    internal void AskEnemy(bool on) { lock (_enemyLock) _enemy.Request(on, Own(), Autopilot.EnemyRule); }
     /// <summary>The Enemy line on the panel: what the ship is to players, or the switch's last word.</summary>
     public string EnemyText => _enemy.Text();
 
-    /// <summary>The block's server step: an asked switch done, the grid's state read each second, the saved state kept with it.</summary>
+    /// <summary>The block's server step: an asked switch done, the ship kept whole (each second), the saved state kept with it.</summary>
     void EnemyStep(long now)
     {
         if (_enemy.Ask == 0 && now < _enemyLook) return;
@@ -137,11 +139,32 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         bool en; long prev;
         lock (_lock) { en = _panel.Enemy; prev = _panel.EnemyPrevOwner; }
         bool wasEnemy = en;
-        if (_enemy.Step(Own(), Autopilot.EnemyRule, ref en, ref prev))
+        bool wrote;
+        lock (_enemyLock)
+        {
+            var o = Own();
+            if (_enemyLoaded.Count > 0) { foreach (var (g, ow) in _enemyLoaded) _enemy.Prev[o.KeyOf(g)] = ow; _enemyLoaded.Clear(); }
+            wrote = _enemy.Step(o, Autopilot.EnemyRule, ref en, ref prev);
+        }
+        if (wrote)
         {
             lock (_lock) { _panel.Enemy = en; _panel.EnemyPrevOwner = prev; }
-            if (en != wasEnemy) Log.Default?.Info($"[AERO] autopilot: '{Entity?.DebugName}' - its grid {(en ? "is an enemy (the hostile NPC's)" : "is no enemy any more")}");
+            if (en != wasEnemy) Log.Default?.Info($"[AERO] autopilot: '{Entity?.DebugName}' - its ship {(en ? $"is an enemy (the hostile NPC's; {_enemy.Flipped} grid(s))" : $"is no enemy any more ({_enemy.Restored} grid(s) given back)")}");
         }
+    }
+
+    /// <summary>The save's copy: each living grid of the ship with its owner before (the switch's Prev, or as loaded and not yet mapped).</summary>
+    List<(Entity grid, long owner)> EnemyPrevForSave()
+    {
+        var list = new List<(Entity, long)>();
+        lock (_enemyLock)
+        {
+            if (_enemyLoaded.Count > 0) { foreach (var x in _enemyLoaded) if (x.grid != null && GridPhysics.Alive(x.grid.Data)) list.Add(x); return list; }
+            var o = _own;
+            if (o == null) return list;
+            foreach (var kv in _enemy.Prev) { var g = o.GridOf(kv.Key); if (g != null && GridPhysics.Alive(g.Data)) list.Add((g, kv.Value)); }
+        }
+        return list;
     }
 
     // ── the status line (the grid's step writes its inputs; the terminal builds the text when it reads it) ──

@@ -14,7 +14,7 @@ sealed class EnemyPack : IScenarioPack
     public void Register(ScenarioRegistry r)
     {
         r.Add("enemy: relations by the game's rule (mocked identities) and the filter's matrix", true, Relations);
-        r.Add("enemy: the switch - world rule, owner, creative / admin, the lock, the saved owner round trip", true, Switch);
+        r.Add("enemy: the switch - rules, the whole ship (joined later / detached / destroyed / split), per-grid owners, save round trip", true, Switch);
         r.Add("enemy: an enemy gunship chases the player, not its wingman; a drone takes the raider, or a nearer neutral with + neutral", true, Chase);
     }
 
@@ -67,23 +67,37 @@ sealed class EnemyPack : IScenarioPack
         Sim.Check(ApRelations.Refused("Bob's Miner", ApRelation.Neutral, ApTargetFilter.Hostile) == "Bob's Miner is neutral (filter: hostile only)", "the refusal's words");
     }
 
-    /// <summary>A mocked world: one grid, its owner, the asking player, the game's transfers (CanTransferOwnership's: never to
-    /// the owner it has).</summary>
+    /// <summary>A mocked world: grids (keys) and their owners, the ship's links (which grids are joined to the block's grid 1 by a
+    /// rotor / hinge / piston now), the asking player, the game's transfers (CanTransferOwnership's: never to the owner it has).</summary>
     sealed class World : IApOwnership
     {
-        public long Owner = 1000, Requester = 1000; public bool Creative, Admin, HasGrid = true, Fail;
+        public readonly Dictionary<long, long> Owner = new() { [1] = 1000 };
+        public readonly HashSet<long> Linked = new();   // (grids joined to grid 1 now)
+        public long Requester = 1000; public bool Creative, Admin, HasGrid = true, Fail;
         public readonly HashSet<long> Players = new() { 1000, 1003 };
         public int Transfers;
-        public bool IsEnemy(out bool hasGrid) { hasGrid = HasGrid; return HasGrid && Owner == HostileNpc; }
-        public ApEnemyWho Who(out long requester) { requester = Requester; return new ApEnemyWho { Owner = Owner == Requester, Creative = Creative, Admin = Admin }; }
-        public bool MakeEnemy(out long prev) { prev = Owner; if (Fail || Owner == HostileNpc) return false; Owner = HostileNpc; Transfers++; return true; }
-        public bool Restore(long savedPrev, long requester, out long to)
+        public long BlockGrid => 1;
+        public bool IsEnemy(out bool hasGrid) { hasGrid = HasGrid && Owner.ContainsKey(1); return hasGrid && Owner[1] == HostileNpc; }
+        public ApEnemyWho Who(out long requester) { requester = Requester; return new ApEnemyWho { Owner = Owner.TryGetValue(1, out long o) && o == Requester, Creative = Creative, Admin = Admin }; }
+        public void Ship(List<ApGridOwner> into)
         {
-            to = ApEnemy.RestoreTo(savedPrev, Players.Contains(savedPrev), requester);
-            if (Fail || to == 0 || to == Owner) return false;
-            Owner = to; Transfers++; return true;
+            if (!HasGrid || !Owner.ContainsKey(1)) return;
+            into.Add(new ApGridOwner { Grid = 1, Owner = Owner[1] });
+            foreach (var g in Linked) if (Owner.TryGetValue(g, out long o)) into.Add(new ApGridOwner { Grid = g, Owner = o });
         }
+        public bool KnownPlayer(long owner) => Players.Contains(owner);
+        public bool MakeEnemy(long grid) { if (Fail || !Owner.TryGetValue(grid, out long o) || o == HostileNpc) return false; Owner[grid] = HostileNpc; Transfers++; return true; }
+        public bool GiveTo(long grid, long owner) { if (Fail || !Owner.TryGetValue(grid, out long o) || o == owner) return false; Owner[grid] = owner; Transfers++; return true; }
+        public World Ship2(params (long grid, long owner)[] gs) { foreach (var (g, o) in gs) { Owner[g] = o; Linked.Add(g); } return this; }
     }
+
+    static (ApEnemySwitch sw, ApPanel p) On(World w, ApEnemyRule rule = ApEnemyRule.CreativeOrAdmin)
+    {
+        var sw = new ApEnemySwitch(); var p = ApPanel.Defaults; p.Mode = ApMode.Engage;
+        sw.Request(true, w, rule); sw.Step(w, rule, ref p.Enemy, ref p.EnemyPrevOwner);
+        return (sw, p);
+    }
+    static void Off(World w, ApEnemySwitch sw, ref ApPanel p, ApEnemyRule rule = ApEnemyRule.CreativeOrAdmin) { sw.Request(false, w, rule); sw.Step(w, rule, ref p.Enemy, ref p.EnemyPrevOwner); }
 
     static void Switch()
     {
@@ -102,50 +116,81 @@ sealed class EnemyPack : IScenarioPack
         Sim.Check(!ApEnemy.CanEdit(true, in survival) && ApEnemy.CanEdit(true, in admin) && ApEnemy.CanEdit(false, in survival), "an enemy's panel: creative / admin only; any other ship's: anyone");
         Sim.Check(ApEnemy.RestoreTo(1000, true, 1003) == 1000 && ApEnemy.RestoreTo(1000, false, 1003) == 1003 && ApEnemy.RestoreTo(0, false, 1003) == 1003, "restore: the owner before if known, else the one switching it off");
 
-        // the state machine over a mocked world (the host in creative: the default rule)
-        var w = new World { Creative = true };
-        var sw = new ApEnemySwitch();
-        var panel = ApPanel.Defaults; panel.Mode = ApMode.Engage;
+        // the WHOLE SHIP: grid 1 (the block's) with a rotor turret grid 2 and a piston arm grid 3, all the player's
+        var w = new World { Creative = true }.Ship2((2, 1000), (3, 1000));
+        var sw = new ApEnemySwitch(); var panel = ApPanel.Defaults; panel.Mode = ApMode.Engage;
         sw.Request(true, w, ApEnemyRule.CreativeOrAdmin);
-        Sim.Check(sw.Ask == 1 && w.Owner == 1000, "asked on: queued for the block's server step (nothing changed yet)");
+        Sim.Check(sw.Ask == 1 && w.Owner[1] == 1000, "asked on: queued for the block's server step (nothing changed yet)");
         sw.Step(w, ApEnemyRule.CreativeOrAdmin, ref panel.Enemy, ref panel.EnemyPrevOwner);
-        Sim.Check(w.Owner == HostileNpc && sw.GridIsEnemy && panel.Enemy && panel.EnemyPrevOwner == 1000 && sw.Text().StartsWith("Enemy ship"),
-                  $"switched on: the grid is the hostile NPC's, the owner before (1000) kept on the panel - '{sw.Text()}'");
-        // saved and loaded (the panel's key; the grid's owner is the game's own save)
-        Sim.Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(panel), out var loaded) && loaded.Enemy && loaded.EnemyPrevOwner == 1000, "saved and loaded: enemy, owner before 1000");
-        var sw2 = new ApEnemySwitch();   // (a new block after the load)
+        Sim.Check(w.Owner[1] == HostileNpc && w.Owner[2] == HostileNpc && w.Owner[3] == HostileNpc && sw.Flipped == 3 && panel.Enemy && panel.EnemyPrevOwner == 1000
+                  && sw.Prev.Count == 3 && sw.Text().StartsWith("Enemy ship"), $"switched on: the block's grid and both joined grids are the hostile NPC's ({sw.Flipped}), each owner before kept - '{sw.Text()}'");
+
+        // a joined grid of someone else's: refused, nothing taken
+        var wx = new World { Creative = true }.Ship2((2, 1003));
+        var (swx, px) = On(wx);
+        Sim.Check(wx.Owner[1] == 1000 && wx.Owner[2] == 1003 && !px.Enemy && wx.Transfers == 0 && swx.Text().Contains("belongs to someone else"), $"a joined grid of another player's: refused, nothing changed - '{swx.Text()}'");
+
+        // while an enemy: a grid joined later is flipped (its owner kept), a grid detached is left as it is and forgotten
+        w.Ship2((4, 1000));
+        sw.Step(w, ApEnemyRule.CreativeOrAdmin, ref panel.Enemy, ref panel.EnemyPrevOwner);
+        Sim.Check(w.Owner[4] == HostileNpc && sw.Prev.TryGetValue(4, out long p4) && p4 == 1000 && sw.JoinedLater == 1, "a grid joined later (a new rotor head): flipped, its owner before kept");
+        w.Linked.Remove(3);
+        sw.Step(w, ApEnemyRule.CreativeOrAdmin, ref panel.Enemy, ref panel.EnemyPrevOwner);
+        Sim.Check(w.Owner[3] == HostileNpc && !sw.Prev.ContainsKey(3), "a grid detached while an enemy: left as it is (the hostile NPC's), forgotten");
+        // a grid destroyed; a split piece still joined (a new grid with no entry, the NPC's by the game's split copy)
+        w.Linked.Remove(2); w.Owner.Remove(2);
+        w.Owner[5] = HostileNpc; w.Linked.Add(5);
+        sw.Step(w, ApEnemyRule.CreativeOrAdmin, ref panel.Enemy, ref panel.EnemyPrevOwner);
+        Sim.Check(!sw.Prev.ContainsKey(2) && !sw.Prev.ContainsKey(5), "a grid destroyed: forgotten; a split piece (already the NPC's): no entry");
+
+        // saved and loaded: the panel's key and each grid's owner before (one entry per grid: grid -> owner)
+        Sim.Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(panel), out var loaded) && loaded.Enemy && loaded.EnemyPrevOwner == 1000, "saved and loaded: enemy, the block grid's owner before 1000");
+        var saved = new Dictionary<string, long>(); int i = 0;
+        foreach (var kv in sw.Prev) saved[AeroBlockSaveForm.EnemyPrev(i++, kv.Value)] = kv.Key;
+        var sw2 = new ApEnemySwitch();
+        foreach (var kv in saved) if (AeroBlockSaveForm.TryReadEnemyPrev(kv.Key, out long ow)) sw2.Prev[kv.Value] = ow;
+        Sim.Check(sw2.Prev.Count == sw.Prev.Count && sw2.Prev[1] == 1000 && sw2.Prev[4] == 1000 && saved.Keys.All(k => k.StartsWith(AeroBlockSaveForm.EnemyPrevKey)),
+                  $"the owners before round trip, one key per grid ({saved.Count}: '{saved.Keys.First()}')");
         sw2.Step(w, ApEnemyRule.CreativeOrAdmin, ref loaded.Enemy, ref loaded.EnemyPrevOwner);
         Sim.Check(sw2.GridIsEnemy && loaded.Enemy, "after the load: read as an enemy");
+
         // a survival player at the enemy's panel: locked, cannot switch it back
         w.Creative = false; w.Admin = false; w.Requester = 1003;
         Sim.Check(!sw2.MayEdit(w) && sw2.Text().Contains("only creative or an admin"), $"a survival player: the enemy's panel is locked - '{sw2.Text()}'");
         sw2.Request(false, w, ApEnemyRule.CreativeOrAdmin);
-        Sim.Check(sw2.Ask == 0 && w.Owner == HostileNpc, "a survival player cannot switch it off");
-        // the world's rule off does not stop an admin undoing it
-        w.Admin = true; w.Requester = 1003;
+        Sim.Check(sw2.Ask == 0 && w.Owner[1] == HostileNpc, "a survival player cannot switch it off");
+        // off by an admin (the world's rule off does not stop it): every grid still in the ship back to its own owner before; the split
+        // piece (no entry) to the block grid's; the detached grid left the NPC's
+        w.Admin = true;
         sw2.Request(false, w, ApEnemyRule.Off);
         sw2.Step(w, ApEnemyRule.Off, ref loaded.Enemy, ref loaded.EnemyPrevOwner);
-        Sim.Check(w.Owner == 1000 && !sw2.GridIsEnemy && !loaded.Enemy && loaded.EnemyPrevOwner == 0, $"switched off by an admin (world rule off): back to the owner before (1000), not to the admin - owner {w.Owner}");
+        Sim.Check(w.Owner[1] == 1000 && w.Owner[4] == 1000 && w.Owner[5] == 1000 && w.Owner[3] == HostileNpc && !sw2.GridIsEnemy && !loaded.Enemy && sw2.Prev.Count == 0 && sw2.Restored == 3,
+                  $"switched off by an admin: the ship back to 1000 (grids 1, 4 and the split piece 5: {sw2.Restored}), the detached grid 3 left the NPC's");
+        // per grid: a joined grid's own owner before kept apart from the block grid's (a faction mate's turret given back to them)
+        var wf = new World { Creative = true }; wf.Players.Add(1002);
+        var swf = new ApEnemySwitch(); var pf = ApPanel.Defaults;
+        swf.Prev[1] = 1000; swf.Prev[2] = 1002; wf.Owner[1] = HostileNpc; wf.Ship2((2, HostileNpc)); wf.Admin = true;
+        swf.Step(wf, ApEnemyRule.CreativeOrAdmin, ref pf.Enemy, ref pf.EnemyPrevOwner);
+        Off(wf, swf, ref pf);
+        Sim.Check(wf.Owner[1] == 1000 && wf.Owner[2] == 1002, "per grid: each grid back to its own owner before (1000, 1002)");
         // the owner before gone: the one switching it off gets it, and says so
-        var w3 = new World { Creative = true }; var sw3 = new ApEnemySwitch(); var p3 = ApPanel.Defaults;
-        sw3.Request(true, w3, ApEnemyRule.CreativeOrAdmin); sw3.Step(w3, ApEnemyRule.CreativeOrAdmin, ref p3.Enemy, ref p3.EnemyPrevOwner);
+        var w3 = new World { Creative = true }.Ship2((2, 1000)); var (sw3, p3) = On(w3);
         w3.Players.Remove(1000); w3.Requester = 1003; w3.Admin = true;
-        sw3.Request(false, w3, ApEnemyRule.CreativeOrAdmin); sw3.Step(w3, ApEnemyRule.CreativeOrAdmin, ref p3.Enemy, ref p3.EnemyPrevOwner);
-        Sim.Check(w3.Owner == 1003 && sw3.Text().Contains("the ship is yours"), $"the owner before is gone: the admin gets it - '{sw3.Text()}'");
-        // made an enemy by someone else (an encounter): read as an enemy with no owner before; off gives it to the one who does
-        var w4 = new World { Owner = HostileNpc, Requester = 1000, Admin = true }; var sw4 = new ApEnemySwitch(); var p4 = ApPanel.Defaults;
-        sw4.Step(w4, ApEnemyRule.CreativeOrAdmin, ref p4.Enemy, ref p4.EnemyPrevOwner);
-        Sim.Check(sw4.GridIsEnemy && p4.Enemy && p4.EnemyPrevOwner == 0, "an encounter's enemy: read as an enemy, no owner before");
-        sw4.Request(false, w4, ApEnemyRule.CreativeOrAdmin); sw4.Step(w4, ApEnemyRule.CreativeOrAdmin, ref p4.Enemy, ref p4.EnemyPrevOwner);
-        Sim.Check(w4.Owner == 1000 && !p4.Enemy, "switched off: the admin who did it owns it");
+        Off(w3, sw3, ref p3);
+        Sim.Check(w3.Owner[1] == 1003 && w3.Owner[2] == 1003 && sw3.Text().Contains("the ship is yours"), $"the owner before is gone: the admin gets the ship - '{sw3.Text()}'");
+        // made an enemy by someone else (an encounter): read as an enemy with no owners before; off gives it to the one who does
+        var w4 = new World { Requester = 1000, Admin = true }.Ship2((2, HostileNpc)); w4.Owner[1] = HostileNpc; var sw4 = new ApEnemySwitch(); var p4b = ApPanel.Defaults;
+        sw4.Step(w4, ApEnemyRule.CreativeOrAdmin, ref p4b.Enemy, ref p4b.EnemyPrevOwner);
+        Sim.Check(sw4.GridIsEnemy && p4b.Enemy && p4b.EnemyPrevOwner == 0, "an encounter's enemy: read as an enemy, no owner before");
+        Off(w4, sw4, ref p4b);
+        Sim.Check(w4.Owner[1] == 1000 && w4.Owner[2] == 1000 && !p4b.Enemy, "switched off: the admin who did it owns the whole ship");
         // the owner changed between the ask and the step: checked again
         var w5 = new World { Creative = true }; var sw5 = new ApEnemySwitch(); var p5 = ApPanel.Defaults;
-        sw5.Request(true, w5, ApEnemyRule.CreativeOrAdmin); w5.Owner = 1003;
+        sw5.Request(true, w5, ApEnemyRule.CreativeOrAdmin); w5.Owner[1] = 1003;
         sw5.Step(w5, ApEnemyRule.CreativeOrAdmin, ref p5.Enemy, ref p5.EnemyPrevOwner);
-        Sim.Check(w5.Owner == 1003 && !p5.Enemy && w5.Transfers == 0 && sw5.Text().Contains("only the ship's owner"), $"the owner changed before the step: refused - '{sw5.Text()}'");
+        Sim.Check(w5.Owner[1] == 1003 && !p5.Enemy && w5.Transfers == 0 && sw5.Text().Contains("only the ship's owner"), $"the owner changed before the step: refused - '{sw5.Text()}'");
         // the game refuses the transfer: said, the panel unchanged
-        var w6 = new World { Creative = true, Fail = true }; var sw6 = new ApEnemySwitch(); var p6 = ApPanel.Defaults;
-        sw6.Request(true, w6, ApEnemyRule.CreativeOrAdmin); sw6.Step(w6, ApEnemyRule.CreativeOrAdmin, ref p6.Enemy, ref p6.EnemyPrevOwner);
+        var w6 = new World { Creative = true, Fail = true }; var (sw6, p6) = On(w6);
         Sim.Check(!p6.Enemy && sw6.Text().Contains("refused the ownership change"), "the game refused the transfer: said, nothing saved");
         // no grid
         var w7 = new World { HasGrid = false }; var sw7 = new ApEnemySwitch();

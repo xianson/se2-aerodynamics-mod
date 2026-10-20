@@ -251,6 +251,10 @@ public partial class AeroAutopilotComponent
     private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
     {
         string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.AutopilotKey);
+        // (the Enemy switch's owners before, one per grid of the ship: kept until the block's first step maps them to its grids)
+        if (ob?.NamedEntities != null)
+            foreach (var kv in ob.NamedEntities)
+                if (kv.Value != null && AeroBlockSaveForm.TryReadEnemyPrev(kv.Key, out long owner)) _enemyLoaded.Add((kv.Value, owner));
         if (!AeroBlockSaveForm.TryReadAutopilot(key, out var p)) return;
         SetPanel(in p);
         RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KAutopilot, key);
@@ -262,5 +266,8 @@ public partial class AeroAutopilotComponent
         var p = Panel;
         string key = AeroBlockSaveForm.Autopilot(in p);
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KAutopilot, key);
+        // (each living grid of an enemy ship with its owner before - a grid gone is not written: the save refuses a dead entity)
+        int i = 0;
+        foreach (var (grid, owner) in EnemyPrevForSave()) ob.NamedEntities[AeroBlockSaveForm.EnemyPrev(i++, owner)] = grid;
     }
 }

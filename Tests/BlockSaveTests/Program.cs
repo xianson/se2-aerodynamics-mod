@@ -151,6 +151,9 @@ static class Program
             k41 = string.Join(' ', k41.Split(' ').Take(42));   // (the key as the first pilot release wrote it)
             Check(AeroBlockSaveForm.TryReadAutopilot(k41, out var o41) && o41.TargetFilter == ApTargetFilter.Hostile && !o41.Enemy && o41.EnemyPrevOwner == 0 && o41.Route == "a b",
                   $"autopilot: a key without the filter / enemy reads hostile only, no enemy: '{k41}'");
+            Check(AeroBlockSaveForm.TryReadEnemyPrev(AeroBlockSaveForm.EnemyPrev(3, 0x7000000000000123L), out long ep) && ep == 0x7000000000000123L
+                  && !AeroBlockSaveForm.TryReadEnemyPrev(AeroBlockSaveForm.Autopilot(ApPanel.Defaults), out _) && !AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.EnemyPrev(0, 5), out _)
+                  && AeroBlockSaveForm.EnemyPrev(0, 5) != AeroBlockSaveForm.EnemyPrev(1, 5), "autopilot: a grid's owner before (enemy) round trip, apart from the panel's key, one key per entry");
             var av = ApPanel.Defaults; av.AvoidOn = false; av.AvoidS = 7.5f;
             Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(av), out var av2) && !av2.AvoidOn && av2.AvoidS == 7.5f, "autopilot: collision avoidance off, 7.5 s round trip");
             Check(AeroBlockSaveForm.TryReadAutopilot(k41, out var av3) && av3.AvoidOn && av3.AvoidS == ApPanel.Defaults.AvoidS, "autopilot: an older key reads the avoidance on, its default look-ahead");

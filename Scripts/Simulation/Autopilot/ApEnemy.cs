@@ -103,10 +103,11 @@ public sealed class ApTargetPicker
 public struct ApEnemyWho { public bool Owner, Creative, Admin; }
 
 /// <summary>Why an Enemy toggle or an enemy ship's panel edit was refused (None: allowed).</summary>
-public enum ApEnemyRefusal : byte { None, WorldOff, NotCreativeOrAdmin, NotOwner, Locked, NoGrid, AlreadyThat, TransferFailed }
+public enum ApEnemyRefusal : byte { None, WorldOff, NotCreativeOrAdmin, NotOwner, Locked, NoGrid, AlreadyThat, TransferFailed, GroupNotOwned }
 
 /// <summary>
-/// THE ENEMY TOGGLE'S RULES (engine-free; the game side: Game/ApEnemyGame.cs). On: the block's grid is handed to the game's
+/// THE ENEMY TOGGLE'S RULES (engine-free; the game side: Game/ApEnemyGame.cs). On: the block's SHIP - its grid and every grid
+/// joined to it by a rotor, hinge or piston (the game's own "ship": CubeGridComponent.GetAllGridsInShip) - is handed to the game's
 /// own hostile NPC owner (OwnershipSessionComponent.TryTransferToNPC(grid, hostile: true) - what the game's encounters, NPC
 /// spawners and mission triggers do), so its turrets and its Engage fight players. Off: back to the owner it had (saved with
 /// the block). The world's rule (Autopilot.EnemyRule) says who may switch it on; only the grid's owner can. Once it is an enemy,
@@ -141,6 +142,9 @@ public static class ApEnemy
     public static long RestoreTo(long savedPrev, bool prevKnown, long requester)
         => savedPrev != 0 && prevKnown ? savedPrev : requester;
 
+    /// <summary>The game's hostile NPC identity (IdentitiesSessionComponent.HostileNPCIdentity: 2 - internal; the game side asks IsHostileNPC).</summary>
+    public const long HostileNpc = 2;
+
     public static string Say(ApEnemyRefusal r) => r switch
     {
         ApEnemyRefusal.WorldOff => "Enemy: not allowed in this world (Autopilot.EnemyRule)",
@@ -150,29 +154,46 @@ public static class ApEnemy
         ApEnemyRefusal.NoGrid => "Enemy: no ship found for this block",
         ApEnemyRefusal.AlreadyThat => "",
         ApEnemyRefusal.TransferFailed => "Enemy: the game refused the ownership change",
+        ApEnemyRefusal.GroupNotOwned => "Enemy: a grid joined to this ship (rotor, hinge, piston) belongs to someone else",
         _ => "",
     };
 }
 
+/// <summary>One grid of the ship and its owner (an identity's number), keyed by the caller (the game: the grid entity's own key).</summary>
+public struct ApGridOwner { public long Grid; public long Owner; }
+
 /// <summary>The game's ownership as the Enemy switch needs it (the game: ApEnemyOwnership over OwnershipSessionComponent; offline:
-/// a mock). Identities as numbers (IdentityId's own: 1 the game's neutral NPC, 2 its hostile NPC, players above).</summary>
+/// a mock). Identities as numbers (IdentityId's own: 1 the game's neutral NPC, 2 its hostile NPC, players above). Grids as keys.</summary>
 public interface IApOwnership
 {
-    /// <summary>The grid exists and is the game's hostile NPC's.</summary>
+    /// <summary>The block's grid exists and is the game's hostile NPC's.</summary>
     bool IsEnemy(out bool hasGrid);
-    /// <summary>Who asks now, about this grid; their identity out.</summary>
+    /// <summary>Who asks now, about the block's grid; their identity out.</summary>
     ApEnemyWho Who(out long requester);
-    /// <summary>The grid to the hostile NPC (the owner before out).</summary>
-    bool MakeEnemy(out long prevOwner);
-    /// <summary>The grid back to savedPrev if the game still knows that player, else to the requester (who got it out).</summary>
-    bool Restore(long savedPrev, long requester, out long to);
+    /// <summary>The block's grid's key.</summary>
+    long BlockGrid { get; }
+    /// <summary>The ship now: the block's grid and every grid joined to it (the game's "ship" connection), with their owners.</summary>
+    void Ship(List<ApGridOwner> into);
+    /// <summary>The game knows this player.</summary>
+    bool KnownPlayer(long owner);
+    /// <summary>One grid to the hostile NPC.</summary>
+    bool MakeEnemy(long grid);
+    /// <summary>One grid to this owner.</summary>
+    bool GiveTo(long grid, long owner);
 }
 
 /// <summary>
-/// THE ENEMY SWITCH'S STATE (engine-free; one per Autopilot block): the panel asks (checked at once, the refusal's words then),
-/// the block's server step does it (checked again - the owner may have changed in between) and keeps the block's saved state
-/// (Enemy, the owner before) with the grid's real one: a grid made an enemy by someone else (an encounter, the admin screen)
-/// reads as an enemy with no owner before - switching it off gives it to the one who does.
+/// THE ENEMY SWITCH'S STATE (engine-free; one per Autopilot block). The panel asks (checked at once, the refusal's words then), the
+/// block's server step does it (checked again - owners may have changed in between). THE WHOLE SHIP flips: every grid joined to
+/// the block's grid by the game's "ship" connection (rotors, hinges, pistons - the links the game itself requires one owner for:
+/// PermissionsConfig.GridConnectionsRequiringSameOwner; a connector's dock is not one - a docked ship keeps its owner; wheels and
+/// merged blocks are part of their grid). Every grid's owner before is kept (Prev, by grid) and given back to it on switch-off.
+/// Refused when a grid of the ship belongs to someone else (never taken from them). While it is an enemy (each step): a grid
+/// joined later is flipped too (its owner before kept); a grid that left the ship (detached, destroyed, split off and away) is
+/// left as it is - still the hostile NPC's - and forgotten. Off: each grid still in the ship gets its own owner before back (a
+/// player the game still knows), else the block grid's, else the one switching it off; a grid made by a split while it was an
+/// enemy has no entry - the block grid's owner before. Made an enemy by someone else (an encounter): no owners before - off
+/// gives the ship to the one who switches it off.
 /// </summary>
 public sealed class ApEnemySwitch
 {
@@ -180,8 +201,21 @@ public sealed class ApEnemySwitch
     public volatile int Ask;
     /// <summary>The last word ("" none): a refusal, or what was done when it was not the plain result.</summary>
     public volatile string Note = "";
-    /// <summary>The grid is the hostile NPC's (as the last step read it).</summary>
+    /// <summary>The block's grid is the hostile NPC's (as the last step read it).</summary>
     public volatile bool GridIsEnemy;
+    /// <summary>Each grid's owner before it was made an enemy (by grid key; the save keeps it with each grid).</summary>
+    public readonly Dictionary<long, long> Prev = new();
+    readonly List<ApGridOwner> _ship = new();
+    readonly List<long> _drop = new();
+    /// <summary>Grids flipped / given back by the last switch, and joined later while an enemy (diagnostics, the tests).</summary>
+    public int Flipped, Restored, JoinedLater;
+
+    /// <summary>The ship's grids all the switcher's (or the hostile NPC's already): none taken from someone else.</summary>
+    static bool AllOwned(List<ApGridOwner> ship, long owner)
+    {
+        foreach (var g in ship) if (g.Owner != owner && g.Owner != ApEnemy.HostileNpc) return false;
+        return true;
+    }
 
     /// <summary>The panel's switch (true: on).</summary>
     public void Request(bool on, IApOwnership o, ApEnemyRule rule)
@@ -190,6 +224,7 @@ public sealed class ApEnemySwitch
         if (!hasGrid) { Note = ApEnemy.Say(ApEnemyRefusal.NoGrid); return; }
         var who = o.Who(out _);
         var why = on ? ApEnemy.CanTurnOn(rule, in who, enemy) : ApEnemy.CanTurnOff(in who, enemy);
+        // (the ship's other grids are checked by the step, on the simulation's thread - never walked from the terminal's)
         if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); return; }
         Ask = on ? 1 : 2; Note = on ? "Enemy: switching..." : "Enemy off: switching...";
     }
@@ -205,35 +240,78 @@ public sealed class ApEnemySwitch
         return false;
     }
 
-    /// <summary>The block's server step (the asked switch done; the saved state kept with the grid's). Returns what changed in the
-    /// saved state: true when panelEnemy / panelPrev were written.</summary>
+    /// <summary>The block's server step (the asked switch done; the ship kept whole while it is an enemy; the saved state kept with
+    /// the grids'). Returns true when panelEnemy / panelPrev (the block grid's owner before) or Prev changed.</summary>
     public bool Step(IApOwnership o, ApEnemyRule rule, ref bool panelEnemy, ref long panelPrev)
     {
         bool enemy = o.IsEnemy(out bool hasGrid);
         int ask = Ask; Ask = 0;
         bool wrote = false;
+        long block = hasGrid ? o.BlockGrid : 0;
         if (hasGrid && ask == 1)
         {
-            var who = o.Who(out _);
+            var who = o.Who(out long requester);
             var why = ApEnemy.CanTurnOn(rule, in who, enemy);
+            _ship.Clear(); o.Ship(_ship);
+            if (why == ApEnemyRefusal.None && !AllOwned(_ship, requester)) why = ApEnemyRefusal.GroupNotOwned;
             if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); }
-            else if (o.MakeEnemy(out long prev)) { panelEnemy = true; panelPrev = prev; wrote = true; enemy = true; Note = ""; }
-            else Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
+            else
+            {
+                // (the block's grid first: it decides; then the rest - a grid the game refuses stays its owner's and is said)
+                Prev.Clear(); Flipped = 0; int failed = 0;
+                long blockOwner = 0;
+                foreach (var g in _ship) if (g.Grid == block) blockOwner = g.Owner;
+                if (o.MakeEnemy(block))
+                {
+                    Prev[block] = blockOwner; Flipped = 1;
+                    foreach (var g in _ship)
+                    {
+                        if (g.Grid == block || g.Owner == ApEnemy.HostileNpc) continue;
+                        if (o.MakeEnemy(g.Grid)) { Prev[g.Grid] = g.Owner; Flipped++; } else failed++;
+                    }
+                    panelEnemy = true; panelPrev = blockOwner; wrote = true; enemy = true;
+                    Note = failed > 0 ? $"Enemy: {failed} joined grid(s) could not be changed" : "";
+                }
+                else Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
+            }
         }
         else if (hasGrid && ask == 2)
         {
             var who = o.Who(out long requester);
             var why = ApEnemy.CanTurnOff(in who, enemy);
             if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); }
-            else if (o.Restore(panelPrev, requester, out long to))
+            else
             {
-                Note = panelPrev != 0 && to == panelPrev ? "" : "Enemy off: the owner before is not known - the ship is yours";
-                panelEnemy = false; panelPrev = 0; wrote = true; enemy = false;
+                _ship.Clear(); o.Ship(_ship);
+                long main = Prev.TryGetValue(block, out long pb) ? pb : panelPrev;
+                long mainTo = ApEnemy.RestoreTo(main, main != 0 && o.KnownPlayer(main), requester);
+                Restored = 0; int failed = 0; bool anyLost = mainTo != main;
+                foreach (var g in _ship)
+                {
+                    if (g.Owner != ApEnemy.HostileNpc) continue;
+                    long to = Prev.TryGetValue(g.Grid, out long pg) && pg != 0 && pg != ApEnemy.HostileNpc && o.KnownPlayer(pg) ? pg : mainTo;
+                    if (o.GiveTo(g.Grid, to)) Restored++; else failed++;
+                }
+                if (o.IsEnemy(out _)) Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
+                else
+                {
+                    Prev.Clear(); panelEnemy = false; panelPrev = 0; wrote = true; enemy = false;
+                    Note = failed > 0 ? $"Enemy off: {failed} joined grid(s) could not be given back" : anyLost ? "Enemy off: the owner before is not known - the ship is yours" : "";
+                }
             }
-            else Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
         }
-        // (the saved state follows the grid's real owner)
-        if (hasGrid && enemy != panelEnemy) { panelEnemy = enemy; if (!enemy) panelPrev = 0; wrote = true; }
+        else if (hasGrid && enemy)
+        {
+            // (kept whole: a grid joined later flipped too; a grid gone from the ship forgotten - left as it is)
+            _ship.Clear(); o.Ship(_ship);
+            foreach (var g in _ship)
+                if (g.Owner != ApEnemy.HostileNpc && o.MakeEnemy(g.Grid)) { if (!Prev.ContainsKey(g.Grid)) Prev[g.Grid] = g.Owner; JoinedLater++; wrote = true; }
+            _drop.Clear();
+            foreach (var k in Prev.Keys) { bool there = false; foreach (var g in _ship) if (g.Grid == k) { there = true; break; } if (!there) _drop.Add(k); }
+            foreach (var k in _drop) { Prev.Remove(k); wrote = true; }
+        }
+        // (the saved state follows the block grid's real owner)
+        if (hasGrid && enemy != panelEnemy) { panelEnemy = enemy; if (!enemy) { panelPrev = 0; Prev.Clear(); } wrote = true; }
         GridIsEnemy = hasGrid && enemy;
         return wrote;
     }
@@ -246,4 +324,3 @@ public sealed class ApEnemySwitch
         return GridIsEnemy ? "Enemy ship (the game's hostile NPC): its turrets and Engage fight players" : "Not an enemy (its owner's ship)";
     }
 }
-

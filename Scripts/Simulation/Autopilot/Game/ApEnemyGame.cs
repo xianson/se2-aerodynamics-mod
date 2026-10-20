@@ -15,6 +15,11 @@ namespace AeroMod;
 ///  - a grid's owner: its OwnershipComponent.Owner (a SyncProperty: it replicates to the clients, and its [Serializer] saves it
 ///    with the grid);
 ///  - hostile NPC: IdentitiesSessionComponent.IsHostileNPC(owner) (the game's two NPC identities: neutral and hostile);
+///  - the ship: CubeGridComponent.GetAllGridsInShip() - the game's "ship" connection group (vanilla content: rotors, hinges,
+///    pistons and their heads give it; connectors only the physical and terminal groups - a docked ship is its own; wheels and
+///    merged blocks are part of their grid). It is the group the game itself demands ONE owner for when linking
+///    (PermissionsConfig.GridConnectionsRequiringSameOwner = the ship group) and the one the terminal and toolbars treat as one
+///    ship; each grid's owner is its own OwnershipComponent, read by that grid's own targeting and turrets - so every grid flips;
 ///  - the change: OwnershipSessionComponent.TryTransferToNPC(grid, hostile: true) - what the game's own encounters, NPC spawners,
 ///    mission triggers (SetEntityOwnershipActionComponent) and its admin debug request (RequestSetNPC) call - and back with
 ///    TryTransferOwnership(grid, owner). Both fire the owner's signal: the grid's TargetingGridComponent rebuilds its target list
@@ -78,38 +83,76 @@ internal static class ApEnemyGame
         lock (_transfer) return own.TryTransferToNPC(grid, hostile: true);
     }
 
-    /// <summary>The grid back to the saved owner (a player the game still knows), else to the requester; who got it out.</summary>
-    public static bool Restore(Entity grid, long savedPrev, IdentityId requester, out long to)
+    /// <summary>One grid to this owner (the game's transfer, under the lock).</summary>
+    public static bool GiveTo(Entity grid, IdentityId owner)
     {
-        to = 0;
-        var session = grid?.GetSession();
-        var own = session?.TryGet<OwnershipSessionComponent>();
-        var ids = session?.TryGet<IdentitiesSessionComponent>();
-        if (own == null || ids == null) return false;
-        IdentityId target = requester; bool known = false;
-        if (savedPrev != 0)
-            foreach (var id in ids.GetPlayerIdentityIds())   // (a few players; once per switch, never per tick)
-                if ((long)id == savedPrev) { target = id; known = true; break; }
-        long pick = ApEnemy.RestoreTo(savedPrev, known, requester);
-        if (pick == 0 || !target.IsValid()) return false;
-        to = target;
-        lock (_transfer) return own.TryTransferOwnership(grid, target);
+        var own = grid?.GetSession()?.TryGet<OwnershipSessionComponent>();
+        if (own == null || !owner.IsValid()) return false;
+        lock (_transfer) return own.TryTransferOwnership(grid, owner);
     }
 }
 
-/// <summary>The Enemy switch's view of the game (ApEnemySwitch): the block's grid, the in-process player, the transfers.</summary>
+/// <summary>The Enemy switch's view of the game (ApEnemySwitch): the block's grid and its SHIP (CubeGridComponent.GetAllGridsInShip:
+/// the game's "ship" connection - rotors, hinges, pistons, the links PermissionsConfig requires one owner for), the in-process player,
+/// the transfers. Grids as keys handed out here (kept: a key always means the same grid entity).</summary>
 internal sealed class ApEnemyOwnership : IApOwnership
 {
     public Entity Block;
+    readonly Dictionary<Entity, long> _keys = new();
+    readonly Dictionary<long, Entity> _grids = new();
+    long _next = 1;
     Entity Grid => ApEnemyGame.GridOfBlock(Block);
+
+    public long KeyOf(Entity grid)
+    {
+        if (grid == null) return 0;
+        if (_keys.TryGetValue(grid, out long k)) return k;
+        k = _next++; _keys[grid] = k; _grids[k] = grid;
+        return k;
+    }
+    public Entity GridOf(long key) => _grids.TryGetValue(key, out var g) ? g : null;
+
+    public long BlockGrid => KeyOf(Grid);
     public bool IsEnemy(out bool hasGrid) { var g = Grid; hasGrid = g != null && ApEnemyGame.TryOwner(g, out _); return hasGrid && ApEnemyGame.IsEnemy(g); }
     public ApEnemyWho Who(out long requester) { var w = ApEnemyGame.Who(Grid, out var r); requester = r; return w; }
-    public bool MakeEnemy(out long prevOwner) => ApEnemyGame.MakeEnemy(Grid, out prevOwner);
-    public bool Restore(long savedPrev, long requester, out long to)
+
+    public void Ship(List<ApGridOwner> into)
     {
-        to = 0;
-        ApEnemyGame.Who(Grid, out var r);   // (the requester as an IdentityId: the in-process player)
-        return (long)r == requester && ApEnemyGame.Restore(Grid, savedPrev, r, out to);
+        var grid = Grid;
+        if (grid == null) return;
+        var ids = grid.GetSession()?.TryGet<IdentitiesSessionComponent>();
+        bool self = false;
+        var cg = grid.TryGet<Keen.Game2.Simulation.WorldObjects.CubeGrids.CubeGridComponent>();
+        if (cg != null)
+            foreach (var g in cg.GetAllGridsInShip())   // (an enumeration: once a second, never per tick)
+            {
+                if (g == null || !GridPhysics.Alive(g.Data) || !ApEnemyGame.TryOwner(g, out var ow)) continue;
+                if (ReferenceEquals(g, grid)) self = true;
+                into.Add(new ApGridOwner { Grid = KeyOf(g), Owner = ids != null && ids.IsHostileNPC(ow) ? ApEnemy.HostileNpc : (long)ow });
+            }
+        if (!self && ApEnemyGame.TryOwner(grid, out var own))
+            into.Add(new ApGridOwner { Grid = KeyOf(grid), Owner = ids != null && ids.IsHostileNPC(own) ? ApEnemy.HostileNpc : (long)own });
+    }
+
+    public bool KnownPlayer(long owner)
+    {
+        var ids = Grid?.GetSession()?.TryGet<IdentitiesSessionComponent>();
+        if (ids == null || owner == 0) return false;
+        foreach (var id in ids.GetPlayerIdentityIds()) if ((long)id == owner) return true;
+        return false;
+    }
+
+    public bool MakeEnemy(long grid) => ApEnemyGame.MakeEnemy(GridOf(grid), out _);
+
+    public bool GiveTo(long grid, long owner)
+    {
+        var g = GridOf(grid);
+        var ids = g?.GetSession()?.TryGet<IdentitiesSessionComponent>();
+        if (g == null || ids == null) return false;
+        IdentityId target = default; bool found = false;
+        foreach (var id in ids.GetPlayerIdentityIds()) if ((long)id == owner) { target = id; found = true; break; }
+        if (!found) return false;
+        return ApEnemyGame.GiveTo(g, target);
     }
 }
 

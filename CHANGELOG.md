@@ -36,8 +36,10 @@ was flown in game for this release. The commit hashes are on the integration bra
 - **Target Filter:** hostile only (default) / hostile + neutral / everything, on every target source, by the game's own
   relation (the turrets' rule). With no turret, or a wider filter, the block finds the nearest target within 4 km itself.
   A refused named grid says why ("no target - X is neutral").
-- **Enemy** switch (Engage): the ship becomes the game's hostile NPC's (as encounter ships are) - its turrets and its
-  Engage fight players; off gives it back to its owner (saved with the block). World setting `Autopilot.EnemyRule`: off /
+- **Enemy** switch (Engage): the whole ship - every grid on its rotors, hinges and pistons (the game's own "ship") - becomes
+  the game's hostile NPC's (as encounter ships are): its turrets, subgrid turrets too, and its Engage fight players; off gives
+  each grid back to its own owner (saved with the block, per grid). A grid joined later turns hostile too; one detached
+  stays as it is. Refused when a joined grid belongs to someone else. Docked ships (connectors) are not part of it. World setting `Autopilot.EnemyRule`: off /
   creative or admin (default) / everyone; only the owner switches it on; switching it off and editing an enemy's panel:
   creative or admin. An enemy ship follows the game's NPC rules (no fuel used, the NPC grid cleanup limit). `AeroApi` 12:
   `TryGetAutopilotEnemy`.

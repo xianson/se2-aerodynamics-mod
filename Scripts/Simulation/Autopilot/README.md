@@ -37,8 +37,9 @@ Hover + External; else External) with the pilot as the source. Only tactical num
 speeds, the g and the climb come from `FlightPerf` and the thrust. A helicopter aims by yaw and by height (pitching its lift axis
 would move it); six-axis aims anywhere its side thrusters still hold the weight; an airplane blends the nose off its path within
 30 deg and gives it back 4..7 s before the target. NPC ships: an unpiloted grid with an Autopilot block in Engage engages what its
-turrets' targeting sees (no turret: the nearest the filter takes within 4 km). The Enemy switch makes a player's ship the
-game's hostile NPC's (2026-10-19; the game's own owner change - replicated, saved with the grid); spawning NPC ships is not here
+turrets' targeting sees (no turret: the nearest the filter takes within 4 km). The Enemy switch makes a player's ship - the whole
+construct on its rotors, hinges and pistons (GetAllGridsInShip) - the game's hostile NPC's (2026-10-19; the game's own owner
+change per grid - replicated, saved with each grid; each grid's owner before saved with the block, keyed by that grid); spawning NPC ships is not here
 (an encounter would place the block with its panel saved in the prefab - the saved key carries every value).
 
 ## Entry points

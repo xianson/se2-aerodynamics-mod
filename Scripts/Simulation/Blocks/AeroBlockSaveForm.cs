@@ -31,6 +31,9 @@ public static class AeroBlockSaveForm
     public const int Format = 1;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
     public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
+    /// <summary>The Enemy switch's owner before, one per grid of the ship (2026-10-19): "aero-enemyprev:1 index owner", its value
+    /// THAT grid (an entity reference the save resolves - each grid is a bundle root).</summary>
+    public const string EnemyPrevKey = "aero-enemyprev:";
     static readonly CultureInfo C = CultureInfo.InvariantCulture;
 
     static string B(bool b) => b ? "1" : "0";
@@ -144,6 +147,16 @@ public static class AeroBlockSaveForm
            + " " + ((int)p.TargetFilter).ToString(C) + " " + B(p.Enemy) + " " + p.EnemyPrevOwner.ToString(C)
            // (45 the collision avoidance on, 46 its look-ahead s)
            + " " + B(p.AvoidOn) + " " + F(p.AvoidS);
+
+    /// <summary>One grid's owner before the Enemy switch (index: the entry's number - keys of one map must differ).</summary>
+    public static string EnemyPrev(int index, long owner) => EnemyPrevKey + Format + " " + index.ToString(C) + " " + owner.ToString(C);
+
+    public static bool TryReadEnemyPrev(string key, out long owner)
+    {
+        owner = 0;
+        string[] w = Values(key, EnemyPrevKey, 2);
+        return w != null && long.TryParse(w[2], NumberStyles.Integer, C, out owner);
+    }
 
     /// <summary>A text as one space-free value: "s" then the text with '%', spaces, tabs and line breaks as %25 %20 %09 %0A %0D.</summary>
     public static string Esc(string t)
