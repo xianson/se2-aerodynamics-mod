@@ -246,7 +246,7 @@ sealed class FlightPack : IScenarioPack
         r.Measure();
         r.Fly(80f);
         Sim.Note($"hills route: 150 m over the ground asked, 100 m minimum, over 250 m hills - lowest {r.MinAgl:F0} m, highest {r.MaxAgl:F0} m, prot {r.ProtSeen}");
-        Sim.Check(!r.P.Crashed && r.MinAgl > 60f, $"hills route: the terrain kept under it - lowest {r.MinAgl:F0} m over the ground (> 60)");
+        Sim.Check(!r.P.Crashed && r.MinAgl > 90f, $"hills route: the terrain kept under it - lowest {r.MinAgl:F0} m over the ground (> 90: the 100 m minimum)");
         Program.LedgerPublic(r, false);
     }
 

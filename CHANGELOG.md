@@ -3,7 +3,30 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
-## Unreleased - the Autopilot block (hover hold, height hold, envelope protection)
+## Unreleased - the Autopilot block (hover hold, height hold, flight in the air, target behaviours)
+
+- **Flight Hold** (the Autopilot block's panel; also Level Off): heading hold or wings level, altitude hold with a climb
+  rate, speed hold - each on or off; engaging catches what the ship has. TECS flies height and speed together (the most
+  climb is the excess thrust's). Plane2: 90 deg turn with no overshoot (2 deg in 22 s), height within 4 m; +300 m in 37 s
+  with speed held within 1.1 m/s; +30 m/s with height within 5 m. Level Off from a 50 deg bank, 20 deg dive: 39 m lost.
+- **Navigate:** GPS marker names or coordinates, once (then a loiter at the end) or round; **Return** to the engage point;
+  the terrain minimum kept along the path. Plane2 in a 15 m/s crosswind: a 90 deg corner caught with 103 m past the line
+  (turn radius 970 m), then within 9 m; a 1500 m loiter within 22 m RMS; 250 m hills at 150 m asked (100 m minimum), never under 195 m - over the ground the ground's rise is in the climb, and terrain climbs as hard as the excess thrust allows.
+- **Engage** (From the Depths' attack modes on a target): attack run (begin / abort distance, re-run time), attack run
+  U-turn, broadside (angle, range; 90 circles), circle, hover above / below, point at, standoff, pursuit lead / pure /
+  lag, jinking. Auto picks one (utility scores with hysteresis: 1 switch in 60 s across a boundary). Tactical numbers only -
+  the turn, the speeds and the g are the ship's own.
+- **Flight styles**, detected or set: airplane, helicopter (tilt movement - the hover's lean toward the motion), six-axis
+  (thrusters every way, the nose free).
+- **Nose on the target's lead** for fixed forward guns (their axis, muzzle speed and range read from the grid's weapon
+  blocks; SE2 4.0 shots fly straight): aim error and "in cone" on the status line and the API. Pursuit on Plane2: 100 % of
+  the time in a 2 deg cone at 480..510 m (straight, turning and weaving targets); six-axis standoff: 100 %; a helicopter
+  aims by yaw and by height (25..100 % against a weaving target).
+- **Target:** the grid's own targeting (locked, else priority, else nearest seen by the turrets), a GPS marker, a grid
+  by name, or another mod (`AeroApi` 12: `SetAutopilotTarget`, `TryGetAutopilotAim`, ...). Runs unpiloted.
+- The panel shows only the chosen mode's fields. Every refusal and let-go says why ("too slow to fly on the wings",
+  "no waypoints", ...). Saved with the block.
+
 
 - **Autopilot block** (Aircraft Parts; a stand-in look for now: the vanilla Event Controller, 1 m, and Timer, 0.5 m): its
   control panel is the autopilot. **Hover Hold** holds the ship's place and height - your movement keys fly it at up to its

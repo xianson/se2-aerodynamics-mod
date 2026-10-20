@@ -1,4 +1,4 @@
-# Autopilot - hover hold, height hold, envelope protection
+# Autopilot - hover and height hold, flight in the air, target behaviours, envelope protection
 
 Flown from the **Autopilot block's** control panel (one block per ship; several: the first working one by position flies).
 One core for every autopilot user: goals -> guidance -> protection -> the seam (what a seated pilot writes: a target
@@ -14,12 +14,26 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `ApTypes.cs` | `ApSense` (what the instruments show), `ApCommand` (the seam), the enums, `ApExternal` / `IApGoalSource`, `ApMath`, `LoacMath` (Loac.cs's arithmetic), `SideAuthority` |
 | `ApConfig.cs` | The world's caps and the client readout (`Autopilot.*`; the rest are a new block's panel defaults) and `ApTuning` (the one constant the game and the sim share) |
 | `ApPanel.cs` | The Autopilot block's panel (`ApPanel`, `ApMode`, `ApHeightRef`) and the limits it flies with (`ApLimits.Of`: the panel within the world's caps) |
+| `ApPilot.cs` | THE FLIGHT PILOT (an external goal source): Flight Hold, Navigate, Engage; the style's executor (airplane: an acceleration - L1 across, TECS vertical - on the lift with TECS's throttle; helicopter: a moving place for the hover's lean; six-axis: the same place on the thrusters, the nose free), the terrain minimum, the aim, jinking, its view (`ApPilotView.cs`: the status line) |
+| `ApNav.cs` | `ApAltimeter` (the height over the engage datum; the planet's centre where the gravity's lines meet), `ApCompass`, `ApL1` (L1 toward a point, a circle; a vector field onto a line flown by a braking course law), `ApTecs`, `ApRoute` (the route's text: GPS names, coordinates) |
+| `ApBehaviours.cs` | The behaviours (attack run, U-turn run, broadside, circle, hover above / below, point at, standoff, pursuit lead / pure / lag, extend) as parameterised goals (`ApNavGoal`), and the arbiter (`ApArbiterBh`: utility scores, hysteresis, dwell) |
+| `ApAim.cs` | The target's track (`ApTargetTrack`: its acceleration estimated), the lead (`ApAim.Lead`: the intercept iterated), the style's detection (`ApStyleDetect`), the target source interface (`IApTargetSource`) |
 | `ApBlockLink.cs` | The block and the flight director in step (`ApBlockLink`: a mode chosen engages, a let-go / the held height written back, the block dark lets go), the modes as goals (`ApModes`), which block flies (`ApArbiter`), the status line |
 | `Game/AeroGridComponent.Autopilot.cs` | Per grid: the server's flight director each tick before ThrustTorque (`AutopilotStep` from `AeroSimJob.AttitudeJob`), its instruments (`ApSenseNow`), the keys written in place (`ControlData.Movement`), the record (`ThrustTorque.ApPub`) - the client copy flies the same target and hands the server the pilot's keys and steering |
+| `Game/ApGameSense.cs` | The target in game (`ApGameTargets`: the grid's `TargetingGridComponent` - locked, priority, nearest; a GPS marker; a grid by name; the API's), GPS markers (`ApGps`: the owner's, then every player's), the fixed guns (`ApGunScan`: their axis, muzzle speed, range; the nose without guns: the block's front) |
 | `Game/GridTerrain.cs` | The terrain in game: `IPhysics.CastRay`, synchronous, own buffers (voxel colliders exist only near entities: a miss is "not known") |
 | `Game/AeroAutopilotComponent.cs` | The Autopilot block (server, injected by its prefabs): its panel under a lock, its status line, its step (registered with its own grid, which keeps the list: `AeroGridComponent.ApBlocks`) |
 | `Game/AeroAutopilotBlockDetailModel.cs` | Its terminal: the mode buttons (toolbar actions too), the status line, the setpoints and limits |
 | `Game/ApToasts.cs` | The autopilot's words to the seated pilot (client toasts) |
+
+## The pilot modes (2026-10-19)
+The panel's Flight Hold / Navigate / Engage are `ApPilot` on the flight director: the goals `ApPilot.GoalsFor(style)` (a helicopter:
+Hover + External; else External) with the pilot as the source. Only tactical numbers on the panel; the turn radius, the
+speeds, the g and the climb come from `FlightPerf` and the thrust. A helicopter aims by yaw and by height (pitching its lift axis
+would move it); six-axis aims anywhere its side thrusters still hold the weight; an airplane blends the nose off its path within
+30 deg and gives it back 4..7 s before the target. NPC ships: an unpiloted grid with an Autopilot block in Engage engages what its
+turrets' targeting sees; spawning and owning NPC ships is not here (an encounter would place the block with its panel saved in
+the prefab - the saved key carries every value).
 
 ## Entry points
 - `AeroGridComponent.AutopilotStep` (AttitudeJob, both scenes; a null check when nothing is engaged).
@@ -36,6 +50,11 @@ swap (a reader holds one for a tick). The block's panel: under the block's lock 
 let-go); its status line built when the terminal reads it, from inputs the grid's step swaps in four times a second.
 
 ## Tests
+Pilot modes: `Scenarios/FlightPack.cs` (holds, TECS, routes, wind, loiter, terrain, styles, refusals), `EngagePack.cs` (every
+behaviour on the plane, the gun helicopter and the six-axis gunship against straight / turning / weaving / accelerating
+targets; aim and time in the cone; the arbiter; the lead against a flown shot; the protection clipping a chase; idle patrol),
+`PilotBlockPack.cs` (the panel through the link; the saved form).
+
 `Tests/AutopilotSim` (in the gate; `-- full` the sweeps): the real core and protection over the game's thrust law and the
 mod's allocator / rotor trim / attitude law, on the dumped H25 helicopter (1.5x / 2.5x / 3x, one and two tails), VTOLs, and
 the dumped planes on their AeroBench polars; terrain, gusts, noise, lag, mass changes, engine-out, pilot keys, every reason;

@@ -43,6 +43,17 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   10 m/s and it stops where you let go) or just the height. A helicopter left hovering keeps hovering, also after a
   reload. Protected against stalls, overload, loss of control and the ground; it flies only through the ship's real
   controls.
+  - **Flight Hold:** heading (or wings level), altitude with a climb rate, speed. **Level Off** recovers and holds.
+  - **Navigate:** a route of GPS markers or coordinates, once (then a loiter) or round; terrain kept under it. **Return**
+    flies back to where you engaged.
+  - **Engage:** From the Depths' attack modes on a target - attack run, U-turn run, broadside, circle, hover above / below,
+    point at, standoff, pursuit lead / pure / lag, optional jinking. Auto picks one.
+  - **Flies like the ship:** airplane (banks to turn), helicopter (leans toward the motion) or six-axis (thrusters, the
+    nose free) - detected, or set on the panel.
+  - **Aims fixed guns:** the nose on the target's lead point; aim error and "in cone" for weapon mods. It never fires.
+  - **Target:** what you locked (or what the turrets see), a GPS marker, a grid by name, or another mod. Works on
+    unpiloted ships (NPC-style).
+
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
   the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).

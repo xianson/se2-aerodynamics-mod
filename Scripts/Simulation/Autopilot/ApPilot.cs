@@ -33,7 +33,8 @@ public sealed class ApPilot : IApGoalSource
     public int Wp, WpCount; Vector3D _wpFrom; bool _loiter; Vector3D _loiterAt;
     Vector3D _home, _station; bool _hasStation;
     Vector3 _upL = Vector3.UnitY, _noseL = -Vector3.UnitZ;
-    Vector3 _upW = Vector3.UnitY;
+    Vector3 _upW = Vector3.UnitY; bool _terrainUp;
+
     float _cruise, _time, _jinkIn, _gunEl;
  int _jx = 1, _jy = 1; uint _rng = 2463534242u;
 
@@ -215,8 +216,10 @@ public sealed class ApPilot : IApGoalSource
         // ── the terrain under it: never below MinAglM over the ground below, and up over what is ahead ──
         float hDem = goal.Height;
         float need = Cfg.MinAglM;
+        float hd0 = hDem;
         if (need > 0f && agl >= 0f && agl < 1.5f * need) hDem = MathF.Max(float.IsFinite(hDem) ? hDem : h, h + (need - agl));
         if (need > 0f && Fd != null && Fd.Ground.Tti < 12f && Style == ApStyle.Airplane) hDem = MathF.Max(float.IsFinite(hDem) ? hDem : h, h + need);
+        _terrainUp = float.IsFinite(hDem) && (!float.IsFinite(hd0) || hDem > hd0 + 1f);
         HeightWanted = hDem; Goal = goal;
         // ── the style's executor ──
         x = default; x.Throttle = float.NaN;
@@ -322,9 +325,13 @@ public sealed class ApPilot : IApGoalSource
         float thrust = ApMath.Along(s.ThrustPos, s.ThrustNeg, Vector3.Normalize(s.AirVel));
         float drag = MathF.Max(0f, perf.DragDecelNow * s.Mass);
         float aVertMax = gT * MathF.Max(0.3f, nAvail - 1f) * 0.7f;
-        float hdot = Vector3.Dot(s.Vel, up);
+        // (over the ground the height's rate is the climb less the ground's own rise under the ship; terrain ahead or under the
+        //  minimum: climb as hard as the excess thrust lets it, not at the panel's rate)
+        bool overGround = Mode != ApMode.Engage && Cfg.HeightRef == ApHeightRef.Ground && Agl(in s) >= 0f;
+        float hdot = Vector3.Dot(s.Vel, up) - (overGround && Fd != null && Fd.Ground.HasGround ? Fd.Ground.GroundRate : 0f);
         float vDem = goal.Max ? float.NaN : goal.Speed;
-        Tecs.Step(h, hdot, hDem, Cfg.VsMs, air, vDem, thrust, drag, s.Mass, gT, aVertMax, s.Dt > 0f ? s.Dt : 1f / 60f, out float aVert, out float thr);
+        float vs = _terrainUp ? MathF.Max(Cfg.VsMs, 0.4f * air) : Cfg.VsMs;
+        Tecs.Step(h, hdot, hDem, vs, air, vDem, thrust, drag, s.Mass, gT, aVertMax, s.Dt > 0f ? s.Dt : 1f / 60f, out float aVert, out float thr);
         x.Kind = ApExternalKind.Accel; x.Accel = aLat + up * aVert; x.Throttle = goal.Max ? 1f : thr;
     }
 
