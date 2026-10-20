@@ -203,32 +203,51 @@ public static partial class AeroSettings
             foreach (var s in _all) if (s.Scope == scope && (s.Get() != s.Default || s.Stored != s.Default)) Set(s.Name, s.Default, out _, fromStorage: true);
     }
 
-    // ── the world save (AeroWorldSettingsComponent) ──
+    // ── the world save (the carriers: AeroWorldSettingsComponent on the server planets, AeroWorldBodyComponent on the
+    //    players' server bodies - Save/WorldCarriers.cs decides which text is applied and when the world is over) ──
 
     internal const string SaveKey = "aero-settings:";
-    static int _carriers;
-    static bool _worldApplied;
 
-    /// <summary>A server planet loaded with its saved builder: the world's settings (the first non-empty one wins).</summary>
-    internal static void WorldLoaded(string text)
+    /// <summary>The world's settings carriers (2026-10-19: planetless worlds - the bodies carry the text too; a body's text
+    /// wins over a planet's; the world's end is its last carrier leaving while the session unloads, or another session).</summary>
+    internal static readonly WorldCarriers Carriers = new WorldCarriers(
+        (text, kind) => WorldLoaded(text, legacyLines: kind == WorldCarriers.Kind.Planet),
+        (why, unloading) => { Log.Default?.Info($"[AERO] world reset: {why}"); WorldDefaults(); WorldHooks?.Invoke(); },
+        () => _worldUnsaved);
+
+    /// <summary>The per-world state beyond the settings, dropped at the world's end (set by the game side: the API's structure
+    /// events, quick launch's ask, the autopilot's toasts - AeroWorldSettingsComponent.Hooks).</summary>
+    internal static Action WorldHooks;
+
+    /// <summary>A carrier's saved key (`aero-settings:` + the text) out of its builder's map; "" if none.</summary>
+    internal static string SavedText(IEnumerable<string> keys)
     {
-        if (_worldApplied || string.IsNullOrEmpty(text)) return;
-        _worldApplied = true;
+        if (keys != null) foreach (var k in keys) if (k != null && k.StartsWith(SaveKey) && k.Length > SaveKey.Length) return k.Substring(SaveKey.Length);
+        return "";
+    }
+
+    /// <summary>The world's settings from a saved text (Carriers picks which; the host's overrides re-read over it).
+    /// `legacyLines`: a planet's text - saves before 2026-10-15 also held the blocks' lines there (AeroSurfaceSaved).</summary>
+    internal static void WorldLoaded(string text, bool legacyLines = true)
+    {
+        if (string.IsNullOrEmpty(text)) return;
         ResetScope("world");
         int n = Apply(text, "world");
-        AeroSurfaceSaved.Load(text);
-        Log.Default?.Info($"[AERO] world settings loaded: {n}");
+        if (legacyLines) AeroSurfaceSaved.Load(text);
+        Log.Default?.Info($"[AERO] world settings loaded: {n} ({(legacyLines ? "a planet's" : "a body's")} carrier)");
         _worldUnsaved = false;
         _worldFileAt = DateTime.MinValue;   // (the host's overrides again, over the save)
     }
 
-    internal static void CarrierAdded() { SawServer = true; System.Threading.Interlocked.Increment(ref _carriers); Poll(force: true); }
+    /// <summary>A carrier joined its session's scene (the server side is here).</summary>
+    internal static void CarrierAdded(object session) { SawServer = true; Carriers.Added(session); Poll(force: true); }
 
-    /// <summary>The last carrier gone (the world unloaded): world settings back to defaults for the next world.</summary>
-    internal static void CarrierRemoved()
+    /// <summary>A carrier leaves its session's scene; the last one while the session unloads ends the world (Carriers).</summary>
+    internal static void CarrierRemoved(object session, bool unloading) => Carriers.Removed(session, unloading);
+
+    /// <summary>The world is over: world settings back to defaults for the next world.</summary>
+    internal static void WorldDefaults()
     {
-        if (System.Threading.Interlocked.Decrement(ref _carriers) > 0) return;
-        _worldApplied = false;
         ResetScope("world");
         AeroSurfaceSaved.Clear();
         _worldFileAt = DateTime.MinValue;

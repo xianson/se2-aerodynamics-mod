@@ -239,7 +239,7 @@ static class Program
         Check(AeroSettings.TryGet("Structure.Strength", out str) && str == 5, "forced: the save's own text still applies (storage)");
         AeroSettings.ApplyHostFile("# nothing\n");
         Check(!AeroSettings.IsForced("Structure.Strength") && AeroSettings.Set("Structure.Strength", 3, out why), $"host file emptied: nothing forced, Set works ({why})");
-        AeroSettings.CarrierRemoved();   // (the world unloaded: _worldApplied back, defaults)
+        AeroSettings.WorldDefaults();   // (the world unloaded: defaults)
 
         // WorldUnsaved
         AeroSettings.WorldSaved();
@@ -296,15 +296,58 @@ static class Program
     static void ForcedUnload()
     {
         ResetAll();
-        var carriers = typeof(AeroSettings).GetField("_carriers", BindingFlags.NonPublic | BindingFlags.Static);
-        carriers.SetValue(null, 1);   // (one world's carrier; CarrierAdded would poll the real files)
+        var world = new object();
+        AeroSettings.Carriers.Added(world);   // (one world's carrier; CarrierAdded would poll the real files)
         AeroSettings.ApplyHostFile("Structure.Strength = 9" + NL + "Heat.Multiplier = 3" + NL);
         Check(AeroSettings.IsForced("Structure.Strength") && AeroSettings.IsForced("Heat.Multiplier"), "unload: forced while the world is loaded");
-        AeroSettings.CarrierRemoved();
+        AeroSettings.CarrierRemoved(world, unloading: true);
         Check(!AeroSettings.IsForced("Structure.Strength") && !AeroSettings.IsForced("Heat.Multiplier"), "unload: nothing forced after the world unloads");
         Check(AeroSettings.Set("Structure.Strength", 3, out string why), $"unload: the next world sets it ({why})");
         Check(AeroSettings.TryGet("Heat.Multiplier", out double hm) && AeroSettings.Info("Heat.Multiplier", out _, out double def, out _, out _, out _, out _, out _) && hm == def, "unload: the forced value went back to its default");
-        carriers.SetValue(null, 0);
+        ResetAll();
+    }
+
+    // ── 9b. a planetless world (2026-10-19): the players' bodies carry the world's settings (Save/WorldCarriers.cs) ──
+    static void Planetless()
+    {
+        ResetAll();
+        var body = WorldCarriers.Kind.Body; var planet = WorldCarriers.Kind.Planet;
+        var s1 = new object();
+        AeroSettings.Carriers.Added(s1); AeroSettings.Carriers.Added(s1);   // (a new world: its spectator and character, empty builders)
+        AeroSettings.Info("Heat.Multiplier", out _, out double hmDef, out _, out _, out _, out _, out _);
+        Check(AeroSettings.Set("Heat.Multiplier", 2.5, out string why), $"planetless: a world setting changes ({why})");
+        string text = AeroSettings.Text("world", all: false);   // (what each body writes at the save)
+        Check(AeroSettings.SavedText(new[] { "other:1", AeroSettings.SaveKey + text }) == text && text.Contains("Heat.Multiplier = 2.5"), $"planetless: the saved key holds the text ('{text.Replace(NL, "|")}')");
+        Check(AeroSettings.SavedText(new[] { "other:1" }) == "" && AeroSettings.SavedText(null) == "", "planetless: no key - no text");
+        AeroSettings.CarrierRemoved(s1, unloading: false);   // (the character died: a body gone mid-session)
+        Check(AeroSettings.TryGet("Heat.Multiplier", out double hm) && hm == 2.5, "planetless: a body leaving mid-session keeps the world's settings");
+        AeroSettings.CarrierRemoved(s1, unloading: true);   // (the world closes: its last carrier)
+        Check(AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == hmDef, "planetless: the unload resets the world's settings");
+        var s2 = new object();
+        AeroSettings.Carriers.Read(text, body, s2); AeroSettings.Carriers.Read(text, body, s2);
+        AeroSettings.Carriers.Added(s2); AeroSettings.Carriers.Added(s2);
+        Check(AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == 2.5 && !AeroSettings.WorldUnsaved, "planetless: the save's value back after the reload (and nothing unsaved)");
+        AeroSettings.CarrierRemoved(s2, true); AeroSettings.CarrierRemoved(s2, true);
+        // precedence: an old save (planets only) still loads; a body's text wins over a planet's either way round
+        var s3 = new object();
+        AeroSettings.Carriers.Read("Heat.Multiplier = 3" + NL, planet, s3); AeroSettings.Carriers.Added(s3);
+        Check(AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == 3, "old save: the planets' text loads");
+        AeroSettings.CarrierRemoved(s3, true);
+        var s4 = new object();
+        AeroSettings.Carriers.Read("Heat.Multiplier = 3" + NL, planet, s4); AeroSettings.Carriers.Read(text, body, s4);
+        AeroSettings.Carriers.Added(s4); AeroSettings.Carriers.Added(s4);
+        Check(AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == 2.5, "precedence: planet then body - the body's");
+        AeroSettings.CarrierRemoved(s4, true); AeroSettings.CarrierRemoved(s4, true);
+        var s5 = new object();
+        AeroSettings.Carriers.Read(text, body, s5); AeroSettings.Carriers.Read("Heat.Multiplier = 3" + NL, planet, s5);
+        AeroSettings.Carriers.Added(s5); AeroSettings.Carriers.Added(s5);
+        Check(AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == 2.5, "precedence: body then planet - the body's");
+        // the hooks run at the world's end (and at a new session whose last world's unload was not seen)
+        int hooks = 0; var old = AeroSettings.WorldHooks; AeroSettings.WorldHooks = () => hooks++;
+        AeroSettings.Carriers.Read(text, body, new object());
+        Check(hooks == 1 && AeroSettings.TryGet("Heat.Multiplier", out hm) && hm == 2.5, "unseen unload: the hooks run, the new world's text applied after the reset");
+        AeroSettings.WorldHooks = old;
+        AeroSettings.WorldDefaults();
         ResetAll();
     }
 
@@ -374,14 +417,13 @@ static class Program
             Check(!AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm0) && hm0 == hmDef, "poll: the host file read in the background is not applied there");
             TickPoll();
             Check(AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm1) && hm1 == 3, "poll: the next tick-thread poll applies the host file (forced)");
-            var carriers = typeof(AeroSettings).GetField("_carriers", Priv);
-            carriers.SetValue(null, 1);
+            var loaded = new object();
+            AeroSettings.Carriers.Added(loaded);
             HandEdit(world, "Heat.Multiplier = 4" + NL);
             PollFiles();   // (read; the world unloads before a tick applies it)
-            AeroSettings.CarrierRemoved();
+            AeroSettings.CarrierRemoved(loaded, unloading: true);
             TickPoll();
             Check(!AeroSettings.IsForced("Heat.Multiplier") && AeroSettings.TryGet("Heat.Multiplier", out double hm2) && hm2 == hmDef, "poll: a world unload discards a host-file read still waiting for a tick");
-            carriers.SetValue(null, 0);
             // a change made while the client file is written (after the poll took its mark) is not lost
             var dirtyAt = typeof(AeroSettings).GetField("_clientDirtyAt", Priv);
             var write = typeof(AeroSettings).GetMethod("WriteClient", Priv);
@@ -475,7 +517,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root); FilePoll(); Assists();
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Planetless(); Denylist(root); NoCodeWrites(root); FilePoll(); Assists();
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

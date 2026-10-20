@@ -73,12 +73,13 @@ public partial class AeroSurfaceSettingsComponent : Component, IInSceneListener,
 /// <summary>
 /// The OLD form of the blocks' saved state, READ ONLY since 2026-10-15 (each block now saves its own: AeroBlockSave):
 /// "surface x y z pitch yaw roll max trim", "gear x y z 1|0", "airbrake x y z max", "thrust x y z f" lines after the world's
-/// aero settings in their text (AeroWorldSettingsComponent; AeroSettings.Apply skips lines without '='). On load they wait
+/// aero settings in their text (AeroWorldSettingsComponent, the planets' carrier - never the bodies' since 2026-10-19;
+/// AeroSettings.Apply skips lines without '='). On load they wait
 /// until a block is within a metre of where it was (a save keeps grids where they were), then go onto it; one nobody
 /// claims in 60 s is dropped. A block that took its value from its own saved data is never claimed. Nothing writes these
 /// lines any more: the first save after loading an old world writes the block data, and no lines.
 /// REMOVE the reader (the four line lists, Load, the legacy loops of ApplyPending, AeroBlockSaveForm.ParseLegacy, the
-/// AeroSettings.WorldLoaded call) once one release has shipped with the block data: a world last saved before that release
+/// AeroSettings.WorldLoaded legacyLines call) once one release has shipped with the block data: a world last saved before that release
 /// would then load with its aero blocks at their defaults. Keep Follow (the thrusters' client copies) and Clear.
 /// </summary>
 internal static class AeroSurfaceSaved

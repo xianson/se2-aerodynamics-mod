@@ -14,7 +14,8 @@ creative") aero owns it and the Orbital mod only moves the ship for aero (`Orbit
 | `QuickLaunchRules.cs` | Engine-free (`Tests/QuickLaunchTests`): the key's press (`KeyEdge`) and an ask's freshness (`Fresh`, `AskMaxAgeS`), may it go, where it ends (over the ground, never lower, never into it; the clamp room it leaves the Orbital mod's space border), the level turn, the speed, the refusal lines, the binding |
 
 ## Entry points
-- `QuickLaunch.ClientTick` / `TurnTarget`: `AeroEntryFxComponent.EntryJob` (every client grid's effects job; one claims the tick).
+- `QuickLaunch.ClientTick`: `AeroClientHost.Frame` (the client's session tick, the render camera's job). `TurnTarget`:
+  `AeroEntryFxComponent.EntryJob` (the seated client grid's own effects job).
 - `AeroWorldSettingsComponent.QuickLaunchJob` (`OnQuickLaunch`): only while an ask waits (a reference read otherwise).
 - `AeroApi.RequestQuickLaunch` (the Orbital mod's DevHarness key `quicklaunch`): the key's ask, its checks skipped.
 

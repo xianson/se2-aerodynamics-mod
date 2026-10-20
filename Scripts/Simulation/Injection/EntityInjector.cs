@@ -33,6 +33,9 @@ public class InjectAeroComponents : Injections
         bool hasTank = false;
         bool hasFlame = false;   // a client thruster (it draws flames)
         bool isServerPlanet = false;   // (carries the world's aero settings in the save)
+        bool isRenderCamera = false;   // (the client's render camera: the client's session tick, AeroClientHost)
+        bool isServerBody = false;   // (a player's server character or spectator: carries the world's aero settings too)
+        bool hasBodyCarrier = false;
 
         foreach (var type in composition.Types)
         {
@@ -46,6 +49,21 @@ public class InjectAeroComponents : Injections
                 hasFlame = true;
             if (type == typeof(Keen.Game2.Simulation.GameSystems.Discoveries.Discoverables.DiscoverablePlanetComponent))
                 isServerPlanet = true;
+            if (type == typeof(Keen.Game2.Client.GameSystems.CameraSystems.CameraComponent))
+                isRenderCamera = true;
+            if (type == typeof(Keen.Game2.Simulation.WorldObjects.Characters.CharacterMovementServerComponent)
+                || type == typeof(Keen.Game2.Simulation.WorldObjects.Spectators.ServerSpectatorComponent))
+                isServerBody = true;
+            if (type == typeof(AeroWorldBodyComponent))
+                hasBodyCarrier = true;   // (a composition two prefabs share: once)
+        }
+
+        if (isRenderCamera)
+        {
+            // (the client scene's one camera entity - ClientPlayersSessionConfiguration.RenderCamera: there with no grid, on
+            //  foot, in spectator; the settings menu, the files' poll and the local player's HUD and feel run from it)
+            Add(entity, typeof(AeroClientHostComponent));
+            Log.Default?.Info($"[AERO] Injected AeroClientHostComponent into camera prefab '{entity.DebugName}'");
         }
 
         if (isServerPlanet)
@@ -55,10 +73,24 @@ public class InjectAeroComponents : Injections
             Add(entity, new Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo
             {
                 Type = typeof(AeroWorldSettingsComponent),
-                ComponentId = new System.Guid("ae205e77-1a65-4c0d-9b1e-0000000000a5"),
+                ComponentId = WorldCarrier.PlanetId,
                 ObjectBuilder = new Keen.Game2.Simulation.GameSystems.EntityNameSessionComponentObjectBuilder(),
             });
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroWorldSettingsComponent into server planet prefab '{entity.DebugName}'");
+        }
+
+        if (isServerBody && !hasBodyCarrier)
+        {
+            // (2026-10-19, planetless worlds: a space-only save holds only the players' bodies - the world's settings ride
+            //  on them too; the SERVER compositions only (CharacterMovementServerComponent, ServerSpectatorComponent are in no client one),
+            //  a fixed id and the engine's builder as the planets' carrier - Runtime/AeroWorldSettingsComponent.cs)
+            Add(entity, new Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo
+            {
+                Type = typeof(AeroWorldBodyComponent),
+                ComponentId = WorldCarrier.BodyId,
+                ObjectBuilder = new Keen.Game2.Simulation.GameSystems.EntityNameSessionComponentObjectBuilder(),
+            });
+            Log.Default?.Info($"[AERO] Injected AeroWorldBodyComponent (world settings carrier) into server body prefab '{entity.DebugName}'");
         }
 
         if (hasCubeGrid)

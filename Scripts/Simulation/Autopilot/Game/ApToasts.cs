@@ -19,8 +19,8 @@ public static class ApToasts
     static long _nextFrame;
     static int _busy;
 
-    /// <summary>Client, the effects jobs (AeroEntryFxComponent.EntryJob, beside QuickLaunch.ClientTick): one job a frame claims it.</summary>
-    internal static void ClientTick(Entity anyGrid)
+    /// <summary>Client, the client's session tick (Runtime/AeroClientHost.cs, beside QuickLaunch.ClientTick): one caller a frame claims it.</summary>
+    internal static void ClientTick(Entity anyClient)
     {
         if (ApNotes.Pending == null) return;
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
@@ -32,7 +32,7 @@ public static class ApToasts
             var say = ApNotes.Pending;
             if (say == null) return;
             ApNotes.Pending = null; Status = say;
-            Toast(anyGrid?.GetSession(), say);
+            Toast(anyClient?.GetSession(), say);
         }
         finally { Volatile.Write(ref _busy, 0); }
     }

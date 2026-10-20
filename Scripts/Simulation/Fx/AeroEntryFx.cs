@@ -610,14 +610,12 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         if (c.NoRender) return;
         if (c.Data.Scene?.DebugName != "Client") { c.NoRender = true; return; }   // (the server copy: aero runs there, nothing is drawn)
         c.CheckOwner();
-        if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
-        AeroSettings.Poll();   // (the settings files, every ~2 s)
-        if (SettingsTab.Claim()) SettingsTab.Ticked(c.Entity.GetSession());   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one job per 250 ms)
-        MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
-        QuickLaunch.ClientTick(c.Entity);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs, 2026-10-18)
-        ApToasts.ClientTick(c.Entity);   // (the autopilot's words to the pilot - Autopilot/Game/ApToasts.cs)
+        // (the client's session-level work - settings poll and menu, Mach readout, quick launch's key, autopilot toasts, creaks
+        //  and shake - runs from the render camera, Runtime/AeroClientHost.cs, grid or no grid: with no client grid the
+        //  settings menu never appeared, 2026-10-19. Here only its fallback: a timestamp compare while the camera host runs)
+        AeroClientHost.Frame(c.Entity, fromHost: false);
         // (the autopilot's and the stall protection's CLIENT bridge - the pilot's keys and steering to the server's record, the
-        //  server's target and readout back to this copy: AeroGridComponent.ClientAp / ClientAssist. Here, in the client's frame:
+        //  server's target and readout back to this copy: AeroGridComponent.ClientAp / ClientAssist. Here, in the client's frame (per grid, so not in AeroClientHost):
         //  the attitude job that called them is the server scene's only - in game 2026-10-19 they never ran, so the seated
         //  pilot's keys and steering never reached the autopilot and the readout stayed empty)
         var aeroGrid = c.Entity?.TryGet<AeroGridComponent>();
@@ -628,7 +626,6 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
             aeroGrid.AssistStep(bwt);
         }
         QuickLaunch.TurnTarget(c.Entity);   // (this grid's cockpit target, after a quick launch aero turned it: a reference compare)
-        StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
         // (the hull's scorch marks, twice a second - off with the effects only: from the flight field's update they were never
         //  stamped with the field off, out of its range or culled, 2026-10-15. The server copy: the field's pairing, else

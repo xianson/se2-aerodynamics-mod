@@ -310,7 +310,9 @@ static class Program
         Check(Regex.IsMatch(Body(cl, "internal static void ClientTick("), @"CompareExchange\(ref _busy, 1, 0\) != 0\) return;"), "one job at a time at the key (the time claim alone let two in)");
         Check(Body(srv, "internal static void ServerStep(").Contains("QuickLaunchRules.Fresh(ask.At,"), "the server: an ask taken once (TakeAsk) and only while fresh");
         string fx = Src("Fx", "AeroEntryFx.cs");
-        Check(fx.Contains("QuickLaunch.ClientTick(c.Entity)") && fx.Contains("QuickLaunch.TurnTarget(c.Entity)"), "the client effects job runs the key and the target turn");
+        string host = Src("Runtime", "AeroClientHost.cs");
+        Check(host.Contains("QuickLaunch.ClientTick(any)") && fx.Contains("QuickLaunch.TurnTarget(c.Entity)") && !fx.Contains("QuickLaunch.ClientTick("),
+            "the key: the client's session tick (AeroClientHost - on foot, no grid, too); the target turn: the seated grid's effects job");
         string api = Src("Api", "AeroApi.cs");
         Check(api.Contains("public static void RequestQuickLaunch() => QuickLaunch.DevAsk();"), "AeroApi.RequestQuickLaunch: the key's ask (the Orbital harness key quicklaunch)");
         string set = Src("Runtime", "AeroSettings.cs");

@@ -28,8 +28,9 @@ namespace AeroMod;
 ///  - Fails closed: anything missing (a type, PART_TabControl, the dispatcher) leaves the Options screen as the game made it,
 ///    puts the reason in Status, logs it once, and shows ONE toast per session pointing to the .cfg files (W5 b).
 /// Reflection: AvaloniaReflect.cs (every member listed in docs/REFLECTION_AND_WHITELIST.md).
-/// SHARED: written once in the Orbital mod, copied into the Aerodynamics Mod by tools/sync_settings_ui.sh (only the
-/// namespace line differs; tools/check_contract.sh checks it). The per-mod part is SettingsTab.Mod.cs. Edit it here.
+/// SHARED: written once in the Aerodynamics Mod's tools/shared/modsrc/files/ (this path under it), copied into both mods by
+/// tools/shared/modsrc/sync.sh (only the namespace line differs; both mods' gates check the copies). The per-mod part is
+/// SettingsTab.Mod.cs. Edit it THERE, not in a mod's copy.
 /// </summary>
 public static partial class SettingsTab
 {

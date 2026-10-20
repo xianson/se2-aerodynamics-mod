@@ -9,7 +9,8 @@ namespace AeroMod;
 /// <summary>
 /// QUICK LAUNCH, the server's step: the teleport phase - before the simulation, where the game's fast travel moves ships
 /// (FastTravelUpdate.Teleport) - on the server planets' settings carrier (AeroWorldSettingsComponent, one job per planet: the
-/// first to see an ask takes it). Nothing runs while nobody asked (a reference read).
+/// first to see an ask takes it). Nothing runs while nobody asked (a reference read). The same job ticks the atmosphere
+/// point query's generator list (AtmosphereProbe: with no grid in the world, AeroApi.TryGetAtmosphereAt answered false).
 /// </summary>
 public partial class AeroWorldSettingsComponent
 {
@@ -20,8 +21,9 @@ public partial class AeroWorldSettingsComponent
     [MustHave(typeof(AeroWorldSettingsComponent))]
     private static void QuickLaunchJob(AeroWorldSettingsComponent c)
     {
-        if (!QuickLaunch.Asked) return;
         if (c.Data.Scene?.DebugName == "Client") return;   // (the carrier is the server planets'; never answer from a client copy)
+        AtmosphereProbe.Tick(c.Entity);   // (the API's point query with no grid in the world: a timestamp compare; ~10 s its list)
+        if (!QuickLaunch.Asked) return;
         QuickLaunch.ServerStep(c);
     }
 

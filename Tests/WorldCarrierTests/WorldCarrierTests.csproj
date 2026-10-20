@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The world settings' carriers (Scripts/Simulation/Save/WorldCarriers.cs, shared with the Orbital Mod) with mock
+       sessions: Program.cs is shared too (tools/shared/modsrc). No game. -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Save\WorldCarriers.cs" />
+  </ItemGroup>
+</Project>

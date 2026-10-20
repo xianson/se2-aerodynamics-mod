@@ -13,7 +13,8 @@ namespace AeroMod;
 /// patterns of the Orbital mod's UiThread / MapView / GameUi, in one place both mods can carry.
 /// Everything here fails closed: a missing type or member gives null / false (never a throw to the caller), and Why keeps
 /// the first thing that was missing. Every touch of a control must run on the UI thread (Post).
-/// SHARED: copied into the Aerodynamics Mod by tools/sync_settings_ui.sh (only the namespace line differs). Edit it here.
+/// SHARED: written once in the Aerodynamics Mod's tools/shared/modsrc/files/ (this path under it), copied into both mods by
+/// tools/shared/modsrc/sync.sh (only the namespace line differs). Edit it THERE, not in a mod's copy.
 /// </summary>
 public static class AvaloniaReflect
 {

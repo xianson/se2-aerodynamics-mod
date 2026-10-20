@@ -26,13 +26,15 @@ internal static class AtmosphereProbe
     static MethodInfo _serialize;
     static bool _resolved, _ok;
     /// <summary>Diagnostics: why the point query cannot answer ("" when it can).</summary>
-    public static string Why = "no aero grid simulated yet";
+    public static string Why = "no server grid or planet seen yet";
     public static int Generators => _gens.Length;
 
     static readonly AtmosphereBridge _bridge = new AtmosphereBridge();
 
-    /// <summary>Sim thread, every aero grid tick: cheap (a timestamp compare); the list again every ~10 s.</summary>
-    internal static void Tick(AeroGridComponent aero)
+    /// <summary>Server sim thread, every server aero grid's tick and every server planet's (the settings carrier's job: the
+    /// query answers with no grid in the world too, 2026-10-19): cheap (a timestamp compare); the list again every ~10 s.
+    /// `any`: a server-scene entity (its session).</summary>
+    internal static void Tick(Entity any)
     {
         // (the due time read plainly - a long is read whole on 64-bit: Interlocked.Read is a locked compare-exchange that took
         //  this shared cache line for writing from every server grid's tick on every thread - 1.6 ms/s of a profile, 2026-10-15;
@@ -43,7 +45,7 @@ internal static class AtmosphereProbe
         if (System.Threading.Interlocked.CompareExchange(ref _refreshAt, now + 10 * System.Diagnostics.Stopwatch.Frequency, due) != due) return;
         try
         {
-            _session = aero.Entity?.GetSession() ?? _session;
+            _session = any?.GetSession() ?? _session;
             if (_session == null) return;
             if (!Resolve()) return;
             var l = new List<(Vector3D, float, float, float)>();

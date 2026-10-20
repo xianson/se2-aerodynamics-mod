@@ -53,6 +53,7 @@ projects in `Tests/`; keep game types out of them.
 | `ThrusterEffectsComponent` (client thruster), with `EntityInjector.InjectFlames` | `AeroFlameComponent` |
 | `ResourceContainerComponent` (tanks) | `AeroFuelMassComponent` |
 | `DiscoverablePlanetComponent` (server planets) | `AeroWorldSettingsComponent` (carries the world settings in the save) |
+| `CameraComponent` (the client's render camera: one entity, always in the client scene) | `AeroClientHostComponent` (the client's session tick, `Runtime/AeroClientHost.cs`: runs with no grid in the world) |
 | the mod's control-surface / gear / airbrake prefabs (`AeroBlockGuids`) | `AeroSurfaceSettingsComponent` / `AeroFlapComponent`, `AeroGearComponent` / `AeroGearAnimComponent`, `AeroAirbrakeComponent` / `AeroAirbrakeAnimComponent` (server / client; the server ones saved with the block, section 11) |
 | the Autopilot block's server prefabs (`AeroBlockGuids.AutopilotServerPrefabs`) | `AeroAutopilotComponent` (its panel, saved with the block; it registers with its grid, whose attitude step flies it: `Autopilot/`) |
 
@@ -66,7 +67,7 @@ exists twice, a **server copy** and a **client copy**, each with its own `AeroGr
 |---|---|
 | **Simulation jobs** (DCS jobs, one per grid, grids in parallel; both scenes) | `AeroGridComponent.AeroSimJob` (`[During(GridUpdateOrder.UpdateSystems.Update)]`, after `ThrustComponent.OnComputeThrust`); `AttitudeJob` (after `GridUpdateOrder.UpdateSystems`, before `Physics`); `WindUndoJob` (after `RangedAffectGenerators`, before `Physics`); `AeroDebrisDrag.DebrisDragJob` (the same slot, one call per loose fracture piece - client scene only, where the game spawns them); `TearJob` (after `OnAttitude`, before `Physics`, server, once a tick); `AeroStallWarning.AeroStallJob` (after the game's `ReportStall`, server); the gear, airbrake and autopilot block server jobs (before `Simulation`) |
 | **Aero workers** (`AeroWork`, `Workers` = 2 long-running tasks, highest priority first) | full rebuilds (`AeroGridComponent.StartBackgroundBuild`'s lambda), local chunk updates after damage (`Damage.cs`), structure evaluations (`EvaluateStructure`). They only touch the snapshot they were handed; results are installed on the simulation thread (`FinalizeStaggeredBuild`, `TickLocal`, `TickStructureCore`) |
-| **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (flight field, scorch stamping twice a second, smoke, creaks, Mach readout, settings poll, the settings tab's 250 ms claim - `SettingsTab.Claim` / `Ticked`), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
+| **Client render-submission jobs** (after `RenderSubmissionBegin`) | `AeroClientHostComponent.ClientFrameJob` (the render camera's, once a frame, grid or no grid - `AeroClientHost.Frame`: settings poll, the settings tab's 250 ms claim - `SettingsTab.Claim` / `Ticked`, Mach readout, quick launch's key, autopilot toasts, creaks and shake); `AeroEntryFxComponent.EntryJob` / `TrailDrawJob` (per client grid: flight field, scorch stamping twice a second, smoke, quick launch's cockpit turn; the session tick's fallback while the camera's has not run for 1 s), `AeroFlameComponent`, `AeroFlapComponent`, gear / airbrake animators, `AeroDebugDraw`, and `AeroGridComponent.SpeedUncapJob` (reads the physics speed cap) |
 | **Avalonia UI thread** | The settings tab (`SettingsTab.UiTick`, posted by the claim): attach to the open Options screen, read the controls (~4 Hz while the tab is selected), `AeroSettings.Set` |
 | **Thread pool** | `AeroSettings.Poll` reads the settings files off the job threads; what it read is applied by the next job's poll, on that job's thread |
 
@@ -311,8 +312,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
 - **The menu** (`Ui/`): the Options screen's **Mods** tab, one tab for both mods (Tag contract `ModSettings/v1`, a section
   per mod), rows generated from the registry (`SettingsModel`: basic shown, advanced collapsed, hidden left out; a
   slider's edit applies once it holds still), reset per group (`ResetGroup`), refusal reasons shown. The shared files are
-  the Orbital mod's (`tools/sync_settings_ui.sh` there writes them, its `check_contract.sh` checks the copies); edit them
-  there. API: `docs/API.md` version 8 and Settings.
+  written once in `tools/shared/modsrc/files/` (this repo; `tools/shared/modsrc/sync.sh` writes both mods' copies, both
+  mods' gates check them); edit them there, never a copy. API: `docs/API.md` version 8 and Settings.
 
 ## 11. What the save holds
 
@@ -324,6 +325,7 @@ The engine type is always there, so a world saved with the mod still loads witho
 | What | Where | Key (value: the entity itself) |
 |---|---|---|
 | World settings (values off their default) | `AeroWorldSettingsComponent` on each server planet, component id `ae205e77-1a65-4c0d-9b1e-0000000000a5` | `aero-settings:<name = value lines>` |
+| World settings, the players' bodies (2026-10-19: a planetless world) | `AeroWorldBodyComponent` on each server character and spectator, id `...a7` | `aero-settings:<name = value lines>` (value: the body's root - a seated character's grid) |
 | Control surface: pitch / yaw / roll, max deflection, trim | `AeroSurfaceSettingsComponent` on the block, id `...b1` | `aero-surface:1 p y r max trim` (every surface) |
 | Gear: down / up, Airshock | `AeroGearComponent` on the block, id `...b2` | `aero-gear:1 down airshock` (every gear) |
 | Airbrake: max opening | `AeroAirbrakeComponent` on the block, id `...b3` | `aero-airbrake:1 max` (every airbrake) |
@@ -331,6 +333,15 @@ The engine type is always there, so a world saved with the mod still loads witho
 | Autopilot block: its panel - mode, height and reference, hover speed, protection's limits, unattended (2026-10-19) | `AeroAutopilotComponent` on the block, id `...b8` | `aero-autopilot:1 mode height ref speed prot g aoa floor look unattended` (every autopilot block) |
 | Rotor / prop blades' health (rotor strikes, 2026-10-17) | `AeroRotorStrikeComponent` on the striking propulsors' server blocks, id `...b7` | `aero-blades:1 health` (only below 1: worn or broken - 0) |
 
+- **The world settings' carriers** (2026-10-19; `Save/WorldCarriers.cs`, shared with the Orbital Mod; the engine side
+  `Runtime/AeroWorldSettingsComponent.cs`): a planetless save (the game's Empty World) holds only the players' bodies, so
+  the server character and spectator carry the text as the planets do. Every carrier writes the same text. On load one
+  text is applied: a body's wins over a planet's (old saves: planets only - still read), the first of a kind wins, and a
+  body loaded later never undoes a change made since the load; the host's world.cfg wins over both. The world's end - world
+  settings to defaults, then the hooks (`WorldCarrier.Hooks`: the API's structure events, quick launch, the autopilot's
+  toasts) - is the last carrier leaving while its session unloads (`Session.IsUnloading`; a body leaving mid-session is not
+  it), or a carrier of another session (that unload unseen: reset, then its text). Offline: `Tests/WorldCarrierTests`,
+  SettingsTests "planetless", SceneTests 6.
 - **The blocks' keys** (since 2026-10-15; `Blocks/AeroBlockSave.cs`, the text in `Blocks/AeroBlockSaveForm.cs`, pure):
   each component is injected with a fixed component id and the builder (`InjectAeroComponents`); its `[Init]` reads the
   key, its `[Serializer]` writes a fresh map. Saved with the block, they follow it through a moved grid, blueprints,

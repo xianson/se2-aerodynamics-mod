@@ -48,7 +48,8 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 ## Entry points
 - `AeroGridComponent.TickStructure` (end of the sim job, server, after the air's forces are applied) and
   `TickWingStrain`; `TearJob` (`OnTear`); `AeroApi.SetFocusGrid` (who flies what), `TryGetStructure`, `NoteMoved`.
-- Client: `StructureFeel.Tick`, `TearSmoke.Tick`, `HeatScorch.Sync` from `AeroEntryFxComponent.EntryJob` / `FlightJob`.
+- Client: `StructureFeel.Tick` from `AeroClientHost.Frame` (the client's session tick); `TearSmoke.Tick`, `HeatScorch.Sync` from
+  `AeroEntryFxComponent.EntryJob` / `FlightJob`.
 - The flow, step by step: `docs/ARCHITECTURE.md` §6.
 
 ## Threading
@@ -58,5 +59,5 @@ Compiled as-is by `Tests/StructureTests`, `Tests/ApiTests`, `Tests/AeroBench` (`
 - Background (`AeroWork`, one evaluation per grid, `StructureLoads.MaxInFlight` in all): `EvaluateStructure` -
   rebuild, heat, loads, solve, damage plan, bends plan; it writes only the grid's own `_st*New`, ledger and lists, read
   back on the simulation thread once the job is done.
-- Client effects job (`AeroEntryFxComponent`): `StructureFeel.Tick`, `TearSmoke.Tick`, `HeatScorch.Sync`.
+- Client: `StructureFeel.Tick` from `AeroClientHost.Frame`; the effects job (`AeroEntryFxComponent`): `TearSmoke.Tick`, `HeatScorch.Sync`.
 - Reflection used here is listed in `docs/REFLECTION_AND_WHITELIST.md` §3.9.

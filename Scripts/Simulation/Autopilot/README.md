@@ -50,7 +50,7 @@ change per grid - replicated, saved with each grid; each grid's owner before sav
 ## Entry points
 - `AeroGridComponent.AutopilotStep`: the server copy from `AeroSimJob.AttitudeJob`; the client copy (its bridge: `ClientAp`) from the client effects job, `AeroEntryFxComponent.EntryJob` - the attitude job runs in the server scene only (a null check when nothing is engaged).
 - `AeroAutopilotComponent.BlockJob` (server, before the simulation: the block registers with its grid and keeps it awake while a mode is on); its panel's setters (the terminal, host / single player), its save (`AeroBlockSave.cs`).
-- `ApToasts.ClientTick` (the client effects job, beside QuickLaunch).
+- `ApToasts.ClientTick` (the client's session tick, `Runtime/AeroClientHost.Frame`, beside QuickLaunch). The client bridge stays per grid in the effects job (one caller).
 - `AeroApi.TryGetAutopilot` / `RequestAutopilot` / `TryGetFlightPerformance` (version 11).
 - The seam inside ThrustTorque: `AttitudeTarget` returns the autopilot's target first (`ApFlying`); the aware law flies it in any air, the game's gyro law taken back (the rate law's impulse for an unpiloted grid: `GyroControl.Undo(..., targetLaw: false)`).
 - Inputs from the background evaluation (Structure/Server): the stall sweep's lift and drag and lift direction (`Hud/StallWarning.cs`), the loss of control predicted at the autopilot's probe (`Hud/Loac.cs EvaluateApProbe`); both run while it flies, whatever the HUD settings.

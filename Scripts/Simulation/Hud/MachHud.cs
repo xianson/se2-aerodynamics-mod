@@ -39,8 +39,9 @@ public static class MachHud
         }
     }
 
-    /// <summary>Client, every frame (from the flight effects' job; cheap: the work is every 0.1 s and 3 s).</summary>
-    internal static void Tick(Keen.VRage.DCS.Components.Entity anyGrid)
+    /// <summary>Client, every frame (the client's session tick, Runtime/AeroClientHost.cs - grid or no grid; cheap: the work is
+    /// every 0.1 s and 3 s). `anyClient`: a client-scene entity (its session).</summary>
+    internal static void Tick(Keen.VRage.DCS.Components.Entity anyClient)
     {
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         // (the effects jobs run in parallel: one of them claims the tick - Install once, never twice at a time)
@@ -51,7 +52,7 @@ public static class MachHud
         if (!On && !ap) { Suffix = ""; return; }
         if (now >= _nextPatch) { _nextPatch = now + 3 * f; Install(); }
         // (the Mach of what the local player is in)
-        var players = anyGrid?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
+        var players = anyClient?.GetSession()?.SessionComponents.TryGet<ClientPlayersSessionComponent>();
         var top = players?.LocalPlayerController?.GetTopObservableEntity();
         // (seated, that is the cockpit block: its grid is up the hierarchy)
         for (int up = 0; top != null && up < 4 && top.TryGet<AeroGridComponent>() == null; up++)
