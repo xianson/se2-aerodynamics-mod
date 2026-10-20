@@ -33,7 +33,9 @@ public sealed class ApPilot : IApGoalSource
     public int Wp, WpCount; Vector3D _wpFrom; bool _loiter; Vector3D _loiterAt;
     Vector3D _home, _station; bool _hasStation;
     Vector3 _upL = Vector3.UnitY, _noseL = -Vector3.UnitZ;
-    float _cruise, _time, _jinkIn, _gunEl; int _jx = 1, _jy = 1; uint _rng = 2463534242u;
+    Vector3 _upW = Vector3.UnitY;
+    float _cruise, _time, _jinkIn, _gunEl;
+ int _jx = 1, _jy = 1; uint _rng = 2463534242u;
 
     // ── what it caught at the engage (the link writes it to the panel) ──
     public bool CapturedHolds; public float CapHeading, CapAlt, CapSpeed;
@@ -45,6 +47,29 @@ public sealed class ApPilot : IApGoalSource
     public float CrossTrack, RadiusErr, WpDist, Eta, HeightNow, HeightWanted = float.NaN, TurnR, LeadBlend;
     public float HeadingNow, SpeedNow;
     public ApNavGoal Goal;
+
+    /// <summary>The panel now (each tick): a return asked or taken back starts the route's legs again from here.</summary>
+    public void SyncCfg(in ApPanel p, in ApSense s)
+    {
+        bool ret = Cfg.ReturnHome;
+        Cfg = p;
+        if (p.ReturnHome != ret) { Wp = 0; _loiter = false; _wpFrom = s.Pos; }
+    }
+
+    /// <summary>What it shows (the status line's values; no allocation).</summary>
+    public void View(out ApPilotView v, ApProt prot)
+    {
+        v = default;
+        v.Mode = Mode; v.Style = Style; v.Behaviour = ActiveBh; v.Phase = Bh.Phase; v.Loitering = Loitering; v.Recovering = Recovering; v.Returning = Cfg.ReturnHome;
+        v.HasTarget = T.Valid && Mode == ApMode.Engage; v.TargetName = T.Name; v.Range = T.Range;
+        v.BearingDeg = T.Valid ? ApCompass.Diff(ApCompass.Heading(T.Los, _upW), HeadingNow) : 0f;
+        v.AimOn = AimOn; v.InCone = InCone; v.InRange = InRange; v.AimErrDeg = AimErrDeg;
+        v.Wp = Wp; v.WpCount = Cfg.ReturnHome ? 1 : _route.Count; v.WpName = WpName; v.WpDist = WpDist; v.Eta = Eta;
+        v.HeadingNow = HeadingNow; v.HeightNow = HeightNow; v.SpeedNow = SpeedNow;
+        v.HeadingOn = Cfg.HeadingOn; v.AltOn = Cfg.AltOn; v.SpeedOn = Cfg.SpeedOn;
+        v.HeadingWant = Cfg.HeadingDeg; v.HeightWant = Cfg.AltM; v.SpeedWant = Cfg.SpeedMs > 0f ? Cfg.SpeedMs : _cruise;
+        v.Prot = prot;
+    }
 
     /// <summary>The flight director's goals a style flies with: the hover's lean for a helicopter, the external goal alone otherwise.</summary>
     public static ApGoal GoalsFor(ApStyle st) => st == ApStyle.Helicopter ? ApGoal.Hover | ApGoal.External : ApGoal.External;
@@ -133,7 +158,7 @@ public sealed class ApPilot : IApGoalSource
     {
         float dt = s.Dt > 0f ? s.Dt : 1f / 60f; _time += dt;
         float g = s.Gravity.Length(), gT = (s.GravityTrue.LengthSquared() > 0f ? s.GravityTrue : s.Gravity).Length();
-        Vector3 up = g > 1e-2f ? -s.Gravity / g : Vector3.UnitY;
+        Vector3 up = g > 1e-2f ? -s.Gravity / g : Vector3.UnitY; _upW = up;
         float alt = Alt.Height(s.Pos, up), h = HeightIn(in s, up, alt), agl = Agl(in s);
         float air = s.AirVel.Length();
         HeightNow = h; SpeedNow = Style == ApStyle.Airplane ? air : ApMath.Flat(s.Vel, up).Length();

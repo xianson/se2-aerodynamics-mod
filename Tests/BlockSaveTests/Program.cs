@@ -113,7 +113,30 @@ static class Program
                 var q = ApPanel.Defaults; q.Mode = m; q.HeightRef = hr;
                 Check(AeroBlockSaveForm.TryReadAutopilot(AeroBlockSaveForm.Autopilot(q), out var q2) && q2.Mode == m && q2.HeightRef == hr, $"autopilot mode {m}, reference {hr} round trip");
             }
-        Check(AeroBlockSaveForm.Autopilot(ApPanel.Defaults) == "aero-autopilot:1 0 0 0 10 1 3 3 15 1 1", $"autopilot defaults key: '{AeroBlockSaveForm.Autopilot(ApPanel.Defaults)}'");
+        Check(AeroBlockSaveForm.Autopilot(ApPanel.Defaults).StartsWith("aero-autopilot:1 0 0 0 10 1 3 3 15 1 1 "), $"autopilot defaults key: '{AeroBlockSaveForm.Autopilot(ApPanel.Defaults)}'");
+        // the flight pilot's values (appended 2026-10-19): every one round-trips; texts with spaces, '%', ';' and line breaks intact;
+        // an older key (the first 11 values) reads the pilot's defaults
+        {
+            var f = ApPanel.Defaults; f.Mode = ApMode.Engage; f.Style = ApStyle.SixAxis; f.HeadingDeg = 271.5f; f.HeadingOn = false; f.AltM = 1234.5f; f.AltOn = false;
+            f.VsMs = 7.5f; f.SpeedMs = 155f; f.SpeedOn = false; f.BankDeg = 33f; f.RouteLoop = true; f.LoiterM = 777f; f.MinAglM = 88f; f.Behaviour = ApBehaviour.PursuitLag;
+            f.RangeM = 999f; f.AbortM = 321f; f.RerunS = 45f; f.AngleDeg = 120f; f.AltOffsetM = -55f; f.Aggression = 0.8f; f.Evasive = true; f.TargetSrc = ApTargetSrc.Grid;
+            f.AimOn = false; f.MuzzleSpeed = 950f; f.ConeDeg = 1.5f; f.HasHome = true; f.HomeX = 123456.789; f.HomeY = -9876.5; f.HomeZ = 0.25; f.ReturnHome = true;
+            f.Route = "Base One; 100 200 300\nGPS:Pad:1:2:3: 50%"; f.TargetText = "Red Raider %20 ";
+            string key = AeroBlockSaveForm.Autopilot(f);
+            Check(AeroBlockSaveForm.TryReadAutopilot(key, out var g) && g.Mode == f.Mode && g.Style == f.Style && g.HeadingDeg == f.HeadingDeg && g.HeadingOn == f.HeadingOn
+                  && g.AltM == f.AltM && g.AltOn == f.AltOn && g.VsMs == f.VsMs && g.SpeedMs == f.SpeedMs && g.SpeedOn == f.SpeedOn && g.BankDeg == f.BankDeg && g.RouteLoop
+                  && g.LoiterM == f.LoiterM && g.MinAglM == f.MinAglM && g.Behaviour == f.Behaviour && g.RangeM == f.RangeM && g.AbortM == f.AbortM && g.RerunS == f.RerunS
+                  && g.AngleDeg == f.AngleDeg && g.AltOffsetM == f.AltOffsetM && g.Aggression == f.Aggression && g.Evasive && g.TargetSrc == f.TargetSrc && !g.AimOn
+                  && g.MuzzleSpeed == f.MuzzleSpeed && g.ConeDeg == f.ConeDeg && g.HasHome && g.HomeX == f.HomeX && g.HomeY == f.HomeY && g.HomeZ == f.HomeZ && g.ReturnHome
+                  && g.Route == f.Route && g.TargetText == f.TargetText, $"autopilot flight pilot round trip: '{key}'");
+            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 42, $"autopilot: one line, 41 values after the format ({key.Split(' ').Length - 1})");
+            Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 4 0 0 10 1 3 3 15 1 1", out var old) && old.Mode == ApMode.Navigate && old.Style == ApStyle.Auto && old.Route == ""
+                  && old.RangeM == ApPanel.Defaults.RangeM && old.AimOn, "autopilot: a key of the first release reads the pilot's defaults");
+            Check(AeroBlockSaveForm.TryReadAutopilot(key.Replace(" 3 ", " 99 "), out var bad) && AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 5 0 0 10 1 3 3 15 1 1 9 NaN 1 -5 1 0 99999 1 0 1 0 0 77", out var bad2)
+                  && bad2.Style == ApStyle.Auto && bad2.HeadingDeg == 0f && bad2.AltM == 0f && bad2.SpeedMs == ApPanel.SpeedMax && bad2.BankDeg == ApPanel.BankMin && bad2.Behaviour == ApBehaviour.Auto,
+                  "autopilot: the pilot's unknown style / behaviour read as auto, NaN and out-of-range numbers clamped");
+        }
+
         Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 1", out var ap3) && ap3.Mode == ApMode.HoverHold && ap3.GLimit == ApPanel.Defaults.GLimit && ap3.Unattended,
               "autopilot: a short key keeps the defaults for the rest (a later format may append)");
         Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:2 9 NaN 7 999 0 -3 99 -1 0 0 extra", out var ap4) && ap4.Mode == ApMode.Off && ap4.HeightM == 0f && ap4.HeightRef == ApHeightRef.Ground

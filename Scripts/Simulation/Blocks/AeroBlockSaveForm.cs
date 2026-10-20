@@ -18,7 +18,8 @@ namespace AeroMod;
 /// latched at ignition - a key without one reads 1)</item>
 /// <item>rotor / prop blades (rotor strikes, 2026-10-17): "aero-blades:1 health" (0..1, 0 = broken; written only below 1 - whole
 /// blades carry no key)</item>
-/// <item>autopilot (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead unattended" (Autopilot)</item>
+/// <item>autopilot (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead unattended" + the flight
+/// pilot's values appended (style, holds, route, behaviour, target, aim, return point; Autopilot)</item>
 /// </list>
 /// A later format may append values: a reader takes the ones it knows from any format &gt;= 1.
 /// Also the reader of the OLD form (<see cref="ParseLegacy"/>): the "surface / gear / airbrake / thrust x y z ..." lines after
@@ -129,7 +130,38 @@ public static class AeroBlockSaveForm
     /// 1/0). Always written (the block's mode survives a save: an unattended hover holds on after a load).</summary>
     public static string Autopilot(in ApPanel p)
         => AutopilotKey + Format + " " + ((int)p.Mode).ToString(C) + " " + F(p.HeightM) + " " + ((int)p.HeightRef).ToString(C) + " " + F(p.HoverSpeed)
-           + " " + B(p.Protection) + " " + F(p.GLimit) + " " + F(p.AoaMarginDeg) + " " + F(p.FloorM) + " " + B(p.LookAhead) + " " + B(p.Unattended);
+           + " " + B(p.Protection) + " " + F(p.GLimit) + " " + F(p.AoaMarginDeg) + " " + F(p.FloorM) + " " + B(p.LookAhead) + " " + B(p.Unattended)
+           // (2026-10-19, appended: the flight pilot - 11 style, 12..19 holds, 20..22 route, 23..30 behaviour, 31 target source, 32..34
+           //  aim, 35..39 the return point, 40 route text, 41 target text - texts escaped: no spaces)
+           + " " + ((int)p.Style).ToString(C) + " " + F(p.HeadingDeg) + " " + B(p.HeadingOn) + " " + F(p.AltM) + " " + B(p.AltOn) + " " + F(p.VsMs)
+           + " " + F(p.SpeedMs) + " " + B(p.SpeedOn) + " " + F(p.BankDeg) + " " + B(p.RouteLoop) + " " + F(p.LoiterM) + " " + F(p.MinAglM)
+           + " " + ((int)p.Behaviour).ToString(C) + " " + F(p.RangeM) + " " + F(p.AbortM) + " " + F(p.RerunS) + " " + F(p.AngleDeg) + " " + F(p.AltOffsetM)
+           + " " + F(p.Aggression) + " " + B(p.Evasive) + " " + ((int)p.TargetSrc).ToString(C) + " " + B(p.AimOn) + " " + F(p.MuzzleSpeed) + " " + F(p.ConeDeg)
+           + " " + B(p.HasHome) + " " + p.HomeX.ToString("R", C) + " " + p.HomeY.ToString("R", C) + " " + p.HomeZ.ToString("R", C) + " " + B(p.ReturnHome)
+           + " " + Esc(p.Route) + " " + Esc(p.TargetText);
+
+    /// <summary>A text as one space-free value: "s" then the text with '%', spaces, tabs and line breaks as %25 %20 %09 %0A %0D.</summary>
+    public static string Esc(string t)
+    {
+        if (string.IsNullOrEmpty(t)) return "s";
+        var sb = new System.Text.StringBuilder("s", t.Length + 8);
+        foreach (char ch in t)
+            sb.Append(ch switch { '%' => "%25", ' ' => "%20", '\t' => "%09", '\n' => "%0A", '\r' => "%0D", _ => ch.ToString() });
+        return sb.ToString();
+    }
+
+    /// <summary>Esc's text back (null: not an escaped value).</summary>
+    public static string Unesc(string v)
+    {
+        if (v == null || v.Length == 0 || v[0] != 's') return null;
+        var sb = new System.Text.StringBuilder(v.Length);
+        for (int i = 1; i < v.Length; i++)
+        {
+            if (v[i] == '%' && i + 2 < v.Length && int.TryParse(v.Substring(i + 1, 2), NumberStyles.HexNumber, C, out int code)) { sb.Append((char)code); i += 2; }
+            else sb.Append(v[i]);
+        }
+        return sb.ToString();
+    }
 
     /// <summary>Read it (false: not this key - the defaults out). Values missing at the end keep the defaults (a later format
     /// appends), each one clamped to its range, an unknown mode or reference read as off / over the ground.</summary>
@@ -142,11 +174,23 @@ public static class AeroBlockSaveForm
         float Fl(int i, float def) => i < w.Length && Float(w[i], out float v) ? v : def;
         bool Bo(int i, bool def) => i < w.Length ? w[i] == "1" || (w[i] != "0" && def) : def;
         int mode = I(1, 0), href = I(3, (int)p.HeightRef);
-        p.Mode = mode >= 0 && mode <= (int)ApMode.HeightHold ? (ApMode)mode : ApMode.Off;
+        p.Mode = mode >= 0 && mode <= (int)ApMode.Engage ? (ApMode)mode : ApMode.Off;
         p.HeightM = Fl(2, p.HeightM);
         p.HeightRef = href == 1 ? ApHeightRef.Inertial : ApHeightRef.Ground;
         p.HoverSpeed = Fl(4, p.HoverSpeed); p.Protection = Bo(5, p.Protection); p.GLimit = Fl(6, p.GLimit);
         p.AoaMarginDeg = Fl(7, p.AoaMarginDeg); p.FloorM = Fl(8, p.FloorM); p.LookAhead = Bo(9, p.LookAhead); p.Unattended = Bo(10, p.Unattended);
+        // (the flight pilot's, appended 2026-10-19: absent in an older key - the defaults kept)
+        p.Style = (ApStyle)I(11, (int)p.Style); p.HeadingDeg = Fl(12, p.HeadingDeg); p.HeadingOn = Bo(13, p.HeadingOn); p.AltM = Fl(14, p.AltM);
+        p.AltOn = Bo(15, p.AltOn); p.VsMs = Fl(16, p.VsMs); p.SpeedMs = Fl(17, p.SpeedMs); p.SpeedOn = Bo(18, p.SpeedOn); p.BankDeg = Fl(19, p.BankDeg);
+        p.RouteLoop = Bo(20, p.RouteLoop); p.LoiterM = Fl(21, p.LoiterM); p.MinAglM = Fl(22, p.MinAglM);
+        p.Behaviour = (ApBehaviour)I(23, (int)p.Behaviour); p.RangeM = Fl(24, p.RangeM); p.AbortM = Fl(25, p.AbortM); p.RerunS = Fl(26, p.RerunS);
+        p.AngleDeg = Fl(27, p.AngleDeg); p.AltOffsetM = Fl(28, p.AltOffsetM); p.Aggression = Fl(29, p.Aggression); p.Evasive = Bo(30, p.Evasive);
+        p.TargetSrc = (ApTargetSrc)I(31, (int)p.TargetSrc); p.AimOn = Bo(32, p.AimOn); p.MuzzleSpeed = Fl(33, p.MuzzleSpeed); p.ConeDeg = Fl(34, p.ConeDeg);
+        p.HasHome = Bo(35, p.HasHome);
+        double Db(int i, double def) => i < w.Length && double.TryParse(w[i], NumberStyles.Float, C, out double v) && double.IsFinite(v) ? v : def;
+        p.HomeX = Db(36, p.HomeX); p.HomeY = Db(37, p.HomeY); p.HomeZ = Db(38, p.HomeZ); p.ReturnHome = Bo(39, p.ReturnHome);
+        p.Route = (40 < w.Length ? Unesc(w[40]) : null) ?? p.Route; p.TargetText = (41 < w.Length ? Unesc(w[41]) : null) ?? p.TargetText;
+
         p = p.Clamped();
         return true;
     }

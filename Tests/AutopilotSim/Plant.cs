@@ -402,5 +402,7 @@ sealed class Plant
     {
         if (o.ModeChanged) { Panel.Mode = o.Mode; LastPanelReason = o.Reason; PanelWrites++; }
         if (o.HeightChanged) { Panel.HeightM = o.HeightM; PanelWrites++; }
+        if (o.HoldsChanged) { Panel.HeadingDeg = o.HeadingDeg; Panel.AltM = o.AltM; Panel.SpeedMs = o.SpeedMs; PanelWrites++; }
+        if (o.HomeChanged) { Panel.HasHome = true; Panel.HomeX = o.Home.X; Panel.HomeY = o.Home.Y; Panel.HomeZ = o.Home.Z; PanelWrites++; }
     }
 }
