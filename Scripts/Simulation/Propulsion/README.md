@@ -4,7 +4,7 @@ Where the game's thrust acts, how thrusters and gyros steer, thrust-vs-Mach curv
 
 | File | What |
 |---|---|
-| `ThrustTorque.cs` | Thrust torque (each thruster's share acts at its block, r x F) and the aero-aware attitude law over thrusters, gyros and surfaces; publishes flame shares, flap angles and gear state for the client components. Its gear parts belong to the gear work (do not reshape `PublishGear` / `GearState`). |
+| `ThrustTorque.cs` | Thrust torque (each thruster's share acts at its block, r x F) and the aero-aware attitude law over thrusters, gyros and surfaces; publishes flame shares, flap angles and gear state for the client components. The flight assist `Assists.OffsetThrust` (`Lift/FlightAssists.cs`, off at 1) scales only the uncommanded part of the offset torque, before the gyros (`Report.AssistRemoved`). Its gear parts belong to the gear work (do not reshape `PublishGear` / `GearState`). |
 | `ThrustAllocator.cs` | Pure maths (no game): the game's share per thruster, the rate command, the allocation solve. Offline-tested by `Tests/ThrustTests` (also compiled into AeroBench and ControlSurfaceTests). |
 | `GyroControl.cs` | Reads back the game's own gyro impulse (private `ActiveGridGyroscopeData`) so the mod's law flies the gyros within the game's budget. |
 | `OffsetThrustJob*.cs` | The grid's thruster and gyro caches (the name is the old per-thruster path's, kept for the harness and the tests' source checks; that path - Execute's Mach scaling, override writes and phantom attitude torque, `.Attitude.cs` - was removed 2026-10-17): `.cs` `ThrusterInfo` / `GyroInfo` and `AppliedProfile`, `.Cache.cs` `RebuildThrusterCache` / `RebuildGyroCache` and the `_definition` reflection. |

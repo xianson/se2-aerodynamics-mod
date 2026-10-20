@@ -12,6 +12,7 @@
     <Compile Include="$(Sim)\Propulsion\ReversibleThrust.cs" />
     <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
     <Compile Include="$(Sim)\Lift\LiftPeak.cs" />
+    <Compile Include="$(Sim)\Lift\FlightAssists.cs" />
     <Compile Include="$(Sim)\Core\CellCoords.cs" />
   </ItemGroup>
 </Project>

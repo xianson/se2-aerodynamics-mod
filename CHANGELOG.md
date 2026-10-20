@@ -61,6 +61,10 @@ was flown in game for this release. The commit hashes are on the integration bra
 - **Changes physics:** stall angle, lift kept past the stall, control bite past the stall (`Assists.StallAngleScale`,
   `PostStallLift`, `SurfaceAuthority`). 1 is bit-identical to realistic.
 - `Gyros.TorqueScale` moved here (same name; saves unchanged).
+- **Unrealistic, opt-in:** `Assists.OffsetThrust` scales only the offset-thrust torque the attitude control could not
+  cancel; what it asks the thrusters for is never touched. Realistic (1): the controller already cancels offset thrust
+  with real gyros and thrusters while they can. AutopilotSim: a cancelled offset loses 0.05 % (the solve's residual); a
+  weak lifter's 5.6 deg roll is 2.8 deg at 0.5, none at 0.
 
 ## 1.0.4 - saving fixed on SE2 4.0
 

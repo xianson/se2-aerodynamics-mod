@@ -93,6 +93,9 @@ sealed class Plant
     public readonly Ledger Book = new();
     // the reports a tick leaves (the traces and metrics)
     public Vector3 LastGameF, LastAeroT, LastGyroT, LastCyclicT, LastThrTau, LastReaction, LastTilt; public float LastCycReach, LastPrio;
+    /// <summary>The offset-thrust assist's tick (FlightAssists): the thrusters' torque the law asked for (+ the reaction it answered),
+    /// as solved (+ the reaction), the offset (the game's share + the reaction), and what the assist took off it (local N m).</summary>
+    public Vector3 LastThrAsked, LastThrApplied, LastOffset, LastAssistRemoved;
     public string Mode = "-";
     public bool Crashed, OnGround;
     public Vector3 LastAeroF;
@@ -336,6 +339,14 @@ sealed class Plant
         LastPrio = prio;
         Vector3 thrTau = Vector3.Zero, total = Vector3.Zero;
         for (int i = 0; i < n; i++) { thrTau += _arms[i] * _f[i]; total += _dirs[i] * _f[i]; }
+        // (the offset-thrust assist - ThrustTorque.Apply's step: the thrusters' torque as applied, the reaction in, less the share of
+        //  what misses the law's ask in the offset's way; FlightAssists.OffsetThrustScale 1: skipped)
+        LastAssistRemoved = Vector3.Zero; LastThrAsked = tauTarget + reaction; LastThrApplied = thrTau + reaction; LastOffset = shareTau + reaction;
+        if (FlightAssists.OffsetThrustScale < 1f)
+        {
+            LastAssistRemoved = LastThrApplied - FlightAssists.ScaleOffset(LastThrApplied, LastOffset, LastThrAsked);
+            thrTau -= LastAssistRemoved;
+        }
         Vector3 given = S.Rotor >= 0 ? RotorTrim.Give(cycAsk, thrTau, plan, axis, cycReach, trim) : Vector3.Zero;
         if (aware) tauNeed += plan - given;
         Vector3 gyroT = aware ? Vector3.Clamp(tauNeed - thrTau, -S.Gyro, S.Gyro) : Vector3.Clamp(-W * S.I / 0.3f, -S.Gyro, S.Gyro);

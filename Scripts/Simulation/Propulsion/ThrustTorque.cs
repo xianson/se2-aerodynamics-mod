@@ -57,7 +57,9 @@ public static class ThrustTorque
         /// the predicted loss-of-control warning's (Loac.cs).</summary>
         public Quaternion Target; public bool HasTarget; public Vector3 Reach;
         /// <summary>The helicopter rotors' cyclic reach (N m about the in-plane axes; 0: none) - the autopilot's tilt authority.</summary>
-        public float CyclicReach; }
+        public float CyclicReach;
+        /// <summary>The thrust torque the offset-thrust assist took away this frame (local N m; zero at Assists.OffsetThrust 1).</summary>
+        public Vector3 AssistRemoved; }
 
     /// <summary>
     /// AERO-AWARE ATTITUDE (2026-10-12, the user: "fix the controllers so they are aware of exact aero torque but they don't
@@ -414,6 +416,17 @@ public static class ThrustTorque
                 PublishReversible(aero, wt, thrusters[i].Cell, (int)side[i], rc.PushSide);
             }
         rep.RcsTorque = torque - offsetTorque; rep.RcsForce = extraForce;
+        // FLIGHT ASSIST "uncancelled offset thrust" (Assists.OffsetThrust, 1 realistic: skipped): the thrust's torque as it will be
+        // applied (torque: the thrusters' as solved, the rotors' reaction, the lit rockets') less the share of its UNCOMMANDED part -
+        // FlightAssists.Uncommanded: per axis what it misses the law's own ask by (tauTarget, what the solve was asked for, + the
+        // reaction and rockets' torque the law already answered in it; 0 when nothing steered), in the offset's direction, at most
+        // the offset there. The torque the law asks for is never touched. Before the gyros (they take what is left of the need).
+        if (FlightAssists.OffsetThrustScale < 1f)
+        {
+            Vector3 was = torque;
+            torque = FlightAssists.ScaleOffset(torque, offsetTorque, solved ? tauTarget + rotorReaction + steerTau : Vector3.Zero);
+            rep.AssistRemoved = was - torque;
+        }
         // the gyros: what the thrusters' torque left of the need, up to their reach
         // (the rotors' reaction is in torque - applied - and taken out of the need: the actuators answer it; the need and what
         //  was delivered are counted without it, as the loss-of-control warning compares them)
