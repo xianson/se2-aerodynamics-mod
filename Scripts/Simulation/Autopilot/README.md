@@ -15,7 +15,7 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `ApTypes.cs` | `ApSense` (what the instruments show), `ApCommand` (the seam), the enums, `ApExternal` / `IApGoalSource`, `ApMath`, `LoacMath` (Loac.cs's arithmetic), `SideAuthority` |
 | `ApConfig.cs` | The world's caps and the client readout (`Autopilot.*`; the rest are a new block's panel defaults) and `ApTuning` (the one constant the game and the sim share) |
 | `ApPanel.cs` | The Autopilot block's panel (`ApPanel`, `ApMode`, `ApHeightRef`; the panel's own choices `ApModeChoice` / `ApMove` and their mapping onto the saved fields - `ChoiceOf` / `Choose`, `MoveOf` / `BhOf`; the facing `ApFacing` and the old Point At / Broadside's migration - `Migrate`) and the limits it flies with (`ApLimits.Of`: the panel within the world's caps) |
-| `ApPanelLayout.cs` | What the panel shows per mode (the `[ShowInInspectorWhen]` switches), the line under each dropdown (`*Hint`), the choices' names and tooltips |
+| `ApPanelLayout.cs` | What the panel shows per mode (the `[ShowInInspectorWhen]` switches), the line under each dropdown (`*Hint`), the choices' names |
 | `ApPilot.cs` | THE FLIGHT PILOT (an external goal source): Flight Hold, Navigate, Engage; the style's executor (airplane: an acceleration - L1 across, TECS vertical - on the lift with TECS's throttle; helicopter: a moving place for the hover's lean; six-axis: the same place on the thrusters, the nose free), the terrain minimum, the aim, jinking, its view (`ApPilotView.cs`: the status line) |
 | `ApNav.cs` | `ApAltimeter` (the height over the engage datum; the planet's centre where the gravity's lines meet), `ApCompass`, `ApL1` (L1 toward a point, a circle; a vector field onto a line flown by a braking course law), `ApTecs`, `ApRoute` (the route's text: GPS names, coordinates) |
 | `ApBehaviours.cs` | The attack movements (strafing run, turn-back run, circle it, hover over / under, keep distance, chase lead / direct / trailing, extend) as parameterised goals - movements only: the facing is the pilot's (`ApPilot.Aim`); a circle turns the way that keeps a chosen side in (`ApNavGoal`), and the arbiter (`ApArbiterBh`: utility scores, hysteresis, dwell) |
@@ -42,7 +42,7 @@ Status; Mode (Off, Hover, Hold height, Cruise, Follow route, Return home, Follow
 Mode / ReturnHome / Behaviour: Follow ship is Engage with the formation, Return home the route's return); Level Off; then the mode's
 fields: "Fly as" (Detect / Plane / Helicopter / Thruster ship), Follow ship's leader and slot, Attack's target, "Attack movement"
 (`ApMove`), "Facing" and "Aim priority", the band; the route; the holds; "Keep flying when I leave the seat"; "Safety limits".
-Each dropdown has a line under it and every choice in its tooltip. FACING IS A DESIRE (`ApFacing`: the way it flies / the nose on the
+Each dropdown has a line under it saying what its choice does (no tooltip texts: in game a row's tooltip is its label). FACING IS A DESIRE (`ApFacing`: the way it flies / the nose on the
 lead / a side on the target): `ApPilot.Aim` blends it into the movement's attitude by the aim priority, within each style's caps (a
 plane: the 30 deg window and the pull-out - a side by the circle's direction; a helicopter: yaw; six-axis: anywhere its side
 thrusters hold the weight, the heading turned first); movement wins, the protection clips. Old saves: Point At - Keep distance +

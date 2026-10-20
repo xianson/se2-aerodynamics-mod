@@ -10,7 +10,7 @@ namespace AeroMod;
 /// ApModeChoice) with a line saying what the chosen mode does, Level Off the one button, then ONLY the chosen mode's fields
 /// (the hover's height and speed; Fly as; Follow ship's leader and slot; Attack's target, movement, facing, band; the route; the
 /// holds), "keep flying when I leave the seat", and the Safety limits last. Each dropdown has a line under it saying what its
-/// choice does (the *Hint texts here) and every choice in its tooltip.
+/// choice does (the *Hint texts here; no tooltips - in game a row's tooltip is its label).
 /// </summary>
 public static class ApPanelLayout
 {
@@ -65,7 +65,7 @@ public static class ApPanelLayout
     /// <summary>The Enemy switch: in Attack while the world allows it, and always on an enemy ship (so it can be switched back).</summary>
     public static bool ShowEnemy(in ApPanel p, ApEnemyRule rule, bool gridIsEnemy) => (Attack(in p) && rule != ApEnemyRule.Off) || gridIsEnemy;
 
-    // ── the lines under the dropdowns: what the choice does (one line each; every choice's line is in its tooltip too) ──
+    // ── the lines under the dropdowns: what the choice does (one line each) ──
 
     public static string ModeHint(ApModeChoice c) => c switch
     {
@@ -120,7 +120,7 @@ public static class ApPanelLayout
     };
 
     /// <summary>The dropdowns' choice names as the game shows them ("&lt;Type&gt;_&lt;Value&gt;" -> the en-US text: the texts file holds the
-    /// same - Tests/AutopilotSim TextsPack compares them; the tooltips below use these).</summary>
+    /// same - Tests/AutopilotSim TextsPack compares them).</summary>
     public static readonly System.Collections.Generic.Dictionary<string, string> Names = new()
     {
         ["ApModeChoice_Off"] = "Off", ["ApModeChoice_Hover"] = "Hover", ["ApModeChoice_HoldHeight"] = "Hold height", ["ApModeChoice_Cruise"] = "Cruise",
@@ -136,14 +136,6 @@ public static class ApPanelLayout
 
     /// <summary>A choice's name (Names; the value's own name when missing).</summary>
     public static string Name<T>(T v) where T : struct, Enum => Names.TryGetValue(typeof(T).Name + "_" + v, out var n) ? n : v.ToString();
-
-    /// <summary>A dropdown's tooltip: every choice with its line ("Name: line" a line each).</summary>
-    public static string Tooltip<T>(Func<T, string> name, Func<T, string> hint, params T[] all)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var v in all) { if (sb.Length > 0) sb.Append('\n'); sb.Append(name(v)).Append(": ").Append(hint(v)); }
-        return sb.ToString();
-    }
 
     /// <summary>A switch by its name (the model's property names - the offline layout check evaluates the model's attributes with
     /// it). False for a name it does not know (the check fails on it).</summary>

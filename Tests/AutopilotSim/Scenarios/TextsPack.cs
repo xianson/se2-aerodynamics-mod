@@ -78,7 +78,7 @@ sealed class TextsPack : IScenarioPack
         var unused = texts.Keys.Where(k => !need.ContainsKey(k)).ToList();
         foreach (var k in unused) Sim.Note($"texts: unused '{k}'");
         Sim.Check(unused.Count == 0, $"texts: every key in the file is used ({unused.Count} unused: {string.Join(" | ", unused.Take(8))})");
-        // (the autopilot's choice names in code - its tooltips - are the texts file's: ApPanelLayout.Names)
+        // (the autopilot's choice names in code are the texts file's: ApPanelLayout.Names)
         var differ = ApPanelLayout.Names.Where(kv => !texts.TryGetValue(kv.Key, out var t) || t != kv.Value).Select(kv => kv.Key).ToList();
         Sim.Check(differ.Count == 0, $"texts: the panel's choice names (ApPanelLayout.Names) are the texts file's ({string.Join(", ", differ)})");
         // (a text never empty: the game's label lookup falls back to the key on an empty text)

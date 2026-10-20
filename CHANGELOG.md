@@ -10,7 +10,7 @@ was flown in game for this release. The commit hashes are on the integration bra
   A line under it says what the mode does. **Level Off** is the only button. Then only that mode's settings; **Safety limits** last.
 - Renamed: **Fly as** (Detect / Plane / Helicopter / Thruster ship), **Attack movement** (Strafing run, Turn-back run, Circle it,
   Keep distance, Hover over / under, Chase - gun lead / direct / trailing, Dogfight, Rocket), **Target** (Locked target / GPS /
-  Ship by name / Other mod), **Keep flying when I leave the seat**. Each dropdown: a line for the choice, all choices in its tooltip.
+  Ship by name / Other mod), **Keep flying when I leave the seat**. Each dropdown: a line under it for the choice.
 - **Facing** (Direction of travel / Nose at target / Side at target - left / right) and **Aim priority**: how far the flight gives
   way to point that face at the target. Movement always wins; the safety limits still clip. Replaces Point At, Broadside and the
   aim switch - old saves convert (Point At: Keep distance + nose; Broadside: Circle it + a side; aim on: the nose).

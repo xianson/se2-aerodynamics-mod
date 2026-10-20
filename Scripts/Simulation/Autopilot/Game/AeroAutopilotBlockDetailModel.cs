@@ -16,7 +16,8 @@ namespace AeroMod;
 /// then ONLY the chosen mode's fields ([ShowInInspectorWhen] on ApPanelLayout's switches): the hover's height and speed; "Fly as";
 /// Follow ship's leader and slot; Attack's target, movement, facing (a desire, ApFacing) and aim priority, band, Enemy; the route;
 /// the holds; "Keep flying when I leave the seat"; the Safety limits last. Each dropdown has a line under it naming what its choice
-/// does, and every choice with its line in its tooltip (MembersDocumentation). The toolbar keeps every mode as an action (the
+/// does (in game a row's tooltip is always its label - the control panel's style binds ToolTip.Tip to Label; a member's
+/// documentation shows in the editor only, so there are no tooltip texts here). The toolbar keeps every mode as an action (the
 /// methods here, never shown on the panel - ShowNever; their names are what saved toolbars hold). On / off and power are the game's
 /// own panel. Host / single player, as every mod panel (DetailModelPairing). The status line is read when the panel shows it.
 /// </summary>
@@ -30,7 +31,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     // the mode, Level Off, the chosen mode's fields top down, unattended, the safety limits last. The switches and the toolbar's
     // actions after (never shown). Tests/AutopilotSim PanelLayoutPack reads this list and checks it mode by mode.
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroAutopilotBlockDetailModel>(
-        "Autopilot: hover, hold a height, cruise, follow a route or a ship, return home, attack - with safety limits.", Tips(),
+        "Autopilot: hover, hold a height, cruise, follow a route or a ship, return home, attack - with safety limits.",
         nameof(Status),
         nameof(Mode), nameof(ModeHint), nameof(LevelOffNow),
         nameof(HeightM), nameof(OverGround), nameof(HoverSpeed),
@@ -59,20 +60,6 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     /// out shuffled (protection first) with the buttons last, below the fold (in game, 2026-10-19). ModDetailTypeInfo.</summary>
     public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
-
-    /// <summary>The tooltips (the game shows a member's documentation on hover): every dropdown's choices with their lines.</summary>
-    static System.Collections.Generic.Dictionary<string, string> Tips() => new()
-    {
-        [nameof(Mode)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.ModeHint, (ApModeChoice[])Enum.GetValues(typeof(ApModeChoice))),
-        [nameof(Style)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.StyleHint, (ApStyle[])Enum.GetValues(typeof(ApStyle))),
-        [nameof(AttackMove)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.MoveHint, (ApMove[])Enum.GetValues(typeof(ApMove))),
-        [nameof(Facing)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.FacingHint, (ApFacing[])Enum.GetValues(typeof(ApFacing))),
-        [nameof(TargetSrc)] = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.TargetHint, (ApTargetSrc[])Enum.GetValues(typeof(ApTargetSrc))),
-        [nameof(AimPriority)] = "How much the flight gives way to turn the chosen face onto the target. 0: the movement only. 1: as far as the ship can while it still flies the movement.",
-        [nameof(LevelOffNow)] = "Recover: wings level, then cruise on the heading, altitude and speed it has now.",
-        [nameof(Unattended)] = "On: the autopilot keeps flying when nobody is in the seat. Off: it lets go when you leave.",
-        [nameof(Protection)] = "Keeps the flight inside the ship's limits: the g limit, a margin from the stall, the terrain floor.",
-    };
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroAutopilotComponent _ap;

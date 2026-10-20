@@ -209,7 +209,7 @@ sealed class PanelLayoutPack : IScenarioPack
             Sim.Check(!h.ReturnHome && h.Mode == ApMode.FlightHold, "panel mode: another mode takes the return back");
         }
         Sim.Check(unknown.Count == 0, $"panel layout: every [ShowInInspectorWhen] switch is one ApPanelLayout knows ({string.Join(", ", unknown.Distinct())})");
-        // (each dropdown's line and its tooltip: a line for every choice, short)
+        // (each dropdown's line: one for every choice, short; no tooltip texts - in game a row's tooltip is its label)
         {
             bool lines = true;
             foreach (ApModeChoice c in Enum.GetValues(typeof(ApModeChoice))) lines &= Short(ApPanelLayout.ModeHint(c));
@@ -218,9 +218,10 @@ sealed class PanelLayoutPack : IScenarioPack
             foreach (ApFacing c in Enum.GetValues(typeof(ApFacing))) lines &= Short(ApPanelLayout.FacingHint(c));
             foreach (ApTargetSrc c in Enum.GetValues(typeof(ApTargetSrc))) lines &= Short(ApPanelLayout.TargetHint(c));
             Sim.Check(lines, "panel hints: every choice of every dropdown has its own one-line hint (under 80 characters)");
-            string tip = ApPanelLayout.Tooltip(ApPanelLayout.Name, ApPanelLayout.MoveHint, (ApMove[])Enum.GetValues(typeof(ApMove)));
-            Sim.Check(tip.Contains("Strafing run: Fly over it, extend, come back.") && tip.Split('\n').Length == Enum.GetValues(typeof(ApMove)).Length,
-                $"panel hints: the movement's tooltip lists every choice with its line ({tip.Split('\n').Length} lines)");
+            // (no tooltip texts: in game a row's tooltip is always its label - the control panel's style binds ToolTip.Tip to
+            //  Label; a member's documentation is editor-only. The hint rows explain the choices.)
+            Sim.Check(!Regex.IsMatch(src, @"Tips\(\)|MembersDocumentation") && !Regex.IsMatch(File.ReadAllText(Path.Combine(root, "Scripts", "Simulation", "Blocks", "ModDetailTypeInfo.cs")), @"IReadOnlyDictionary<string, string> tips"),
+                "panel hints: no tooltip texts handed to the panel (dead in game; the hint rows explain)");
         }
     }
 
