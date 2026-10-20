@@ -13,6 +13,24 @@ creative") aero owns it and the Orbital mod only moves the ship for aero (`Orbit
 | `QuickLaunchMove.cs` | Aero's own Havok-safe move, ONLY without the Orbital mod: the joined set (`IFindConnectedEntities`), nothing if any of it is static, every place worked out first, world areas released, velocities set, spin turned, contacts masked |
 | `QuickLaunchRules.cs` | Engine-free (`Tests/QuickLaunchTests`): the key's press (`KeyEdge`) and an ask's freshness (`Fresh`, `AskMaxAgeS`), may it go, where it ends (over the ground, never lower, never into it; the clamp room it leaves the Orbital mod's space border), the level turn, the speed, the refusal lines, the binding |
 
+## Test spawns (2026-10-20)
+Creative / admin test enemies: `Ctrl` + `M` an enemy missile, `Ctrl` + `B` an enemy bogey, `Ctrl` + `N` every test ship removed
+(client settings `Spawn.*Key`, `Spawn.Modifier`; world `Spawn.Allowed`, `Spawn.DespawnMinutes`). A blueprint by name
+(`Spawn.MissileBlueprint` "Missile", `Spawn.BogeyBlueprint` "Bogey") with an Autopilot block, spawned `Spawn.*Distance` away
+around the player, made the hostile NPC's by the block's own Enemy switch, its panel Engage with the author's slot (Rocket
+Guidance / Dogfight) and the player as its API target. No guidance or dogfight logic here.
+
+| File | What |
+|---|---|
+| `EnemySpawn.cs` | Client: the settings' fields, the keys (`QuickLaunchRules.KeyEdge`, not while typing, one ask a second), the blueprint loaded by the game's own service (`IBlueprints.TryLoadAsync`, `Blueprint.TryLoadGridAsync` - the paste tool's path), its builders scanned (the Autopilot block, its saved panel and front, the reach), the ask, the toast; `DevAsk` (`AeroApi.RequestTestSpawn`) |
+| `EnemySpawn.Server.cs` | Server (the planets' teleport-phase job, beside quick launch): the checks, where (planet height, `IPhysics.QueryAABB`), the paste's preparation (`IGameMode.PrepareForSpawn`), the bundle moved and launched, `SpawnBundleAsync`; then each Autopilot block's panel, `SetAutopilotTarget`, `AskEnemySpawned`; a bogey's cruise; the despawn timer and key (`IEntitySpawner.DeleteEntity`) |
+| `EnemySpawnRules.cs` | Engine-free (`Tests/SpawnTests`): who may, the validation and its words, the names, the heading / direction / place / ground / salvo, the aim, the speed, the panel (`Configure`), the timer |
+
+The server reads only its own entities (the asking identity's character, its seat); the ask carries the identity, the
+blueprint's builders (what a paste sends) and the player's choices. `ApEnemySwitch.RequestSpawned` (Ask 3) is the Enemy
+switch's test-spawn path: the world's Enemy rule and the asker are not judged (the spawn's own rule was), the construct must
+still be all the spawning player's.
+
 ## Entry points
 - `QuickLaunch.ClientTick`: `AeroClientHost.Frame` (the client's session tick, the render camera's job). `TurnTarget`:
   `AeroEntryFxComponent.EntryJob` (the seated client grid's own effects job).

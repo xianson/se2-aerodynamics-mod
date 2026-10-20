@@ -64,7 +64,7 @@ internal static class WorldCarrier
 
     /// <summary>The world's end beyond the settings: the API's structure events let go of its entities (2026-10-15 review),
     /// quick launch's unanswered ask, answer and cockpit turn (2026-10-18), the autopilot's toasts.</summary>
-    static void Hooks() { AeroApi.ResetStructureEvents(); QuickLaunch.ResetWorld(); ApToasts.ResetWorld(); }
+    static void Hooks() { AeroApi.ResetStructureEvents(); QuickLaunch.ResetWorld(); ApToasts.ResetWorld(); EnemySpawn.ResetWorld(); }
 
     internal static void Read(EntityNameSessionComponentObjectBuilder ob, WorldCarriers.Kind kind, Entity self)
     {

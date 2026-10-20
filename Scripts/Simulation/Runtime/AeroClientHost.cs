@@ -62,6 +62,7 @@ public static class AeroClientHost
             if (SettingsTab.Claim()) SettingsTab.Ticked(session);   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one per 250 ms)
             MachHud.Tick(any);   // (the speed readout's Mach: not an effect - runs with the effects off too)
             QuickLaunch.ClientTick(any);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs)
+            EnemySpawn.ClientTick(any);   // (the test spawn keys, the blueprint's load and the answer - Launch/EnemySpawn.cs)
             ApToasts.ClientTick(any);   // (the autopilot's words to the pilot - Autopilot/Game/ApToasts.cs)
             StructureFeel.Tick(any);   // (the airframe's creaks and cockpit shake - Structure/Fx/StructureFeel.cs; its own switches)
         }

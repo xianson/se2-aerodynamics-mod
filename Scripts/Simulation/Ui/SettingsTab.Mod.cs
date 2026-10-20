@@ -38,6 +38,9 @@ public static partial class SettingsTab
             string n = names[k];
             if (!AeroSettings.Info(n, out string type, out double def, out double min, out double max, out string scope, out bool rebuild, out string doc)) continue;
             AeroSettings.UiInfo(n, out string label, out string group, out string tier, out string unit, out double step, out string[] choices);
+            // (a text setting - the test spawn's blueprint names, 2026-10-20: the menu edits numbers only - a hidden row, never
+            //  shown; its number range is a stand-in the model can lay out, nothing reads it)
+            if (type == "text") { tier = "hidden"; min = 0; max = 1; step = 1; }
             rows.Add(new SettingsModel.Row
             {
                 Name = n, Type = type, Scope = scope, Label = string.IsNullOrEmpty(label) ? n : label, Group = group, Tier = tier ?? "basic",

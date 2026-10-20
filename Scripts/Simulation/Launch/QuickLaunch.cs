@@ -155,7 +155,7 @@ public static partial class QuickLaunch
 
     /// <summary>A screen takes the keyboard (SharedUIComponent.TryGetTopScreenNeedingInput, public, by reflection - the type
     /// is the client UI's: docs/REFLECTION_AND_WHITELIST.md). Asked only when the binding went down. Unknown: false.</summary>
-    static bool TopScreenNeedsInput(Session session)
+    internal static bool TopScreenNeedsInput(Session session)
     {
         try
         {

@@ -42,10 +42,58 @@ public static partial class AeroSettings
     public static bool TryGet(string name, out double value)
     {
         value = 0;
-        if (name == null || !_by.TryGetValue(name, out var s)) return false;
+        if (name == null || !_by.TryGetValue(name, out var s) || s.Type == "text") return false;   // (a text has no number: TryGetText)
         value = s.Get();
         return true;
     }
+
+    /// <summary>A text setting's value now (false: no such setting, or not a text one).</summary>
+    public static bool TryGetText(string name, out string value)
+    {
+        value = null;
+        if (name == null || !_by.TryGetValue(name, out var s) || s.Type != "text") return false;
+        value = s.GetText() ?? "";
+        return true;
+    }
+
+    /// <summary>Change a text setting (from the API or a script). False, with why: no such text setting, its rule, a world one
+    /// where the server does not run or the host file forces it.</summary>
+    public static bool SetText(string name, string value, out string why) => SetText(name, value, out why, fromStorage: false);
+
+    static bool SetText(string name, string value, out string why, bool fromStorage)
+    {
+        why = null;
+        if (name == null || !_by.TryGetValue(name, out var s)) { why = "no setting " + name; return false; }
+        if (s.Type != "text") { why = "not a text setting (SetSetting)"; return false; }
+        value = (value ?? "").Trim();
+        if (value.IndexOf('\n') >= 0 || value.IndexOf('\r') >= 0) { why = "one line only"; return false; }
+        if (s.Scope == "world" && !fromStorage)
+        {
+            if (!CanEditWorld()) { why = "world settings are set by the host / server"; return false; }
+            if (IsForced(s.Name)) { why = "forced by the host file " + WorldPath; return false; }
+        }
+        lock (_lock)
+        {
+            bool same = string.Equals(s.GetText(), value, StringComparison.Ordinal);
+            if (same && string.Equals(s.StoredText, value, StringComparison.Ordinal)) return true;
+            if (!same && s.CheckText != null && (why = s.CheckText(value)) != null) return false;
+            if (!same) { s.SetText(value); System.Threading.Interlocked.Increment(ref _version); }
+            s.StoredText = s.GetText() ?? "";
+            if (s.Scope == "client" && !fromStorage) _clientDirtyAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (s.Scope == "world" && !fromStorage) _worldUnsaved = true;
+        }
+        Log.Default?.Info($"[AERO] setting {s.Name} = {value}{(fromStorage ? " (loaded)" : "")}");
+        return true;
+    }
+
+    /// <summary>A setting off its default (the live value or the player's): a text compares its text.</summary>
+    static bool OffDefault(Setting s) => s.Type == "text"
+        ? !string.Equals(s.GetText(), s.DefaultText, StringComparison.Ordinal) || !string.Equals(s.StoredText, s.DefaultText, StringComparison.Ordinal)
+        : s.Get() != s.Default || s.Stored != s.Default;
+
+    /// <summary>A setting back to its default through the store.</summary>
+    static bool Reset(Setting s, out string why, bool fromStorage)
+        => s.Type == "text" ? SetText(s.Name, s.DefaultText, out why, fromStorage) : Set(s.Name, s.Default, out why, fromStorage);
 
     /// <summary>Change a setting (from the API or a script). False, with why, when it cannot be.</summary>
     public static bool Set(string name, double value, out string why) => Set(name, value, out why, fromStorage: false);
@@ -54,6 +102,7 @@ public static partial class AeroSettings
     {
         why = null;
         if (name == null || !_by.TryGetValue(name, out var s)) { why = "no setting " + name; return false; }
+        if (s.Type == "text") { why = "a text setting (SetSettingText)"; return false; }
         if (double.IsNaN(value) || double.IsInfinity(value)) { why = "not a number"; return false; }
         if (s.Type != "float") value = Math.Round(value);
         if (s.Type == "bool" && value != 0 && value != 1) { why = "a bool is 0 or 1"; return false; }
@@ -125,8 +174,8 @@ public static partial class AeroSettings
             {
                 if (!string.Equals(s.Group, group, StringComparison.OrdinalIgnoreCase) || (scope != null && s.Scope != scope)) continue;
                 any = true;
-                if (s.Get() == s.Default && s.Stored == s.Default) continue;
-                if (Set(s.Name, s.Default, out string w)) n++;
+                if (!OffDefault(s)) continue;
+                if (Reset(s, out string w, fromStorage: false)) n++;
                 else if (pass == 1) why ??= s.Name + ": " + w;
             }
         if (!any) why = "no group " + group + (scope != null ? " in " + scope : "");
@@ -146,6 +195,14 @@ public static partial class AeroSettings
         foreach (var s in _all)
         {
             if (s.Scope != scope || s.Derived) continue;   // (a derived one - the assists' preset - is its members)
+            if (s.Type == "text")
+            {
+                string t = s.StoredText ?? "";
+                if (!all && string.Equals(t, s.DefaultText, StringComparison.Ordinal)) continue;
+                if (all) sb.Append("# ").Append(s.Doc).Append(" (text, default ").Append(s.DefaultText.Length > 0 ? s.DefaultText : "empty").Append(")\n");
+                sb.Append(s.Name).Append(" = ").Append(t).Append('\n');
+                continue;
+            }
             double v = s.Stored;   // (the player's value, never a harness's direct write to the field)
             if (!all && v == s.Default) continue;
             if (all) sb.Append("# ").Append(s.Doc).Append(" (").Append(s.Type).Append(", default ").Append(Fmt(s, s.Default))
@@ -172,6 +229,12 @@ public static partial class AeroSettings
             if (eq <= 0) continue;
             string name = line.Substring(0, eq).Trim(), val = line.Substring(eq + 1).Trim();
             if (!_by.TryGetValue(name, out var s) || s.Scope != scope) continue;
+            if (s.Type == "text")
+            {
+                if (SetText(name, val, out string twhy, fromStorage: true)) { n++; applied?.Add(s.Name); }
+                else Log.Default?.Info($"[AERO] setting {name} = {val} refused: {twhy}");
+                continue;
+            }
             if (!Parse(val, out double v)) { Log.Default?.Info($"[AERO] setting {name}: '{val}' is not a value"); continue; }
             if (Set(name, v, out string why, fromStorage: true)) { n++; applied?.Add(s.Name); }
             else (retry ??= new List<(string, double, string)>()).Add((name, v, val));
@@ -200,7 +263,7 @@ public static partial class AeroSettings
     {
         // (twice: a default refused against a partner not yet reset - Onset 2 over a world's Full 1 - goes in on the second)
         for (int pass = 0; pass < 2; pass++)
-            foreach (var s in _all) if (s.Scope == scope && (s.Get() != s.Default || s.Stored != s.Default)) Set(s.Name, s.Default, out _, fromStorage: true);
+            foreach (var s in _all) if (s.Scope == scope && OffDefault(s)) Reset(s, out _, fromStorage: true);
     }
 
     // ── the world save (the carriers: AeroWorldSettingsComponent on the server planets, AeroWorldBodyComponent on the

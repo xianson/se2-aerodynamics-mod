@@ -38,7 +38,7 @@ static class Program
     static int _fails, _checks;
     static void Check(bool ok, string what) { _checks++; if (!ok) { _fails++; Console.WriteLine("FAIL " + what); } else if (Environment.GetEnvironmentVariable("VERBOSE") != null) Console.WriteLine("ok   " + what); }
 
-    static readonly string[] Groups = { "Flight model", "Flight assists", "Structure and damage", "Re-entry heat", "Quick launch", "Autopilot", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality", "Controls" };
+    static readonly string[] Groups = { "Flight model", "Flight assists", "Structure and damage", "Re-entry heat", "Quick launch", "Autopilot", "Test spawn (host)", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality", "Controls", "Test spawn" };
 
     static string Root()
     {
@@ -126,7 +126,15 @@ static class Program
             if (s.Group != null) { if (groupScope.TryGetValue(s.Group, out var sc)) Check(sc == s.Scope, $"{n}: group '{s.Group}' is one scope ({sc})"); else groupScope[s.Group] = s.Scope; }
             Check(Enum.IsDefined(typeof(AeroSettings.Tier), s.Tier), $"{n}: a tier");
             Check(s.Scope == "world" || s.Scope == "client", $"{n}: scope {s.Scope}");
-            Check(s.Type == "bool" || s.Type == "int" || s.Type == "float", $"{n}: type {s.Type}");
+            Check(s.Type == "bool" || s.Type == "int" || s.Type == "float" || s.Type == "text", $"{n}: type {s.Type}");
+            if (s.Type == "text")
+            {
+                // (a text setting - 2026-10-20, the test spawn's blueprint names: no number, its own accessors, never in the menu)
+                Check(s.GetText != null && s.SetText != null && s.GetText() == s.DefaultText && s.StoredText == s.DefaultText, $"{n}: a text at its default ('{s.DefaultText}')");
+                Check(s.CheckText == null || s.CheckText(s.DefaultText) == null, $"{n}: its text rule holds at the default");
+                Check(!AeroSettings.TryGet(n, out _) && !AeroSettings.Set(n, 1, out _), $"{n}: a text has no number (TryGet / Set refuse it)");
+                Check(s.Tier == AeroSettings.Tier.Hidden, $"{n}: a text is hidden (the menu edits numbers)");
+            }
             Check(s.Min <= s.Default && s.Default <= s.Max, $"{n}: {s.Min} <= default {s.Default} <= {s.Max}");
             if (s.Type != "float") Check(s.Default == Math.Round(s.Default) && s.Step >= 1 && s.Step == Math.Round(s.Step) && (s.Type == "int" || s.Step == 1), $"{n}: a whole default and a whole step ({s.Step})");
             else Check(s.Step > 0 && s.Step <= s.Max - s.Min, $"{n}: a step ({s.Step}) inside its range");
@@ -171,9 +179,11 @@ static class Program
             ResetAll();
             Check(AeroSettings.Text(scope, all: false) == "", $"text {scope}: at the defaults the save's text is empty");
             int moved = 0;
-            foreach (var s in all) if (s.Scope == scope && AeroSettings.Set(s.Name, Off(s), out _)) moved++;
+            foreach (var s in all)
+                if (s.Scope == scope && (s.Type == "text" ? AeroSettings.SetText(s.Name, s.DefaultText + "X 2", out _) : AeroSettings.Set(s.Name, Off(s), out _))) moved++;
             Check(moved >= all.Count(s => s.Scope == scope) - 2, $"text {scope}: {moved} values moved off their defaults");
             var want = all.Where(s => s.Scope == scope).ToDictionary(s => s.Name, s => s.Get());
+            var wantText = all.Where(s => s.Scope == scope && s.Type == "text").ToDictionary(s => s.Name, s => s.GetText());
             foreach (var all_ in new[] { true, false })
             {
                 string text = AeroSettings.Text(scope, all_);
@@ -181,6 +191,7 @@ static class Program
                 int n = AeroSettings.Apply(text, scope);
                 bool same = true; string first = null;
                 foreach (var s in all.Where(s => s.Scope == scope)) if (s.Get() != want[s.Name]) { same = false; first ??= $"{s.Name} {s.Get()} != {want[s.Name]}"; }
+                foreach (var s in all.Where(s => s.Scope == scope && s.Type == "text")) if (s.GetText() != wantText[s.Name]) { same = false; first ??= $"{s.Name} '{s.GetText()}' != '{wantText[s.Name]}'"; }
                 Check(same, $"text {scope} (all: {all_}): Text -> Apply gives back every value ({n} applied){(first != null ? ": " + first : "")}");
             }
             // the other scope's lines are ignored
@@ -195,6 +206,20 @@ static class Program
         AeroSettings.ResetScope("world"); AeroSettings.Apply(t, "world");
         AeroSettings.TryGet("Aero.DragMultiplier", out double after);
         Check(before == after, $"text: a float comes back exactly ({before:R} / {after:R})");
+        ResetAll();
+        // a text setting (the test spawn's blueprint names): set, saved as its text, its rule, one line, reset
+        string tv = null;
+        Check(AeroSettings.SetText("Spawn.MissileBlueprint", "  My Missile 2 ", out string twhy) && AeroSettings.TryGetText("Spawn.MissileBlueprint", out tv) && tv == "My Missile 2", $"text setting: set, trimmed ('{tv}', {twhy})");
+        Check(AeroSettings.Text("client", all: false).Contains(NL + "Spawn.MissileBlueprint = My Missile 2" + NL) || AeroSettings.Text("client", all: false).StartsWith("Spawn.MissileBlueprint = My Missile 2" + NL), "text setting: the file holds its text");
+        Check(!AeroSettings.SetText("Spawn.MissileBlueprint", "a/b", out twhy) && twhy != null, $"text setting: its rule refuses a path ({twhy})");
+        Check(!AeroSettings.SetText("Spawn.MissileBlueprint", "a" + NL + "b", out twhy) && twhy != null, $"text setting: one line only ({twhy})");
+        Check(!AeroSettings.SetText("Spawn.MissileDistance", "x", out twhy) && twhy != null && !AeroSettings.TryGetText("Spawn.MissileDistance", out _), $"text setting: a number is not a text ({twhy})");
+        string tt = AeroSettings.Text("client", all: false);
+        AeroSettings.ResetScope("client");
+        Check(AeroSettings.TryGetText("Spawn.MissileBlueprint", out tv) && tv == "Missile", $"text setting: a reset gives the default back ('{tv}')");
+        AeroSettings.Apply(tt, "client");
+        Check(AeroSettings.TryGetText("Spawn.MissileBlueprint", out tv) && tv == "My Missile 2", $"text setting: applied back from the text ('{tv}')");
+        Check(AeroSettings.ResetGroup("client", "Test spawn", out twhy) >= 1 && AeroSettings.TryGetText("Spawn.MissileBlueprint", out tv) && tv == "Missile", $"text setting: a group reset includes it ('{tv}', {twhy})");
         ResetAll();
     }
 

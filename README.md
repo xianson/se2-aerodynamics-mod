@@ -69,6 +69,11 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
   the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).
+- **Test enemies (creative or admin):** `Ctrl` + `M` spawns an enemy missile, `Ctrl` + `B` an enemy bogey, `Ctrl` + `N`
+  removes them.
+  - From your blueprints named "Missile" and "Bogey"; each needs an Autopilot block.
+  - It appears 2 km / 4 km away and goes for you (Rocket Guidance / Dogfight).
+  - Distance, direction, salvo, speed, keys: Settings > Mods > Aerodynamics (Test spawn).
 - **Settings:** an in-game menu (pause menu > Settings > Mods), plus host override files.
 
 ## Requirements

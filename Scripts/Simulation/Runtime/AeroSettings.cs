@@ -61,6 +61,14 @@ public static partial class AeroSettings
         public bool ClientVisible;
         /// <summary>Worked out from other settings (Assists.Preset): set through them, never written to the files or the save.</summary>
         public bool Derived;
+        /// <summary>A TEXT setting (Type "text", 2026-10-20: the test spawn's blueprint names): its value is GetText / SetText, its
+        /// default DefaultText, the player's StoredText; the number accessors give 0 and Set refuses it (AeroSettings.SetText).
+        /// The files and the save write it as "name = text"; a settings screen does not show it yet (SettingsTab.Mod.cs).</summary>
+        public Func<string> GetText;
+        public Action<string> SetText;
+        public string DefaultText = "", StoredText = "";
+        /// <summary>A text's rule: why not, or null.</summary>
+        public Func<string, string> CheckText;
 
         /// <summary>The UI metadata, fluently after B / I / F.</summary>
         public Setting Ui(string label, string group, Tier tier, string unit = "", double step = 0, string[] choices = null)
@@ -88,7 +96,8 @@ public static partial class AeroSettings
     // the screen's sections, in order
     const string GFlight = "Flight model", GAssists = "Flight assists", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
                  GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality",
-                 GLaunch = "Quick launch", GAutopilot = "Autopilot", GControls = "Controls";   // (a group is one scope: the menu keys sections by name)
+                 GLaunch = "Quick launch", GAutopilot = "Autopilot", GControls = "Controls",
+                 GSpawnHost = "Test spawn (host)", GSpawn = "Test spawn";   // (a group is one scope: the menu keys sections by name)
     const Tier Basic = Tier.Basic, Advanced = Tier.Advanced, Hidden = Tier.Hidden;
 
     static AeroSettings()
@@ -341,6 +350,14 @@ public static partial class AeroSettings
             "Who may switch an Autopilot block's Enemy toggle on: its ship becomes a hostile NPC's (the game's own) - its turrets and its Engage fight players. Only the ship's owner can, and only creative or an admin can switch it back or change an enemy ship's panel.")
             .Ui("Enemy ships from autopilot blocks", GAutopilot, Basic, choices: new[] { "Off", "Creative or admin", "Everyone" });
 
+        // ── test spawn (2026-10-20: Ctrl+M an enemy missile, Ctrl+B an enemy bogey - Launch/EnemySpawn.cs; the server reads these) ──
+        I("Spawn.Allowed", "world", 0, 2, false, () => EnemySpawn.Allowed, v => EnemySpawn.Allowed = (int)v,
+            "Who may spawn TEST enemies with the test spawn keys (an enemy missile / bogey from a blueprint, going for the player). Off: nobody in this world.")
+            .Ui("Test enemy spawns", GSpawnHost, Basic, choices: new[] { "Off", "Creative or admin", "Everyone" });
+        F("Spawn.DespawnMinutes", "world", 0, 240, false, () => EnemySpawn.DespawnMinutes, v => EnemySpawn.DespawnMinutes = v,
+            "Spawned test ships are removed this many minutes after they appear (0: never - the despawn key removes them).")
+            .Ui("Remove test ships after", GSpawnHost, Basic, "min", 1);
+
         // ── performance (the host's) ──
         F("Perf.FrameBudgetMs", "world", 0.1, 16, false, () => AeroFrameBudget.BudgetMs, v => AeroFrameBudget.BudgetMs = v,
             "The most aero may take of a simulation frame (ms); past it, grids not piloted wait a few frames.")
@@ -467,6 +484,44 @@ public static partial class AeroSettings
         I("QuickLaunch.Modifier", "client", 0, 3, false, () => QuickLaunch.Modifier, v => QuickLaunch.Modifier = (int)v,
             "Held with the quick launch key. None: the key alone, with no Ctrl, Shift or Alt held.")
             .Ui("Quick launch modifier", GControls, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
+
+        // ── test spawn (this player's keys and choices; the world's Spawn.Allowed decides) ──
+        I("Spawn.MissileKey", "client", 0, 26, false, () => EnemySpawn.MissileKey, v => EnemySpawn.MissileKey = (int)v,
+            "Spawns an enemy missile (the blueprint Spawn.MissileBlueprint) that goes for you, with the modifier below. Off: no key.")
+            .Ui("Spawn missile key", GSpawn, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("Spawn.BogeyKey", "client", 0, 26, false, () => EnemySpawn.BogeyKey, v => EnemySpawn.BogeyKey = (int)v,
+            "Spawns an enemy bogey - a fighter (the blueprint Spawn.BogeyBlueprint) that dogfights you, with the modifier below. Off: no key.")
+            .Ui("Spawn bogey key", GSpawn, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("Spawn.DespawnKey", "client", 0, 26, false, () => EnemySpawn.DespawnKey, v => EnemySpawn.DespawnKey = (int)v,
+            "Removes every spawned test ship (tagged ' [aero test]' in its name), with the modifier below. Off: no key.")
+            .Ui("Remove test ships key", GSpawn, Basic, choices: QuickLaunchRules.KeyChoices());
+        I("Spawn.Modifier", "client", 0, 3, false, () => EnemySpawn.Modifier, v => EnemySpawn.Modifier = (int)v,
+            "Held with the test spawn keys. None: the key alone, with no Ctrl, Shift or Alt held.")
+            .Ui("Test spawn modifier", GSpawn, Basic, choices: new[] { "None", "Ctrl", "Shift", "Alt" });
+        T("Spawn.MissileBlueprint", "client", () => EnemySpawn.MissileBlueprint, v => EnemySpawn.MissileBlueprint = v, EnemySpawnRules.NameRule,
+            "The blueprint the missile key spawns: its name in your Blueprints folder (it needs an Autopilot block).")
+            .Ui("Missile blueprint", GSpawn, Hidden);
+        T("Spawn.BogeyBlueprint", "client", () => EnemySpawn.BogeyBlueprint, v => EnemySpawn.BogeyBlueprint = v, EnemySpawnRules.NameRule,
+            "The blueprint the bogey key spawns: its name in your Blueprints folder (it needs an Autopilot block).")
+            .Ui("Bogey blueprint", GSpawn, Hidden);
+        F("Spawn.MissileDistance", "client", 100, 20000, false, () => EnemySpawn.MissileDistance, v => EnemySpawn.MissileDistance = v,
+            "How far from you a missile appears (m), at your height (out of the ground and clear of grids).")
+            .Ui("Missile distance", GSpawn, Basic, "m", 100);
+        F("Spawn.BogeyDistance", "client", 100, 30000, false, () => EnemySpawn.BogeyDistance, v => EnemySpawn.BogeyDistance = v,
+            "How far from you a bogey appears (m), at your height (out of the ground and clear of grids).")
+            .Ui("Bogey distance", GSpawn, Basic, "m", 100);
+        I("Spawn.Direction", "client", 0, 3, false, () => EnemySpawn.Direction, v => EnemySpawn.Direction = (int)v,
+            "Where it appears around you, by your heading (your velocity's; standing still, your nose's).")
+            .Ui("Spawn direction", GSpawn, Basic, choices: new[] { "Random", "Behind", "Ahead", "Side" });
+        I("Spawn.MissileSalvo", "client", 1, EnemySpawnRules.SalvoMax, false, () => EnemySpawn.MissileSalvo, v => EnemySpawn.MissileSalvo = (int)v,
+            "Missiles per press, side by side across their line of approach.")
+            .Ui("Missiles per press", GSpawn, Basic);
+        F("Spawn.MissileSpeed", "client", 0, 1000, false, () => EnemySpawn.MissileSpeed, v => EnemySpawn.MissileSpeed = v,
+            "A missile's launch speed (m/s) along its nose, toward you. 0: the blueprint's own (its Autopilot panel's speed), else 100 m/s.")
+            .Ui("Missile launch speed (0: its own)", GSpawn, Advanced, "m/s", 10);
+        F("Spawn.BogeySpeed", "client", 0, 1000, false, () => EnemySpawn.BogeySpeed, v => EnemySpawn.BogeySpeed = v,
+            "A bogey's speed (m/s) as it appears, level toward you. 0: its cruise (its top speed at 3/4 throttle), else its Autopilot panel's speed, else 150 m/s.")
+            .Ui("Bogey speed (0: cruise)", GSpawn, Advanced, "m/s", 10);
     }
 
     // ── the entry heating's Mach pair (stored as heat: OnsetHeat (M / OnsetMach)^3; FullMach is where it is full) ──
@@ -493,6 +548,13 @@ public static partial class AeroSettings
         s.Order = _all.Count;
         if (type != "float") s.Step = 1;
         _all.Add(s); _by[name] = s;
+        return s;
+    }
+    static Setting T(string n, string scope, Func<string> get, Action<string> set, Func<string, string> rule, string doc)
+    {
+        var s = Add(n, "text", scope, 0, 0, false, () => 0, _ => { }, doc);
+        s.GetText = get; s.SetText = set; s.CheckText = rule;
+        s.DefaultText = s.StoredText = get() ?? "";
         return s;
     }
     static Setting B(string n, string scope, bool rebuild, Func<bool> get, Action<bool> set, string doc) => Add(n, "bool", scope, 0, 1, rebuild, () => get() ? 1 : 0, v => set(v != 0), doc);

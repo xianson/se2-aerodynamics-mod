@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 13;   // (13: the combat slots and the formation - TryGetAutopilotSlot, behaviours 13..15 in TryGetAutopilotPilot; thrust vectoring - SetThrusterGimbal, TryGetThrustVectoring; 12: the flight pilot - SetAutopilotTarget, SetAutopilotTargetPoint, ClearAutopilotTarget, TryGetAutopilotAim, TryGetAutopilotPilot, TryGetAutopilotEnemy; 11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 14;   // (14: test spawns - RequestTestSpawn; text settings - TryGetSettingText, SetSettingText; 13: the combat slots and the formation - TryGetAutopilotSlot, behaviours 13..15 in TryGetAutopilotPilot; thrust vectoring - SetThrusterGimbal, TryGetThrustVectoring; 12: the flight pilot - SetAutopilotTarget, SetAutopilotTargetPoint, ClearAutopilotTarget, TryGetAutopilotAim, TryGetAutopilotPilot, TryGetAutopilotEnemy; 11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -626,6 +626,15 @@ public static partial class AeroApi
     /// <summary>Bumped on every change of any setting (the API, a settings file, a world load): watch it to re-read.</summary>
     public static int GetSettingsVersion() => AeroSettings.Version;
 
+    /// <summary>(version 14) A TEXT setting's value (TryGetSettingInfo's type "text" - the test spawn's blueprint names,
+    /// Spawn.MissileBlueprint / Spawn.BogeyBlueprint). False: no such setting, or not a text one (TryGetSetting is false for a
+    /// text one).</summary>
+    public static bool TryGetSettingText(string name, out string value) => AeroSettings.TryGetText(name, out value);
+
+    /// <summary>(version 14) Change a text setting (saved as SetSetting saves). False, with why: no such text setting, its rule
+    /// (a blueprint name: a folder name), more than one line, or a world one where the server does not run.</summary>
+    public static bool SetSettingText(string name, string value, out string why) => AeroSettings.SetText(name, value, out why);
+
     // ── settings for a settings screen (version 8): build one from GetSettings + these; GetSettings' order is the screen's ──
 
     /// <summary>(version 8) What a settings screen shows for a setting: the player-facing label, the group (section) it
@@ -660,6 +669,15 @@ public static partial class AeroApi
     /// frame asks; the answer is the player's toast (and QuickLaunch.Status). One ask a second (a second within it is
     /// dropped). Client, any thread; no lock. The Orbital Mod's DevHarness key "quicklaunch" calls it.</summary>
     public static void RequestQuickLaunch() => QuickLaunch.DevAsk();
+
+    // ── test spawns (version 14) ──
+
+    /// <summary>(version 14) Ask for a TEST SPAWN as its keys do (Launch/EnemySpawn.cs; creative or an admin by default -
+    /// Spawn.Allowed): 0 an enemy missile (Spawn.MissileBlueprint, Ctrl+M), 1 an enemy bogey (Spawn.BogeyBlueprint, Ctrl+B), 2 every
+    /// test ship removed (Ctrl+N) - the key's own checks (the binding, not while typing) skipped, the server's all kept. The next
+    /// client frame asks (the blueprint is loaded first); the answer is the player's toast (and EnemySpawn.Status). Client, any
+    /// thread; no lock.</summary>
+    public static void RequestTestSpawn(int kind) => EnemySpawn.DevAsk(kind);
 
     // ── telling aero what it cannot see ──
 

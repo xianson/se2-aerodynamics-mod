@@ -11,6 +11,7 @@
     <Compile Include="$(Sim)\Runtime\AeroSettings.Store.cs" />
     <Compile Include="$(Sim)\Save\WorldCarriers.cs" />
     <Compile Include="$(Sim)\Launch\QuickLaunchRules.cs" />
+    <Compile Include="$(Sim)\Launch\EnemySpawnRules.cs" />
     <Compile Include="$(Sim)\Autopilot\ApConfig.cs" />
     <Compile Include="$(Sim)\Autopilot\ApPanel.cs" />
     <Compile Include="$(Sim)\Core\IGridAccessor.cs" />

@@ -565,6 +565,30 @@ back to straight. Solid rocket nozzles have their own panel fields (**Thrust Vec
 5). They swivel only while lit. The force a gimbal gives is its own thrust's change: a side force and a little less along its
 axis. Server only.
 
+## Version 14
+
+Every earlier member is unchanged. New (2026-10-20): **test spawns** (a creative / admin test feature: an enemy missile or bogey
+from a blueprint, going for the player - `Scripts/Simulation/Launch/EnemySpawn*.cs`) and **text settings** (their blueprint
+names; `TryGetSettingInfo` gives type `"text"`, `TryGetSetting` is false for one).
+
+| Member | Since | What it does |
+|---|---|---|
+| `void RequestTestSpawn(int kind)` | 14 | Asks for a test spawn as its keys do: 0 an enemy missile (`Spawn.MissileBlueprint`, Ctrl+M), 1 an enemy bogey (`Spawn.BogeyBlueprint`, Ctrl+B), 2 every test ship removed (Ctrl+N). The key's own checks (the binding, not while typing) skipped, the server's all kept (`Spawn.Allowed`, creative / admin, the world's `Autopilot.Enabled` and `Autopilot.Unattended`, an Autopilot block in the blueprint, the slot's logic written). The next client frame loads the blueprint and asks; the answer is the player's toast (and `EnemySpawn.Status`, `aeroget`). Client, any thread, no lock. |
+| `bool TryGetSettingText(string name, out string value)` | 14 | A text setting's value. False: no such setting, or not a text one. |
+| `bool SetSettingText(string name, string value, out string why)` | 14 | Change a text setting (trimmed; one line), saved as `SetSetting` saves. False, with why: no such text setting, its rule (a blueprint name: a folder name, no path), or a world one where the server does not run. |
+
+What a spawn does (server, the planets' teleport-phase job): the blueprint's builders - loaded on the client by the game's own
+blueprint service, as its paste tool loads them - are prepared as a paste is (`IGameMode.PrepareForSpawn`: the player's
+ownership), placed `Spawn.MissileDistance` / `Spawn.BogeyDistance` away (`Spawn.Direction`: random, behind, ahead or a side, by
+the player's heading), at the player's height over the planet, at least the ship's radius + 100 m over the ground (the planet's
+own height) and moved up out of any grid or asteroid; turned so its Autopilot block's front points at the player (a bogey
+level); all its grids dynamic, at the launch velocity; named with the tag ` [aero test]`; spawned staged and async
+(`IEntitySpawner.SpawnBundleAsync`). Once in: every Autopilot block on it gets its panel (Engage, Rocket Guidance / Dogfight,
+Target Source API with the player - the seated grid, else the character - as `SetAutopilotTarget`'s target, every relation
+taken, kept unattended) and its Enemy switch on (the whole construct becomes the game's hostile NPC's, as the panel's switch
+does). A bogey with no speed set flies off at its cruise (its top speed at 3/4 throttle) once known. Removed after
+`Spawn.DespawnMinutes`, or by the despawn key (every grid with the tag, a reloaded world's too).
+
 ## Roadmap / gaps
 
 What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).
@@ -674,6 +698,8 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Autopilot.MaxLeanDeg` | world | float | 20 | 2..45 | Hover: most lean · Autopilot · advanced | *(Unreleased)* The most a hover leans to move or hold its place (deg). |
 | `Autopilot.ClimbRate` | world | float | 4 | 0.5..20 | Hover: climb rate · Autopilot · advanced | *(Unreleased)* The climb / descent rate the up / down keys ask for in hover or height hold, and the most it climbs or sinks to a new height (m/s). |
 | `Autopilot.EnemyRule` | world | int | 1 | 0..2 | Enemy ships from autopilot blocks · Autopilot · basic | *(Unreleased)* Who may switch an Autopilot block's Enemy toggle on (0 off, 1 creative or admin, 2 everyone): its ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Only the ship's owner can; only creative or an admin can switch it back or change an enemy ship's panel. |
+| `Spawn.Allowed` | world | int | 1 | 0..2 | Test enemy spawns · Test spawn (host) · basic | *(Unreleased)* Who may spawn test enemies with the test spawn keys (0 off, 1 creative or admin, 2 everyone). |
+| `Spawn.DespawnMinutes` | world | float | 10 | 0..240 | Remove test ships after · Test spawn (host) · basic | *(Unreleased)* Spawned test ships are removed this many minutes after they appear (0: never - the despawn key removes them). |
 | `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
 | `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
 | `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |
@@ -712,6 +738,13 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Fx.Range` | client | float | 4000 | 100..50000 | Effect distance · Effects quality · basic | Distance (m) past which a grid shows no flight effects. |
 | `Fx.SpawnPerTick` | client | int | 48 | 1..200 | Effect build-up speed · Effects quality · advanced | Effects started per frame while a grid's effects build. |
 | `QuickLaunch.Key` | client | int | 20 | 0..26 | Quick launch key · Controls · basic | *(1.0.1)* The quick launch key: 0 off, 1..26 the letters A..Z (20: T). Seated, in creative worlds that allow it. |
+| `Spawn.MissileKey` / `Spawn.BogeyKey` / `Spawn.DespawnKey` | client | int | 13 / 2 / 14 | 0..26 | Test spawn · basic | *(Unreleased)* The test spawn keys: 0 off, 1..26 A..Z (M, B, N), with `Spawn.Modifier`. |
+| `Spawn.Modifier` | client | int | 1 | 0..3 | Test spawn modifier · Test spawn · basic | *(Unreleased)* Held with them: 0 none, 1 Ctrl, 2 Shift, 3 Alt. |
+| `Spawn.MissileBlueprint` / `Spawn.BogeyBlueprint` | client | text | Missile / Bogey |  | hidden (files and API) | *(Unreleased)* The blueprints the keys spawn: their folder names under your Blueprints folder. Each needs an Autopilot block. |
+| `Spawn.MissileDistance` / `Spawn.BogeyDistance` | client | float | 2000 / 4000 | 100..20000 / 100..30000 | Test spawn · basic | *(Unreleased)* How far from you it appears (m). |
+| `Spawn.Direction` | client | int | 0 | 0..3 | Spawn direction · Test spawn · basic | *(Unreleased)* Where, by your heading: 0 random, 1 behind, 2 ahead, 3 a side. |
+| `Spawn.MissileSalvo` | client | int | 1 | 1..8 | Missiles per press · Test spawn · basic | *(Unreleased)* Missiles per press, side by side. |
+| `Spawn.MissileSpeed` / `Spawn.BogeySpeed` | client | float | 0 | 0..1000 | Test spawn · advanced | *(Unreleased)* The launch speed (m/s). 0: a missile its Autopilot panel's speed (else 100 m/s); a bogey its cruise (else the panel's speed, else 150 m/s). |
 | `QuickLaunch.Modifier` | client | int | 1 | 0..3 | Quick launch modifier · Controls · basic | *(1.0.1)* Held with it: 0 none (no Ctrl, Shift or Alt held), 1 Ctrl, 2 Shift, 3 Alt. |
 
 **Multiplayer:** SE2 2.4 runs its server in the same process as the client (its networking is a mock), so world values are the server's and the flight effects read them directly. A process that has only seen a client scene refuses world sets. When SE2 gets real multiplayer, the world values the clients' effects use (the entry Mach pair) will need replicating.

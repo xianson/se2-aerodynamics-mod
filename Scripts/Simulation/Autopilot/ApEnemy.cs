@@ -197,7 +197,7 @@ public interface IApOwnership
 /// </summary>
 public sealed class ApEnemySwitch
 {
-    /// <summary>0 none, 1 on asked, 2 off asked.</summary>
+    /// <summary>0 none, 1 on asked, 2 off asked, 3 on for a test spawn (RequestSpawned).</summary>
     public volatile int Ask;
     /// <summary>The last word ("" none): a refusal, or what was done when it was not the plain result.</summary>
     public volatile string Note = "";
@@ -229,6 +229,11 @@ public sealed class ApEnemySwitch
         Ask = on ? 1 : 2; Note = on ? "Enemy: switching..." : "Enemy off: switching...";
     }
 
+    /// <summary>A TEST SPAWN's switch (Launch/EnemySpawn.Server.cs, 2026-10-20): on, for a ship the server itself just spawned for
+    /// a player its own rule (Spawn.Allowed) let spawn one - the world's Enemy rule and the asking player are not this switch's
+    /// to judge then; the ship must still be all one owner's (the spawning player's), as the step checks.</summary>
+    public void RequestSpawned() { Ask = 3; Note = "Enemy: switching..."; }
+
     /// <summary>An edit of the panel by whoever asks now (refused: the words said).</summary>
     public bool MayEdit(IApOwnership o)
     {
@@ -248,11 +253,17 @@ public sealed class ApEnemySwitch
         int ask = Ask; Ask = 0;
         bool wrote = false;
         long block = hasGrid ? o.BlockGrid : 0;
-        if (hasGrid && ask == 1)
+        if (hasGrid && (ask == 1 || ask == 3))
         {
             var who = o.Who(out long requester);
-            var why = ApEnemy.CanTurnOn(rule, in who, enemy);
             _ship.Clear(); o.Ship(_ship);
+            if (ask == 3)
+            {
+                // (a test spawn: the spawn's own rule was judged; the block grid's owner - the spawning player - stands in as who asks)
+                who = new ApEnemyWho { Owner = true, Creative = true, Admin = true }; rule = ApEnemyRule.Everyone; requester = 0;
+                foreach (var g in _ship) if (g.Grid == block) requester = g.Owner;
+            }
+            var why = ApEnemy.CanTurnOn(rule, in who, enemy);
             if (why == ApEnemyRefusal.None && !AllOwned(_ship, requester)) why = ApEnemyRefusal.GroupNotOwned;
             if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); }
             else

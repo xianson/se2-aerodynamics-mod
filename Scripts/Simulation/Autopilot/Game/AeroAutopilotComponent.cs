@@ -129,6 +129,9 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     bool MayEdit() { if (!_enemy.GridIsEnemy) return true; lock (_enemyLock) return _enemy.MayEdit(Own()); }
     /// <summary>The panel's Enemy switch: checked now (the words at once), done by the block's next server step.</summary>
     internal void AskEnemy(bool on) { lock (_enemyLock) _enemy.Request(on, Own(), Autopilot.EnemyRule); }
+    /// <summary>A test spawn's ship (Launch/EnemySpawn.Server.cs): the switch on, done by the block's next server step - the whole
+    /// ship to the game's hostile NPC through the same step (ApEnemySwitch.RequestSpawned: the spawn's own rule was judged).</summary>
+    internal void AskEnemySpawned() { lock (_enemyLock) _enemy.RequestSpawned(); }
     /// <summary>The Enemy line on the panel: what the ship is to players, or the switch's last word.</summary>
     public string EnemyText => _enemy.Text();
 

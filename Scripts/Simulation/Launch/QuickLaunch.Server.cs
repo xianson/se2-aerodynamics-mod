@@ -23,6 +23,7 @@ public partial class AeroWorldSettingsComponent
     {
         if (c.Data.Scene?.DebugName == "Client") return;   // (the carrier is the server planets'; never answer from a client copy)
         AtmosphereProbe.Tick(c.Entity);   // (the API's point query with no grid in the world: a timestamp compare; ~10 s its list)
+        EnemySpawn.ServerTick(c);   // (test spawns - Launch/EnemySpawn.Server.cs: three reads while there is nothing to do)
         if (!QuickLaunch.Asked) return;
         QuickLaunch.ServerStep(c);
     }
@@ -157,7 +158,7 @@ public static partial class QuickLaunch
     }
 
     /// <summary>The nearest server planet's centre (false: none in this world).</summary>
-    static bool NearestPlanet(object scene, Vector3D at, out Vector3D centre)
+    internal static bool NearestPlanet(object scene, Vector3D at, out Vector3D centre)
     {
         centre = default; double best = double.MaxValue; bool any = false;
         lock (AeroWorldSettingsComponent.Planets)

@@ -3,6 +3,20 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - test spawns (creative / admin)
+
+- **Ctrl+M** spawns an enemy **missile**, **Ctrl+B** an enemy **bogey**, **Ctrl+N** removes them. Each is a blueprint from your
+  Blueprints folder ("Missile", "Bogey"; settings `Spawn.MissileBlueprint` / `Spawn.BogeyBlueprint`) with an Autopilot block.
+- It appears 2000 m / 4000 m away (random, behind, ahead or a side), at your height, out of the ground and clear of grids;
+  1..8 missiles per press.
+- Made the game's hostile NPC's through the Autopilot block's Enemy switch (the whole construct); its panel set to Engage with
+  Rocket Guidance / Dogfight and you (your grid, else your character) as the target; launched at its own speed (a bogey at its
+  cruise) or the `Spawn.MissileSpeed` / `Spawn.BogeySpeed` setting.
+- Who may: `Spawn.Allowed` (world; creative or an admin by default). Removed after `Spawn.DespawnMinutes` (10; 0 never).
+- Says why when it cannot: no such blueprint, no Autopilot block, the slot not written, not allowed, the world's autopilot off.
+- API 14: `RequestTestSpawn`, and text settings (`TryGetSettingText`, `SetSettingText`). Offline: `Tests/SpawnTests` (132
+  checks). Not flown in game yet.
+
 ## Unreleased - the Autopilot block (hover hold, height hold, flight in the air, target behaviours)
 
 - **Flight Hold** (the Autopilot block's panel; also Level Off): heading hold or wings level, altitude hold with a climb
