@@ -480,10 +480,10 @@ public class CompressibleWingModel : IWingLiftModel
             _clAlphas[i] = ComputeCLAlpha(machPerp, MathF.Min(arI / phiG, 4f * arI), sweepLE,
                                           SubsonicBlendLimit, SupersonicBlendLimit);
 
-            // Runtime stall angle, floored at 3 degrees
-            _alphaStalls[i] = _clAlphas[i] > 0.01f
+            // Runtime stall angle, floored at 3 degrees (x the flight assist's stall angle scale: 1 realistic)
+            _alphaStalls[i] = FlightAssists.Stall(_clAlphas[i] > 0.01f
                 ? MathF.Max(3f * MathF.PI / 180f, w.CLMax / _clAlphas[i])
-                : MathF.PI / 4f;
+                : MathF.PI / 4f);
         }
 
         // Step 2: Prandtl biplane interference — mutual downwash
@@ -611,6 +611,7 @@ public class CompressibleWingModel : IWingLiftModel
                 cdSep = 2f * sinA * sinA * sepShare;
                 attached = 1f - sepShare;
                 cl = clAttached * kirchhoffFactor * (1f - blendToFlat) + clFlatPlate * blendToFlat;
+                cl = FlightAssists.Retain(cl, clAlpha * alphaStall);   // (the flight assist's post-stall lift: 1 realistic)
             }
 
             float q = 0.5f * rho * speed * speed;

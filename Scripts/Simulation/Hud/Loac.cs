@@ -51,7 +51,7 @@ public partial class AeroGridComponent
     internal bool SurfaceReachFresh => _simFrameCount - _surfReachFrame <= 4 + AeroFrameBudget.MaxSkips + 1;
 
     /// <summary>The surfaces' torque left in each direction from where they are trimmed (the allocator's measure this tick:
-    /// each one's torque per unit input, about its trim/flap base; inputs reach +-1): per axis, the most they add toward
+    /// each one's torque at its measured inputs less at its trim/flap base, the most either way): per axis, the most they add toward
     /// + (SurfacePush) and toward - (SurfacePull, as a magnitude) - a surface trimmed hard one way has little left that way
     /// and plenty the other. (Checked in game on the Tu-134, 2026-10-13, tools/harness/loacdiag.sh: the airframe torque
     /// predicted at the attitude now matched the applied to the kN m; gliding with idle engines it needs ~2.4 MN m of
@@ -61,10 +61,12 @@ public partial class AeroGridComponent
         Vector3 push = Vector3.Zero, pull = Vector3.Zero;
         for (int k = 0; k < list.Count; k++)
         {
-            var a = list[k].a * scale; float b = k < _allocBase.Count ? _allocBase[k] : 0f;
-            Vector3 up = a * (1f - b), down = a * (-1f - b);   // (the torque change at full throw either way)
-            push += Vector3.Max(Vector3.Max(up, down), Vector3.Zero);
-            pull -= Vector3.Min(Vector3.Min(up, down), Vector3.Zero);
+            // (the most torque change either way at any input it may be given, MEASURED there - AllocateSurfaces' knots, 2026-10-19;
+            //  a straight line from a slope about the trim gave reach past the stall the surface did not have, or the wrong way)
+            int o = k * ControlSurface.Knots;
+            Vector3 hi = Vector3.Zero, lo = Vector3.Zero;
+            for (int j = o; j < o + ControlSurface.Knots && j < _knotT.Length; j++) { var t = _knotT[j] * scale; hi = Vector3.Max(hi, t); lo = Vector3.Min(lo, t); }
+            push += hi; pull -= lo;
         }
         SurfacePush = push; SurfacePull = pull; SurfaceNeutral = t0 * scale; _surfReachFrame = _simFrameCount;
     }

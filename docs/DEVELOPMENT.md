@@ -24,7 +24,8 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
   - every suite in `Tests/` (AeroBench runs its `gate`: known shapes, table vs exact forces, table cache, wing
     repeatability, rebuild garbage, cache version vs sources). Suites include `SurfaceTests`, `StructureTests`,
     `TearTests`, `ThrustTests`, `RotorTests`, `RotorStrikeTests`, `SolidRocketTests`, `ExhaustTests`,
-    `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SceneTests`,
+    `ControlSurfaceTests`, `SurfaceStallTests` (ships from `Tests/data/surfaces/*.boxes` + `*.ship`: `conv.py` there, from
+    blueprints; skipped when absent), `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SceneTests`,
     `SettingsTests`, `SettingsUiTests` (`-- dump` prints the settings menu), `ApiTests`, `BlockSaveTests`, `QuickLaunchTests`,
     `AutopilotSim` (the autopilot's flight simulator: `-- full` the sweeps, `-- list`, `-- <name>`, `csv <folder>` traces).
 - **AeroBench modes** (`cd Tests/AeroBench; dotnet run -c Release -- <mode> <ships>`), e.g. `damage`, `impact`, `scale`,

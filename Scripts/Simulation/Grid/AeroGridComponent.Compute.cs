@@ -207,10 +207,11 @@ public partial class AeroGridComponent
         // ── Control surface input from player ──
         long csStart = AeroStats.Timestamp();
         float q = (float)(0.5 * atmo.Density * speed * speed);
-        UpdateControlSurfaceInputs(centerOfMass, wt, localAngVel, q, LastResult.Torque);
         // the aero-aware attitude law flying: the surfaces deliver ITS torque demand (ThrustTorque publishes it; the gyros
         // and thrusters give the rest) - the mixer's own law stands only when it does not fly (rate input, harness, vacuum)
-        if (AllocEnabled && IsServerScene && LastControlTorqueValid && float.IsNaN(ControlSurface.TestInput)) AllocateSurfaces(ctx, centerOfMass);
+        bool allocates = AllocEnabled && IsServerScene && LastControlTorqueValid && float.IsNaN(ControlSurface.TestInput);
+        UpdateControlSurfaceInputs(centerOfMass, wt, localAngVel, q, LastResult.Torque, in ctx, allocates);
+        if (allocates) AllocateSurfaces(ctx, centerOfMass);
         PublishFlapAngles(wt);
         AeroStats.SetCtrl(AeroStats.ElapsedUs(csStart));
 

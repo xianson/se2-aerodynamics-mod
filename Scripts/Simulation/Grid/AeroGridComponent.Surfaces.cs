@@ -14,7 +14,7 @@ public partial class AeroGridComponent
     private int _csLogOnceCountdown = 300; // log once after 5s regardless of input
 
     private void UpdateControlSurfaceInputs(Vector3 centerOfMass, WorldTransform wt,
-        Vector3 localAngVel, float dynamicPressure, Vector3 bodyTorque)
+        Vector3 localAngVel, float dynamicPressure, Vector3 bodyTorque, in AeroContext ctx, bool allocates)
     {
         if (_components.Count == 0 && !HingeSurfaces.Wanted(this)) return;   // (hinge surfaces: native subgrid flaps)
 
@@ -208,11 +208,11 @@ public partial class AeroGridComponent
                 if (Vector3.Dot(-_lastVelocityLocal, cs.ChordDirection) < 0f) liftDir = -liftDir;
                 float liftDirLen = liftDir.Length();
 
-                // 5c. Torque axis from positive deflection.
-                //     Torque = Cross(r, F). Positive DeflectionInput → deflRad = -input*maxDefl
-                //     → positive AoA → positive lift → torque = Cross(r, liftDir*lift).
-                //     effectiveness = Cross(r, liftDir): torque direction from positive lift.
-                //     But positive input → positive lift, so effectiveness IS the torque direction of +input.
+                // 5c. Torque axis from positive deflection (geometric: r x liftDir, +input -> + lift). It holds only in attached
+                //     flow - past ~45 deg a flat plate's deflection turns its force round and this fixed sign steered the
+                //     surface against the pilot (Tests/SurfaceStallTests) - so the input below is the MEASURED one's
+                //     (ControlSurface.MixerInput) whenever the air gives something to measure; the geometric stands for the
+                //     skip test, the log, a parked or vacuum ship, and while the allocator sets the inputs this tick anyway.
                 Vector3 effectiveness = MaskAxes(cs, Vector3.Cross(r, liftDir));
                 float effLen = effectiveness.Length();
 
@@ -241,6 +241,19 @@ public partial class AeroGridComponent
                 command = Vector3.Dot(effNorm, targetAngVel) * ControlSurface.RateKp;
                 damping = Vector3.Dot(effNorm, localAngVel - targetAngVel) * ControlSurface.RateKd;
                 scaledInput = ControlSurface.RateCommand(effNorm, targetAngVel, localAngVel, gainScale);
+                if (!allocates && dynamicPressure > MeasuredMixerMinQ)
+                {
+                    // (2026-10-19, MEASURED: the surface's torque about the centre of mass at +1 and -1 less at its base, in the
+                    //  air now - the rate law on the side that turns the ship the way wanted; neither: it stays at its base)
+                    var cond = LocalAeroConditions.FromContext(ctx, cs.Position);
+                    float keep = cs.DeflectionInput, b = Math.Clamp(baseInput, -1f, 1f);
+                    cs.DeflectionInput = b; var tb = cs.Compute(cond).TorqueAbout(centerOfMass);
+                    cs.DeflectionInput = 1f; var tp = cs.Compute(cond).TorqueAbout(centerOfMass);
+                    cs.DeflectionInput = -1f; var tm = cs.Compute(cond).TorqueAbout(centerOfMass);
+                    cs.DeflectionInput = keep;
+                    var up = MaskAxes(cs, tp - tb); var down = MaskAxes(cs, tm - tb);
+                    if (up.LengthSquared() + down.LengthSquared() > 1e-6f) scaledInput = ControlSurface.MixerInput(up, down, targetAngVel, localAngVel, gainScale);
+                }
                 float clampedInput = MathF.Max(-1f, MathF.Min(1f, baseInput + scaledInput));
                 cs.DeflectionInput = float.IsNaN(ControlSurface.TestInput) ? clampedInput : Math.Clamp(ControlSurface.TestInput, -1f, 1f);
 
@@ -320,8 +333,9 @@ public partial class AeroGridComponent
     /// <summary>
     /// The control surfaces as actuators of the aero-aware attitude law (the user, 2026-10-12: "the gyro / thrust controller
     /// is correct - the surfaces follow it"): its torque demand (LastControlTorque, grid-local N m, a tick old) less what the
-    /// surfaces give undeflected, shared out by least squares over each surface's torque per unit input - measured now, by
-    /// computing it at +-1/2 input - and clamped to +-1. So the surfaces give about the demand and never more (an excess the
+    /// surfaces give undeflected, shared out by least squares over each surface's torque per unit input - measured now at
+    /// the inputs it may be given (its ends, its base, half-way: ControlSurface.Measure; the least squares on the full-throw
+    /// slope, then each input refined against its measured knots: ControlSurface.Refine) - and clamped to +-1. So the surfaces give about the demand and never more (an excess the
     /// gyros and thrusters would counter); the law asks them for the rest (demand - LastSurfaceTorque).
     /// </summary>
     private void AllocateSurfaces(in AeroContext ctx, Vector3 com)
@@ -337,12 +351,18 @@ public partial class AeroGridComponent
             if (!SurfaceSetup(cs, _lastVelocityLocal, out float b, out bool usable)) b = 0f;
             else if (usable)
             {
-                cs.DeflectionInput = b + 0.5f; var tp = cs.Compute(cond).TorqueAbout(com);
-                cs.DeflectionInput = b - 0.5f; var tm = cs.Compute(cond).TorqueAbout(com);
-                // (torque per unit input, about the centre of mass - only its share on the axes it may help with: what it
-                //  gives on the others the gyros answer, the law asking them for demand less what the surfaces gave)
-                var a = MaskAxes(cs, tp - tm);
+                // (2026-10-19: MEASURED at the inputs it may really be given - its ends, its base and half-way, ControlSurface.Measure
+                //  - not a +-1/2 slope about the trim: past the stall the torque is far from linear in the input and that slope's
+                //  sign could be the wrong one - Tests/SurfaceStallTests. Five Computes (three before). About the centre of mass,
+                //  only its share on the axes it may help with: what it gives on the others the gyros answer)
+                int o = list.Count * ControlSurface.Knots;
+                if (_knotT.Length < o + ControlSurface.Knots) { System.Array.Resize(ref _knotT, (o + ControlSurface.Knots) * 2); System.Array.Resize(ref _knotU, (o + ControlSurface.Knots) * 2); }
+                var tb = ControlSurface.Measure(cs, cond, com, b, _knotT.AsSpan(o, ControlSurface.Knots), _knotU.AsSpan(o, ControlSurface.Knots));
+                for (int k = o; k < o + ControlSurface.Knots; k++) _knotT[k] = MaskAxes(cs, _knotT[k]);
+                var a = 0.5f * (_knotT[o + ControlSurface.Knots - 1] - _knotT[o]);   // (the full-throw slope: Allocate's linear model)
                 if (a.LengthSquared() > 1e-6f) { list.Add((cs, a)); _allocBase.Add(b); }
+                cs.DeflectionInput = b; t0 += tb;
+                continue;
             }
             cs.DeflectionInput = b; t0 += cs.Compute(cond).TorqueAbout(com);
         }
@@ -357,6 +377,8 @@ public partial class AeroGridComponent
         _allocA.Clear(); foreach (var (_, a) in list) _allocA.Add(a);
         if (_allocU.Length < list.Count) _allocU = new float[list.Count * 2];
         if (!ControlSurface.Allocate(_allocA, want, _allocU)) return;
+        // (the inputs against each one's measured knots: none ends pushing against the demand - ControlSurface.Refine)
+        ControlSurface.Refine(_knotT, _knotU, want, _allocU, list.Count);
         _allocN = list.Count; _allocSat = 0;
         for (int k = 0; k < list.Count; k++)
         {
@@ -364,6 +386,12 @@ public partial class AeroGridComponent
             list[k].cs.DeflectionInput = u; if (MathF.Abs(u) > 0.999f) _allocSat++;
         }
     }
+    /// <summary>The keyboard mixer measures each surface's effect (ControlSurface.MixerInput) above this dynamic pressure (Pa);
+    /// below it the geometric r x liftDir (no air to measure).</summary>
+    const float MeasuredMixerMinQ = 1f;
+    // (the allocator's measure per surface, in step with the list: Knots torques less the base's, masked, and their inputs less
+    //  the base - ControlSurface.Measure; Loac's reach reads them too. Grown only)
+    internal Vector3[] _knotT = new Vector3[16 * ControlSurface.Knots]; internal float[] _knotU = new float[16 * ControlSurface.Knots];
     /// <summary>The surfaces as the attitude law's actuators on/off (harness: aeroset AeroGridComponent.AllocEnabled true).
     /// (Its off switch is for diagnosis: the 2026-10-12 freeze blamed on it was EffectCull's exceptions.) Server only: the
     /// client copies show the server's deflections.</summary>

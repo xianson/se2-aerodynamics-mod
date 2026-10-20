@@ -44,6 +44,16 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Not tested in game yet: the block, its panel and toolbar actions, the readout, the toasts, an unattended hover after the
   pilot leaves and after a reload, the terrain rays.
 
+### Control surfaces past the stall
+
+- **A stalled surface is a flat plate.** Its force grows to ~1.2 x q x area broadside (Hoerner's plates; it was ~0.03), its
+  drag included (tails now steady a ship at high angles). No dead zone or reversal from 30 to 50 deg. Under the stall: unchanged.
+- **Deflection keeps at least 35 % of its bite past the stall** (Hoerner / NASA flap data; was down to ~0).
+- **The allocator and the keyboard mixer measure each surface** at the inputs they may give it: no wrong-way pushes at any
+  angle. SSTO (full) nose-down at 30 deg, 100 m/s: 55 -> 162 kN m best, the allocator's -21 -> 162. With its gyro it no
+  longer locks into a deep stall (was: past 79 deg). Cost: +4-7 us per piloted grid per tick, no allocation.
+- `Tests/SurfaceStallTests`: before / after on single plates and dumped ships.
+
 ## 1.0.4 - saving fixed on SE2 4.0
 
 - **A world with a newly placed aero block could not be saved** ("Failed save ... Serializing dead Entities ... AeroSurfaceSettingsComponent").

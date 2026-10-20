@@ -122,7 +122,11 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
   and its drag due to lift toward CL^2/CLa as the leading-edge suction goes supersonic: "Wave drag", "Supersonic drag
   due to lift").
 - **Control surfaces.** `UpdateControlSurfaceInputs` mixes the pilot's rotation into surface inputs; while the aero-aware
-  law flies (`LastControlTorqueValid`, server) `AllocateSurfaces` gives them its torque demand instead.
+  law flies (`LastControlTorqueValid`, server) `AllocateSurfaces` gives them its torque demand instead. Both work from each
+  surface's torque MEASURED at the inputs it may be given (`ControlSurface.Measure` / `MixerInput`; the allocator's least
+  squares then `ControlSurface.Refine` on the measured knots), never a slope about the trim: past the stall a surface is a
+  flat plate (`ControlSurface.Section`, its deflection's authority floored at `PostStallAuthorityFloor`) and far from
+  linear in its input.
   `PublishFlapAngles` publishes deflections for the client flap models. `HingeSurfaces` drives vanilla hinges
   (`Control.HingeSurfaces`, off by default).
 - **Block components** (`AeroComponentRegistry.EvaluateAll`) and **other mods' drag** (`EvaluateDragPatches`,
@@ -273,7 +277,8 @@ thrust-overload warning (`AeroStallWarning`, `GameStallWarning`) and the optiona
   `AeroCost.Log` is off), the engine stat overlay's "Grid" / "All" sections; `StructureLoads` counters for the structure.
 - **Offline tests** (`Tests/`, no game): `AeroBench` (shapes, table vs exact, cache, wings, structure `struct` / `fail` /
   `replay`, polars; `gate` mode in the gate), `SurfaceTests`, `StructureTests`, `TearTests`, `ThrustTests`,
-  `ControlSurfaceTests`, `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SettingsTests` (the settings
+  `ControlSurfaceTests`, `SurfaceStallTests` (surfaces past the stall, before / after, on the dumped ships in
+  `Tests/data/surfaces`), `GearTests`, `ShockGridTests`, `WingStrainTests`, `DebrisTests`, `SettingsTests` (the settings
   registry: metadata, text round trip, groups, host-file forcing, authority, denylist, dev writes never saved, the
   background poll), `SettingsUiTests` (the menu's model over the real registry; `-- dump` prints the menu), `ApiTests`
   (the API's shape, the event ring, the cross-mod binding), `BlockSaveTests` (the blocks' save keys, the old lines'
