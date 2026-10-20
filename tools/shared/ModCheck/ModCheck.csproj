@@ -13,7 +13,9 @@
     <NoWarn>$(NoWarn);$(KnNoWarn)</NoWarn>
     <ModDir Condition="'$(ModDir)'==''">C:\Users\slob\Documents\SpaceEngineers2\Mods\Orbital Mod</ModDir>
     <Game2>C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\Game2</Game2>
-    <NetRt Condition="'$(NetRt)'==''">C:\Program Files\dotnet\shared\Microsoft.NETCore.App\9.0.19</NetRt>
+    <!-- the .NET runtime the game runs on (its runtimeconfig: 9.0, rolled forward to the newest installed 9.0.x); 9.0.19 until
+         the 2026-10-20 .NET update removed it (env NetRt overrides) -->
+    <NetRt Condition="'$(NetRt)'==''">C:\Program Files\dotnet\shared\Microsoft.NETCore.App\9.0.21</NetRt>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <NoStdLib>true</NoStdLib>
     <NoCompilerStandardLib>true</NoCompilerStandardLib>
