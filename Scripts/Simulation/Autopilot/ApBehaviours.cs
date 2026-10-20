@@ -38,6 +38,10 @@ public struct ApBhCtx
 {
     public ApStyle Style; public ApPanel P;
     public Vector3D Pos; public Vector3 Vel, Up; public float Speed, Cruise, Chase, TurnR, Height, Time;
+    /// <summary>The deceleration it has with the throttle shut (m/s2: the drag's, FlightPerf) - a closure is planned with it.</summary>
+    public float Decel;
+    /// <summary>The load the lift gives at the stall margin now (g; FlightPerf.NAtAlphaMax - 0 not known): the energy to manoeuvre.</summary>
+    public float NMax;
     public ApTargetTrack T; public float THeight;
 }
 
@@ -112,8 +116,14 @@ public sealed class ApBehaviours
             case ApBehaviour.Broadside:
             {
                 float th = c.P.AngleDeg;
-                if (plane)
+                if (plane && MathF.Abs(th - 90f) < 20f)
                 {
+                    // (about 90: circling at the range - the target abeam; the L1 circle holds the radius)
+                    g.Kind = ApNavKind.Circle; g.Point = T.Pos; g.PointVel = T.Vel; g.Radius = MathF.Max(D, 1.3f * c.TurnR); g.Dir = _side;
+                }
+                else if (plane)
+                {
+
                     // the target held at the broadside angle off the nose, the angle opened when too close, closed when too far
                     float corr = Math.Clamp((D - range) / MathF.Max(D, 1f), -0.5f, 0.5f) * 90f;
                     float ang = Math.Clamp(th + corr, 0f, 180f) * ApMath.Deg * _side;
@@ -139,7 +149,8 @@ public sealed class ApBehaviours
                 float dh = MathF.Abs(c.P.AltOffsetM) * (b == ApBehaviour.HoverBelow ? -1f : 1f);
                 g.Height = c.THeight + dh;
                 if (plane) { g.Kind = ApNavKind.Circle; g.Point = T.Pos; g.PointVel = T.Vel; g.Radius = MathF.Max(D * 0.5f, 1.3f * c.TurnR); g.Dir = _side; }
-                else { g.Kind = ApNavKind.Point; g.Point = T.Pos; g.PointVel = T.Vel; g.PointAcc = T.Acc; g.Aim = true; }
+                else { g.Kind = ApNavKind.Point; g.Point = T.Pos; g.PointVel = T.Vel; g.PointAcc = T.Acc; g.Aim = c.Style == ApStyle.SixAxis; }   // (a helicopter's forward guns cannot bear straight down)
+
                 break;
             }
             case ApBehaviour.PointAt:
@@ -175,8 +186,11 @@ public sealed class ApBehaviours
                     g.Kind = ApNavKind.Point; g.Point = aimP; g.PointVel = T.Vel; g.Aim = true;
                     g.Height = c.THeight + Vector3.Dot((Vector3)(aimP - T.Pos), up);   // (3D: the aim point's own height)
                     // closure: full speed far out, the target's speed plus the gap's at the gun range
-                    float tv = T.Vel.Length();
-                    g.Speed = range > 1.5f * D ? c.Cruise : MathF.Max(0.6f * c.Cruise, tv + 0.1f * (range - D));
+                    // closure: no faster than the drag can take out by the gun range (sqrt(2 a d), a margin), the target's own speed
+                    // along the line of sight under it
+                    float tAlong = Vector3.Dot(T.Vel, los), dec = MathF.Max(0.3f, c.Decel);
+                    float close = range > D ? MathF.Sqrt(2f * 0.6f * dec * (range - D)) : -0.15f * (D - range);
+                    g.Speed = Math.Clamp(tAlong + close, 0.55f * c.Cruise, c.Cruise);
                 }
                 else
                 {
@@ -244,8 +258,10 @@ public sealed class ApArbiterBh
         if (plane)
         {
             // energy: slow and close - away and back up to speed first
-            float lowE = c.Speed < 0.7f * c.Cruise && T.Range < 2f * D ? 0.9f : 0f;
-            if (Active == ApBehaviour.Extend && c.Speed < 0.9f * c.Cruise) lowE = MathF.Max(lowE, 0.8f);
+            // (out of energy: the lift at the stall margin gives under 1.6 g - it could not turn with the target; back once over 2.2)
+            float lowE = c.NMax > 0f && c.NMax < 1.6f && T.Range < 3f * D ? 0.9f : 0f;
+            if (Active == ApBehaviour.Extend && c.NMax > 0f && c.NMax < 2.2f) lowE = MathF.Max(lowE, 0.8f);
+
             Try(ApBehaviour.Extend, lowE);
         }
         if (chosen != ApBehaviour.Auto) Try(chosen, 0.6f);

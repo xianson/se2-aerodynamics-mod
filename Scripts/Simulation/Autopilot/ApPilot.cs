@@ -33,7 +33,7 @@ public sealed class ApPilot : IApGoalSource
     public int Wp, WpCount; Vector3D _wpFrom; bool _loiter; Vector3D _loiterAt;
     Vector3D _home, _station; bool _hasStation;
     Vector3 _upL = Vector3.UnitY, _noseL = -Vector3.UnitZ;
-    float _cruise, _time, _jinkIn; int _jx = 1, _jy = 1; uint _rng = 2463534242u;
+    float _cruise, _time, _jinkIn, _gunEl; int _jx = 1, _jy = 1; uint _rng = 2463534242u;
 
     // ── what it caught at the engage (the link writes it to the panel) ──
     public bool CapturedHolds; public float CapHeading, CapAlt, CapSpeed;
@@ -161,10 +161,22 @@ public sealed class ApPilot : IApGoalSource
             if (T.Valid)
             {
                 var c = new ApBhCtx { Style = Style, P = Cfg, Pos = s.Pos, Vel = s.Vel, Up = up, Speed = Style == ApStyle.Airplane ? air : vg, Cruise = cruise, Chase = chase,
-                    TurnR = TurnR, Height = alt, Time = _time, T = T, THeight = Alt.Height(T.Pos, up) };
+                    TurnR = TurnR, Height = alt, Time = _time, T = T, THeight = Alt.Height(T.Pos, up), Decel = perf.Valid ? perf.DragDecelNow : 1f, NMax = perf.Valid ? perf.NAtAlphaMax : 0f };
                 ActiveBh = Arb.Pick(Cfg.Behaviour, in c, dt);
                 Bh.Plan(ActiveBh, in c, dt, ref goal);
                 h = alt;   // (the target's heights are the altimeter's)
+                // (a helicopter aiming fixed guns: level with the target - it cannot pitch onto it without moving)
+                //  - and its gun's own pitch now (the lean, the trim; filtered) taken in: the height where that line meets the lead)
+                if (Style == ApStyle.Helicopter && goal.Aim && Cfg.AimOn)
+                {
+                    Vector3 axis = s.GunAxis.LengthSquared() > 0.5f ? s.GunAxis : s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
+                    float el = MathF.Asin(Math.Clamp(Vector3.Dot(Vector3.Transform(axis, s.Orient), up), -1f, 1f));
+                    _gunEl += (el - _gunEl) * MathF.Min(1f, dt / 1.5f);
+                    float flat = ApMath.Flat((Vector3)(T.Pos - s.Pos), up).Length();
+                    goal.Height = c.THeight + Vector3.Dot(T.Vel, up) * Tof - flat * MathF.Tan(Math.Clamp(_gunEl, -0.5f, 0.5f));
+                }
+
+
             }
             else
             {
@@ -343,11 +355,21 @@ public sealed class ApPilot : IApGoalSource
             Vector3 path = s.AirVel.LengthSquared() > 1f ? Vector3.Transform(Vector3.Normalize(s.AirVel), s.Orient) : gunW;
             float off = ApAim.ErrorDeg(path, dir);
             w = Math.Clamp((30f - off) / 15f, 0f, 1f) * (T.Range <= 1.2f * reach ? 1f : 0f);
+            // (and off it before the target: the nose given back to the path from 7 s before reaching it, all of it by 4 s - the pull-out's time)
+            if (T.Closing > 1f) w *= Math.Clamp((T.Range / T.Closing - 4f) / 3f, 0f, 1f);
+
         }
-        else if (Style == ApStyle.Helicopter) { w = Math.Clamp((35f - AimErrDeg) / 15f, 0f, 1f); x.Heading = ApMath.Flat(dir, up); }
+        else if (Style == ApStyle.Helicopter)
+        {
+            // (a helicopter yaws onto the lead; it does not pitch onto it - its lift axis is its nose's pitch, tilting it moves the
+            //  ship: the behaviour holds it level with the lead instead - ApPilot.Step - so the nose is on it in height too)
+            w = 0f; x.Heading = ApMath.Flat(dir, up);
+        }
+
         else w = 1f;
         LeadBlend = w;
         x.AimAxis = axis; x.AimDir = dir; x.Blend = w;
+
     }
 
     void Jink(in ApSense s, Vector3 up, float aLatMax, float dt, ref ApExternal x)
