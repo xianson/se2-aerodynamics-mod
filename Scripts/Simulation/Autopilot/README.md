@@ -43,7 +43,7 @@ change per grid - replicated, saved with each grid; each grid's owner before sav
 (an encounter would place the block with its panel saved in the prefab - the saved key carries every value).
 
 ## Entry points
-- `AeroGridComponent.AutopilotStep` (AttitudeJob, both scenes; a null check when nothing is engaged).
+- `AeroGridComponent.AutopilotStep`: the server copy from `AeroSimJob.AttitudeJob`; the client copy (its bridge: `ClientAp`) from the client effects job, `AeroEntryFxComponent.EntryJob` - the attitude job runs in the server scene only (a null check when nothing is engaged).
 - `AeroAutopilotComponent.BlockJob` (server, before the simulation: the block registers with its grid and keeps it awake while a mode is on); its panel's setters (the terminal, host / single player), its save (`AeroBlockSave.cs`).
 - `ApToasts.ClientTick` (the client effects job, beside QuickLaunch).
 - `AeroApi.TryGetAutopilot` / `RequestAutopilot` / `TryGetFlightPerformance` (version 11).
