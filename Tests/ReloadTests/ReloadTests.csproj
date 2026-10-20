@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Reload/ScriptResultsCleanup.cs (engine-free half): the world-switch fix's key finder and removal on a fake of the
+       game's script results, and the real field names and types in the installed game's DLLs (Program.cs). -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Scripts\Simulation\Reload\ScriptResultsCleanup.cs" />
+  </ItemGroup>
+</Project>

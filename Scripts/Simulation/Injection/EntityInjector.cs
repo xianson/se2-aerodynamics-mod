@@ -14,6 +14,7 @@ public class EntityInjector : SimpleDefinitionPostProcessor<PrefabDefinition>
 
     public override void PostProcess(PrefabDefinition definition)
     {
+        ScriptResultsCleanup.Ensure();   // (the world-switch fix: runs on every world load, before any entity - Reload/)
         InjectAeroComponents.Please(definition);
     }
 }

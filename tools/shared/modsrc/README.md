@@ -8,12 +8,13 @@ these files. They are written ONCE, here (until 2026-10-19 in the Orbital repo, 
   `<mod>/Scripts/Simulation/Ui/SettingsTab.cs`). Today: the in-game settings menu (`Ui/AvaloniaReflect.cs`, `SettingsModel.cs`,
   `SettingsTab.cs`) and its offline test (`Tests/SettingsUiTests/Program.cs`); the world settings' carriers
   (`Save/WorldCarriers.cs`: which saved text a world applies, when a world is over - planetless worlds too) and their test
-  (`Tests/WorldCarrierTests/Program.cs`). The namespace is a placeholder:
+  (`Tests/WorldCarrierTests/Program.cs`); the world-switch fix (`Reload/ScriptResultsCleanup.cs`,
+  `ScriptResultsCleanup.Engine.cs`: the mod's entry out of the game's script results on unload) and its test
+  (`Tests/ReloadTests/Program.cs`). The namespace is a placeholder:
   `namespace __MOD__;` / `using __MOD__;` (those lines only) become `AeroMod` / `OrbitalMod` in the copies.
 - Never here: each mod's adapter (`Scripts/Simulation/Ui/SettingsTab.Mod.cs`: its id, title, files, registry calls) and its
   test project files (`*.csproj`). The two adapters' `ModId`s must differ (the check says so).
-- More shared files (e.g. the world-switch fix's `Scripts/Simulation/Reload/ScriptResultsCleanup*.cs` and
-  `Tests/ReloadTests/Program.cs`): put them under `files/` at their mod path, placeholder namespace, and sync.
+- More shared files: put them under `files/` at their mod path, placeholder namespace, and sync.
 
 | command | what |
 |---|---|
