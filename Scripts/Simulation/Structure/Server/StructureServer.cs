@@ -190,7 +190,8 @@ public partial class AeroGridComponent
         snap.Weight = LastMass * GridPhysics.GetGravityDirection(Data).Length() * GridPhysics.GravityScale;   // (the real weight the wings carry: x the engine's GravityMultiplier)
         // (the predicted loss of control's: the commanded attitude, the ship's now, the actuators' reach)
         snap.HasTarget = LoacHasTarget; snap.Target = LoacTarget; snap.Orient = Data.GetWorldTransform().Orientation;
-        snap.HasProbe = ApFlying && ApHasProbe; snap.Probe = ApProbe;
+        // (the autopilot's probe, or - stall protection in manual flight, Assists.cs - the pilot's own target)
+        snap.HasProbe = ApFlying ? ApHasProbe : PilotProbeOn; snap.Probe = ApFlying ? ApProbe : PilotProbe;
         snap.Mass = LastMass; snap.GravityTrue = GridPhysics.GetGravityDirection(Data) * GridPhysics.GravityScale;
         if (Data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var apMt)) { snap.ThrustPos = apMt.Regular.Positive; snap.ThrustNeg = apMt.Regular.Negative; }
         bool sFresh = SurfaceReachFresh;   // (a reach measured in faster air is not the surfaces' now: 2026-10-17)

@@ -40,7 +40,8 @@ public partial class AeroGridComponent
         }
         if (Data.TryGet<TargetControlData>(out var tc) && tc.TargetOrientation.IsValidAndRotationIsNormalized())
         {
-            target = tc.TargetOrientation; mode = "pilot target"; return true;
+            // (the flight assist's stall protection: the pilot's target as governed this tick - AeroGridComponent.Assists.cs)
+            target = PilotGovOn ? PilotGov : tc.TargetOrientation; mode = "pilot target"; return true;
         }
         if ((Data.TryGet<AngularControlData>(out var ac) && ac.TargetAngularVelocity.LengthSquared() > 1e-6f)
             || (Data.TryGet<ControlData>(out var cd) && cd.Rotation.LengthSquared() > 1e-4f))

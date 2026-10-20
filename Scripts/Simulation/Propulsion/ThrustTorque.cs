@@ -656,6 +656,9 @@ public static class ThrustTorque
         public bool Flying; public Quaternion Target = Quaternion.Identity; public string Readout = ""; public int Goals, Prot, Reason; public long Stamp;
         // client -> server: the cockpit's movement keys and the pilot's steering (deg, a leaky sum), seated, when
         public bool Seated; public Vector3 Keys; public float Steer; public long PilotStamp;
+        // server -> client: stall protection in manual flight (Grid/AeroGridComponent.Assists.cs) - on, the governed pilot target,
+        // what clips it (ApProt, the readout's), when
+        public bool PilotGov; public Quaternion PilotTarget = Quaternion.Identity; public int PilotProt; public long PilotGovStamp;
     }
 
     /// <summary>Server: the grid's autopilot record (made on first use; the pose refreshed as every publish does).</summary>

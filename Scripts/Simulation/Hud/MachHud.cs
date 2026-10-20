@@ -47,7 +47,7 @@ public static class MachHud
         long due = System.Threading.Interlocked.Read(ref _nextValue);
         if (now < due || System.Threading.Interlocked.CompareExchange(ref _nextValue, now + f / 10, due) != due) return;
         // (the autopilot's readout too - "AP HOVER POS AGL" - whatever Hud.Mach says: Autopilot.Readout)
-        bool ap = Autopilot.Readout && System.Threading.Volatile.Read(ref AeroGridComponent.ApEngaged) > 0;
+        bool ap = Autopilot.Readout && (System.Threading.Volatile.Read(ref AeroGridComponent.ApEngaged) > 0 || FlightAssists.StallProtection);
         if (!On && !ap) { Suffix = ""; return; }
         if (now >= _nextPatch) { _nextPatch = now + 3 * f; Install(); }
         // (the Mach of what the local player is in)
@@ -60,6 +60,7 @@ public static class MachHud
         var aero = top?.TryGet<AeroGridComponent>();
         var p = On && aero != null ? AeroEntryFx.FindFlow(top.Data.GetWorldTransform().Position) : null;
         string mach = p != null && p.Mach >= 0.05f ? $" · M {p.Mach:0.00}" : "", apText = ap && aero != null ? aero.ApReadoutClient ?? "" : "";
+        if (apText.Length == 0 && ap && aero != null) apText = aero.PilotProtText ?? "";   // (stall protection in manual flight: what clips it)
         // (built only when a part changed: the readout's text is a few fixed strings)
         if (!ReferenceEquals(apText, _lastAp) || mach != _lastMach) { _lastAp = apText; _lastMach = mach; Suffix = apText.Length > 0 ? mach + " · " + apText : mach; }
     }

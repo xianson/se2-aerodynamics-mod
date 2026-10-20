@@ -46,6 +46,7 @@ public partial class AeroGridComponent
             GridPhysics.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
             // (the autopilot first: its target and keys, as a pilot's, for the attitude law below - Autopilot/AeroGridComponent.Autopilot.cs)
             aero.AutopilotStep(wt);
+            aero.AssistStep(wt);   // (the flight assists' stall protection: the pilot's target governed - Grid/AeroGridComponent.Assists.cs)
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
             aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
             // (the predicted loss-of-control warning's inputs: Loac.cs)

@@ -37,7 +37,7 @@ public partial class AeroGridComponent
         float speed = L.AirVel.Length();
         int raw = 0;
         // (also while the autopilot flies, whatever the HUD warning's setting: its protection reads it)
-        if ((StallWarning.Enabled || ApFlying) && speed > StallWarning.MinSpeed && snap.Density > StallWarning.MinDensity && snap.Weight > 0f)
+        if ((StallWarning.Enabled || ApFlying || PilotProbeOn) && speed > StallWarning.MinSpeed && snap.Density > StallWarning.MinDensity && snap.Weight > 0f)
         {
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var v = L.AirVel / speed;

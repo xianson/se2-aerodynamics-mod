@@ -127,6 +127,11 @@ worker into the game: workers write only the grid's own `_built*` / `_st*New` fi
   squares then `ControlSurface.Refine` on the measured knots), never a slope about the trim: past the stall a surface is a
   flat plate (`ControlSurface.Section`, its deflection's authority floored at `PostStallAuthorityFloor`) and far from
   linear in its input.
+- **Flight assists** (`Lift/FlightAssists.cs`, world group "Flight assists", every default realistic). Stall protection in
+  manual flight: `AeroGridComponent.Assists.cs` governs the pilot's target with `Autopilot/PilotProtection.cs` (the
+  autopilot's `EnvelopeGuard`) before `AttitudeTarget` hands it to the aware law - no force of its own. The stall
+  multipliers: `ControlSurface` / `CompressibleWingModel` (`FlightAssists.Stall`, `Retain`, `SurfaceAuthority`). The
+  offset-thrust scale: `ThrustTorque.Apply`, the uncommanded part only (`FlightAssists.Uncommanded`), before the gyros.
   `PublishFlapAngles` publishes deflections for the client flap models. `HingeSurfaces` drives vanilla hinges
   (`Control.HingeSurfaces`, off by default).
 - **Block components** (`AeroComponentRegistry.EvaluateAll`) and **other mods' drag** (`EvaluateDragPatches`,

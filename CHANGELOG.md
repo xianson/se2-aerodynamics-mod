@@ -58,6 +58,11 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 - **New world settings group "Flight assists"**, every default realistic (nothing changes unless you turn it on). Presets
   Realistic / Assisted / Forgiving (`Assists.Preset`, worked out from the values; Custom when they match none).
+- **Stall protection in manual flight** (`Assists.StallProtection`): your steering is held short of the stall, under the
+  autopilot's g limit and short of what the controls can hold - the autopilot's envelope protection on your target. No
+  physics change. The speed readout says STALL LIMIT / G LIMIT / CONTROL LIMIT while it holds you back. AutopilotSim: a
+  pull 25 deg past the stall stops at 10.7 deg (unprotected 19.3); a 10 deg pull at 200 m/s 2.6 g (4.7); from 35 deg,
+  surfaces only, the nose is under the stall in 3.4 s (unprotected it stays at 27+). Inside the envelope: identical.
 - **Changes physics:** stall angle, lift kept past the stall, control bite past the stall (`Assists.StallAngleScale`,
   `PostStallLift`, `SurfaceAuthority`). 1 is bit-identical to realistic.
 - `Gyros.TorqueScale` moved here (same name; saves unchanged).

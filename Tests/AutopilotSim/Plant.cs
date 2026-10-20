@@ -81,6 +81,11 @@ sealed class Plant
     public Vector3 Move; public bool Damp = true;
     /// <summary>A seated pilot: their keys and their steering (deg, the leaky sum the client publishes).</summary>
     public bool Piloted; public Vector3 PilotKeys; public float PilotSteerDeg;
+    /// <summary>A pilot flying by a target attitude (the reticle, world) with the autopilot not flying: the aware law flies it - through
+    /// the flight assist's stall protection when PilotProt is set (AeroGridComponent.Assists.cs; null: the reticle as it is). What
+    /// clipped it this tick, and the target the law flew.</summary>
+    public bool PilotTargetOn; public Quaternion PilotTarget = Quaternion.Identity; public PilotProtection PilotProt;
+    public ApProt LastPilotProt; public Quaternion LastFlown = Quaternion.Identity;
     /// <summary>The wind (world m/s) - set by the scenario each tick.</summary>
     public Vector3 Wind;
     /// <summary>The air density and the world's speed limit.</summary>
@@ -205,16 +210,19 @@ sealed class Plant
         ps.Sort(); _perfBack = _perf; _perf = ps;
         _stallState = LiftPeak.State(tp, lp, l0, 0.05f * weight);
         _stallMargin = tp * 180f / MathF.PI; _stallInUse = lp > 0f ? l0 / lp : 0f; _stallG = lp / weight; _liftDir = l; _stallFlow = v; _stallFresh = true;
-        // the loss of control at the autopilot's probe (Loac.cs: PathPoints 3 on the way, the attitude now too)
-        if (!Cmd.HasProbe) return;
+        // the loss of control at the autopilot's probe (Loac.cs: PathPoints 3 on the way, the attitude now too) - or, protecting a
+        // pilot (the assist), at their own target (StructureServer's snap.Probe)
+        bool pilotProbe = !Fd.Engaged && PilotTargetOn && PilotProt != null;
+        if (!Cmd.HasProbe && !pilotProbe) return;
+        Quaternion probe = pilotProbe ? PilotTarget : Cmd.Probe;
         float q = 0.5f * Rho * speed * speed;
         Vector3 reach = S.Gyro + ThrusterReach(), surf = S.Air.SurfaceReach(q);
         var airW = Vector3.Transform(air, Q);
         float Need(Quaternion at) { var al = Vector3.Transform(airW, Quaternion.Inverse(at)); S.Air.Forces(al, Vector3.Zero, Rho, out _, out var tq); return LoacMath.Worst(tq, reach, surf, surf); }
         _loacHere = Need(Q);
         float worst = 0f;
-        for (int k = 1; k <= 3; k++) worst = MathF.Max(worst, Need(Quaternion.Slerp(Q, Cmd.Probe, k / 3f)));
-        _loacProbe = worst; _loacAt = Cmd.Probe; _loacFresh = true;
+        for (int k = 1; k <= 3; k++) worst = MathF.Max(worst, Need(Quaternion.Slerp(Q, probe, k / 3f)));
+        _loacProbe = worst; _loacAt = probe; _loacFresh = true;
     }
 
     /// <summary>One 60 Hz tick.</summary>
@@ -301,15 +309,20 @@ sealed class Plant
         LastCycReach = cycReach; LastReaction = reaction;
         Vector3 netA = (applied + _lastLawW) / m + gravApplied;
         bool trim = S.Rotor >= 0 && !RotorTrim.Resting(V.Length(), W.Length(), netA.Length());
-        bool aware = Cmd.Flying;
+        // (a pilot's target - the autopilot not flying: the aware law flies it, governed by the assist's protection when it is on)
+        bool pilotFly = !Cmd.Flying && PilotTargetOn;
+        Quaternion flyTarget = Cmd.Target; LastPilotProt = ApProt.None;
+        if (pilotFly) { flyTarget = PilotProt != null ? PilotProt.Step(in sense, PilotTarget) : PilotTarget; LastPilotProt = PilotProt?.Prot ?? ApProt.None; }
+        LastFlown = flyTarget;
+        bool aware = Cmd.Flying || pilotFly;
         Vector3 tauNeed = Vector3.Zero, tauTarget, cycAsk, plan = Vector3.Zero; bool project = false;
         Vector3 inv = new(1f / S.I.X, 1f / S.I.Y, 1f / S.I.Z);
         if (aware)
         {
-            Mode = "autopilot (aero-aware)";
-            ThrustAllocator.RateCommand(Q, Cmd.Target, W, 1.2f, 0.8f, 0.3f, 0.002f, 0.002f, out Vector3 err);
+            Mode = pilotFly ? "pilot target (aero-aware)" : "autopilot (aero-aware)";
+            ThrustAllocator.RateCommand(Q, flyTarget, W, 1.2f, 0.8f, 0.3f, 0.002f, 0.002f, out Vector3 err);
             Vector3 reach = S.Gyro + ThrusterReach() + 0.75f * sReach;
-            if (PlanWithCyclic && S.Rotor >= 0) reach += ApTuning.CyclicPlanShare * cycReach * (Vector3.One - Vector3.Abs(axis));   // (ThrustTorque.CyclicPlanShare: the autopilot's law plans with the cyclic too)
+            if (PlanWithCyclic && Cmd.Flying && S.Rotor >= 0) reach += ApTuning.CyclicPlanShare * cycReach * (Vector3.One - Vector3.Abs(axis));   // (ThrustTorque.CyclicPlanShare: the autopilot's law plans with the cyclic too)
             Vector3 d = (aeroT + surfT) * inv;
             Vector3 acc = ThrustAllocator.AttitudeAccel(err, W - d * dt, reach * inv, aeroT * inv, 0.002f, 0.002f);
             Vector3 demand = acc * S.I - aeroT;
