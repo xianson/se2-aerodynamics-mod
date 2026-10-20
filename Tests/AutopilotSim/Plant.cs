@@ -92,6 +92,8 @@ sealed class Plant
     // disturbances
     public float NoiseVel, NoisePos, NoiseDeg, LagSeconds; public Random Rng = new(1);
     public float StallEvalHz = 4f;
+    /// <summary>The ship's fuel and integrity as the instruments show them (ApSense.HasShipStatus; a scenario sets them).</summary>
+    public bool ShipStatus; public float Fuel = float.NaN, Integrity = 1f;
     /// <summary>ThrustTorque's aware law plans its braking with the rotors' cyclic reach too while the autopilot flies (CyclicPlanShare of it).</summary>
     public bool PlanWithCyclic = true;
     public readonly Ledger Book = new();
@@ -179,6 +181,7 @@ sealed class Plant
         s.LoacFresh = _loacFresh; s.LoacProbe = _loacProbe; s.LoacHere = _loacHere; s.LoacProbeAt = _loacAt;
         s.SpeedLimit = SpeedLimit;
         s.Nose = S.Nose; s.GunAxis = S.GunAxis; s.MuzzleSpeed = S.Muzzle; s.GunRange = S.GunRange;
+        s.SpeedOfSound = 340f; s.HasShipStatus = ShipStatus; s.FuelShare = Fuel; s.IntegrityShare = Integrity;
         return s;
     }
     float _lastErr, _lastShare;
@@ -411,5 +414,6 @@ sealed class Plant
         if (o.HeightChanged) { Panel.HeightM = o.HeightM; PanelWrites++; }
         if (o.HoldsChanged) { Panel.HeadingDeg = o.HeadingDeg; Panel.AltM = o.AltM; Panel.SpeedMs = o.SpeedMs; PanelWrites++; }
         if (o.HomeChanged) { Panel.HasHome = true; Panel.HomeX = o.Home.X; Panel.HomeY = o.Home.Y; Panel.HomeZ = o.Home.Z; PanelWrites++; }
+        if (o.SlotSavedChanged) { if (o.DfSaved != null) Panel.DfSaved = o.DfSaved; if (o.RgSaved != null) Panel.RgSaved = o.RgSaved; PanelWrites++; }
     }
 }

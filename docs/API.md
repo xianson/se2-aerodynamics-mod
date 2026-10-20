@@ -522,7 +522,7 @@ aim and fire from your own mod.
 | `bool SetAutopilotTargetPoint(Entity grid, Vector3D position, Vector3 velocity)` | 12 | ... or a point (world) moving at a velocity (world m/s). |
 | `bool ClearAutopilotTarget(Entity grid)` | 12 | No API target: the block waits (flies its route, or loiters where it was engaged). |
 | `bool TryGetAutopilotAim(Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)` | 12 | The angle between the fixed guns' axis (or the nose) and the target's lead point (deg), inside the block's aim cone (or the miss inside the target's size), the target inside the guns' range, the range (m) and the shot's time of flight (s). False: nothing aimed at now. |
-| `bool TryGetAutopilotPilot(Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)` | 12 | The mode flying (3 flight hold, 4 navigate, 5 engage), the style (1 airplane, 2 helicopter, 3 six-axis), the behaviour active (1 attack run, 2 attack run U-turn, 3 broadside, 4 circle, 5 hover above, 6 hover below, 7 point at, 8 standoff, 9-11 pursuit lead / pure / lag, 12 extend), a target held, the next waypoint (-1 loitering). False: no pilot mode flying. |
+| `bool TryGetAutopilotPilot(Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)` | 12 | The mode flying (3 flight hold, 4 navigate, 5 engage), the style (1 airplane, 2 helicopter, 3 six-axis), the behaviour active (1 attack run, 2 attack run U-turn, 3 broadside, 4 circle, 5 hover above, 6 hover below, 7 point at, 8 standoff, 9-11 pursuit lead / pure / lag, 12 extend; since 13: 13 dogfight, 14 rocket guidance, 15 formation), a target held, the next waypoint (-1 loitering). False: no pilot mode flying. |
 | `bool TryGetAutopilotEnemy(Entity grid, out bool enemy, out int targetFilter)` | 12 | The grid's Autopilot block: the grid is an **enemy** now (the game's hostile NPC owns it - the switch flips the whole ship: every grid on its rotors, hinges and pistons - by the block's Enemy switch or otherwise: its turrets and Engage fight players) and the block's **Target Filter** (0 hostile only, 1 hostile + neutral, 2 everything). The switch is the panel's (the world's `Autopilot.EnemyRule`, the owner checks); to change ownership yourself call the game's `OwnershipSessionComponent.TryTransferToNPC`. False: no Autopilot block. |
 
 **The target filter** applies to every source, with the game's own relation (`TargetingGridComponent.IsEligibleTarget`,
@@ -539,6 +539,23 @@ across for six-axis, 20 the style set does not fit the ship.
 `SimulatedProjectileDefinition.IsAffectedByBulletDrop` is never read). The intercept time is iterated against the target's
 velocity and its estimated acceleration. The muzzle speed and range come from the grid's fixed guns (weapon blocks without a
 turret), or the block's Muzzle Speed.
+
+## Version 13
+
+Every earlier member is unchanged. New (2026-10-19): the Engage behaviours **Formation** (15: follow a leader grid in a slot
+right / up / back in its own frame - its motion estimated from its observed positions) and two combat **slots** whose logic
+the mod's author writes (13 **Dogfight**, 14 **Rocket Guidance** - `Scripts/Simulation/Autopilot/AUTHORING.md`; until written
+they refuse, "this behaviour is not written yet", reason 22). `TryGetAutopilotPilot`'s behaviour takes these numbers too.
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool TryGetAutopilotSlot(Entity grid, out int behaviour, out string status, out float slotError, out float slotAlong)` | 13 | In Engage with a target: the active behaviour (13 dogfight, 14 rocket guidance, 15 formation, or a built-in one's number), the combat slot's own status text ("" none), the formation's slot error (m) and its part along the leader's path (m, + behind the slot; NaN when not in formation). False: not in Engage with a target. |
+
+New `reason` values (`TryGetAutopilot`): 21 the ship never took the mode up, 22 the behaviour is not written yet, 23 bingo
+(fuel or damage), 24 the behaviour timed out, 25 the target was lost.
+
+**Formation's leader** is any grid the block's Target Source picks (Grid by name is the usual; the API's `SetAutopilotTarget`
+too) - the Target Filter does not apply to it.
 
 ## Roadmap / gaps
 

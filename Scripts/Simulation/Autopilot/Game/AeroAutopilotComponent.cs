@@ -102,13 +102,14 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
     /// <summary>The grid's step: what the panel should now show (a let-go's mode, the height held).</summary>
     internal void WriteBack(in ApBlockLink.Out o)
     {
-        if (!o.ModeChanged && !o.HeightChanged && !o.HoldsChanged && !o.HomeChanged) return;
+        if (!o.ModeChanged && !o.HeightChanged && !o.HoldsChanged && !o.HomeChanged && !o.SlotSavedChanged) return;
         lock (_lock)
         {
             if (o.ModeChanged) _panel.Mode = o.Mode;
             if (o.HeightChanged) _panel.HeightM = o.HeightM;
             if (o.HoldsChanged) { _panel.HeadingDeg = o.HeadingDeg; _panel.AltM = o.AltM; _panel.SpeedMs = o.SpeedMs; }
             if (o.HomeChanged) { _panel.HasHome = true; _panel.HomeX = o.Home.X; _panel.HomeY = o.Home.Y; _panel.HomeZ = o.Home.Z; }
+            if (o.SlotSavedChanged) { if (o.DfSaved != null) _panel.DfSaved = o.DfSaved; if (o.RgSaved != null) _panel.RgSaved = o.RgSaved; }   // (the combat slots' own saved state)
         }
     }
 

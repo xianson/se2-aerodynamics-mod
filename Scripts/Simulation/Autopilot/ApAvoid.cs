@@ -52,6 +52,7 @@ public sealed class ApAvoid
         {
             ApBehaviour.AttackRun or ApBehaviour.AttackRunUTurn => abort,
             ApBehaviour.HoverAbove or ApBehaviour.HoverBelow => hov,
+            ApBehaviour.Formation => MathF.Max(5f, new Vector3(p.FmRightM, p.FmUpM, p.FmBackM).Length()),   // (the slot's distance: half of it kept)
             ApBehaviour.Auto => MathF.Min(abort, MathF.Min(range, MathF.Max(hov, 1f))),
             _ => range,
         };

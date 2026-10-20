@@ -99,7 +99,7 @@ sealed class PanelLayoutPack : IScenarioPack
             ("Flight hold", ApMode.FlightHold, false, head.Concat(pilot).Concat(new[] { "HeadingOn", "HeadingDeg" }).Concat(holds).Concat(Tail(false, true)).ToArray()),
             ("Navigate", ApMode.Navigate, false, head.Concat(pilot).Concat(holds).Concat(route).Concat(Tail(false, true)).ToArray()),
             ("Engage", ApMode.Engage, false, head.Concat(pilot).Concat(holds.Where(h => h != "AltOverGround")).Concat(route)
-                .Concat(new[] { "Behaviour", "RangeM", "AbortM", "RerunS", "AltOffsetM", "Evasive", "Aggression", "TargetSrc", "TargetText", "TargetFilter",
+                .Concat(new[] { "Behaviour", "RangeM", "AbortM", "RerunS", "AltOffsetM", "Evasive", "Aggression", "DeckM", "CeilingM", "TargetSrc", "TargetText", "TargetFilter",
                     "AimOn", "MuzzleSpeed", "ConeDeg", "Enemy", "EnemyText" }).Concat(Tail(false, true)).ToArray()),
             ("Off, an enemy ship", ApMode.Off, true, head.Concat(new[] { "Enemy", "EnemyText" }).Concat(Tail(false, true)).ToArray()),
         };
@@ -121,6 +121,40 @@ sealed class PanelLayoutPack : IScenarioPack
             v = Visible(ms, in q, ApEnemyRule.Off, false, unknown);
             Sim.Check(v.Contains("AngleDeg") && !v.Contains("AbortM") && !v.Contains("TargetText") && !v.Contains("Enemy"),
                 $"panel layout: a broadside by the targeting, the enemy switch not allowed ({string.Join(" / ", v)})");
+        }
+        // (2026-10-19: per behaviour - the combat slots' own values, the formation's slot; the built-in tactics, the band, the
+        //  filter and the aim only where they mean something)
+        {
+            string[] engHead = head.Concat(pilot).Concat(holds.Where(h => h != "AltOverGround")).Concat(route).Concat(new[] { "Behaviour" }).ToArray();
+            var slots = new (ApBehaviour b, string[] mid)[]
+            {
+                (ApBehaviour.Dogfight, new[] { "Aggression", "DfFight", "DfHeadOn", "DfRespectGuns", "DfSkill", "DfBingoFuelPct", "DfBingoDamagePct", "DeckM", "CeilingM",
+                    "TargetSrc", "TargetText", "TargetFilter", "AimOn", "MuzzleSpeed", "ConeDeg" }),
+                (ApBehaviour.RocketGuidance, new[] { "RgLaw", "RgNavConst", "RgTargetAccelGain", "RgMaxLatG", "RgGravityComp", "RgArmM", "RgTimeoutS",
+                    "TargetSrc", "TargetText", "TargetFilter" }),
+                (ApBehaviour.Formation, new[] { "FmRightM", "FmUpM", "FmBackM", "FmCatchUpMs", "TargetSrc", "TargetText" }),
+            };
+            foreach (var (b, mid) in slots)
+            {
+                var q = p; q.Mode = ApMode.Engage; q.Behaviour = b;
+                var want = engHead.Concat(mid).Concat(new[] { "Enemy", "EnemyText" }).Concat(Tail(false, true)).ToArray();
+                var v = Visible(ms, in q, ApEnemyRule.CreativeOrAdmin, false, unknown);
+                bool ok = v.SequenceEqual(want);
+                Sim.Check(ok, $"panel layout, Engage {b}: {string.Join(" / ", v)}" + (ok ? "" : $"\n      wanted: {string.Join(" / ", want)}"));
+            }
+            // (a slot's values never show in another mode or for another behaviour)
+            string[] own = { "DfFight", "DfHeadOn", "DfRespectGuns", "DfSkill", "DfBingoFuelPct", "DfBingoDamagePct", "RgLaw", "RgNavConst", "RgTargetAccelGain", "RgMaxLatG",
+                "RgGravityComp", "RgArmM", "RgTimeoutS", "FmRightM", "FmUpM", "FmBackM", "FmCatchUpMs" };
+            bool leak = false;
+            foreach (ApMode m in Enum.GetValues(typeof(ApMode)))
+                foreach (ApBehaviour b in Enum.GetValues(typeof(ApBehaviour)))
+                {
+                    var q = p; q.Mode = m; q.Behaviour = b;
+                    var v = Visible(ms, in q, ApEnemyRule.CreativeOrAdmin, false, unknown);
+                    string pre = b == ApBehaviour.Dogfight ? "Df" : b == ApBehaviour.RocketGuidance ? "Rg" : b == ApBehaviour.Formation ? "Fm" : "--";
+                    foreach (var n in own) if (v.Contains(n) && (m != ApMode.Engage || !n.StartsWith(pre))) { leak = true; Sim.Note($"panel layout: {n} shown in {m} / {b}"); }
+                }
+            Sim.Check(!leak, "panel layout: each slot's and the formation's values show only for that behaviour in Engage");
         }
         Sim.Check(unknown.Count == 0, $"panel layout: every [ShowInInspectorWhen] switch is one ApPanelLayout knows ({string.Join(", ", unknown.Distinct())})");
     }

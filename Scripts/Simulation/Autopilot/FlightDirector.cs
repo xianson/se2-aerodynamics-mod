@@ -970,6 +970,10 @@ public static class ApText
         ApReason.NoTranslation => "not enough thrust across to fly six-axis",
         ApReason.WrongStyle => "the flight style set does not fit this ship",
         ApReason.NoResponse => "the ship never took it up - no working thrusters or gyros to fly it",
+        ApReason.NotImplemented => "this behaviour is not written yet",
+        ApReason.Bingo => "bingo - fuel or damage",
+        ApReason.TimedOut => "the behaviour timed out",
+        ApReason.LostTarget => "the target was lost",
 
         _ => "",
     };

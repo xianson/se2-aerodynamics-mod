@@ -17,6 +17,9 @@ public struct ApPilotView
     public ApProt Prot;
     /// <summary>A target the filter refused (its words, held by the target source; null none).</summary>
     public string Refused;
+    /// <summary>(2026-10-19) A combat slot's own status words (ApSlotOut.Status; null none) and the formation's slot error (m), its
+    /// part along the leader's path (m, + behind the slot), overshooting, the leader's speed (m/s).</summary>
+    public string SlotText; public float FormErr, FormAlong, LeaderSpeed; public bool FormOver;
 
     public bool Same(in ApPilotView o) => o.Mode == Mode && o.Style == Style && o.Behaviour == Behaviour && o.Phase == Phase && o.Loitering == Loitering
         && o.Recovering == Recovering && o.Returning == Returning && o.HasTarget == HasTarget && ReferenceEquals(o.TargetName, TargetName)
@@ -25,7 +28,8 @@ public struct ApPilotView
         && ReferenceEquals(o.WpName, WpName) && MathF.Abs(o.WpDist - WpDist) < 10f && MathF.Abs(o.HeadingNow - HeadingNow) < 1f
         && MathF.Abs(o.HeightNow - HeightNow) < 1f && MathF.Abs(o.SpeedNow - SpeedNow) < 0.5f && o.Prot == Prot
         && o.HeadingWant == HeadingWant && o.HeightWant == HeightWant && o.SpeedWant == SpeedWant && o.HeadingOn == HeadingOn && o.AltOn == AltOn && o.SpeedOn == SpeedOn
-        && ReferenceEquals(o.Refused, Refused);
+        && ReferenceEquals(o.Refused, Refused) && ReferenceEquals(o.SlotText, SlotText) && MathF.Abs(o.FormErr - FormErr) < 0.5f && MathF.Abs(o.FormAlong - FormAlong) < 0.5f
+        && o.FormOver == FormOver && MathF.Abs(o.LeaderSpeed - LeaderSpeed) < 0.5f;
 
     public static string StyleName(ApStyle s) => s switch { ApStyle.Airplane => "airplane", ApStyle.Helicopter => "helicopter", ApStyle.SixAxis => "six-axis", _ => "auto" };
 
@@ -34,7 +38,8 @@ public struct ApPilotView
         ApBehaviour.AttackRun => "Attack run", ApBehaviour.AttackRunUTurn => "Attack run (U-turn)", ApBehaviour.Broadside => "Broadside",
         ApBehaviour.Circle => "Circle", ApBehaviour.HoverAbove => "Hover above", ApBehaviour.HoverBelow => "Hover below", ApBehaviour.PointAt => "Point at",
         ApBehaviour.Standoff => "Standoff", ApBehaviour.PursuitLead => "Pursuit (lead)", ApBehaviour.PursuitPure => "Pursuit (pure)",
-        ApBehaviour.PursuitLag => "Pursuit (lag)", ApBehaviour.Extend => "Extend (energy)", _ => "Auto",
+        ApBehaviour.PursuitLag => "Pursuit (lag)", ApBehaviour.Extend => "Extend (energy)", ApBehaviour.Dogfight => "Dogfight",
+        ApBehaviour.RocketGuidance => "Rocket guidance", ApBehaviour.Formation => "Formation", _ => "Auto",
     };
 
     static string Dist(float m) => m >= 1000f ? $"{m / 1000f:F1} km" : $"{m:F0} m";
@@ -52,7 +57,10 @@ public struct ApPilotView
         else if (Mode == ApMode.Engage && HasTarget)
         {
             string side = MathF.Abs(BearingDeg) < 2f ? "ahead" : BearingDeg > 0f ? $"{BearingDeg:F0}° right" : $"{-BearingDeg:F0}° left";
-            body = $"{BehaviourName(Behaviour)} on {(string.IsNullOrEmpty(TargetName) ? "target" : TargetName)} {Dist(Range)}, {side}";
+            string who = string.IsNullOrEmpty(TargetName) ? "target" : TargetName;
+            if (Behaviour == ApBehaviour.Formation)
+                body = $"Formation on {who} - {(FormErr < 1f ? "in the slot" : $"{FormErr:F0} m from the slot ({(FormAlong >= 0f ? $"{FormAlong:F0} m behind" : $"{-FormAlong:F0} m ahead")})")}{(FormOver ? " - overshoot, dropping back" : "")} · leader {LeaderSpeed:F0} m/s";
+            else body = $"{BehaviourName(Behaviour)}{(string.IsNullOrEmpty(SlotText) ? "" : " - " + SlotText)} on {who} {Dist(Range)}, {side}";
             if (AimOn) body += float.IsFinite(AimErrDeg) ? $" · aim {AimErrDeg:F1}°{(InCone ? " IN CONE" : !InRange ? " (out of range)" : "")}" : "";
         }
         else if (Mode == ApMode.Engage && !Returning && !string.IsNullOrEmpty(Refused)) body = "no target - " + Refused + (Loitering ? " - loitering" : "");

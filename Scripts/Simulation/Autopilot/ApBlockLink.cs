@@ -80,6 +80,8 @@ public sealed class ApBlockLink
         public bool ModeChanged, HeightChanged; public ApMode Mode; public float HeightM; public ApReason Reason;
         /// <summary>(the flight pilot) The holds it caught at an engage (heading, altitude, speed), the return point it set.</summary>
         public bool HoldsChanged, HomeChanged; public float HeadingDeg, AltM, SpeedMs; public Vector3D Home;
+        /// <summary>(2026-10-19) A combat slot's saved state changed (ApDogfightState / ApRocketState.Save): the panel's DfSaved / RgSaved (null: unchanged).</summary>
+        public bool SlotSavedChanged; public string DfSaved, RgSaved;
     }
 
     /// <summary>The flight pilot this link flies the pilot modes with (FlightHold, Navigate, Engage; ApPilot) - its target source
@@ -165,6 +167,7 @@ public sealed class ApBlockLink
         ApMode now = ApPanel.IsPilotMode(_mode) && (fd.Goals & ApGoal.External) != 0 ? _mode : ApModes.ModeOf(fd.Goals);
         if (Pilot.CapturedHolds) { Pilot.CapturedHolds = false; o.HoldsChanged = true; o.HeadingDeg = Pilot.CapHeading; o.AltM = Pilot.CapAlt; o.SpeedMs = Pilot.CapSpeed; }
         if (Pilot.CapturedHome) { Pilot.CapturedHome = false; o.HomeChanged = true; o.Home = Pilot.Home; }
+        if (Pilot.SlotSavedChanged) { Pilot.SlotSavedChanged = false; o.SlotSavedChanged = true; o.DfSaved = Pilot.DfSavedOut; o.RgSaved = Pilot.RgSavedOut; Pilot.DfSavedOut = Pilot.RgSavedOut = null; }
         if (_mode != ApMode.Off && now != _mode)
         {
             _mode = now; o.Mode = now; o.ModeChanged = true; o.Reason = fd.Reason;

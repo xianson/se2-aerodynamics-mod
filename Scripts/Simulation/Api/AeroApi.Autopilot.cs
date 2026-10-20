@@ -78,7 +78,7 @@ public static partial class AeroApi
     }
 
     /// <summary>(version 12) The flight pilot: its mode (3 flight hold, 4 navigate, 5 engage - ApMode), the style it flies (1 airplane,
-    /// 2 helicopter, 3 six-axis), the behaviour active (ApBehaviour: 1 attack run .. 11 pursuit lag, 12 extend), a target held, and
+    /// 2 helicopter, 3 six-axis), the behaviour active (ApBehaviour: 1 attack run .. 11 pursuit lag, 12 extend; 13 dogfight, 14 rocket guidance, 15 formation - version 13), a target held, and
     /// the next waypoint's index (-1: loitering). False: no pilot mode flying.</summary>
     public static bool TryGetAutopilotPilot(Keen.VRage.DCS.Components.Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)
     {
@@ -87,6 +87,22 @@ public static partial class AeroApi
         var p = aero?.ApPilotNow;
         if (p == null || aero.Fd == null || (aero.Fd.Goals & ApGoal.External) == 0) return false;
         mode = (int)p.Mode; style = (int)p.Style; behaviour = (int)p.ActiveBh; hasTarget = p.T.Valid; waypoint = p.Loitering ? -1 : p.Wp;
+        return true;
+    }
+
+    /// <summary>(version 13) The behaviour flying in Engage beyond the numbers TryGetAutopilotPilot gives: the active behaviour
+    /// (13 dogfight, 14 rocket guidance, 15 formation - ApBehaviour - or a built-in one's number), the combat slot's own status text
+    /// (ApSlotOut.Status - "" none, or the slot's logic not written yet), and the formation's slot error (m; its part along the
+    /// leader's path, + behind the slot; both NaN when not in formation). False: not in Engage with a target.</summary>
+    public static bool TryGetAutopilotSlot(Keen.VRage.DCS.Components.Entity grid, out int behaviour, out string status, out float slotError, out float slotAlong)
+    {
+        behaviour = 0; status = ""; slotError = slotAlong = float.NaN;
+        var aero = DesignProbe.ServerAero(grid);
+        var p = aero?.ApPilotNow;
+        if (p == null || aero.Fd == null || (aero.Fd.Goals & ApGoal.External) == 0 || p.Mode != ApMode.Engage || !p.T.Valid) return false;
+        behaviour = (int)p.ActiveBh;
+        status = ApPilot.IsSlot(p.ActiveBh) ? p.SlotText ?? "" : "";
+        if (p.ActiveBh == ApBehaviour.Formation) { slotError = p.Formation.Err; slotAlong = p.Formation.Along; }
         return true;
     }
 

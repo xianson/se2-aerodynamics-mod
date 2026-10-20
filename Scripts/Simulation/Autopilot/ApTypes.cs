@@ -20,6 +20,9 @@ public enum ApReason : byte
     /// <summary>(21) A mode chosen on the block and the ship's autopilot step never took it up (ApEngageWatch: a wreck with no
     /// thruster or gyro left - the grid's attitude step does not run for it).</summary>
     NoResponse,
+    /// <summary>(22..) The combat slots (2026-10-19): a behaviour whose logic is not written yet (ApDogfight / ApRocketGuidance not
+    /// Implemented, or its Step declined); bingo (fuel or damage); its timeout; the target lost - let-go reasons a slot returns.</summary>
+    NotImplemented, Bingo, TimedOut, LostTarget,
 }
 
 /// <summary>What the envelope protection changed this tick (several at once).</summary>
@@ -108,6 +111,12 @@ public struct ApSense
     /// common firing axis (local unit; zero: none found), their projectile's muzzle speed (m/s; 0 unknown) and range (m; 0 unknown).
     /// SE2 4.0's projectiles fly straight (no drop) at the muzzle speed plus the shooter's velocity.</summary>
     public Vector3 Nose, GunAxis; public float MuzzleSpeed, GunRange;
+    /// <summary>(2026-10-19) The speed of sound where the ship is (m/s; 0 not known) - Mach for the combat slots.</summary>
+    public float SpeedOfSound;
+    /// <summary>(2026-10-19) The ship's state (HasShipStatus: read - in game every 2 s in Engage): its fuel (0..1 of the tanks'
+    /// capacity; NaN: no tanks) and its integrity (0..1: the blocks' integrity now over what the ship had when the mode was
+    /// engaged - destroyed blocks count as lost).</summary>
+    public bool HasShipStatus; public float FuelShare, IntegrityShare;
 }
 
 /// <summary>

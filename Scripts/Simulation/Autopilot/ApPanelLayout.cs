@@ -19,7 +19,23 @@ public static class ApPanelLayout
     public static bool ShowAttack(in ApPanel p) => p.Mode == ApMode.Engage && (p.Behaviour == ApBehaviour.AttackRun || p.Behaviour == ApBehaviour.AttackRunUTurn || p.Behaviour == ApBehaviour.Auto);
     public static bool ShowBroadside(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour == ApBehaviour.Broadside;
     public static bool ShowTargetText(in ApPanel p) => p.Mode == ApMode.Engage && (p.TargetSrc == ApTargetSrc.Gps || p.TargetSrc == ApTargetSrc.Grid);
-    public static bool ShowAim(in ApPanel p) => p.Mode == ApMode.Engage && p.AimOn;
+    public static bool ShowAim(in ApPanel p) => ShowAimSw(in p) && p.AimOn;
+    // ── (2026-10-19) per behaviour: the built-in behaviours' tactical numbers; the formation's slot; the combat slots' own values;
+    //    the altitude band; the filter and the aim where they mean something ──
+    static bool Classic(ApBehaviour b) => b != ApBehaviour.Formation && b != ApBehaviour.Dogfight && b != ApBehaviour.RocketGuidance;
+    /// <summary>Range, height over the target, jinking: the built-in behaviours (and Auto).</summary>
+    public static bool ShowTactics(in ApPanel p) => p.Mode == ApMode.Engage && Classic(p.Behaviour);
+    /// <summary>Aggressiveness: the built-in behaviours and the dogfight.</summary>
+    public static bool ShowAggression(in ApPanel p) => p.Mode == ApMode.Engage && (Classic(p.Behaviour) || p.Behaviour == ApBehaviour.Dogfight);
+    public static bool ShowDogfight(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour == ApBehaviour.Dogfight;
+    public static bool ShowRocket(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour == ApBehaviour.RocketGuidance;
+    public static bool ShowFormation(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour == ApBehaviour.Formation;
+    /// <summary>The hard deck and the combat ceiling: every Engage behaviour but the formation (the leader's height) and the rocket.</summary>
+    public static bool ShowBand(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour != ApBehaviour.Formation && p.Behaviour != ApBehaviour.RocketGuidance;
+    /// <summary>The target filter: not for a formation's leader (any grid - your own).</summary>
+    public static bool ShowTargetFilter(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour != ApBehaviour.Formation;
+    /// <summary>The aim switch: not for a formation or a rocket (no guns to bear).</summary>
+    public static bool ShowAimSw(in ApPanel p) => p.Mode == ApMode.Engage && p.Behaviour != ApBehaviour.Formation && p.Behaviour != ApBehaviour.RocketGuidance;
     public static bool ShowHeading(in ApPanel p) => p.Mode == ApMode.FlightHold && p.HeadingOn;
     public static bool ShowAlt(in ApPanel p) => ApPanel.IsPilotMode(p.Mode) && p.AltOn;
     /// <summary>The altitude's reference (over the ground / level): the flight hold's and the route's altitude (Engage flies its
@@ -52,6 +68,14 @@ public static class ApPanelLayout
             case "ShowSpeed": return ShowSpeed(in p);
             case "ShowAvoidS": return ShowAvoidS(in p);
             case "ShowEnemy": return ShowEnemy(in p, rule, gridIsEnemy);
+            case "ShowTactics": return ShowTactics(in p);
+            case "ShowAggression": return ShowAggression(in p);
+            case "ShowDogfight": return ShowDogfight(in p);
+            case "ShowRocket": return ShowRocket(in p);
+            case "ShowFormation": return ShowFormation(in p);
+            case "ShowBand": return ShowBand(in p);
+            case "ShowTargetFilter": return ShowTargetFilter(in p);
+            case "ShowAimSw": return ShowAimSw(in p);
         }
         known = false;
         return false;

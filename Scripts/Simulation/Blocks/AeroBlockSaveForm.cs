@@ -29,6 +29,10 @@ namespace AeroMod;
 public static class AeroBlockSaveForm
 {
     public const int Format = 1;
+    /// <summary>The autopilot key's own format (2026-10-19: 2 - the combat slots' and the formation's values appended, 47..67). Every
+    /// reader takes any format >= 1 and the values it knows: a format-1 key reads the new ones as their defaults, an older mod
+    /// reads a format-2 key's first 47.</summary>
+    public const int AutopilotFormat = 2;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
     public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
     /// <summary>The Enemy switch's owner before, one per grid of the ship (2026-10-19): "aero-enemyprev:1 index owner", its value
@@ -133,7 +137,7 @@ public static class AeroBlockSaveForm
     /// unattended" (mode 0 off / 1 hover hold / 2 height hold; ref 0 over the ground / 1 altitude; m, m/s, g, deg, m; switches
     /// 1/0). Always written (the block's mode survives a save: an unattended hover holds on after a load).</summary>
     public static string Autopilot(in ApPanel p)
-        => AutopilotKey + Format + " " + ((int)p.Mode).ToString(C) + " " + F(p.HeightM) + " " + ((int)p.HeightRef).ToString(C) + " " + F(p.HoverSpeed)
+        => AutopilotKey + AutopilotFormat + " " + ((int)p.Mode).ToString(C) + " " + F(p.HeightM) + " " + ((int)p.HeightRef).ToString(C) + " " + F(p.HoverSpeed)
            + " " + B(p.Protection) + " " + F(p.GLimit) + " " + F(p.AoaMarginDeg) + " " + F(p.FloorM) + " " + B(p.LookAhead) + " " + B(p.Unattended)
            // (2026-10-19, appended: the flight pilot - 11 style, 12..19 holds, 20..22 route, 23..30 behaviour, 31 target source, 32..34
            //  aim, 35..39 the return point, 40 route text, 41 target text - texts escaped: no spaces)
@@ -146,7 +150,15 @@ public static class AeroBlockSaveForm
            // (2026-10-19, appended: 42 the target filter, 43 the enemy toggle, 44 the grid's owner before it - an identity's number)
            + " " + ((int)p.TargetFilter).ToString(C) + " " + B(p.Enemy) + " " + p.EnemyPrevOwner.ToString(C)
            // (45 the collision avoidance on, 46 its look-ahead s)
-           + " " + B(p.AvoidOn) + " " + F(p.AvoidS);
+           + " " + B(p.AvoidOn) + " " + F(p.AvoidS)
+           // (format 2, 2026-10-19: 47..54 the dogfight slot - fight, head-on, hard deck, ceiling, bingo fuel / damage, guns, skill; 55..61
+           //  the rocket slot - law, nav constant, accel gain, lateral g, gravity, arm, timeout; 62..65 the formation; 66, 67 the slots' state)
+           + " " + ((int)p.DfFight).ToString(C) + " " + B(p.DfHeadOn) + " " + F(p.DeckM) + " " + F(p.CeilingM) + " " + F(p.DfBingoFuelPct) + " " + F(p.DfBingoDamagePct)
+           + " " + F(p.DfRespectGuns) + " " + F(p.DfSkill)
+           + " " + ((int)p.RgLaw).ToString(C) + " " + F(p.RgNavConst) + " " + F(p.RgTargetAccelGain) + " " + F(p.RgMaxLatG) + " " + B(p.RgGravityComp)
+           + " " + F(p.RgArmM) + " " + F(p.RgTimeoutS)
+           + " " + F(p.FmRightM) + " " + F(p.FmUpM) + " " + F(p.FmBackM) + " " + F(p.FmCatchUpMs)
+           + " " + Esc(p.DfSaved) + " " + Esc(p.RgSaved);
 
     /// <summary>One grid's owner before the Enemy switch (index: the entry's number - keys of one map must differ).</summary>
     public static string EnemyPrev(int index, long owner) => EnemyPrevKey + Format + " " + index.ToString(C) + " " + owner.ToString(C);
@@ -211,6 +223,13 @@ public static class AeroBlockSaveForm
         p.TargetFilter = (ApTargetFilter)I(42, (int)p.TargetFilter); p.Enemy = Bo(43, p.Enemy);
         p.EnemyPrevOwner = 44 < w.Length && long.TryParse(w[44], NumberStyles.Integer, C, out long prev) ? prev : p.EnemyPrevOwner;
         p.AvoidOn = Bo(45, p.AvoidOn); p.AvoidS = Fl(46, p.AvoidS);
+        // (format 2: the combat slots and the formation - absent in a format-1 key: the defaults kept)
+        p.DfFight = (ApFightPref)I(47, (int)p.DfFight); p.DfHeadOn = Bo(48, p.DfHeadOn); p.DeckM = Fl(49, p.DeckM); p.CeilingM = Fl(50, p.CeilingM);
+        p.DfBingoFuelPct = Fl(51, p.DfBingoFuelPct); p.DfBingoDamagePct = Fl(52, p.DfBingoDamagePct); p.DfRespectGuns = Fl(53, p.DfRespectGuns); p.DfSkill = Fl(54, p.DfSkill);
+        p.RgLaw = (ApGuidanceLaw)I(55, (int)p.RgLaw); p.RgNavConst = Fl(56, p.RgNavConst); p.RgTargetAccelGain = Fl(57, p.RgTargetAccelGain); p.RgMaxLatG = Fl(58, p.RgMaxLatG);
+        p.RgGravityComp = Bo(59, p.RgGravityComp); p.RgArmM = Fl(60, p.RgArmM); p.RgTimeoutS = Fl(61, p.RgTimeoutS);
+        p.FmRightM = Fl(62, p.FmRightM); p.FmUpM = Fl(63, p.FmUpM); p.FmBackM = Fl(64, p.FmBackM); p.FmCatchUpMs = Fl(65, p.FmCatchUpMs);
+        p.DfSaved = (66 < w.Length ? Unesc(w[66]) : null) ?? p.DfSaved; p.RgSaved = (67 < w.Length ? Unesc(w[67]) : null) ?? p.RgSaved;
 
         p = p.Clamped();
         return true;

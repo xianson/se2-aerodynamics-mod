@@ -69,7 +69,7 @@ public partial class AeroGridComponent
     // the Autopilot block that flies this grid (ApArbiter), its link to the flight director, the panel's write-back
     AeroAutopilotComponent _apCtl; ApBlockLink _apLink; ApBlockLink.Out _apOut; int _apReportIn;
     // the flight pilot's game senses: its target source, the fixed guns, the route's text resolved (every few seconds), the restarts seen
-    internal ApGameTargets ApTargets; ApGunScan _apGuns; ApGameObstacles _apObs; string _apRouteText; long _apRouteNext; int _apRestarts;
+    internal ApGameTargets ApTargets; ApGunScan _apGuns; ApGameObstacles _apObs; ApShipScan _apShip; string _apRouteText; long _apRouteNext; int _apRestarts;
     /// <summary>The flight pilot of the block that flies (null: none) - the API's reads.</summary>
     internal ApPilot ApPilotNow => _apLink?.Pilot;
     /// <summary>The Autopilot block that flies this grid (null: none chosen yet) - the API's reads.</summary>
@@ -183,7 +183,8 @@ public partial class AeroGridComponent
         s.GunAxis = _apGuns.Axis; s.MuzzleSpeed = _apGuns.Muzzle; s.GunRange = _apGuns.Range;
         s.Nose = _apGuns.Guns > 0 ? _apGuns.Axis : _apGuns.Nose;
         var tg = ApTargetsMade;
-        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? ""; tg.Filter = panel.TargetFilter;
+        // (a formation's leader is any grid the source picks - your own: the filter does not apply)
+        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? ""; tg.Filter = panel.Behaviour == ApBehaviour.Formation && panel.Mode == ApMode.Engage ? ApTargetFilter.Everything : panel.TargetFilter;
         var pilot = _apLink.Pilot;
         pilot.Targets = tg;
 
@@ -194,6 +195,10 @@ public partial class AeroGridComponent
             var grid = Entity;
             pilot.SetRoute(ApRoute.Parse(panel.Route, name => (ApGps.Find(grid, name, out var p), p)));
         }
+        // (the ship's fuel and integrity for the combat slots: Engage only, every 2 s)
+        _apShip ??= new ApShipScan();
+        _apShip.Update(Entity, panel.Mode == ApMode.Engage);
+        s.HasShipStatus = _apShip.Known; s.FuelShare = _apShip.Fuel; s.IntegrityShare = _apShip.Integrity;
         int r = Volatile.Read(ref ctl.Restarts);
         if (r != _apRestarts) { _apRestarts = r; _apLink.Restart(); }
     }
@@ -330,7 +335,7 @@ public partial class AeroGridComponent
             Vector3 r = Vector3.Max(rep.Reach + new Vector3(rep.CyclicReach), new Vector3(1f));
             s.CtrlShare = MathF.Max(MathF.Abs(rep.Need.X) / r.X, MathF.Max(MathF.Abs(rep.Need.Y) / r.Y, MathF.Abs(rep.Need.Z) / r.Z));
         }
-        s.AirVel = WorldTransform.TransformDirectionInv(LastAirVel, wt); s.Density = LastDensity;
+        s.AirVel = WorldTransform.TransformDirectionInv(LastAirVel, wt); s.Density = LastDensity; s.SpeedOfSound = LastSoundSpeed;
         // the stall and the predicted loss of control (the structure's background evaluation, a few times a second)
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), f = System.Diagnostics.Stopwatch.Frequency;
         if (now - Volatile.Read(ref StallStamp) < f * 3 / 2)

@@ -34,6 +34,9 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg), nameof(MinAglM),
         nameof(Route), nameof(RouteLoop), nameof(LoiterM),
         nameof(Behaviour), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AngleDeg), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
+        nameof(DfFight), nameof(DfHeadOn), nameof(DfRespectGuns), nameof(DfSkill), nameof(DfBingoFuelPct), nameof(DfBingoDamagePct),
+        nameof(RgLaw), nameof(RgNavConst), nameof(RgTargetAccelGain), nameof(RgMaxLatG), nameof(RgGravityComp), nameof(RgArmM), nameof(RgTimeoutS),
+        nameof(FmRightM), nameof(FmUpM), nameof(FmBackM), nameof(FmCatchUpMs), nameof(DeckM), nameof(CeilingM),
         nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
         nameof(Enemy), nameof(EnemyText),
         nameof(Unattended),
@@ -41,6 +44,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
         nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw),
         nameof(ToggleHoverHold), nameof(ToggleHeightHold), nameof(ToggleFlightHold), nameof(ToggleNavigate), nameof(ToggleEngage));
     /// <summary>The game's member-order lookup (MemberReference.DeclarationOrder asks AccessibleTypeIndexer, which finds a type's
     /// info by its nested TypeInfoHolder.Value): without it every member here sorted as -1, in no stable order - the panel came
@@ -82,6 +86,14 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool ShowSpeed => ApPanelLayout.ShowSpeed(P);
     [HideInInspector] public bool ShowAvoidS => ApPanelLayout.ShowAvoidS(P);
     [HideInInspector] public bool ShowEnemy => _ap != null && ApPanelLayout.ShowEnemy(P, Autopilot.EnemyRule, _ap.GridIsEnemy);
+    [HideInInspector] public bool ShowTactics => ApPanelLayout.ShowTactics(P);
+    [HideInInspector] public bool ShowAggression => ApPanelLayout.ShowAggression(P);
+    [HideInInspector] public bool ShowDogfight => ApPanelLayout.ShowDogfight(P);
+    [HideInInspector] public bool ShowRocket => ApPanelLayout.ShowRocket(P);
+    [HideInInspector] public bool ShowFormation => ApPanelLayout.ShowFormation(P);
+    [HideInInspector] public bool ShowBand => ApPanelLayout.ShowBand(P);
+    [HideInInspector] public bool ShowTargetFilter => ApPanelLayout.ShowTargetFilter(P);
+    [HideInInspector] public bool ShowAimSw => ApPanelLayout.ShowAimSw(P);
 
     // ── the modes ──
     [Label("Hover Hold")] [Button(null)] [WritableInInspectorWhen("CanHover", WritableWhen.True)]
@@ -192,7 +204,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     public ApBehaviour Behaviour { get => P.Behaviour; set => Edit((ref ApPanel p) => p.Behaviour = value == ApBehaviour.Extend ? ApBehaviour.Auto : value); }
 
     /// <summary>The attack run's begin distance, the standoff range, the orbit radius, the broadside range, the gun range of a pursuit.</summary>
-    [Slider(null)] [Range<float>(ApPanel.RangeMin, 10000f, RangeMode.InIn)] [Label("Range (m)")] [Increment(10f, 100f, 500f)] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Slider(null)] [Range<float>(ApPanel.RangeMin, 10000f, RangeMode.InIn)] [Label("Range (m)")] [Increment(10f, 100f, 500f)] [ShowInInspectorWhen("ShowTactics", ShowWhen.True)]
     public float RangeM { get => P.RangeM; set => Edit((ref ApPanel p) => p.RangeM = value); }
 
     [Slider(null)] [Range<float>(ApPanel.AbortMin, 5000f, RangeMode.InIn)] [Label("Abort Distance (m)")] [Increment(10f, 50f, 250f)] [ShowInInspectorWhen("ShowAttack", ShowWhen.True)]
@@ -206,14 +218,81 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     public float AngleDeg { get => P.AngleDeg; set => Edit((ref ApPanel p) => p.AngleDeg = value); }
 
     /// <summary>Over the target (+) or under it (-): the attack run's, the orbit's, the hover above / below's height.</summary>
-    [Slider(null)] [Range<float>(-2000f, 2000f, RangeMode.InIn)] [Label("Height Over Target (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Slider(null)] [Range<float>(-2000f, 2000f, RangeMode.InIn)] [Label("Height Over Target (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowTactics", ShowWhen.True)]
     public float AltOffsetM { get => P.AltOffsetM; set => Edit((ref ApPanel p) => p.AltOffsetM = value); }
 
-    [Label("Evasive (jink)")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Label("Evasive (jink)")] [ShowInInspectorWhen("ShowTactics", ShowWhen.True)]
     public bool Evasive { get => P.Evasive; set => Edit((ref ApPanel p) => p.Evasive = value); }
 
-    [Slider(null)] [Range<float>(0f, 1f, RangeMode.InIn)] [Label("Aggressiveness")] [Increment(0.05f, 0.1f, 0.25f)] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Slider(null)] [Range<float>(0f, 1f, RangeMode.InIn)] [Label("Aggressiveness")] [Increment(0.05f, 0.1f, 0.25f)] [ShowInInspectorWhen("ShowAggression", ShowWhen.True)]
     public float Aggression { get => P.Aggression; set => Edit((ref ApPanel p) => p.Aggression = value); }
+
+    // ── (2026-10-19) the DOGFIGHT slot's values (ApDogfightParams - the author's ApDogfight reads them; the core acts on none but
+    //    the band below) ──
+    [Label("Preferred Fight")] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public ApFightPref DfFight { get => P.DfFight; set => Edit((ref ApPanel p) => p.DfFight = value); }
+
+    [Label("Head-on Passes")] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public bool DfHeadOn { get => P.DfHeadOn; set => Edit((ref ApPanel p) => p.DfHeadOn = value); }
+
+    [Slider(null)] [Range<float>(0f, 1f, RangeMode.InIn)] [Label("Respect Enemy Guns")] [Increment(0.05f, 0.1f, 0.25f)] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public float DfRespectGuns { get => P.DfRespectGuns; set => Edit((ref ApPanel p) => p.DfRespectGuns = value); }
+
+    [Slider(null)] [Range<float>(0f, 1f, RangeMode.InIn)] [Label("Skill")] [Increment(0.05f, 0.1f, 0.25f)] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public float DfSkill { get => P.DfSkill; set => Edit((ref ApPanel p) => p.DfSkill = value); }
+
+    /// <summary>Break off and fly home under this much fuel (0: off).</summary>
+    [Slider(null)] [Range<float>(0f, 100f, RangeMode.InIn)] [Label("Bingo Fuel (%)")] [Increment(1f, 5f, 10f)] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public float DfBingoFuelPct { get => P.DfBingoFuelPct; set => Edit((ref ApPanel p) => p.DfBingoFuelPct = value); }
+
+    /// <summary>Break off with this much of the ship's integrity lost since the engage (0: off).</summary>
+    [Slider(null)] [Range<float>(0f, 100f, RangeMode.InIn)] [Label("Bingo Damage (%)")] [Increment(1f, 5f, 10f)] [ShowInInspectorWhen("ShowDogfight", ShowWhen.True)]
+    public float DfBingoDamagePct { get => P.DfBingoDamagePct; set => Edit((ref ApPanel p) => p.DfBingoDamagePct = value); }
+
+    // ── the ROCKET-GUIDANCE slot's values (ApRocketParams) ──
+    [Label("Guidance Law")] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public ApGuidanceLaw RgLaw { get => P.RgLaw; set => Edit((ref ApPanel p) => p.RgLaw = value); }
+
+    [Slider(null)] [Range<float>(ApPanel.NavConstMin, ApPanel.NavConstMax, RangeMode.InIn)] [Label("Navigation Constant")] [Increment(0.1f, 0.5f, 1f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public float RgNavConst { get => P.RgNavConst; set => Edit((ref ApPanel p) => p.RgNavConst = value); }
+
+    [Slider(null)] [Range<float>(0f, ApPanel.AccelGainMax, RangeMode.InIn)] [Label("Target Accel Gain")] [Increment(0.05f, 0.25f, 0.5f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public float RgTargetAccelGain { get => P.RgTargetAccelGain; set => Edit((ref ApPanel p) => p.RgTargetAccelGain = value); }
+
+    /// <summary>The most lateral load the guidance may ask (the protection clips further).</summary>
+    [Slider(null)] [Range<float>(ApPanel.LatGMin, 60f, RangeMode.InIn)] [Label("Max Lateral g")] [Increment(0.5f, 1f, 5f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public float RgMaxLatG { get => P.RgMaxLatG; set => Edit((ref ApPanel p) => p.RgMaxLatG = value); }
+
+    [Label("Gravity Compensation")] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public bool RgGravityComp { get => P.RgGravityComp; set => Edit((ref ApPanel p) => p.RgGravityComp = value); }
+
+    [Slider(null)] [Range<float>(0f, 5000f, RangeMode.InIn)] [Label("Arm Distance (m)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public float RgArmM { get => P.RgArmM; set => Edit((ref ApPanel p) => p.RgArmM = value); }
+
+    /// <summary>Self-destruct / let go after this long (0: off).</summary>
+    [Slider(null)] [Range<float>(0f, 600f, RangeMode.InIn)] [Label("Let-go Timeout (s)")] [Increment(1f, 10f, 60f)] [ShowInInspectorWhen("ShowRocket", ShowWhen.True)]
+    public float RgTimeoutS { get => P.RgTimeoutS; set => Edit((ref ApPanel p) => p.RgTimeoutS = value); }
+
+    // ── FORMATION: the slot in the leader's frame (the leader: the target source's grid) ──
+    [Slider(null)] [Range<float>(-500f, 500f, RangeMode.InIn)] [Label("Slot Right (m)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
+    public float FmRightM { get => P.FmRightM; set => Edit((ref ApPanel p) => p.FmRightM = value); }
+
+    [Slider(null)] [Range<float>(-200f, 200f, RangeMode.InIn)] [Label("Slot Up (m)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
+    public float FmUpM { get => P.FmUpM; set => Edit((ref ApPanel p) => p.FmUpM = value); }
+
+    [Slider(null)] [Range<float>(-500f, 1000f, RangeMode.InIn)] [Label("Slot Back (m)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
+    public float FmBackM { get => P.FmBackM; set => Edit((ref ApPanel p) => p.FmBackM = value); }
+
+    /// <summary>The most speed over the leader's a gap is closed at.</summary>
+    [Slider(null)] [Range<float>(0f, 200f, RangeMode.InIn)] [Label("Catch-up Speed (m/s)")] [Increment(1f, 5f, 25f)] [ShowInInspectorWhen("ShowFormation", ShowWhen.True)]
+    public float FmCatchUpMs { get => P.FmCatchUpMs; set => Edit((ref ApPanel p) => p.FmCatchUpMs = value); }
+
+    // ── the altitude band (every Engage behaviour's height keeps it; the dogfight slot reads it too) ──
+    [Slider(null)] [Range<float>(0f, ApPanel.DeckMax, RangeMode.InIn)] [Label("Hard Deck (m over ground)")] [Increment(5f, 25f, 100f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
+    public float DeckM { get => P.DeckM; set => Edit((ref ApPanel p) => p.DeckM = value); }
+
+    [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Combat Ceiling (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowBand", ShowWhen.True)]
+    public float CeilingM { get => P.CeilingM; set => Edit((ref ApPanel p) => p.CeilingM = value); }
 
     // ── the target and the aim ──
     /// <summary>Targeting: what the cockpit locked, else what the turrets see. GPS: a marker's name or coordinates. Grid: a grid's
@@ -226,7 +305,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
 
     /// <summary>Which targets it takes, by the game's own relation (the turrets' rule): hostile only; also neutral (another
     /// player, a neutral NPC); everything but this ship.</summary>
-    [Label("Target Filter")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Label("Target Filter")] [ShowInInspectorWhen("ShowTargetFilter", ShowWhen.True)]
     public ApTargetFilter TargetFilter { get => P.TargetFilter; set => Edit((ref ApPanel p) => p.TargetFilter = value); }
 
     /// <summary>ENEMY: this ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Off: back to its owner.
@@ -238,7 +317,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     public string EnemyText => _ap?.EnemyText ?? "";
 
     /// <summary>The nose (the fixed guns' axis) on the target's lead point - the protection still clips.</summary>
-    [Label("Aim Nose at Target")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    [Label("Aim Nose at Target")] [ShowInInspectorWhen("ShowAimSw", ShowWhen.True)]
     public bool AimOn { get => P.AimOn; set => Edit((ref ApPanel p) => p.AimOn = value); }
 
     /// <summary>0: the grid's own fixed guns' projectile speed.</summary>
@@ -281,6 +360,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
         nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ShowTactics), nameof(ShowAggression), nameof(ShowDogfight), nameof(ShowRocket), nameof(ShowFormation), nameof(ShowBand), nameof(ShowTargetFilter), nameof(ShowAimSw),
         nameof(Enemy), nameof(EnemyText),
         nameof(HeightM), nameof(OverGround), nameof(AltOverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };

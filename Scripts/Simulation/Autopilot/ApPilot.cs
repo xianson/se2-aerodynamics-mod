@@ -28,6 +28,20 @@ public sealed class ApPilot : IApGoalSource
     public readonly ApArbiterBh Arb = new();
     /// <summary>The flight director it feeds (its terrain watch, its flight performance).</summary>
     public FlightDirector Fd;
+    /// <summary>(2026-10-19) The built-in formation, and the two combat SLOTS - the author's files (ApDogfight.cs, ApRocketGuidance.cs):
+    /// each step the context (Slot - everything they get) is filled, their Step asked, its goal flown. SlotText: the active slot's
+    /// own status words (null none).</summary>
+    public readonly ApFormation Formation = new();
+    public readonly ApDogfight Dogfight = new();
+    public readonly ApRocketGuidance Rocket = new();
+    public readonly ApSlotCtx Slot = new();
+    public string SlotText; public ApSlotOut SlotOut;
+    /// <summary>A slot's saved state to write back to the panel (DfSaved / RgSaved; the link copies it).</summary>
+    public bool SlotSavedChanged; public string DfSavedOut, RgSavedOut;
+    ApBehaviour _slotWas = (ApBehaviour)255; float _slotTime, _slotSaveIn; bool _dfBan, _rgBan;
+    public static bool IsSlot(ApBehaviour b) => b == ApBehaviour.Dogfight || b == ApBehaviour.RocketGuidance;
+    /// <summary>A slot whose logic is there (its Implemented).</summary>
+    public static bool SlotImplemented(ApBehaviour b) => b == ApBehaviour.Dogfight ? ApDogfight.Implemented : b == ApBehaviour.RocketGuidance ? ApRocketGuidance.Implemented : true;
 
     readonly List<ApRoute.Point> _route = new();
     public int Wp, WpCount; Vector3D _wpFrom; bool _loiter; Vector3D _loiterAt;
@@ -72,6 +86,7 @@ public sealed class ApPilot : IApGoalSource
         v.HeadingOn = Cfg.HeadingOn; v.AltOn = Cfg.AltOn; v.SpeedOn = Cfg.SpeedOn;
         v.HeadingWant = Cfg.HeadingDeg; v.HeightWant = Cfg.AltM; v.SpeedWant = Cfg.SpeedMs > 0f ? Cfg.SpeedMs : _cruise;
         v.Prot = prot;
+        v.SlotText = IsSlot(ActiveBh) ? SlotText : null; v.FormErr = Formation.Err; v.FormAlong = Formation.Along; v.FormOver = Formation.Overshoot; v.LeaderSpeed = T.Motion.Valid ? T.Motion.Speed : T.Vel.Length();
     }
 
     /// <summary>The flight director's goals a style flies with: the hover's lean for a helicopter, the external goal alone otherwise.</summary>
@@ -99,7 +114,11 @@ public sealed class ApPilot : IApGoalSource
         float g = s.Gravity.Length();
         Vector3 up = g > 1e-2f ? -s.Gravity / g : Vector3.UnitY;
         float air = s.AirVel.Length();
-        if (st == ApStyle.Airplane)
+        // (a combat slot chosen whose logic is not written yet: refused, said)
+        if (mode == ApMode.Engage && IsSlot(Cfg.Behaviour) && !SlotImplemented(Cfg.Behaviour)) { why = ApReason.NotImplemented; return false; }
+        // (a rocket steered onto its target launches from rest: no airspeed asked of it)
+        bool rocket = mode == ApMode.Engage && Cfg.Behaviour == ApBehaviour.RocketGuidance;
+        if (st == ApStyle.Airplane && !rocket)
         {
             if (!(s.Density > EnvelopeGuard.MinDensity)) { why = ApReason.NoAir; return false; }
             if (air < EnvelopeGuard.MinSpeed + 5f) { why = ApReason.TooSlow; return false; }
@@ -124,7 +143,7 @@ public sealed class ApPilot : IApGoalSource
         Mode = mode; Style = st;
         float agl = s.Agl;
         Alt.Reset(s.Pos, up, agl >= 0f ? agl : 0f);
-        Tecs.Reset(); Bh.Reset(); Arb.Reset(); T.Clear();
+        Tecs.Reset(); Bh.Reset(); Arb.Reset(); T.Clear(); Formation.Reset(); _slotWas = (ApBehaviour)255; SlotText = null; _dfBan = _rgBan = false;
         Wp = 0; _wpFrom = s.Pos; _loiter = false; _hasStation = false; _time = 0f;
         Quaternion inv = Quaternion.Inverse(s.Orient);
         _upL = Near(Vector3.Transform(up, inv));
@@ -180,7 +199,7 @@ public sealed class ApPilot : IApGoalSource
         float cruise = Cfg.SpeedMs > 0f ? Cfg.SpeedMs : _cruise;
         float chase = Style == ApStyle.Airplane ? cruise : (cruise > 0f ? cruise : 30f);
         // ── the mode's goal ──
-        var goal = ApNavGoal.None;
+        var goal = ApNavGoal.None; bool direct = false;
         ActiveBh = ApBehaviour.Auto; Loitering = false;
         if (Mode == ApMode.FlightHold) Holds(in s, up, cruise, ref goal);
         else if (Mode == ApMode.Navigate) RouteGoal(in s, up, cruise, chase, ref goal);
@@ -190,13 +209,37 @@ public sealed class ApPilot : IApGoalSource
             {
                 var c = new ApBhCtx { Style = Style, P = Cfg, Pos = s.Pos, Vel = s.Vel, Up = up, Speed = Style == ApStyle.Airplane ? air : vg, Cruise = cruise, Chase = chase,
                     TurnR = TurnR, Height = alt, Time = _time, T = T, THeight = Alt.Height(T.Pos, up), Decel = perf.Valid ? perf.DragDecelNow : 1f, NMax = perf.Valid ? perf.NAtAlphaMax : 0f };
+                // (the combat slots: their context filled when they may fly - chosen, or Auto asking their scores)
+                bool auto = Cfg.Behaviour == ApBehaviour.Auto;
+                if (auto || IsSlot(Cfg.Behaviour)) FillSlot(in s, up, gT, alt, agl, air, in perf, dt);
+                Arb.DogfightScore = auto && ApDogfight.Implemented && !_dfBan ? Dogfight.Score(Slot) : float.NaN;
+                Arb.RocketScore = auto && ApRocketGuidance.Implemented && !_rgBan ? Rocket.Score(Slot) : float.NaN;
                 ActiveBh = Arb.Pick(Cfg.Behaviour, in c, dt);
-                Bh.Plan(ActiveBh, in c, dt, ref goal);
-                // (the target as an obstacle for the collision avoidance, kept at most half the behaviour's own closest distance)
+                float clear = float.NaN;
+                if (IsSlot(ActiveBh))
+                {
+                    if (!RunSlot(ActiveBh, dt, ref goal, out direct, out var letGo))
+                    {
+                        // (declined: chosen - the mode lets go with the slot's reason; picked by Auto - not asked again this engage)
+                        if (!auto) { x = default; x.LetGo = letGo; return false; }
+                        if (ActiveBh == ApBehaviour.Dogfight) _dfBan = true; else _rgBan = true;
+                        ActiveBh = Style == ApStyle.Airplane ? ApBehaviour.PursuitPure : ApBehaviour.Standoff; direct = false;
+                        Bh.Plan(ActiveBh, in c, dt, ref goal);
+                    }
+                    else clear = SlotOut.TargetClearM;
+                }
+                else
+                {
+                    _slotWas = ActiveBh; SlotText = null;
+                    if (ActiveBh == ApBehaviour.Formation) Formation.Plan(in c, ApFormationParams.Of(in Cfg), LeastSpeed(in perf), ref goal);
+                    else Bh.Plan(ActiveBh, in c, dt, ref goal);
+                }
+                // (the target as an obstacle for the collision avoidance, kept at most half the behaviour's own closest distance - a
+                //  slot's own clearance when it gives one, never under the target's size)
                 if (Fd != null)
                 {
                     Fd.TargetObstacle = new ApObstacle { Pos = T.Pos, Vel = T.Vel, Radius = MathF.Max(1f, T.Radius), Target = true };
-                    Fd.HasTargetObstacle = true; Fd.TargetClearMax = ApAvoid.TargetClear(in Cfg, ActiveBh);
+                    Fd.HasTargetObstacle = true; Fd.TargetClearMax = float.IsFinite(clear) ? MathF.Max(clear, T.Radius) : ApAvoid.TargetClear(in Cfg, ActiveBh);
                 }
                 h = alt;   // (the target's heights are the altimeter's)
                 // (a helicopter aiming fixed guns: level with the target - it cannot pitch onto it without moving)
@@ -214,30 +257,98 @@ public sealed class ApPilot : IApGoalSource
             }
             else
             {
-                Arb.Reset();
+                Arb.Reset(); _slotWas = (ApBehaviour)255; SlotText = null;   // (no target: a slot begins again on the next)
                 if (_route.Count > 0) RouteGoal(in s, up, cruise, chase, ref goal);
                 else { Loiter(_home, up, ref goal); goal.Height = float.IsFinite(Cfg.AltM) && Cfg.AltM > 0f ? Cfg.AltM : h; goal.Speed = cruise; h = HeightIn(in s, up, alt); }
             }
         }
-        // ── the terrain under it: never below MinAglM over the ground below, and up over what is ahead ──
+        // ── the terrain under it: never below MinAglM over the ground below, and up over what is ahead; Engage's altitude band
+        //    (the combat ceiling in the altimeter, the hard deck over the ground - the deck wins) ──
         float hDem = goal.Height;
         float need = Cfg.MinAglM;
         float hd0 = hDem;
+        if (Mode == ApMode.Engage && T.Valid && !direct)
+        {
+            if (Cfg.CeilingM > 0f && float.IsFinite(hDem)) hDem = MathF.Min(hDem, Cfg.CeilingM);
+            if (Cfg.DeckM > 0f && agl >= 0f) hDem = MathF.Max(float.IsFinite(hDem) ? hDem : h, h + (Cfg.DeckM - agl));
+        }
         if (need > 0f && agl >= 0f && agl < 1.5f * need) hDem = MathF.Max(float.IsFinite(hDem) ? hDem : h, h + (need - agl));
         if (need > 0f && Fd != null && Fd.Ground.Tti < 12f && Style == ApStyle.Airplane) hDem = MathF.Max(float.IsFinite(hDem) ? hDem : h, h + need);
         _terrainUp = float.IsFinite(hDem) && (!float.IsFinite(hd0) || hDem > hd0 + 1f);
         HeightWanted = hDem; Goal = goal;
-        // ── the style's executor ──
+        // ── the style's executor (a slot's direct goal: flown as it is - the rocket's lateral cap on it) ──
         x = default; x.Throttle = float.NaN;
         Recovering = false;
-        if (Style == ApStyle.Airplane) Airplane(in s, up, gT, h, hDem, air, aLatMax, nAvail, perf, ref goal, ref x);
+        if (direct) { x = SlotOut.Goal; x.LetGo = ApReason.None; if (ActiveBh == ApBehaviour.RocketGuidance) CapLateral(in s, gT, ref x); }
+        else if (Style == ApStyle.Airplane) Airplane(in s, up, gT, h, hDem, air, aLatMax, nAvail, perf, ref goal, ref x);
         else Hover(in s, up, h, hDem, chase, ref goal, ref x);
-        // ── the aim, jinking ──
-        Aim(in s, up, in goal, ref x);
-        if (Cfg.Evasive && Mode == ApMode.Engage && T.Valid) Jink(in s, up, aLatMax, dt, ref x);
+        // ── the aim (a slot asks for its report, and the nose on the lead or not), jinking (the built-in behaviours) ──
+        bool slot = IsSlot(ActiveBh) && Mode == ApMode.Engage && T.Valid;
+        bool wantAim = slot ? SlotOut.AimReport || SlotOut.AimNose || (!direct && goal.Aim) : goal.Aim;
+        bool blendAim = slot ? SlotOut.AimNose || (!direct && goal.Aim) : goal.Aim;
+        Aim(in s, up, wantAim, blendAim, ref x);
+        if (Cfg.Evasive && Mode == ApMode.Engage && T.Valid && !slot && ActiveBh != ApBehaviour.Formation) Jink(in s, up, aLatMax, dt, ref x);
         return true;
     }
 
+    /// <summary>Everything a slot gets this step (ApSlotCtx) - copies, no allocation.</summary>
+    void FillSlot(in ApSense s, Vector3 up, float gT, float alt, float agl, float air, in ApPerf perf, float dt)
+    {
+        var c = Slot;
+        c.Dt = dt; c.S = s; c.Style = Style; c.Up = up; c.G = gT; c.Height = alt; c.Agl = agl; c.AirSpeed = air;
+        c.Mach = s.SpeedOfSound > 1f ? air / s.SpeedOfSound : 0f;
+        Vector3 main = ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out float mf);
+        c.MainAxisW = Vector3.Transform(main, s.Orient); c.MainThrust = mf; c.ThrustToWeight = s.Mass > 0f && gT > 0f ? mf / (s.Mass * gT) : 0f;
+        c.Perf = perf; c.Samples = s.Perf; c.GLimit = s.Lim.GLimit;
+        c.LiftNMax = perf.Valid ? perf.NInst : s.Lim.GLimit; c.AlphaMax = perf.Valid ? perf.AlphaMax : float.NaN;
+        c.HasTarget = T.Valid; c.Target = T;
+        c.Terrain = Fd?.Terrain; c.Ground = Fd?.Ground;
+        c.Panel = Cfg.Clamped(); c.Dogfight = ApDogfightParams.Of(in c.Panel); c.Rocket = ApRocketParams.Of(in c.Panel);
+    }
+
+    /// <summary>One step of a slot (b): begun when it takes over, its Step asked; its saved state copied out twice a second. False:
+    /// declined (letGo: its reason - NotImplemented when it gave none). direct: its goal is a direct one (SlotOut.Goal).</summary>
+    bool RunSlot(ApBehaviour b, float dt, ref ApNavGoal goal, out bool direct, out ApReason letGo)
+    {
+        direct = false; letGo = ApReason.None;
+        if (!SlotImplemented(b)) { letGo = ApReason.NotImplemented; SlotText = null; return false; }
+        if (b != _slotWas)
+        {
+            _slotWas = b; _slotTime = 0f; _slotSaveIn = 0.5f;
+            if (b == ApBehaviour.Dogfight) Dogfight.Begin(Slot, Cfg.DfSaved); else Rocket.Begin(Slot, Cfg.RgSaved);
+        }
+        _slotTime += dt; Slot.Time = _slotTime;
+        var o = ApSlotOut.None;
+        bool ok = b == ApBehaviour.Dogfight ? Dogfight.Step(Slot, ref o) : Rocket.Step(Slot, ref o);
+        SlotOut = o; SlotText = o.Status;
+        if (!ok || o.LetGo != ApReason.None) { letGo = o.LetGo != ApReason.None ? o.LetGo : ApReason.NotImplemented; return false; }
+        if ((_slotSaveIn -= dt) <= 0f)
+        {
+            _slotSaveIn = 0.5f;
+            if (b == ApBehaviour.Dogfight && Dogfight.State.Dirty) { Dogfight.State.Dirty = false; DfSavedOut = Dogfight.State.Save() ?? ""; SlotSavedChanged = true; }
+            if (b == ApBehaviour.RocketGuidance && Rocket.State.Dirty) { Rocket.State.Dirty = false; RgSavedOut = Rocket.State.Save() ?? ""; SlotSavedChanged = true; }
+        }
+        if (o.UseNav) { goal = o.Nav; return true; }
+        direct = true;
+        return true;
+    }
+
+    /// <summary>The rocket slot's Max Lateral g on its direct goal: a Lift goal's load, an Accel goal's part across the path.</summary>
+    void CapLateral(in ApSense s, float gT, ref ApExternal x)
+    {
+        float cap = Cfg.RgMaxLatG;
+        if (x.Kind == ApExternalKind.Lift) x.Load = float.IsFinite(x.Load) ? MathF.Min(x.Load, cap) : cap;
+        else if (x.Kind == ApExternalKind.Accel && s.Vel.LengthSquared() > 1f)
+        {
+            Vector3 vh = Vector3.Normalize(s.Vel), across = ApMath.Flat(x.Accel, vh);
+            float a = across.Length(), m = cap * gT;
+            if (a > m) x.Accel += across * (m / a - 1f);
+        }
+    }
+
+    /// <summary>The least airspeed a formation's airplane drops back at: where the lift at the stall margin gives 1.3 g (the
+    /// performance's chart), else EnvelopeGuard's floor and 10 m/s.</summary>
+    static float LeastSpeed(in ApPerf p) => p.Valid && p.NAtAlphaMax > 0.1f ? p.SpeedRef * MathF.Sqrt(1.3f / p.NAtAlphaMax) : EnvelopeGuard.MinSpeed + 10f;
     // ── the modes ──
 
     void Holds(in ApSense s, Vector3 up, float cruise, ref ApNavGoal g)
@@ -375,9 +486,11 @@ public sealed class ApPilot : IApGoalSource
         x.Heading = face;
     }
 
-    void Aim(in ApSense s, Vector3 up, in ApNavGoal goal, ref ApExternal x)
+    /// <summary>The aim report (the lead, the error, in the cone, in range) when wanted; blend: and the nose blended onto the lead
+    /// (the goal's aim fields) - a slot's report alone leaves its goal as it is.</summary>
+    void Aim(in ApSense s, Vector3 up, bool want, bool blend, ref ApExternal x)
     {
-        AimOn = goal.Aim && Cfg.AimOn && T.Valid;
+        AimOn = want && T.Valid && (Cfg.AimOn || !blend);
         if (!AimOn) { AimErrDeg = float.NaN; InCone = InRange = false; LeadBlend = 0f; return; }
         Vector3 axis = s.GunAxis.LengthSquared() > 0.5f ? s.GunAxis : s.Nose.LengthSquared() > 0.5f ? s.Nose : _noseL;
         float u = Cfg.MuzzleSpeed > 0f ? Cfg.MuzzleSpeed : s.MuzzleSpeed;
@@ -403,7 +516,7 @@ public sealed class ApPilot : IApGoalSource
         {
             // (a helicopter yaws onto the lead; it does not pitch onto it - its lift axis is its nose's pitch, tilting it moves the
             //  ship: the behaviour holds it level with the lead instead - ApPilot.Step - so the nose is on it in height too)
-            w = 0f; x.Heading = ApMath.Flat(dir, up);
+            w = 0f; if (blend) x.Heading = ApMath.Flat(dir, up);
         }
 
         else
@@ -425,7 +538,7 @@ public sealed class ApPilot : IApGoalSource
         }
         LeadBlend = w;
 
-        x.AimAxis = axis; x.AimDir = dir; x.Blend = w;
+        if (blend) { x.AimAxis = axis; x.AimDir = dir; x.Blend = w; }
 
     }
 

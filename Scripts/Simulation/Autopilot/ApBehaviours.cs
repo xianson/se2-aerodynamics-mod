@@ -245,6 +245,9 @@ public sealed class ApArbiterBh
 {
     public const float Hysteresis = 0.15f, MinDwell = 3f;
     public ApBehaviour Active = ApBehaviour.Auto; public float Dwell; public int Switches;
+    /// <summary>(2026-10-19) The combat slots' own utility this tick (ApDogfight.Score / ApRocketGuidance.Score - the pilot asks them
+    /// in Auto while they are Implemented; NaN: not available - skipped).</summary>
+    public float DogfightScore = float.NaN, RocketScore = float.NaN;
     public void Reset() { Active = ApBehaviour.Auto; Dwell = 0f; Switches = 0; }
 
     public ApBehaviour Pick(ApBehaviour chosen, in ApBhCtx c, float dt)
@@ -255,7 +258,9 @@ public sealed class ApArbiterBh
         bool plane = c.Style == ApStyle.Airplane;
         var T = c.T;
         float tv = T.Vel.Length(), my = MathF.Max(c.Speed, 1f), D = c.P.RangeM;
-        if (plane)
+        // (the energy recovery is the built-in behaviours': a slot or a formation chosen keeps its own energy)
+        bool own = chosen == ApBehaviour.Formation || chosen == ApBehaviour.Dogfight || chosen == ApBehaviour.RocketGuidance;
+        if (plane && !own)
         {
             // energy: slow and close - away and back up to speed first
             // (out of energy: the lift at the stall margin gives under 1.6 g - it could not turn with the target; back once over 2.2)
@@ -265,19 +270,25 @@ public sealed class ApArbiterBh
             Try(ApBehaviour.Extend, lowE);
         }
         if (chosen != ApBehaviour.Auto) Try(chosen, 0.6f);
-        else if (plane)
-        {
-            bool slow = tv < 0.35f * my;
-            Try(ApBehaviour.AttackRun, slow ? 0.7f : 0.2f);
-            Try(ApBehaviour.PursuitLead, slow ? 0.25f : 0.6f + (T.Range < 3f * D ? 0.2f : 0f));
-            Try(ApBehaviour.Circle, 0.3f);
-        }
         else
         {
-            bool below = c.THeight < c.Height - 20f, slow = tv < 5f;
-            Try(ApBehaviour.Standoff, 0.6f);
-            Try(ApBehaviour.HoverAbove, below && slow && T.Range < 2f * D ? 0.55f : 0.1f);
-            Try(ApBehaviour.Broadside, c.Style == ApStyle.SixAxis && !slow ? 0.5f : 0.2f);
+            // (the combat slots: only with a score - NaN, not written yet or not available, skips them)
+            if (float.IsFinite(DogfightScore)) Try(ApBehaviour.Dogfight, DogfightScore);
+            if (float.IsFinite(RocketScore)) Try(ApBehaviour.RocketGuidance, RocketScore);
+            if (plane)
+            {
+                bool slow = tv < 0.35f * my;
+                Try(ApBehaviour.AttackRun, slow ? 0.7f : 0.2f);
+                Try(ApBehaviour.PursuitLead, slow ? 0.25f : 0.6f + (T.Range < 3f * D ? 0.2f : 0f));
+                Try(ApBehaviour.Circle, 0.3f);
+            }
+            else
+            {
+                bool below = c.THeight < c.Height - 20f, slow = tv < 5f;
+                Try(ApBehaviour.Standoff, 0.6f);
+                Try(ApBehaviour.HoverAbove, below && slow && T.Range < 2f * D ? 0.55f : 0.1f);
+                Try(ApBehaviour.Broadside, c.Style == ApStyle.SixAxis && !slow ? 0.5f : 0.2f);
+            }
         }
         if (best != Active && (Dwell >= MinDwell || Active == ApBehaviour.Auto)) { if (Active != ApBehaviour.Auto) Switches++; Active = best; Dwell = 0f; }
         return Active;
