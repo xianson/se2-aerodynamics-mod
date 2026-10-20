@@ -118,6 +118,8 @@ public sealed class FlightDirector
     bool _floorArmed, _wasPiloted, _dampWanted;
     float _brakeBest = float.MaxValue, _brakeStall;
     Vector3 _vPrev, _aMeas; bool _hasVPrev; float _pullHold;
+    // the collision avoidance's push on a lift-vector goal this tick (world m/s2)
+    Vector3 _avoidPush;
     Quaternion _lastTarget = Quaternion.Identity; bool _hasLastTarget;
     // six-axis: the attitude held (caught at the engage), its local up and nose (a level frame on a heading)
     Quaternion _sixAtt = Quaternion.Identity; Vector3 _sixUpL = Vector3.UnitY, _sixNoseL = -Vector3.UnitZ;
@@ -308,8 +310,8 @@ public sealed class FlightDirector
         bool ext = (Goals & ApGoal.External) != 0;
         if (ext)
         {
-            _ext = default; _ext.Throttle = float.NaN;
-            if (Source == null || !Source.Step(in s, ref _ext)) { Disengage(Source == null ? ApReason.NoSource : ApReason.GoalDone, ApGoal.External); ext = false; if (!Engaged) { UpdateReadout(); return; } }
+            _ext = default; _ext.Throttle = float.NaN; _ext.Load = float.NaN;
+            if (Source == null || !Source.Step(in s, ref _ext)) { Disengage(Source == null ? ApReason.NoSource : _ext.LetGo != ApReason.None ? _ext.LetGo : ApReason.GoalDone, ApGoal.External); ext = false; if (!Engaged) { UpdateReadout(); return; } }
         }
         bool hover = (Goals & ApGoal.Hover) != 0, height = (Goals & ApGoal.Height) != 0;
         bool track = ext && _ext.Kind == ApExternalKind.Track && hover;
@@ -352,7 +354,8 @@ public sealed class FlightDirector
 
         // ── collision avoidance: the closest approach to each obstacle along the velocity now; a sidestep / pull-up through the
         //    mode's own command (an acceleration, a track's place, the hover's speed) - the protection below as for any goal ──
-        bool sixGoal = ext && _ext.Kind == ApExternalKind.Track && !hover, flyGoal = ext && _ext.Kind == ApExternalKind.Accel;
+        bool sixGoal = ext && _ext.Kind == ApExternalKind.Track && !hover, liftGoal = ext && _ext.Kind == ApExternalKind.Lift, flyGoal = ext && (_ext.Kind == ApExternalKind.Accel || liftGoal);
+        _avoidPush = Vector3.Zero;
         bool anyObs = (Obstacles != null && Obstacles.Count > 0) || HasTargetObstacle;
         if (s.Lim.Avoid && anyObs && (hover || height || sixGoal || flyGoal))
         {
@@ -375,6 +378,7 @@ public sealed class FlightDirector
                 _ext.Position += (Vector3D)(Avoid.Dir * (Avoid.Short + 2f * ApAvoid.Margin));
                 _ext.Velocity += Avoid.Dir * vOut;
             }
+            else if (liftGoal) { _avoidPush = Avoid.Dir * Avoid.Accel; _ext.Blend = 0f; }   // (the lift vector: the push added to its acceleration below, the pull against it out)
             else if (flyGoal)
             {
                 // (the goal's own pull against it taken out - a height hold would sink it back into the obstacle - the push added,
@@ -595,6 +599,34 @@ public sealed class FlightDirector
                 }
                 AccelCmd = _ext.Accel; attitude = true;
             }
+            else if (ext && _ext.Kind == ApExternalKind.Lift)
+            {
+                // THE LIFT VECTOR: the lift along the goal's direction (across the path through the air) at its load - the
+                // collision avoidance's push added (its pull against it out) - flown on the wings, the direction kept when clipped
+                Vector3 vW = s.AirVel.LengthSquared() > 1f ? Vector3.Transform(Vector3.Normalize(s.AirVel), s.Orient)
+                    : s.Vel.LengthSquared() > 1f ? Vector3.Normalize(s.Vel) : Vector3.Transform(ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out _), s.Orient);
+                float gT = gTrue.Length();
+                float n = float.IsFinite(_ext.Load) ? MathF.Max(0f, _ext.Load) : Perf.Valid ? Perf.NInst : s.Lim.GLimit;
+                Vector3 need = ApLift.Across(vW, _ext.Lift) * (n * gT);
+                if (_avoidPush != Vector3.Zero)
+                {
+                    Vector3 pd = Vector3.Normalize(_avoidPush); float opp = Vector3.Dot(need, pd);
+                    if (opp < 0f) need -= pd * opp;
+                    need = ApMath.Flat(need + _avoidPush, vW);
+                }
+                if (LiftFlight(in s, need, need + gTrue, out Quaternion q, out float thr, keepDir: true)) { want = Aimed(q); throttle = float.IsNaN(_ext.Throttle) ? thr : Math.Clamp(_ext.Throttle, 0f, 1f); }
+                else
+                {
+                    // (no lift to fly with - slow, no air, a rocket: the main thrust tilted off the path to give the push across it,
+                    //  the rest along the path - its throttle the goal's, full when not given)
+                    Vector3 main = ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out float tmax);
+                    float thrUse = float.IsNaN(_ext.Throttle) ? 1f : Math.Clamp(_ext.Throttle, 0f, 1f);
+                    float aT = tmax > 1f ? thrUse * tmax / MathF.Max(s.Mass, 1f) : 0f, aN = MathF.Min(need.Length(), aT);
+                    Vector3 f = need.LengthSquared() > 1e-6f ? Vector3.Normalize(need) * aN + vW * MathF.Sqrt(MathF.Max(aT * aT - aN * aN, 0f)) : vW;
+                    want = Aimed(Point(s.Orient, main, f)); throttle = thrUse;
+                }
+                AccelCmd = need + gTrue; attitude = true;
+            }
             else if (ext && _ext.Kind == ApExternalKind.Attitude && _ext.Attitude.IsValidAndRotationIsNormalized())
             {
                 want = Aimed(Quaternion.Normalize(_ext.Attitude)); attitude = true;
@@ -676,7 +708,7 @@ public sealed class FlightDirector
     /// protection then cuts it (stall, g, the predicted loss of control). False: no lift to fly with (slow, no air, no sweep, or
     /// the best lift short of the weight) - the caller points the thrust instead.
     /// </summary>
-    bool LiftFlight(in ApSense s, Vector3 need, Vector3 accel, out Quaternion q, out float throttle)
+    bool LiftFlight(in ApSense s, Vector3 need, Vector3 accel, out Quaternion q, out float throttle, bool keepDir = false)
     {
         q = s.Orient; throttle = 0f;
         var p = s.Perf;
@@ -687,7 +719,7 @@ public sealed class FlightDirector
         // (more than the lift can give - the protection's load, NInst: the gravity's hold kept whole and the asked part scaled to
         //  what is left - an over-asked turn is the tightest level one, never a dive)
         float aMax = Perf.NInst * (s.GravityTrue.LengthSquared() > 0f ? s.GravityTrue : s.Gravity).Length();
-        if (across.Length() > aMax)
+        if (!keepDir && across.Length() > aMax)   // (a lift vector keeps its direction: the protection clips its load, LiftFlight never turns it)
         {
             Vector3 hold = ApMath.Flat(need - accel, vW), ask = across - hold;
             float a2 = ask.LengthSquared(), b = 2f * Vector3.Dot(hold, ask), c = hold.LengthSquared() - aMax * aMax;

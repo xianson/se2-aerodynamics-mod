@@ -207,6 +207,12 @@ public enum ApExternalKind : byte
     Accel,
     /// <summary>An attitude to fly (world), with a throttle.</summary>
     Attitude,
+    /// <summary>(2026-10-19) A LIFT VECTOR: the lift (normal acceleration) pointed along Lift (world unit, made across the flight
+    /// path) at Load g of the real weight (NaN: the most the protection gives now), with a throttle (NaN: the speed held - the drag
+    /// met). Flown on the wings (the roll about the path, the angle of attack for that lift: LiftFlight), the direction kept when
+    /// the load is clipped (stall, g limit, the predicted loss of control - the protection as for every goal); no lift to fly with
+    /// (slow, no air - a rocket): the main thrust pointed to give that sideways push. ApLift: from / to a path acceleration.</summary>
+    Lift,
 }
 
 /// <summary>An external goal for one tick (navigation legs, formation keeping, a landing pad - later items; their protection, the
@@ -226,6 +232,10 @@ public struct ApExternal
     /// <summary>AIM (any kind): this local axis turned toward this world direction - the share Blend (0 none .. 1 all) of the way
     /// from the attitude the goal flies (the lift's, the hover's lean, six-axis level) to the aimed one; the protection still clips.</summary>
     public Vector3 AimAxis, AimDir; public float Blend;
+    /// <summary>(2026-10-19) Lift: the lift's direction (world unit; its part across the path is used) and the load (g; NaN: the most).</summary>
+    public Vector3 Lift; public float Load;
+    /// <summary>Why the source let go when its Step returns false (None: GoalDone) - a behaviour's own reason (ApReason).</summary>
+    public ApReason LetGo;
 }
 
 /// <summary>An external goal source, asked every tick while ApGoal.External is held. False: done (the goal lets go: GoalDone).</summary>
