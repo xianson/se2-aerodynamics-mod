@@ -12,8 +12,15 @@ namespace AeroMod;
 /// members from its IAccessible.GetTypeInfo() - for the game's own models the source generators write that (a
 /// TypeInfoHolder per model), and they do not run on mod scripts: a mod model inherited BlockDetailModel's list and its
 /// toggles and sliders never showed. Built here by hand the way the generated code builds it: BlockDetailModel's members,
-/// then the model's own, in the order given (the inspector sorts by it), each with its attributes ([Label], [Slider],
-/// [Range], [Increment], [ReadOnlyInInspector], [ShowInInspectorWhen] - read off the property). bool, float, string and enum properties.
+/// then the model's own, in the order given, each with its attributes ([Label], [Slider], [Range], [Increment],
+/// [ReadOnlyInInspector], [ShowInInspectorWhen] - read off the property). bool, float, string and enum properties; a parameterless
+/// [Button] method's name places that button (order only).
+/// THE ORDER SHOWN (decompiled 4.0 TerminalInspectorViewModel.InjectInspectable): each property's place is
+/// MemberReference.DeclarationOrder, which asks AccessibleTypeIndexer for the DECLARING type's info - found only through a public
+/// nested class TypeInfoHolder with a static Value field (the generated code's). Without one every mod property sorts as -1, and
+/// List.Sort is unstable past 16 entries: a big panel came out shuffled (the autopilot's, 2026-10-19). So a model built here
+/// declares <c>public static class TypeInfoHolder { public static readonly AccessibleTypeInfo Value = _typeInfo; }</c>. Buttons
+/// take their place from this info's MembersDeclarationOrder (a method not named: last).
 /// </summary>
 public static class ModDetailTypeInfo
 {
@@ -32,7 +39,15 @@ public static class ModDetailTypeInfo
         foreach (var name in properties)
         {
             var p = typeof(TModel).GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
-            if (p == null) throw new ArgumentException($"{typeof(TModel).Name} has no public property {name}");
+            if (p == null)
+            {
+                // a [Button] method: placed by its name too (the inspector reads a button's place from MembersDeclarationOrder by
+                // its MethodInfo - TerminalInspectorViewModel.InjectInspectable; one not listed goes to the bottom, int.MaxValue)
+                var m = typeof(TModel).GetMethod(name, BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+                if (m == null) throw new ArgumentException($"{typeof(TModel).Name} has no public property or parameterless method {name}");
+                order[m] = next++;
+                continue;
+            }
             IMemberAccessor a;
             if (p.PropertyType == typeof(bool)) a = Accessor<TModel, bool>(p);
             else if (p.PropertyType == typeof(float)) a = Accessor<TModel, float>(p);

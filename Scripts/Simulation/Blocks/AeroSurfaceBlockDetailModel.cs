@@ -25,6 +25,8 @@ public partial class AeroSurfaceBlockDetailModel : BlockDetailModel
         "Control surface: the axes it helps with, how far it deflects, a fixed flap / trim.",
         nameof(Pitch), nameof(Yaw), nameof(Roll), nameof(MaxDeflection), nameof(Trim));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+    /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroSurfaceSettingsComponent _settings;

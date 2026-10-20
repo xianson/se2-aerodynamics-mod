@@ -22,6 +22,8 @@ public partial class AeroAirbrakeBlockDetailModel : BlockDetailModel
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroAirbrakeBlockDetailModel>(
         "Airbrake: opens with the parking brake (P); how far.", nameof(MaxOpening));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+    /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroAirbrakeComponent _brake;

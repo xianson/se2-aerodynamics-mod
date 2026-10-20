@@ -25,6 +25,8 @@ public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
         "Solid rocket nozzle: set its power level (50-100 %) with the thrust override BEFORE ignition, then ignite it - it burns at that level until its stack of segments is empty (lit, the flight controller may vary it 50-100 % to turn the ship).",
         nameof(CanIgnite), nameof(Burning), nameof(PowerLevel), nameof(Segments), nameof(Propellant), nameof(BurnTimeLeft));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+    /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroSolidNozzleComponent _nozzle;
@@ -69,6 +71,8 @@ public partial class AeroSolidSegmentBlockDetailModel : BlockDetailModel
         "Solid rocket segment: a tank of solid propellant for the nozzle it is stacked on (not in a motor stack: inert). It cannot be refilled, switched off or set to charge.",
         nameof(InMotorStack), nameof(Propellant));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
+    /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
 
     [Keen.VRage.DCS.Annotations.Component]
     private AeroSolidSegmentComponent _segment;

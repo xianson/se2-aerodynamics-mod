@@ -22,18 +22,30 @@ namespace AeroMod;
 [Keen.VRage.Library.Serialization.NoSerialize]
 public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
 {
+    // THE ORDER ON THE PANEL (the inspector sorts by it - ModDetailTypeInfo; the [Button] methods placed by name too): the status,
+    // the mode buttons, the chosen mode's fields top down, what it does unattended, the protection last. The switches and the
+    // toolbar's hidden toggles after (never shown). Tests/AutopilotSim PanelLayoutPack reads this list and checks it mode by mode.
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroAutopilotBlockDetailModel>(
         "Autopilot: hover, height and flight holds, GPS navigation and target behaviours for this ship, with envelope protection.",
-        nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
-        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
-        nameof(Style),
+        nameof(Status),
+        nameof(HoverHold), nameof(HeightHold), nameof(FlightHold), nameof(Navigate), nameof(Engage), nameof(LevelOff), nameof(Return), nameof(AutopilotOff),
         nameof(HeightM), nameof(OverGround), nameof(HoverSpeed),
-        nameof(HeadingOn), nameof(HeadingDeg), nameof(AltOn), nameof(AltM), nameof(VsMs), nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg),
-        nameof(Route), nameof(RouteLoop), nameof(LoiterM), nameof(MinAglM),
+        nameof(Style), nameof(HeadingOn), nameof(HeadingDeg), nameof(AltOn), nameof(AltM), nameof(AltOverGround), nameof(VsMs),
+        nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg), nameof(MinAglM),
+        nameof(Route), nameof(RouteLoop), nameof(LoiterM),
         nameof(Behaviour), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AngleDeg), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
-        nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(Enemy), nameof(EnemyText), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
-        nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(AvoidOn), nameof(AvoidS), nameof(Unattended));
+        nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
+        nameof(Enemy), nameof(EnemyText),
+        nameof(Unattended),
+        nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(AvoidOn), nameof(AvoidS),
+        nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
+        nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ToggleHoverHold), nameof(ToggleHeightHold), nameof(ToggleFlightHold), nameof(ToggleNavigate), nameof(ToggleEngage));
+    /// <summary>The game's member-order lookup (MemberReference.DeclarationOrder asks AccessibleTypeIndexer, which finds a type's
+    /// info by its nested TypeInfoHolder.Value): without it every member here sorted as -1, in no stable order - the panel came
+    /// out shuffled (protection first) with the buttons last, below the fold (in game, 2026-10-19). ModDetailTypeInfo.</summary>
+    public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
 
     [Keen.VRage.DCS.Annotations.Component]
@@ -55,21 +67,21 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool CanNavigate => _ap != null && P.Mode != ApMode.Navigate;
     [HideInInspector] public bool CanEngage => _ap != null && P.Mode != ApMode.Engage;
     [HideInInspector] public bool CanOff => _ap != null && P.Mode != ApMode.Off;
-    [HideInInspector] public bool ShowHover => P.Mode == ApMode.HoverHold || P.Mode == ApMode.HeightHold;
-    [HideInInspector] public bool ShowPilot => ApPanel.IsPilotMode(P.Mode);
-    [HideInInspector] public bool ShowFlight => P.Mode == ApMode.FlightHold;
-    [HideInInspector] public bool ShowRoute => P.Mode == ApMode.Navigate || P.Mode == ApMode.Engage;
-    [HideInInspector] public bool ShowEngage => P.Mode == ApMode.Engage;
-    [HideInInspector] public bool ShowAttack => P.Mode == ApMode.Engage && (P.Behaviour == ApBehaviour.AttackRun || P.Behaviour == ApBehaviour.AttackRunUTurn || P.Behaviour == ApBehaviour.Auto);
-    [HideInInspector] public bool ShowBroadside => P.Mode == ApMode.Engage && P.Behaviour == ApBehaviour.Broadside;
-    [HideInInspector] public bool ShowTargetText => P.Mode == ApMode.Engage && (P.TargetSrc == ApTargetSrc.Gps || P.TargetSrc == ApTargetSrc.Grid);
-    [HideInInspector] public bool ShowAim => P.Mode == ApMode.Engage && P.AimOn;
-    [HideInInspector] public bool ShowHeading => P.Mode == ApMode.FlightHold && P.HeadingOn;
-    [HideInInspector] public bool ShowAlt => ApPanel.IsPilotMode(P.Mode) && P.AltOn;
-    [HideInInspector] public bool ShowSpeed => ApPanel.IsPilotMode(P.Mode) && P.SpeedOn;
-    /// <summary>The Enemy switch: in Engage while the world allows it, and always on an enemy ship (so it can be switched back).</summary>
-    [HideInInspector] public bool ShowAvoidS => P.AvoidOn;
-    [HideInInspector] public bool ShowEnemy => _ap != null && ((P.Mode == ApMode.Engage && Autopilot.EnemyRule != ApEnemyRule.Off) || _ap.GridIsEnemy);
+    [HideInInspector] public bool ShowHover => ApPanelLayout.ShowHover(P);
+    [HideInInspector] public bool ShowPilot => ApPanelLayout.ShowPilot(P);
+    [HideInInspector] public bool ShowFlight => ApPanelLayout.ShowFlight(P);
+    [HideInInspector] public bool ShowRoute => ApPanelLayout.ShowRoute(P);
+    [HideInInspector] public bool ShowEngage => ApPanelLayout.ShowEngage(P);
+    [HideInInspector] public bool ShowAttack => ApPanelLayout.ShowAttack(P);
+    [HideInInspector] public bool ShowBroadside => ApPanelLayout.ShowBroadside(P);
+    [HideInInspector] public bool ShowTargetText => ApPanelLayout.ShowTargetText(P);
+    [HideInInspector] public bool ShowAim => ApPanelLayout.ShowAim(P);
+    [HideInInspector] public bool ShowHeading => ApPanelLayout.ShowHeading(P);
+    [HideInInspector] public bool ShowAlt => ApPanelLayout.ShowAlt(P);
+    [HideInInspector] public bool ShowAltRef => ApPanelLayout.ShowAltRef(P);
+    [HideInInspector] public bool ShowSpeed => ApPanelLayout.ShowSpeed(P);
+    [HideInInspector] public bool ShowAvoidS => ApPanelLayout.ShowAvoidS(P);
+    [HideInInspector] public bool ShowEnemy => _ap != null && ApPanelLayout.ShowEnemy(P, Autopilot.EnemyRule, _ap.GridIsEnemy);
 
     // ── the modes ──
     [Label("Hover Hold")] [Button(null)] [WritableInInspectorWhen("CanHover", WritableWhen.True)]
@@ -125,7 +137,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
 
     /// <summary>On: the height over the ground under the ship (the terrain followed). Off: a level altitude (over the ground where
     /// the mode was engaged).</summary>
-    [Label("Height Over Ground")]
+    [Label("Height Over Ground")] [ShowInInspectorWhen("ShowHover", ShowWhen.True)]
     public bool OverGround { get => P.HeightRef == ApHeightRef.Ground; set { _ap?.SetHeightRef(value ? ApHeightRef.Ground : ApHeightRef.Inertial); Changed(); } }
 
     [Slider(null)] [Range<float>(ApPanel.HoverSpeedMin, ApPanel.HoverSpeedMax, RangeMode.InIn)] [Label("Hover Speed (m/s)")] [Increment(1f, 5f, 10f)] [ShowInInspectorWhen("ShowHover", ShowWhen.True)]
@@ -143,6 +155,10 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
 
     [Slider(null)] [Range<float>(0f, 20000f, RangeMode.InIn)] [Label("Altitude (m)")] [Increment(10f, 100f, 1000f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
     public float AltM { get => P.AltM; set => Edit((ref ApPanel p) => p.AltM = value); }
+
+    /// <summary>The altitude's reference (the same setting as the hover's Height Over Ground): over the ground under the ship, or level.</summary>
+    [Label("Altitude Over Ground")] [ShowInInspectorWhen("ShowAltRef", ShowWhen.True)]
+    public bool AltOverGround { get => OverGround; set => OverGround = value; }
 
     [Slider(null)] [Range<float>(ApPanel.VsMin, 100f, RangeMode.InIn)] [Label("Climb Rate (m/s)")] [Increment(0.5f, 5f, 20f)] [ShowInInspectorWhen("ShowAlt", ShowWhen.True)]
     public float VsMs { get => P.VsMs; set => Edit((ref ApPanel p) => p.VsMs = value); }
@@ -264,9 +280,9 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     {
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowAltRef), nameof(ShowSpeed), nameof(ShowEnemy), nameof(ShowAvoidS),
         nameof(Enemy), nameof(EnemyText),
-        nameof(HeightM), nameof(OverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
+        nameof(HeightM), nameof(OverGround), nameof(AltOverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };
     void Changed() { foreach (var n in _notify) OnPropertyChanged(n); }
 }
