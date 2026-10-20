@@ -55,7 +55,9 @@ sealed class SlotPack : IScenarioPack
         var cx = p.Slot;
         bool lead = cx.Lead(0f, out var dir, out float tof);
         Sim.Note($"slot auto: 30 s in Auto - a slot picked {picked}; the context filled {filled} of {r.Ticks} ticks; perf valid {cx.Perf.Valid} (corner {cx.Perf.CornerSpeed:F0} m/s), lift max {cx.LiftNMax:F2} g, track confidence {cx.Track.Confidence:F2}, the lead {lead} (tof {tof:F2} s)");
-        Sim.Check(!picked && float.IsNaN(p.Arb.DogfightScore) && float.IsNaN(p.Arb.RocketScore), "slot auto: Auto never picks an unwritten slot (their scores NaN)");
+        // (an unwritten slot only: once the author implemented one, Auto may pick it by its Score)
+        Sim.Check((ApDogfight.Implemented || float.IsNaN(p.Arb.DogfightScore)) && (ApRocketGuidance.Implemented || float.IsNaN(p.Arb.RocketScore))
+            && (ApDogfight.Implemented || ApRocketGuidance.Implemented || !picked), "slot auto: Auto never picks an unwritten slot (their scores NaN)");
         Sim.Check(filled > r.Ticks * 0.9f && cx.Perf.Valid && cx.Track.Confidence > 0.9f && lead && tof > 0f, $"slot auto: the slots' context filled every step ({filled} / {r.Ticks}), performance, track and lead there");
         Program.LedgerPublic(r, true);
     }
