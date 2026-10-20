@@ -46,6 +46,8 @@ public sealed class ApPilot : IApGoalSource
     public float AimErrDeg = float.NaN, Tof; public bool AimOn, InCone, InRange;
     public float CrossTrack, RadiusErr, WpDist, Eta, HeightNow, HeightWanted = float.NaN, TurnR, LeadBlend;
     public float HeadingNow, SpeedNow;
+    /// <summary>Jinks begun (each a new pseudo-random direction) - diagnostics.</summary>
+    public int Jinks;
     public ApNavGoal Goal;
 
     /// <summary>The panel now (each tick): a return asked or taken back starts the route's legs again from here.</summary>
@@ -421,7 +423,7 @@ public sealed class ApPilot : IApGoalSource
         {
             _rng ^= _rng << 13; _rng ^= _rng >> 17; _rng ^= _rng << 5;
             _jinkIn = 1.2f + (_rng % 1000u) / 1000f * 1.6f;
-            _jx = (_rng & 2u) != 0 ? 1 : -1; _jy = (_rng & 4u) != 0 ? 1 : -1;
+            _jx = (_rng & 2u) != 0 ? 1 : -1; _jy = (_rng & 4u) != 0 ? 1 : -1; Jinks++;
         }
         float k = Cfg.Aggression;
         Vector3 vh = ApMath.Flat(s.Vel, up);

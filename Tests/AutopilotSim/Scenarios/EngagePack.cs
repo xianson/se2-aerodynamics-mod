@@ -23,6 +23,8 @@ sealed class EngagePack : IScenarioPack
         r.Add("engage: six-axis standoff vs weaving / accelerating - range, nose on the lead", true, () => { foreach (var k in new[] { "weave", "accelerate" }) Hover(FlightShips.SixAxis(), ApBehaviour.Standoff, k); });
         r.Add("engage: six-axis broadside 90 - the side to the target, the range", true, () => Hover(FlightShips.SixAxis(), ApBehaviour.Broadside, "straight"));
         r.Add("engage: six-axis circle - radius", true, () => Hover(FlightShips.SixAxis(), ApBehaviour.Circle, "slow"));
+        r.Add("engage: one-tail helicopter and VTOL standoff (straight)", false, () => { var h = FlightShips.GunHeli(3f, twin: false); Hover(h, ApBehaviour.Standoff, "straight"); var v = Ships.Vtol(); v.GunAxis = -Vector3.UnitZ; v.Muzzle = 700f; v.GunRange = 1200f; Hover(v, ApBehaviour.Standoff, "straight"); });
+        r.Add("engage: evasive jinking on a pursuit (Plane2) - it jinks, the range kept, within the limits", true, Jink);
         r.Add("engage: arbiter hysteresis - no flip-flop at a boundary; a chosen behaviour holds", true, Hysteresis);
         r.Add("engage: the lead point against a flown projectile (miss distance)", true, LeadMath);
         r.Add("engage: pursuit of a hard turn - the protection clips the pull (Plane2)", true, ProtClip);
@@ -175,7 +177,29 @@ sealed class EngagePack : IScenarioPack
         Program.LedgerPublic(r, false);
     }
 
+    static void Jink()
+    {
+        var r = FlightPack.PlaneAt("jinking pursuit", "Plane2", 150f);
+        if (r == null) { Sim.NoPolar("Plane2"); return; }
+        var air = (PolarAir)r.P.S.Air;
+        var fwd = Vector3.Normalize(new Vector3(air.Nose.X, 0f, air.Nose.Z));
+        var tgt = SimTarget.Straight(r.P.P + (Vector3D)(fwd * 1500f), fwd * 110f); r.Targets.Add(tgt);
+        var cfg = Cfg(ApBehaviour.PursuitPure, 600f, 0f); cfg.Evasive = true; cfg.Aggression = 0.8f; cfg.SpeedMs = 160f;
+        var p = FlightPack.Engage(r, cfg, ApMode.Engage, new SimTargetSource { T = tgt });
+        r.Fly(30f);
+        float nMax = 0f, rMin = float.MaxValue, rMax = 0f; double vyAbs = 0, latAbs = 0; int n = 0, j0 = p.Jinks;
+        var side = Vector3.Cross(fwd, Vector3.UnitY);
+        r.Each(rr => { nMax = MathF.Max(nMax, rr.P.LoadFactor); var rl = rr.Rel(tgt); rMin = MathF.Min(rMin, rl.Range); rMax = MathF.Max(rMax, rl.Range); vyAbs += MathF.Abs(rr.P.V.Y); latAbs += MathF.Abs(Vector3.Dot(rr.P.V, side)); n++; });
+        r.Fly(60f);
+        int flips = p.Jinks - j0;
+        Sim.Note($"{r.Name}: aggressiveness 0.8 - {flips} jinks in 60 s, the path off the target's by {latAbs / n:F1} m/s across and {vyAbs / n:F1} m/s vertical (mean), range {rMin:F0}..{rMax:F0} m (600), load at most {nMax:F2} g");
+        Sim.Check(flips >= 15 && latAbs / n > 2f && rMax < 1500f
+ && nMax <= Autopilot.GLimit * 1.15f && !r.P.Crashed, $"{r.Name}: jinks ({flips} reversals), keeps the range {rMin:F0}..{rMax:F0} m, at most {nMax:F2} g");
+        Program.LedgerPublic(r, false);
+    }
+
     // ── the arbiter, the lead, the protection, the idle patrol ──
+
 
     static void Hysteresis()
     {
