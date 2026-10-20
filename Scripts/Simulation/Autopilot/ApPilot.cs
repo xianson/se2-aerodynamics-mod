@@ -391,8 +391,25 @@ public sealed class ApPilot : IApGoalSource
             w = 0f; x.Heading = ApMath.Flat(dir, up);
         }
 
-        else w = 1f;
+        else
+        {
+            // (six-axis: the nose anywhere - but in gravity tilted only as far as its side thrusters still hold their share of the
+            //  weight: past it the ship could not hold its place - the elevation clipped, the error reported as it is)
+            w = 1f;
+            float g = s.Gravity.Length();
+            Vector3 fh = ApMath.Flat(dir, up);
+            if (g > 0.01f && fh.LengthSquared() > 1e-6f)
+            {
+                Quaternion inv = Quaternion.Inverse(s.Orient); Vector3 uL = Near(Vector3.Transform(up, inv));
+                float side = float.MaxValue;
+                for (int k = 0; k < 6; k++) if (MathF.Abs(C(uL, k % 3)) < 0.5f) side = MathF.Min(side, C(k < 3 ? s.ThrustPos : s.ThrustNeg, k % 3));
+                float elMax = MathF.Asin(Math.Clamp(0.6f * side / MathF.Max(s.Mass * g, 1f), 0f, 1f));
+                float el = Math.Clamp(MathF.Asin(Math.Clamp(Vector3.Dot(dir, up), -1f, 1f)), -elMax, elMax);
+                dir = Vector3.Normalize(fh) * MathF.Cos(el) + up * MathF.Sin(el);
+            }
+        }
         LeadBlend = w;
+
         x.AimAxis = axis; x.AimDir = dir; x.Blend = w;
 
     }

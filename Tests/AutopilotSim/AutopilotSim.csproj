@@ -13,5 +13,9 @@
     <Compile Include="$(Sim)\Propulsion\RotorKinematics.cs" />
     <Compile Include="$(Sim)\Lift\LiftPeak.cs" />
     <Compile Include="$(Sim)\Core\CellCoords.cs" />
+    <Compile Include="$(Sim)\Blocks\AeroBlockSaveForm.cs" />   <!-- (the Autopilot block's saved form: Scenarios/PilotBlockPack) -->
+    <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />
+    <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
+    <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />
   </ItemGroup>
 </Project>
