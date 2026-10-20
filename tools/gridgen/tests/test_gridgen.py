@@ -582,6 +582,78 @@ class TestAeroRules(unittest.TestCase):
                                   "ArmorCubeLight50": 1})
 
 
+class TestGameDefs(unittest.TestCase):
+    """gamedefs.py (data/gameblocks.json: the game's occupancy and mass formula) against the measured catalogue, and
+    bp2boxes on blocks the catalogue lacks."""
+    @classmethod
+    def setUpClass(cls):
+        import gamedefs
+        cls.gd = gamedefs
+        cls.idx = gamedefs.index()
+
+    def test_formula_reproduces_the_measured_catalogue(self):
+        """Every measured block: the same prefab, AABB and mass (to 0.1 kg). Batteries weigh more in game than their
+        definition (their charge's inventory, presumably) - the catalogue keeps the measured number for them."""
+        names = {t[0]: t[1] for t in (l.split() for l in open(os.path.join(HERE, "data", "blocks.txt"))) if len(t) >= 2}
+        n = 0
+        for raw in open(os.path.join(HERE, "data", "catalog.txt")):
+            t = raw.split()
+            if raw.startswith("#") or len(t) < 8 or "?" in t:
+                continue
+            name = names[t[0]]
+            e = self.idx[name]
+            self.assertEqual(e["prefab"], t[0].lower(), name)
+            self.assertEqual(e["bounds"], [int(x) for x in t[2:8]], name)
+            if not name.startswith("Battery"):
+                self.assertAlmostEqual(e["mass"], float(t[1]), delta=0.1, msg=name)
+            n += 1
+        self.assertGreater(n, 60)
+
+    def test_heavy_armour_is_the_light_shape_solid(self):
+        h, l = self.idx["ArmorCube50Heavy"], self.idx["ArmorCubeLight50"]
+        self.assertEqual((h["model"], h["cells"]), (l["model"], l["cells"]))
+        self.assertAlmostEqual(h["mass"], 35 * math.sqrt(8) * math.log10(8) + 5, places=1)    # Solid: 94.4 kg
+        self.assertEqual(self.idx["ArmorCornerHeavy50"]["cells"], 7)
+
+    def test_rotated_groups_match_the_catalogue_box(self):
+        """A block the catalogue and the game both know (an asymmetric thruster), turned every way: the game groups'
+        rotated bounds are the catalogue's box."""
+        import bp2boxes
+        e = self.idx["AtmosphericThruster500"]
+        for o in sb.ALL_ORIENTS:
+            M = sb.orient_matrix(*o)
+            lo, hi = CAT.box("AtmosphericThruster500", (3, 5, 7), o)
+            want = " ".join(str(int(v)) for v in list(np.asarray(lo) + 1) + list(hi))
+            self.assertEqual(bp2boxes.group_cell_lines([e["bounds"]], np.array([3, 5, 7]), M)[0], want, o)
+
+    def test_bp2boxes_heavy_and_mod_blocks(self):
+        """Heavy armour and the mod's 3x3x1 surface: known (no unknowns), the surface tagged and out of the hull."""
+        import bp2boxes
+        comp = lambda n: self.idx[n]["composite"]
+        bp = {"name": "t", "blocks": [
+            {"def": comp("ArmorCube50Heavy"), "pos": [0, 0, 0], "orient": [0, 0, 0, 1]},
+            {"def": comp("ArmorCubeLight50"), "pos": [0.5, 0, 0], "orient": [0, 0, 0, 1]},
+            {"def": comp("ControlSurface_Small"), "pos": [0, 1.5, 0], "orient": [0, 0, 0, 1]},
+            {"def": comp("ControlSurface_1x1"), "pos": [-0.5, 0, 0], "orient": [0, 0, 0, 1]}]}
+        d = tempfile.mkdtemp(prefix="bp2boxes_")
+        try:
+            src, dst = os.path.join(d, "s.json"), os.path.join(d, "s.boxes")
+            json.dump(bp, open(src, "w"))
+            bp2boxes.main(src, dst)
+            text = open(dst).read().splitlines()
+        finally:
+            shutil.rmtree(d)
+        self.assertIn("0 unknown", text[1])
+        surf = [l for l in text if l.startswith("# surf")]
+        self.assertEqual([l.split()[2] for l in surf], ["cs3s", "cs1"])
+        self.assertEqual(surf[0].split()[3:9], ["-2", "6", "-2", "3", "7", "3"])    # 6 x 2 x 6 cells, centred
+        hull = [l for l in text if not l.startswith("#")]
+        self.assertEqual(sorted(hull), sorted(["0 0 0 1 1 1", "2 0 0 3 1 1", "-2 0 0 -1 1 1"]))   # (no 3x3x1 cells)
+        m = float(text[0].split()[4])
+        want = sum(self.idx[n]["mass"] for n in ("ArmorCube50Heavy", "ControlSurface_Small", "ControlSurface_1x1")) + CAT["ArmorCubeLight50"].mass
+        self.assertAlmostEqual(m, want, delta=1)
+
+
 class TestCleanStyle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

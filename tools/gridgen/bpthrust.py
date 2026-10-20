@@ -4,17 +4,16 @@
 
 Thrusters: each thruster block's rated ThrustPower (the game's *_ThrusterDefinition.def, read once), at the centre of its
 box (as bpinfo), pushing along its axis. The forward group: the thrusters whose axis is the nose axis, the sign with the
-most thrust (a plane's main engines; a few reversers point the other way). Mass: the catalogue's, as bpinfo. Up: of the
+most thrust (a plane's main engines; a few reversers point the other way). Mass: bp2boxes.blueprint_blocks', as bpinfo. Up: of the
 two axes across the nose, the one the ship is thinnest along. Prints the forward thrust, the thrust line's offset from
 the centre of mass (up: + above it; span: across) and the torque at full forward thrust (pitch: + nose up).
 """
 import json, sys, os, glob, re
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import se2blocks as sb
-from bp2boxes import quat_matrix, composite_names
+from bp2boxes import blueprint_blocks
 
-GAME = r"C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers2\GameData\Vanilla\Content"
+from gamedefs import CONTENT as GAME
 
 
 def ratings():
@@ -28,24 +27,18 @@ def ratings():
 
 def main(src, nose_s):
     bp = json.load(open(src, encoding="utf-8"))
-    cat = sb.Catalog(); names = composite_names(); rate = ratings()
-    off = np.asarray(sb.CAL["aabb_low_offset"], float)
+    rate = ratings()
     nose = np.array([float(v) for v in nose_s.split(",")])
     M, MX = 0.0, np.zeros(3); lo_all, hi_all = np.full(3, 1e9), np.full(3, -1e9)
     thr = []
-    for b in bp["blocks"]:
-        name = names.get(b["def"].lower())
-        if name is None or name not in cat: continue
-        R = quat_matrix(*b["orient"])
-        fwd = sb.dname(R @ np.array([0, 0, -1.0])); up = sb.dname(R @ np.array([0, 1.0, 0]))
-        lo, hi = cat.box(name, np.array(b["pos"], float) / sb.CELL_M, (fwd, up))
-        lo = np.asarray(lo, float) + off; hi = np.asarray(hi, float)
-        c = (lo + hi + 1.0) / 2.0 * 0.25
-        lo_all = np.minimum(lo_all, lo * 0.25); hi_all = np.maximum(hi_all, (hi + 1) * 0.25)
-        m = float(getattr(cat[name], "mass", 0.0)); M += m; MX += m * c
-        if name in rate:
-            ax = np.rint(R @ np.array([0, 0, -1.0]))
-            thr.append((name, c, ax, rate[name]))
+    for k in blueprint_blocks(bp):
+        if not k.known: continue
+        v = np.array([int(x) for x in k.box.split()], float)
+        c = k.centre_m
+        lo_all = np.minimum(lo_all, v[:3] * 0.25); hi_all = np.maximum(hi_all, (v[3:] + 1) * 0.25)
+        M += k.mass; MX += k.mass * c
+        if k.name in rate:
+            thr.append((k.name, c, k.forward.astype(float), rate[k.name]))
     com = MX / M
     along = [(n, c, ax, t) for n, c, ax, t in thr if abs(ax @ nose) > 0.9]
     plus = sum(t for _, _, ax, t in along if ax @ nose > 0); minus = sum(t for _, _, ax, t in along if ax @ nose < 0)

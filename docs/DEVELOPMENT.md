@@ -31,6 +31,13 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
 - **AeroBench modes** (`cd Tests/AeroBench; dotnet run -c Release -- <mode> <ships>`), e.g. `damage`, `impact`, `scale`,
   `cache`, `gcbuild` (`ALLOC=1` for per-type dumps), `polar`, `struct`, `fail`, `replay`, `tablehash`, `machwall`.
   Ships come from `Tests/data/*.boxes` (gitignored; exported in game with `aeroexport on`).
+- **Ships from blueprints, no game:** `tools/shared/VrbReader <blueprint dir> --json > ship.json`, then
+  `python tools/gridgen/bp2boxes.py ship.json Tests/data/NAME.boxes` (`bp2struct.py`: a structure fixture; `bpinfo.py`:
+  nose and CoM; `bpthrust.py`: thrust line). Every block resolves: the measured catalogue (`tools/gridgen/data/catalog.txt`),
+  else the game's own occupied cells and mass (`tools/gridgen/gamedefs.py`, cached in `data/gameblocks.json`: heavy
+  armour, conveyors, tanks...), else the mod's blocks (their generators' boxes). Control surfaces are tagged
+  `# surf <cs3s|cs3l|cs1> <cell box> <forward> <up>`; the 3x3x1 ones stay out of the hull, as in game. After a game
+  update: rebuild VrbReader if it fails (`tools/shared/VrbReader/README.md`), then `python tools/gridgen/gamedefs.py --rebuild`.
 - **In game:** the Orbital Mod's harness (`Orbital Mod/tools/harness`) drives the game. `aeroget` / `aeroset
   Type.Member [value]` read and set any public static here by name (so public statics are never renamed);
   `aerocost on` writes `[AERO-COST]` lines to the log; `flightdump` (`tools/flightdump.sh`) dumps a grid for

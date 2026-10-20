@@ -5,41 +5,40 @@ AeroBench 'struct'): each block's occupied cells, its mass and its name, one cel
     python bp2struct.py ship.json Tests/data/struct/NAME.struct
 
 Line: minX minY minZ maxX maxY maxZ block mass_kg name [thr ax ay az]  (0.25 m cells, inclusive, game cell indexing - the
-same boxes bp2boxes writes; a block's lines share its index). Masses from the catalogue SNAPSHOT (tools/gridgen/data:
-the measured game masses - the live %TEMP% catalogue is whatever the last generator run left there). Blocks the
-catalogue does not know are listed and skipped.
+same boxes bp2boxes writes - bp2boxes.blueprint_blocks: the measured catalogue SNAPSHOT, else the game's own cells and
+mass (gamedefs.py: heavy armour, conveyors, tanks...), else the mod's blocks; a block's lines share its index). The mod's
+self-modelled blocks (3x3x1 control surfaces) are in: the structure is every block. A block nothing knows: a cube of the
+size its name says, volume-scaled mass (se2blocks' placeholder), listed.
 """
 import json, sys, os, collections, re
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import se2blocks as sb
 import gridgen
-from bp2boxes import quat_matrix, composite_names
+from bp2boxes import blueprint_blocks
 
 
 def main(src, dst):
     bp = json.load(open(src, encoding="utf-8"))
     cat = sb.Catalog(snapshot=True)
-    names = composite_names()
     lines, mass, missing, used, nb = [], 0.0, collections.Counter(), set(), 0
-    for b in bp["blocks"]:
-        name = names.get(b["def"].lower())
+    for k in blueprint_blocks(bp):
+        name = k.name
         if name is None:
-            missing[b["def"]] += 1
+            missing[k.guid] += 1
             continue
-        if name not in cat:
-            # a block the catalogue has not measured (detailing, interior, gyroscopes, lights): a cube of the size its
-            # name says, volume-scaled mass (se2blocks' placeholder) - it still joins its neighbours, as in the game
-            cat.by_name[name] = sb._default_def(name, b["def"])
+        if k.known:
+            bl, m = k.lines, float(k.mass)
+        else:
+            # a block nothing knows: a cube of the size its name says, volume-scaled mass (se2blocks' placeholder) -
+            # it still joins its neighbours, as in the game
+            cat.by_name[name] = sb._default_def(name, k.guid)
             missing["(placeholder) " + name] += 1
-        M = quat_matrix(*b["orient"])
-        fwd = sb.dname(M @ np.array([0, 0, -1.0])); up = sb.dname(M @ np.array([0, 1.0, 0]))
-        pos = np.array(b["pos"], float) / sb.CELL_M
-        bl = gridgen.block_cell_lines(cat, name, pos, (fwd, up))
-        m = float(cat[name].mass)
+            bl = gridgen.block_cell_lines(cat, name, k.pos, (sb.dname(k.forward), sb.dname(k.M @ np.array([0, 1, 0]))))
+            m = float(cat[name].mass)
         tail = ""
         if name.startswith("AtmosphericThruster"):
-            ax = np.rint(M @ np.array([0, 0, -1.0])).astype(int)
+            ax = k.forward
             tail = f" thr {ax[0]} {ax[1]} {ax[2]}"
         lines += [f"{l} {nb} {m:.1f} {name}{tail}" for l in bl]
         mass += m; used.add(name); nb += 1
