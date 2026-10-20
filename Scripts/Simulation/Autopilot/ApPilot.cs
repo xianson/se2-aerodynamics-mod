@@ -78,10 +78,18 @@ public sealed class ApPilot : IApGoalSource
         }
         if (st == ApStyle.SixAxis)
         {
-            int sides = 0;
-            for (int k = 0; k < 3; k++) { if (C(s.ThrustPos, k) > 1f) sides++; if (C(s.ThrustNeg, k) > 1f) sides++; }
-            if (sides < 4) { why = ApReason.NoTranslation; return false; }
+            // (the four sides across the up: each pushes a share of the main thrust, through the centre of mass)
             Vector3 upLoc = Vector3.Transform(up, Quaternion.Inverse(s.Orient));
+            ApMath.MainAxis(s.ThrustPos, s.ThrustNeg, out float mainF);
+            Vector3 u0 = Near(upLoc);
+            bool known = s.SidePos != Vector3.Zero || s.SideNeg != Vector3.Zero;
+            for (int k = 0; k < 6; k++)
+            {
+                if (MathF.Abs(C(u0, k % 3)) > 0.5f) continue;
+                float f = C(k < 3 ? s.ThrustPos : s.ThrustNeg, k % 3), auth = known ? C(k < 3 ? s.SidePos : s.SideNeg, k % 3) : 1f;
+                if (f < ApStyleDetect.SideShare * mainF || auth < 0.3f) { why = ApReason.NoTranslation; return false; }
+            }
+
             if (g > 1e-2f && ApMath.Along(s.ThrustPos, s.ThrustNeg, Near(upLoc)) < 1.05f * s.Mass * g) { why = ApReason.NoLift; return false; }
         }
         if (mode == ApMode.Navigate && _route.Count == 0 && !Cfg.ReturnHome) { why = ApReason.NoWaypoints; return false; }
@@ -206,7 +214,20 @@ public sealed class ApPilot : IApGoalSource
         float gs = MathF.Max(ApMath.Flat(s.Vel, up).Length(), 1f); Eta = dist / gs;
         Vector3 leg = ApMath.Flat((Vector3)(wp - _wpFrom), up);
         bool past = leg.LengthSquared() > 1f && Vector3.Dot(ApMath.Flat((Vector3)(s.Pos - wp), up), leg) > 0f;
-        float accept = Style == ApStyle.Airplane ? MathF.Max(120f, 0.8f * TurnR) : MathF.Max(8f, 0.15f * chase);
+        // (the turn led: an airplane takes the next leg a turn's lead early - R tan(half the leg change) - so it rolls out on it)
+        float accept = MathF.Max(8f, 0.15f * chase);
+        if (Style == ApStyle.Airplane)
+        {
+            float turn = 0f;
+            int nx = Wp + 1 < n ? Wp + 1 : (Cfg.RouteLoop && n > 1 ? 0 : -1);
+            if (nx >= 0 && !Cfg.ReturnHome)
+            {
+                Vector3 next = ApMath.Flat((Vector3)(_route[nx].Pos - wp), up);
+                if (next.LengthSquared() > 1f && leg.LengthSquared() > 1f) turn = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(next), Vector3.Normalize(leg)), -1f, 1f));
+            }
+            accept = Math.Clamp(TurnR * MathF.Tan(MathF.Min(turn, 2.6f) * 0.5f), 120f, 3f * MathF.Max(TurnR, 120f));
+        }
+
         if (dist < accept || (past && Style == ApStyle.Airplane))
         {
             _wpFrom = wp; Wp++;

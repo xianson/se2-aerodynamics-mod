@@ -58,6 +58,8 @@ sealed class SimShip
     public float PlanetG = 9.81f, Gm = 2f; public bool Honest = true;
     /// <summary>Height of the centre of mass over the ship's lowest point (m): it stands on the ground there.</summary>
     public float Bottom = 2f;
+    /// <summary>The nose (local), the fixed guns' axis (local; zero none), their muzzle speed (m/s) and range (m).</summary>
+    public Vector3 Nose = -Vector3.UnitZ, GunAxis; public float Muzzle, GunRange;
     public Thr Add(string name, Vector3 pos, Vector3 dir, float cap, bool rev = false) { var t = new Thr(name, pos, dir, cap, rev); T.Add(t); return t; }
 }
 
@@ -169,6 +171,7 @@ sealed class Plant
         s.StallFresh = _stallFresh; s.StallState = _stallState; s.StallMarginDeg = _stallMargin; s.StallLiftInUse = _stallInUse; s.StallG = _stallG; s.LiftDir = _liftDir; s.StallFlow = _stallFlow; s.Perf = _stallFresh ? _perf : null;
         s.LoacFresh = _loacFresh; s.LoacProbe = _loacProbe; s.LoacHere = _loacHere; s.LoacProbeAt = _loacAt;
         s.SpeedLimit = SpeedLimit;
+        s.Nose = S.Nose; s.GunAxis = S.GunAxis; s.MuzzleSpeed = S.Muzzle; s.GunRange = S.GunRange;
         return s;
     }
     float _lastErr, _lastShare;

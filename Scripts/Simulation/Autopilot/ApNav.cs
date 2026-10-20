@@ -82,7 +82,9 @@ public static class ApCompass
 public static class ApL1
 {
     /// <summary>The L1 distance (m) for ground speed v and the lateral acceleration it can fly (m/s2).</summary>
-    public static float Distance(float v, float aMax) => MathF.Max(30f, 2.2f * v * v / MathF.Max(aMax, 0.3f));
+    public static float Distance(float v, float aMax) => MathF.Max(30f, L1Share * v * v / MathF.Max(aMax, 0.3f));
+    /// <summary>L1 = this x V^2 / a: past ~1 the capture is slow, under it the full-scale ask saturates the turn (flown clipped).</summary>
+    public const float L1Share = 1.4f;
 
     /// <summary>The lateral acceleration (world, horizontal) toward the carrot c from pos at ground velocity vg.</summary>
     public static Vector3 Toward(Vector3D pos, Vector3 vg, Vector3 up, Vector3D c, float l1, float aMax)
@@ -106,11 +108,36 @@ public static class ApL1
         Vector3 t = ab / len, rel = ApMath.Flat((Vector3)(pos - a), up);
         Vector3 right = Vector3.Cross(t, up);
         float s = Vector3.Dot(rel, t); crossTrack = Vector3.Dot(rel, right);
-        float ax = MathF.Abs(crossTrack);
-        float ahead = ax < l1 ? MathF.Sqrt(l1 * l1 - ax * ax) : 0f;
-        Vector3D carrot = a + (Vector3D)(t * (s + MathF.Max(ahead, 1f)));
-        return Toward(pos, vg, up, carrot, l1, aMax);
+        // (a vector field onto the line - NPFG's idea: the course asked turns from the line's toward it by at most 60 deg, as the
+        //  arctangent of the cross-track over the transition (half the ship's own turn radius) - flown by the braking course law:
+        //  no overshoot of the line however far off it starts)
+        float sp = ApMath.Flat(vg, up).Length();
+        float rTurn = sp * sp / MathF.Max(aMax, 0.3f), trans = MathF.Max(0.5f * rTurn, 60f);
+        float q = crossTrack / trans, chi = -1.0472f * (2f / MathF.PI) * MathF.Atan(q);
+        Vector3 want = t * MathF.Cos(chi) + right * MathF.Sin(chi);
+        // (the field's own turn as the cross-track closes, fed forward: d chi / d xt x the cross-track's rate)
+        float ff = -1.0472f * (2f / MathF.PI) / (trans * (1f + q * q)) * Vector3.Dot(ApMath.Flat(vg, up), right);
+        return CourseHold(vg, up, want, aMax, ff);
     }
+
+    /// <summary>A course held with the braking law: the course rate asked never more than the turn gives (a / V), nor than the roll
+    /// can take out again in time (sqrt(2 wdot e), wdot: the full rate in RollIn s), linear near (CourseGain x the full rate per rad).</summary>
+    public static Vector3 CourseHold(Vector3 vg, Vector3 up, Vector3 course, float aMax, float ffRate = 0f)
+    {
+        Vector3 v = ApMath.Flat(vg, up); float sp = v.Length();
+        Vector3 cw = ApMath.Flat(course, up);
+        if (sp < 1f || cw.LengthSquared() < 1e-6f) return Vector3.Zero;
+        Vector3 vh = v / sp, th = Vector3.Normalize(cw), right = Vector3.Cross(vh, up);
+        float e = MathF.Atan2(Vector3.Dot(th, right), Vector3.Dot(th, vh));
+        float wMax = aMax / sp, ae = MathF.Abs(e);
+        float w = MathF.Min(wMax, MathF.Min(CourseGain * wMax * ae, MathF.Sqrt(2f * (wMax / RollIn) * ae)));
+        // (the course's own rate fed forward - both + to the right)
+        float rate = Math.Clamp(MathF.Sign(e) * w + ffRate, -wMax, wMax);
+        return right * (rate * sp);
+
+    }
+    public const float CourseGain = 3f, RollIn = 6f;
+
 
     /// <summary>Round a circle (centre c, radius r; dir +1 clockwise seen from above - right turns, -1 left); radErr out: the
     /// distance from the centre less r (m).</summary>
@@ -129,7 +156,8 @@ public static class ApL1
             float beta = MathF.Acos(Math.Clamp(r / d, -1f, 1f));
             phi = beta;
         }
-        else phi = 2f * MathF.Asin(Math.Clamp(l1 / (2f * MathF.Max(r, 1f)), 0f, 1f));
+        else phi = 2f * MathF.Asin(Math.Clamp(MathF.Min(l1, 0.75f * r) / (2f * MathF.Max(r, 1f)), 0f, 1f));
+        if (d <= r + l1) l1 = MathF.Min(l1, 0.75f * r);   // (on the circle: the chord to the carrot is the L1 - V^2 / r exactly)
         Vector3D carrot = c + (Vector3D)((rh * MathF.Cos(phi) + t * MathF.Sin(phi)) * r);
         return Toward(pos, vg, up, carrot, l1, aMax);
     }
@@ -156,13 +184,13 @@ public static class ApL1
 /// </summary>
 public sealed class ApTecs
 {
-    float _vdot, _vPrev, _thrI; bool _has;
+    float _vdot, _vPrev, _thrI, _hI; bool _has;
     /// <summary>Diagnostics: the climb rate asked (m/s), the throttle (0..1), climb limited by the thrust / sink by the idle.</summary>
     public float HdotDem, Throttle; public bool ThrustLimited, IdleLimited;
     /// <summary>The flight path's time constant (s: the vertical speed error's), the height's (s), the speed's (s).</summary>
     public const float TGamma = 1.5f, THeight = 6f, TSpeed = 6f;
 
-    public void Reset() { _has = false; _thrI = 0f; _vdot = 0f; }
+    public void Reset() { _has = false; _thrI = 0f; _vdot = 0f; _hI = 0f; }
 
     /// <summary>h, hdot: height (m) and climb (m/s); hDem: the height wanted (NaN: hold the path - no vertical ask); vs: the most
     /// climb / sink asked (m/s); v: airspeed, vDem: wanted (NaN: speed not held); thrustMax (N, along the path), drag (N), mass,
@@ -204,7 +232,12 @@ public sealed class ApTecs
         }
         else throttle = float.NaN;
         HdotDem = hdotDem; Throttle = throttle;
-        aVert = hold || speed ? Math.Clamp((hdotDem - hdot) / TGamma, -aVertMax, aVertMax) : 0f;
+        // (the climb error's integral: what the lift's model misses - a steady sink the path would otherwise keep - small, held
+        //  while the vertical ask is at its limit)
+        float aV = (hdotDem - hdot) / TGamma;
+        if (hold && MathF.Abs(aV + _hI) < aVertMax) _hI = Math.Clamp(_hI + 0.15f * (hdotDem - hdot) * dt, -0.3f * aVertMax, 0.3f * aVertMax);
+        aVert = hold || speed ? Math.Clamp(aV + (hold ? _hI : 0f), -aVertMax, aVertMax) : 0f;
+
     }
 }
 
