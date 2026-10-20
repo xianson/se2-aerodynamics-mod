@@ -97,6 +97,22 @@ internal static class ApEnemyGame
     }
 }
 
+/// <summary>The Enemy switch's view of the game (ApEnemySwitch): the block's grid, the in-process player, the transfers.</summary>
+internal sealed class ApEnemyOwnership : IApOwnership
+{
+    public Entity Block;
+    Entity Grid => ApEnemyGame.GridOfBlock(Block);
+    public bool IsEnemy(out bool hasGrid) { var g = Grid; hasGrid = g != null && ApEnemyGame.TryOwner(g, out _); return hasGrid && ApEnemyGame.IsEnemy(g); }
+    public ApEnemyWho Who(out long requester) { var w = ApEnemyGame.Who(Grid, out var r); requester = r; return w; }
+    public bool MakeEnemy(out long prevOwner) => ApEnemyGame.MakeEnemy(Grid, out prevOwner);
+    public bool Restore(long savedPrev, long requester, out long to)
+    {
+        to = 0;
+        ApEnemyGame.Who(Grid, out var r);   // (the requester as an IdentityId: the in-process player)
+        return (long)r == requester && ApEnemyGame.Restore(Grid, savedPrev, r, out to);
+    }
+}
+
 /// <summary>THE RELATION of a target to a grid, by the game's own rules (ApRelations.Classify; the services cached per scan).</summary>
 internal sealed class ApRelationReader
 {

@@ -24,6 +24,14 @@ was flown in game for this release. The commit hashes are on the integration bra
   aims by yaw and by height (25..100 % against a weaving target).
 - **Target:** the grid's own targeting (locked, else priority, else nearest seen by the turrets), a GPS marker, a grid
   by name, or another mod (`AeroApi` 12: `SetAutopilotTarget`, `TryGetAutopilotAim`, ...). Runs unpiloted.
+- **Target Filter:** hostile only (default) / hostile + neutral / everything, on every target source, by the game's own
+  relation (the turrets' rule). With no turret, or a wider filter, the block finds the nearest target within 4 km itself.
+  A refused named grid says why ("no target - X is neutral").
+- **Enemy** switch (Engage): the ship becomes the game's hostile NPC's (as encounter ships are) - its turrets and its
+  Engage fight players; off gives it back to its owner (saved with the block). World setting `Autopilot.EnemyRule`: off /
+  creative or admin (default) / everyone; only the owner switches it on; switching it off and editing an enemy's panel:
+  creative or admin. An enemy ship follows the game's NPC rules (no fuel used, the NPC grid cleanup limit). `AeroApi` 12:
+  `TryGetAutopilotEnemy`.
 - The panel shows only the chosen mode's fields. Every refusal and let-go says why ("too slow to fly on the wings",
   "no waypoints", ...). Saved with the block.
 

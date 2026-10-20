@@ -114,91 +114,33 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
 
     void Wake() { var a = _aero; if (a != null) a.ApBlockWants = true; }
 
-    // ── the ENEMY toggle (ApEnemy's rules; the change itself on the block's server job: ApEnemyGame) ──
-    /// <summary>The block's grid is the game's hostile NPC's now (the block's job reads it every second; the panel shows it).</summary>
-    internal volatile bool GridIsEnemy;
-    volatile int _enemyAsk;   // (0 none, 1 on, 2 off)
-    /// <summary>The toggle's last word ("" none): a refusal, or what was done.</summary>
-    internal volatile string EnemyNote = "";
+    // ── the ENEMY toggle (ApEnemySwitch's rules and state; the game's ownership: ApEnemyOwnership) ──
+    readonly ApEnemySwitch _enemy = new();
+    ApEnemyOwnership _own;
     long _enemyLook;
+    ApEnemyOwnership Own() { var o = _own ??= new ApEnemyOwnership(); o.Block = Entity; return o; }
 
+    /// <summary>The block's grid is the game's hostile NPC's now (the block's job reads it every second; the panel shows it).</summary>
+    internal bool GridIsEnemy => _enemy.GridIsEnemy;
     /// <summary>The panel may be changed by whoever asks now: any ship that is not an enemy; an enemy's by creative or an admin.</summary>
-    bool MayEdit()
-    {
-        if (!GridIsEnemy) return true;
-        var grid = ApEnemyGame.GridOfBlock(Entity);
-        var who = ApEnemyGame.Who(grid, out _);
-        if (ApEnemy.CanEdit(ApEnemyGame.IsEnemy(grid), in who)) return true;
-        EnemyNote = ApEnemy.Say(ApEnemyRefusal.Locked);
-        return false;
-    }
-
+    bool MayEdit() => !_enemy.GridIsEnemy || _enemy.MayEdit(Own());
     /// <summary>The panel's Enemy switch: checked now (the words at once), done by the block's next server step.</summary>
-    internal void AskEnemy(bool on)
-    {
-        var grid = ApEnemyGame.GridOfBlock(Entity);
-        if (grid == null) { EnemyNote = ApEnemy.Say(ApEnemyRefusal.NoGrid); return; }
-        var who = ApEnemyGame.Who(grid, out _);
-        bool enemy = ApEnemyGame.IsEnemy(grid);
-        var why = on ? ApEnemy.CanTurnOn(Autopilot.EnemyRule, in who, enemy) : ApEnemy.CanTurnOff(in who, enemy);
-        if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) EnemyNote = ApEnemy.Say(why); return; }
-        _enemyAsk = on ? 1 : 2; EnemyNote = on ? "Enemy: switching..." : "Enemy off: switching...";
-    }
+    internal void AskEnemy(bool on) => _enemy.Request(on, Own(), Autopilot.EnemyRule);
+    /// <summary>The Enemy line on the panel: what the ship is to players, or the switch's last word.</summary>
+    public string EnemyText => _enemy.Text();
 
-    /// <summary>The block's server step: the grid's state read (each second), an asked switch done (checked again: the owner may
-    /// have changed since), the block's saved state kept with the grid's.</summary>
-    void EnemyStep(Entity grid, long now)
+    /// <summary>The block's server step: an asked switch done, the grid's state read each second, the saved state kept with it.</summary>
+    void EnemyStep(long now)
     {
-        int ask = _enemyAsk;
-        if (ask == 0 && now < _enemyLook) return;
+        if (_enemy.Ask == 0 && now < _enemyLook) return;
         _enemyLook = now + System.Diagnostics.Stopwatch.Frequency;
-        bool enemy = ApEnemyGame.IsEnemy(grid);
-        if (ask != 0)
+        bool en; long prev;
+        lock (_lock) { en = _panel.Enemy; prev = _panel.EnemyPrevOwner; }
+        bool wasEnemy = en;
+        if (_enemy.Step(Own(), Autopilot.EnemyRule, ref en, ref prev))
         {
-            _enemyAsk = 0;
-            var who = ApEnemyGame.Who(grid, out var requester);
-            if (ask == 1)
-            {
-                var why = ApEnemy.CanTurnOn(Autopilot.EnemyRule, in who, enemy);
-                if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) EnemyNote = ApEnemy.Say(why); }
-                else if (ApEnemyGame.MakeEnemy(grid, out long prev))
-                {
-                    lock (_lock) { _panel.Enemy = true; _panel.EnemyPrevOwner = prev; }
-                    enemy = true; EnemyNote = "";
-                    Log.Default?.Info($"[AERO] autopilot: '{grid.DebugName}' made an enemy (hostile NPC; owner before {prev})");
-                }
-                else EnemyNote = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
-            }
-            else
-            {
-                var why = ApEnemy.CanTurnOff(in who, enemy);
-                long prev; lock (_lock) prev = _panel.EnemyPrevOwner;
-                if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) EnemyNote = ApEnemy.Say(why); }
-                else if (ApEnemyGame.Restore(grid, prev, requester, out long to))
-                {
-                    lock (_lock) { _panel.Enemy = false; _panel.EnemyPrevOwner = 0; }
-                    enemy = false;
-                    EnemyNote = to == prev ? "" : "Enemy off: the owner before is gone - the ship is yours";
-                    Log.Default?.Info($"[AERO] autopilot: '{grid.DebugName}' is no enemy any more (owner {to})");
-                }
-                else EnemyNote = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
-            }
-        }
-        else if (!enemy) { bool was; lock (_lock) { was = _panel.Enemy; if (was) { _panel.Enemy = false; _panel.EnemyPrevOwner = 0; } } }
-        // (an enemy grid not made by this block - an encounter's, the admin screen's - keeps its panel's "before" empty: switching it
-        //  off gives it to the one who does)
-        else { lock (_lock) _panel.Enemy = true; }
-        GridIsEnemy = enemy;
-    }
-
-    /// <summary>The Enemy line on the panel: what the ship is to players, or the toggle's last word.</summary>
-    public string EnemyText
-    {
-        get
-        {
-            string note = EnemyNote;
-            if (!string.IsNullOrEmpty(note)) return note;
-            return GridIsEnemy ? "Enemy ship (the game's hostile NPC): its turrets and Engage fight players" : "Not an enemy (its owner's ship)";
+            lock (_lock) { _panel.Enemy = en; _panel.EnemyPrevOwner = prev; }
+            if (en != wasEnemy) Log.Default?.Info($"[AERO] autopilot: '{Entity?.DebugName}' - its grid {(en ? "is an enemy (the hostile NPC's)" : "is no enemy any more")}");
         }
     }
 
@@ -276,8 +218,7 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         }
         // (a mode on the panel keeps its grid's attitude step awake - a parked ship's quiet path skips it otherwise)
         if (a._aero != null && a.Panel.Mode != ApMode.Off) a._aero.ApBlockWants = true;
-        var g = cb?.Grid?.Entity;
-        if (g != null) a.EnemyStep(g, now);
+        a.EnemyStep(now);
     }
 
     /// <summary>Harness (aeroget AeroAutopilotComponent.Summary): every server autopilot block's panel and status.</summary>

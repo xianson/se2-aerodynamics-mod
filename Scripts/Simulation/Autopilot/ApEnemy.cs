@@ -153,3 +153,97 @@ public static class ApEnemy
         _ => "",
     };
 }
+
+/// <summary>The game's ownership as the Enemy switch needs it (the game: ApEnemyOwnership over OwnershipSessionComponent; offline:
+/// a mock). Identities as numbers (IdentityId's own: 1 the game's neutral NPC, 2 its hostile NPC, players above).</summary>
+public interface IApOwnership
+{
+    /// <summary>The grid exists and is the game's hostile NPC's.</summary>
+    bool IsEnemy(out bool hasGrid);
+    /// <summary>Who asks now, about this grid; their identity out.</summary>
+    ApEnemyWho Who(out long requester);
+    /// <summary>The grid to the hostile NPC (the owner before out).</summary>
+    bool MakeEnemy(out long prevOwner);
+    /// <summary>The grid back to savedPrev if the game still knows that player, else to the requester (who got it out).</summary>
+    bool Restore(long savedPrev, long requester, out long to);
+}
+
+/// <summary>
+/// THE ENEMY SWITCH'S STATE (engine-free; one per Autopilot block): the panel asks (checked at once, the refusal's words then),
+/// the block's server step does it (checked again - the owner may have changed in between) and keeps the block's saved state
+/// (Enemy, the owner before) with the grid's real one: a grid made an enemy by someone else (an encounter, the admin screen)
+/// reads as an enemy with no owner before - switching it off gives it to the one who does.
+/// </summary>
+public sealed class ApEnemySwitch
+{
+    /// <summary>0 none, 1 on asked, 2 off asked.</summary>
+    public volatile int Ask;
+    /// <summary>The last word ("" none): a refusal, or what was done when it was not the plain result.</summary>
+    public volatile string Note = "";
+    /// <summary>The grid is the hostile NPC's (as the last step read it).</summary>
+    public volatile bool GridIsEnemy;
+
+    /// <summary>The panel's switch (true: on).</summary>
+    public void Request(bool on, IApOwnership o, ApEnemyRule rule)
+    {
+        bool enemy = o.IsEnemy(out bool hasGrid);
+        if (!hasGrid) { Note = ApEnemy.Say(ApEnemyRefusal.NoGrid); return; }
+        var who = o.Who(out _);
+        var why = on ? ApEnemy.CanTurnOn(rule, in who, enemy) : ApEnemy.CanTurnOff(in who, enemy);
+        if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); return; }
+        Ask = on ? 1 : 2; Note = on ? "Enemy: switching..." : "Enemy off: switching...";
+    }
+
+    /// <summary>An edit of the panel by whoever asks now (refused: the words said).</summary>
+    public bool MayEdit(IApOwnership o)
+    {
+        if (!GridIsEnemy) return true;
+        bool enemy = o.IsEnemy(out _);
+        var who = o.Who(out _);
+        if (ApEnemy.CanEdit(enemy, in who)) return true;
+        Note = ApEnemy.Say(ApEnemyRefusal.Locked);
+        return false;
+    }
+
+    /// <summary>The block's server step (the asked switch done; the saved state kept with the grid's). Returns what changed in the
+    /// saved state: true when panelEnemy / panelPrev were written.</summary>
+    public bool Step(IApOwnership o, ApEnemyRule rule, ref bool panelEnemy, ref long panelPrev)
+    {
+        bool enemy = o.IsEnemy(out bool hasGrid);
+        int ask = Ask; Ask = 0;
+        bool wrote = false;
+        if (hasGrid && ask == 1)
+        {
+            var who = o.Who(out _);
+            var why = ApEnemy.CanTurnOn(rule, in who, enemy);
+            if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); }
+            else if (o.MakeEnemy(out long prev)) { panelEnemy = true; panelPrev = prev; wrote = true; enemy = true; Note = ""; }
+            else Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
+        }
+        else if (hasGrid && ask == 2)
+        {
+            var who = o.Who(out long requester);
+            var why = ApEnemy.CanTurnOff(in who, enemy);
+            if (why != ApEnemyRefusal.None) { if (why != ApEnemyRefusal.AlreadyThat) Note = ApEnemy.Say(why); }
+            else if (o.Restore(panelPrev, requester, out long to))
+            {
+                Note = panelPrev != 0 && to == panelPrev ? "" : "Enemy off: the owner before is not known - the ship is yours";
+                panelEnemy = false; panelPrev = 0; wrote = true; enemy = false;
+            }
+            else Note = ApEnemy.Say(ApEnemyRefusal.TransferFailed);
+        }
+        // (the saved state follows the grid's real owner)
+        if (hasGrid && enemy != panelEnemy) { panelEnemy = enemy; if (!enemy) panelPrev = 0; wrote = true; }
+        GridIsEnemy = hasGrid && enemy;
+        return wrote;
+    }
+
+    /// <summary>The panel's Enemy line.</summary>
+    public string Text()
+    {
+        string note = Note;
+        if (!string.IsNullOrEmpty(note)) return note;
+        return GridIsEnemy ? "Enemy ship (the game's hostile NPC): its turrets and Engage fight players" : "Not an enemy (its owner's ship)";
+    }
+}
+

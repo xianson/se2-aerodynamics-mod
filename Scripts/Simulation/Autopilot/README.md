@@ -18,9 +18,11 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `ApNav.cs` | `ApAltimeter` (the height over the engage datum; the planet's centre where the gravity's lines meet), `ApCompass`, `ApL1` (L1 toward a point, a circle; a vector field onto a line flown by a braking course law), `ApTecs`, `ApRoute` (the route's text: GPS names, coordinates) |
 | `ApBehaviours.cs` | The behaviours (attack run, U-turn run, broadside, circle, hover above / below, point at, standoff, pursuit lead / pure / lag, extend) as parameterised goals (`ApNavGoal`), and the arbiter (`ApArbiterBh`: utility scores, hysteresis, dwell) |
 | `ApAim.cs` | The target's track (`ApTargetTrack`: its acceleration estimated), the lead (`ApAim.Lead`: the intercept iterated), the style's detection (`ApStyleDetect`), the target source interface (`IApTargetSource`) |
+| `ApEnemy.cs` | The target filter (`ApRelations`: the game's relation as own / friendly / neutral / hostile, the filter, `ApTargetPicker` - the scan's nearest) and the Enemy switch (`ApEnemy` rules: the world's rule, owner, creative / admin, the lock; `ApEnemySwitch`: ask, step, the saved owner before; `IApOwnership`) |
 | `ApBlockLink.cs` | The block and the flight director in step (`ApBlockLink`: a mode chosen engages, a let-go / the held height written back, the block dark lets go), the modes as goals (`ApModes`), which block flies (`ApArbiter`), the status line |
 | `Game/AeroGridComponent.Autopilot.cs` | Per grid: the server's flight director each tick before ThrustTorque (`AutopilotStep` from `AeroSimJob.AttitudeJob`), its instruments (`ApSenseNow`), the keys written in place (`ControlData.Movement`), the record (`ThrustTorque.ApPub`) - the client copy flies the same target and hands the server the pilot's keys and steering |
 | `Game/ApGameSense.cs` | The target in game (`ApGameTargets`: the grid's `TargetingGridComponent` - locked, priority, nearest; a GPS marker; a grid by name; the API's), GPS markers (`ApGps`: the owner's, then every player's), the fixed guns (`ApGunScan`: their axis, muzzle speed, range; the nose without guns: the block's front) |
+| `Game/ApEnemyGame.cs` | Ownership and relations in game: `OwnershipSessionComponent.TryTransferToNPC` / `TryTransferOwnership` (the block's server job, one at a time), `IsHostileNPC`, the in-process player (`LocalIdentity`, `IsCreative`), `ApRelationReader` (`IRelations.GetRelationFromOwners` - the turrets' rule -, `IFactions`, `PriorityTargetComponent`) |
 | `Game/GridTerrain.cs` | The terrain in game: `IPhysics.CastRay`, synchronous, own buffers (voxel colliders exist only near entities: a miss is "not known") |
 | `Game/AeroAutopilotComponent.cs` | The Autopilot block (server, injected by its prefabs): its panel under a lock, its status line, its step (registered with its own grid, which keeps the list: `AeroGridComponent.ApBlocks`) |
 | `Game/AeroAutopilotBlockDetailModel.cs` | Its terminal: the mode buttons (toolbar actions too), the status line, the setpoints and limits |
@@ -32,8 +34,9 @@ Hover + External; else External) with the pilot as the source. Only tactical num
 speeds, the g and the climb come from `FlightPerf` and the thrust. A helicopter aims by yaw and by height (pitching its lift axis
 would move it); six-axis aims anywhere its side thrusters still hold the weight; an airplane blends the nose off its path within
 30 deg and gives it back 4..7 s before the target. NPC ships: an unpiloted grid with an Autopilot block in Engage engages what its
-turrets' targeting sees; spawning and owning NPC ships is not here (an encounter would place the block with its panel saved in
-the prefab - the saved key carries every value).
+turrets' targeting sees (no turret: the nearest the filter takes within 4 km). The Enemy switch makes a player's ship the
+game's hostile NPC's (2026-10-19; the game's own owner change - replicated, saved with the grid); spawning NPC ships is not here
+(an encounter would place the block with its panel saved in the prefab - the saved key carries every value).
 
 ## Entry points
 - `AeroGridComponent.AutopilotStep` (AttitudeJob, both scenes; a null check when nothing is engaged).
@@ -53,7 +56,8 @@ let-go); its status line built when the terminal reads it, from inputs the grid'
 Pilot modes: `Scenarios/FlightPack.cs` (holds, TECS, routes, wind, loiter, terrain, styles, refusals), `EngagePack.cs` (every
 behaviour on the plane, the gun helicopter and the six-axis gunship against straight / turning / weaving / accelerating
 targets; aim and time in the cone; the arbiter; the lead against a flown shot; the protection clipping a chase; idle patrol),
-`PilotBlockPack.cs` (the panel through the link; the saved form).
+`PilotBlockPack.cs` (the panel through the link; the saved form), `EnemyPack.cs` (the relations by the game's rule, mocked; the
+filter; the Enemy switch's rules and state over a mocked world; an enemy chasing the player, a drone's filter).
 
 `Tests/AutopilotSim` (in the gate; `-- full` the sweeps): the real core and protection over the game's thrust law and the
 mod's allocator / rotor trim / attitude law, on the dumped H25 helicopter (1.5x / 2.5x / 3x, one and two tails), VTOLs, and
