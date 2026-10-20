@@ -56,7 +56,7 @@ public partial class AeroGridComponent
     bool _apMoved, _apWasEngaged;
     ApReason _apSaid;
     // client: the matched record, its recheck, the pilot's steering sum and last reticle
-    ThrustTorque.Published _apRec; long _apRecheck; float _apSteer; Quaternion _apLastReticle; bool _apHadReticle;
+    ThrustTorque.Published _apRec; long _apRecheck, _apSteerAt; float _apSteer; Quaternion _apLastReticle; bool _apHadReticle;
 
     /// <summary>The attitude job's autopilot step (AeroSimJob.AttitudeJob, before ThrustTorque.Apply).</summary>
     internal void AutopilotStep(in WorldTransform wt)
@@ -319,7 +319,10 @@ public partial class AeroGridComponent
         bool seated = Data.TryGet<TargetControlData>(out var tcd) && tcd.TargetOrientation.IsValidAndRotationIsNormalized();
         Vector3 keys = Vector3.Zero; bool turning = false;
         if (Data.TryGet<ControlData>(out var cd)) { keys = cd.Movement; turning = cd.Rotation.LengthSquared() > 1e-10f; }
-        _apSteer *= MathF.Exp(-AeroPhysics.Dt / 0.5f);
+        // (the decay by the time since the last call: this runs once a rendered frame, not a simulation step)
+        float sdt = _apSteerAt != 0 ? (float)Math.Clamp((now - _apSteerAt) / (double)f, 0.0, 0.25) : AeroPhysics.Dt;
+        _apSteerAt = now;
+        _apSteer *= MathF.Exp(-sdt / 0.5f);
         if (seated)
         {
             if (_apHadReticle && turning) { float moved = ApMath.Angle(_apLastReticle, tcd.TargetOrientation) / ApMath.Deg; if (float.IsFinite(moved)) _apSteer += moved; }

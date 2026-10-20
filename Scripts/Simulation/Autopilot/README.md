@@ -23,7 +23,7 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `Game/ApToasts.cs` | The autopilot's words to the seated pilot (client toasts) |
 
 ## Entry points
-- `AeroGridComponent.AutopilotStep` (AttitudeJob, both scenes; a null check when nothing is engaged).
+- `AeroGridComponent.AutopilotStep`: the server copy from `AeroSimJob.AttitudeJob`; the client copy (its bridge: `ClientAp`) from the client effects job, `AeroEntryFxComponent.EntryJob` - the attitude job runs in the server scene only (a null check when nothing is engaged).
 - `AeroAutopilotComponent.BlockJob` (server, before the simulation: the block registers with its grid and keeps it awake while a mode is on); its panel's setters (the terminal, host / single player), its save (`AeroBlockSave.cs`).
 - `ApToasts.ClientTick` (the client effects job, beside QuickLaunch).
 - `AeroApi.TryGetAutopilot` / `RequestAutopilot` / `TryGetFlightPerformance` (version 11).

@@ -35,12 +35,6 @@ public partial class AeroGridComponent
     private static void AttitudeJob(AeroGridComponent aero, WorldTransform wt)
     {
         if (!aero._initialized || !AeroSwitch.Enabled) return;
-        // (a CLIENT copy: the autopilot's and the stall protection's bridge - the pilot's keys and steering to the server, the
-        //  server's target and readout back - before the gates below: a client copy's thruster and gyro caches are empty (they are
-        //  built by the server scene's step), so the gates returned on every client grid and the bridge never ran - in game
-        //  2026-10-19 the seated pilot's keys and steering never reached the autopilot, and the HUD showed no readout)
-        bool client = !aero.IsServerScene;
-        if (client) { aero.AutopilotStep(wt); aero.AssistStep(wt); }
         if (!ThrustTorque.Enabled || (aero._thrusterCache.Count == 0 && aero._gyroCache.Count == 0)) return;
         // (a quiet grid - the sim job's quiet path, this tick - was at rest for QuietAfter steps: ThrustTorque's rest branch
         //  ran each of them and darkened its flames; nothing to do until it stirs)
@@ -51,11 +45,8 @@ public partial class AeroGridComponent
         {
             GridPhysics.TryGetVelocity(aero.Data, out _, out Vector3 angVel);
             // (the autopilot first: its target and keys, as a pilot's, for the attitude law below - Autopilot/AeroGridComponent.Autopilot.cs)
-            if (!client)
-            {
-                aero.AutopilotStep(wt);
-                aero.AssistStep(wt);   // (the flight assists' stall protection: the pilot's target governed - Grid/AeroGridComponent.Assists.cs)
-            }
+            aero.AutopilotStep(wt);
+            aero.AssistStep(wt);   // (the flight assists' stall protection: the pilot's target governed - Grid/AeroGridComponent.Assists.cs)
             aero.LastThrust = ThrustTorque.Apply(aero, wt, angVel, AeroPhysics.Dt);
             aero.LastGyroAware = aero.LastThrust.Aware; aero.LastGyroTorque = aero.LastThrust.Aware ? aero.LastThrust.GyroTorque : Vector3.Zero;
             // (the predicted loss-of-control warning's inputs: Loac.cs)

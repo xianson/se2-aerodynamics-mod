@@ -616,6 +616,17 @@ public partial class AeroEntryFxComponent : Component, IInSceneListener
         MachHud.Tick(c.Entity);   // (the speed readout's Mach: not an effect - runs with the effects off too)
         QuickLaunch.ClientTick(c.Entity);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs, 2026-10-18)
         ApToasts.ClientTick(c.Entity);   // (the autopilot's words to the pilot - Autopilot/Game/ApToasts.cs)
+        // (the autopilot's and the stall protection's CLIENT bridge - the pilot's keys and steering to the server's record, the
+        //  server's target and readout back to this copy: AeroGridComponent.ClientAp / ClientAssist. Here, in the client's frame:
+        //  the attitude job that called them is the server scene's only - in game 2026-10-19 they never ran, so the seated
+        //  pilot's keys and steering never reached the autopilot and the readout stayed empty)
+        var aeroGrid = c.Entity?.TryGet<AeroGridComponent>();
+        if (aeroGrid != null && !aeroGrid.IsServerScene)
+        {
+            var bwt = c.Data.GetWorldTransform();
+            aeroGrid.AutopilotStep(bwt);
+            aeroGrid.AssistStep(bwt);
+        }
         QuickLaunch.TurnTarget(c.Entity);   // (this grid's cockpit target, after a quick launch aero turned it: a reference compare)
         StructureFeel.Tick(c.Entity);   // (the airframe's creaks and cockpit shake - StructureFeel.cs, 2026-10-14; its own switches)
         TearSmoke.Tick(c);   // (torn-edge smoke from the server's breaks - TearSmoke.cs, 2026-10-14; off with the effects)
