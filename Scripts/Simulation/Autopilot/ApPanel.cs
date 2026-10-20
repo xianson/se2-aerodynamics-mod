@@ -36,6 +36,19 @@ public enum ApBehaviour : byte
 /// targeting), a GPS marker or coordinates, a grid by name, or another mod (AeroApi).</summary>
 public enum ApTargetSrc : byte { Targeting = 0, Gps = 1, Grid = 2, Api = 3 }
 
+/// <summary>Which targets the block engages, by the game's own relation between the owners (ApRelations: the turrets' rule,
+/// TargetingGridComponent.IsEligibleTarget). Every source is filtered (a GPS point or an API point has no owner: always taken).
+/// Appended only (the saved number is this).</summary>
+public enum ApTargetFilter : byte
+{
+    /// <summary>What the game's turrets would shoot at (IRelations: Hostile).</summary>
+    Hostile = 0,
+    /// <summary>... and neutral: not hostile, not yours, not your faction's (another player, a neutral NPC).</summary>
+    HostileNeutral = 1,
+    /// <summary>Anything but this ship itself (a named grid may be your own).</summary>
+    Everything = 2,
+}
+
 /// <summary>
 /// THE AUTOPILOT BLOCK'S PANEL (engine-free): what the player sets on the block - the mode, the flight style, the holds, the route,
 /// the behaviour and its tactical numbers, the target source, the aim, the protection's limits, what it does unattended - its
@@ -80,6 +93,11 @@ public struct ApPanel
     public bool AimOn; public float MuzzleSpeed, ConeDeg;
     /// <summary>Where a mode was first engaged (the return point; world), and the return asked (Navigate flies there and loiters).</summary>
     public bool HasHome; public double HomeX, HomeY, HomeZ; public bool ReturnHome;
+    /// <summary>Which targets it engages (every source).</summary>
+    public ApTargetFilter TargetFilter;
+    /// <summary>The ENEMY toggle (2026-10-19): this block made its grid a hostile NPC's (the game's own NPC owner - its turrets and
+    /// Engage fight players); the grid's owner before (an identity's number; 0 none known), given back when it is switched off.</summary>
+    public bool Enemy; public long EnemyPrevOwner;
 
     public const float HeightMax = 20000f, HoverSpeedMin = 1f, HoverSpeedMax = 50f, GLimitMin = 1.5f, GLimitMax = 15f,
         AoaMarginMin = 0f, AoaMarginMax = 15f, FloorMin = 0f, FloorMax = 500f;
@@ -109,6 +127,7 @@ public struct ApPanel
         if (p.Style > ApStyle.SixAxis) p.Style = ApStyle.Auto;
         if (p.Behaviour > ApBehaviour.PursuitLag) p.Behaviour = ApBehaviour.Auto;
         if (p.TargetSrc > ApTargetSrc.Api) p.TargetSrc = ApTargetSrc.Targeting;
+        if (p.TargetFilter > ApTargetFilter.Everything) p.TargetFilter = ApTargetFilter.Hostile;
         p.HeightM = float.IsFinite(p.HeightM) ? Math.Clamp(p.HeightM, 0f, HeightMax) : 0f;
         p.HoverSpeed = Fin(p.HoverSpeed, Autopilot.HoverSpeed, HoverSpeedMin, HoverSpeedMax);
         p.GLimit = Fin(p.GLimit, Autopilot.GLimit, GLimitMin, GLimitMax);

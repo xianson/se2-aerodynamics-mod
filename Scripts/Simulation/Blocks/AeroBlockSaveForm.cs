@@ -19,7 +19,8 @@ namespace AeroMod;
 /// <item>rotor / prop blades (rotor strikes, 2026-10-17): "aero-blades:1 health" (0..1, 0 = broken; written only below 1 - whole
 /// blades carry no key)</item>
 /// <item>autopilot (2026-10-19): "aero-autopilot:1 mode height ref speed protection g aoa floor lookAhead unattended" + the flight
-/// pilot's values appended (style, holds, route, behaviour, target, aim, return point; Autopilot)</item>
+/// pilot's values appended (style, holds, route, behaviour, target, aim, return point; the target filter, the Enemy toggle and
+/// the grid's owner before it; Autopilot)</item>
 /// </list>
 /// A later format may append values: a reader takes the ones it knows from any format &gt;= 1.
 /// Also the reader of the OLD form (<see cref="ParseLegacy"/>): the "surface / gear / airbrake / thrust x y z ..." lines after
@@ -138,7 +139,9 @@ public static class AeroBlockSaveForm
            + " " + ((int)p.Behaviour).ToString(C) + " " + F(p.RangeM) + " " + F(p.AbortM) + " " + F(p.RerunS) + " " + F(p.AngleDeg) + " " + F(p.AltOffsetM)
            + " " + F(p.Aggression) + " " + B(p.Evasive) + " " + ((int)p.TargetSrc).ToString(C) + " " + B(p.AimOn) + " " + F(p.MuzzleSpeed) + " " + F(p.ConeDeg)
            + " " + B(p.HasHome) + " " + p.HomeX.ToString("R", C) + " " + p.HomeY.ToString("R", C) + " " + p.HomeZ.ToString("R", C) + " " + B(p.ReturnHome)
-           + " " + Esc(p.Route) + " " + Esc(p.TargetText);
+           + " " + Esc(p.Route) + " " + Esc(p.TargetText)
+           // (2026-10-19, appended: 42 the target filter, 43 the enemy toggle, 44 the grid's owner before it - an identity's number)
+           + " " + ((int)p.TargetFilter).ToString(C) + " " + B(p.Enemy) + " " + p.EnemyPrevOwner.ToString(C);
 
     /// <summary>A text as one space-free value: "s" then the text with '%', spaces, tabs and line breaks as %25 %20 %09 %0A %0D.</summary>
     public static string Esc(string t)
@@ -190,6 +193,8 @@ public static class AeroBlockSaveForm
         double Db(int i, double def) => i < w.Length && double.TryParse(w[i], NumberStyles.Float, C, out double v) && double.IsFinite(v) ? v : def;
         p.HomeX = Db(36, p.HomeX); p.HomeY = Db(37, p.HomeY); p.HomeZ = Db(38, p.HomeZ); p.ReturnHome = Bo(39, p.ReturnHome);
         p.Route = (40 < w.Length ? Unesc(w[40]) : null) ?? p.Route; p.TargetText = (41 < w.Length ? Unesc(w[41]) : null) ?? p.TargetText;
+        p.TargetFilter = (ApTargetFilter)I(42, (int)p.TargetFilter); p.Enemy = Bo(43, p.Enemy);
+        p.EnemyPrevOwner = 44 < w.Length && long.TryParse(w[44], NumberStyles.Integer, C, out long prev) ? prev : p.EnemyPrevOwner;
 
         p = p.Clamped();
         return true;

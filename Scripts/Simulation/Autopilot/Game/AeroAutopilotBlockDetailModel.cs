@@ -13,7 +13,7 @@ namespace AeroMod;
 /// methods are what the toolbar takes from a mod panel), the status line, and ONLY the fields of the mode chosen
 /// ([ShowInInspectorWhen] on the Show* switches below): the hover's height and speed; the flight style and holds; the route; the
 /// behaviour's own numbers (the attack run's abort and re-run only for an attack run, the angle only for a broadside), the target's
-/// source and text, the aim; then the protection's limits. On / off and power are the game's own panel. Host / single player, as
+/// source, text and filter, the Enemy switch (Engage, or an enemy ship), the aim; then the protection's limits. On / off and power are the game's own panel. Host / single player, as
 /// every mod panel (DetailModelPairing). The status line is read when the panel shows it (a button press refreshes it).
 /// </summary>
 [BlockDetailProvider]
@@ -26,13 +26,13 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         "Autopilot: hover, height and flight holds, GPS navigation and target behaviours for this ship, with envelope protection.",
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy),
         nameof(Style),
         nameof(HeightM), nameof(OverGround), nameof(HoverSpeed),
         nameof(HeadingOn), nameof(HeadingDeg), nameof(AltOn), nameof(AltM), nameof(VsMs), nameof(SpeedOn), nameof(SpeedMs), nameof(BankDeg),
         nameof(Route), nameof(RouteLoop), nameof(LoiterM), nameof(MinAglM),
         nameof(Behaviour), nameof(RangeM), nameof(AbortM), nameof(RerunS), nameof(AngleDeg), nameof(AltOffsetM), nameof(Evasive), nameof(Aggression),
-        nameof(TargetSrc), nameof(TargetText), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
+        nameof(TargetSrc), nameof(TargetText), nameof(TargetFilter), nameof(Enemy), nameof(EnemyText), nameof(AimOn), nameof(MuzzleSpeed), nameof(ConeDeg),
         nameof(Protection), nameof(GLimit), nameof(AoaMargin), nameof(FloorM), nameof(LookAhead), nameof(Unattended));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
 
@@ -67,6 +67,8 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [HideInInspector] public bool ShowHeading => P.Mode == ApMode.FlightHold && P.HeadingOn;
     [HideInInspector] public bool ShowAlt => ApPanel.IsPilotMode(P.Mode) && P.AltOn;
     [HideInInspector] public bool ShowSpeed => ApPanel.IsPilotMode(P.Mode) && P.SpeedOn;
+    /// <summary>The Enemy switch: in Engage while the world allows it, and always on an enemy ship (so it can be switched back).</summary>
+    [HideInInspector] public bool ShowEnemy => _ap != null && ((P.Mode == ApMode.Engage && Autopilot.EnemyRule != ApEnemyRule.Off) || _ap.GridIsEnemy);
 
     // ── the modes ──
     [Label("Hover Hold")] [Button(null)] [WritableInInspectorWhen("CanHover", WritableWhen.True)]
@@ -205,6 +207,19 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Label("Target (GPS / grid name)")] [ShowInInspectorWhen("ShowTargetText", ShowWhen.True)]
     public string TargetText { get => P.TargetText; set => Edit((ref ApPanel p) => p.TargetText = value ?? ""); }
 
+    /// <summary>Which targets it takes, by the game's own relation (the turrets' rule): hostile only; also neutral (another
+    /// player, a neutral NPC); everything but this ship.</summary>
+    [Label("Target Filter")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
+    public ApTargetFilter TargetFilter { get => P.TargetFilter; set => Edit((ref ApPanel p) => p.TargetFilter = value); }
+
+    /// <summary>ENEMY: this ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Off: back to its owner.
+    /// Who may: the world's Autopilot.EnemyRule; an enemy ship's panel: creative or an admin only.</summary>
+    [Label("Enemy (hostile NPC)")] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
+    public bool Enemy { get => _ap != null && _ap.GridIsEnemy; set { _ap?.AskEnemy(value); Changed(); } }
+
+    [Label("Enemy Status")] [ReadOnlyInInspector] [ShowInInspectorWhen("ShowEnemy", ShowWhen.True)]
+    public string EnemyText => _ap?.EnemyText ?? "";
+
     /// <summary>The nose (the fixed guns' axis) on the target's lead point - the protection still clips.</summary>
     [Label("Aim Nose at Target")] [ShowInInspectorWhen("ShowEngage", ShowWhen.True)]
     public bool AimOn { get => P.AimOn; set => Edit((ref ApPanel p) => p.AimOn = value); }
@@ -239,7 +254,8 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     {
         nameof(Status), nameof(CanHover), nameof(CanHeight), nameof(CanFlight), nameof(CanNavigate), nameof(CanEngage), nameof(CanOff),
         nameof(ShowHover), nameof(ShowPilot), nameof(ShowFlight), nameof(ShowRoute), nameof(ShowEngage), nameof(ShowAttack), nameof(ShowBroadside),
-        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed),
+        nameof(ShowTargetText), nameof(ShowAim), nameof(ShowHeading), nameof(ShowAlt), nameof(ShowSpeed), nameof(ShowEnemy),
+        nameof(Enemy), nameof(EnemyText),
         nameof(HeightM), nameof(OverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };
     void Changed() { foreach (var n in _notify) OnPropertyChanged(n); }

@@ -23,16 +23,33 @@ namespace AeroMod;
 ///  GPS - a GPS marker of the grid owner's (by name) or coordinates (ApRoute.TryCoords), looked up every 2 s.
 ///  GRID - a grid by its name, looked up every 2 s.
 ///  API - another mod's (AeroApi.SetAutopilotTarget / SetAutopilotTargetPoint).
+/// THE FILTER (the block's Target Filter: hostile only / + neutral / everything; ApRelations - the game's own relation, the
+/// turrets' rule) on every source: the targeting lists are hostile already (and a lock: the game locks only an eligible
+/// target); when they are empty - a ship with no turret has none - or the filter takes more, a scan every 2 s finds the nearest
+/// grid or player character within the game's targeting reach (ScanRange) the filter takes; a named grid and the API's entity
+/// are judged every 2 s (refused: "no target - ... is neutral" on the status line). A GPS or API POINT has no owner: always taken.
 /// The target's place is its bounds' centre, its velocity its top grid's (GridPhysics), its radius half its bounds' diagonal.
 /// No allocation per tick: names are read when the target changes, lookups every 2 s.
 /// </summary>
 internal sealed class ApGameTargets : IApTargetSource
 {
     readonly AeroGridComponent _aero;
-    public ApTargetSrc Src; public string Text = "";
+    public ApTargetSrc Src; public string Text = ""; public ApTargetFilter Filter;
     // (the API's: an entity or a point)
     public volatile Entity ApiEntity; public bool ApiPoint; public Vector3D ApiPos; public Vector3 ApiVel;
     Entity _found, _named; string _name = ""; long _nextLook; string _lookFor; Vector3D _gps; bool _gpsOk;
+    // (the filter: the relation of the named / the API's / the scan's target, judged every 2 s - never per tick)
+    readonly ApRelationReader _rel = new();
+    Entity _judged; ApRelation _judgedRel; long _nextJudge; ApTargetFilter _judgedFilter;
+    // (the scan - the targeting source's fallback when the game's lists are empty, or the filter takes more than hostile)
+    readonly ApTargetPicker _pick = new(); readonly List<Entity> _scanList = new(); readonly List<Entity> _chars = new();
+    Entity _scanned; long _nextScan; ApTargetFilter _scanFilter;
+    /// <summary>The words of a target the filter refused ("Bob's Miner is neutral (filter: hostile only)"; null none) - the status line.</summary>
+    public volatile string Refused;
+    /// <summary>How far the scan looks (m): the game's own targeting reach (TargetingGridDefinition.DetectionRange's default).</summary>
+    public const double ScanRange = 4000.0;
+    /// <summary>A grid of fewer blocks is debris to the scan (every grid has an owner in 4.0 - a loose block too).</summary>
+    public const int ScanMinBlocks = 5;
     public ApGameTargets(AeroGridComponent aero) { _aero = aero; }
 
     public bool Get(in ApSense s, out ApTargetFix f)
@@ -45,14 +62,21 @@ internal sealed class ApGameTargets : IApTargetSource
         {
             case ApTargetSrc.Targeting:
             {
+                // (the game's own lists are hostile by the turrets' rule - TargetingGridComponent.IsEligibleTarget - and so is a
+                //  cockpit lock: every filter takes them. The scan adds what they lack: a ship with no turret has no list, and a
+                //  wider filter takes more than hostile)
                 var tg = grid.TryGet<TargetingGridComponent>();
-                if (tg == null) return false;
-                e = tg.LockedTarget;
-                if (e == null) { var pri = tg.PriorityTargets; if (pri.Count > 0) e = pri[0]; }
-                if (e == null) { var pot = tg.PotentialTargets; if (pot.Count > 0) e = pot[0]; }
+                if (tg != null)
+                {
+                    e = tg.LockedTarget;
+                    if (e == null) { var pri = tg.PriorityTargets; if (pri.Count > 0) e = pri[0]; }
+                    if (e == null && Filter == ApTargetFilter.Hostile) { var pot = tg.PotentialTargets; if (pot.Count > 0) e = pot[0]; }
+                }
+                if (e == null) e = Scan(grid, s.Pos);
+                if (e != null) Refused = null;
                 break;
             }
-            case ApTargetSrc.Grid: e = LookGrid(grid); break;
+            case ApTargetSrc.Grid: e = Judge(grid, LookGrid(grid)); break;
             case ApTargetSrc.Gps:
                 Look(grid);
                 if (!_gpsOk) return false;
@@ -60,9 +84,58 @@ internal sealed class ApGameTargets : IApTargetSource
                 return true;
             case ApTargetSrc.Api:
                 if (ApiPoint) { f.Valid = true; f.Pos = ApiPos; f.Vel = ApiVel; f.Name = "API point"; f.Id = 2; f.Radius = 5f; return true; }
-                e = ApiEntity; break;
+                e = Judge(grid, ApiEntity); break;
         }
         return Fix(e, grid, ref f);
+    }
+
+    /// <summary>The target if the filter takes it (its relation judged when it changes and every 2 s), else null - the refusal said.</summary>
+    Entity Judge(Entity self, Entity e)
+    {
+        if (e == null) { Refused = null; return null; }
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!ReferenceEquals(e, _judged) || now >= _nextJudge || Filter != _judgedFilter)
+        {
+            _judged = e; _judgedFilter = Filter; _nextJudge = now + 2 * System.Diagnostics.Stopwatch.Frequency;
+            _judgedRel = _rel.Of(self, e);
+            Refused = ApRelations.Passes(Filter, _judgedRel) ? null : ApRelations.Refused(NameOf(e.GetTopLevelParent() ?? e), _judgedRel, Filter);
+        }
+        return Refused == null ? e : null;
+    }
+
+    /// <summary>The nearest grid (of ScanMinBlocks or more) or player character within ScanRange the filter takes - never this ship
+    /// or the same owner's (ApTargetPicker). Every 2 s (an enumeration of the session's grids: allocates, never per tick).</summary>
+    Entity Scan(Entity self, Vector3D at)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (now < _nextScan && Filter == _scanFilter && (_scanned == null || GridPhysics.Alive(_scanned.Data))) return _scanned;
+        _nextScan = now + 2 * System.Diagnostics.Stopwatch.Frequency; _scanFilter = Filter; _scanned = null;
+        var session = self.GetSession();
+        if (session == null) return null;
+        _pick.Clear(); _scanList.Clear();
+        foreach (var ge in session.GetEntitiesOfType<CubeGridComponent>())
+        {
+            if (ge == null || ReferenceEquals(ge, self) || !GridPhysics.Alive(ge.Data)) continue;
+            var cg = ge.TryGet<CubeGridComponent>();
+            if (cg == null || cg.CubeBlockStorage.GetAllCubeBlocks().Length < ScanMinBlocks) continue;
+            var pos = ge.Data.GetWorldTransform().Position;
+            if ((pos - at).LengthSquared() > ScanRange * ScanRange * 1.5) continue;
+            if (!_pick.Add(pos, _rel.Of(self, ge), _scanList.Count)) break;
+            _scanList.Add(ge);
+        }
+        _chars.Clear();
+        if (session.TryFillAliveCharacters(_chars))
+            foreach (var c in _chars)
+            {
+                if (c == null || ReferenceEquals(c.GetTopLevelParent() ?? c, self)) continue;   // (not our own pilot)
+                if (!_pick.Add(c.Data.GetWorldTransform().Position, _rel.Of(self, c), _scanList.Count)) break;
+                _scanList.Add(c);
+            }
+        _chars.Clear();
+        int k = _pick.Pick(at, ScanRange, Filter);
+        _scanned = k >= 0 ? _scanList[k] : null;
+        _scanList.Clear();
+        return _scanned;
     }
 
     bool Fix(Entity e, Entity self, ref ApTargetFix f)

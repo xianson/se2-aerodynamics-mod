@@ -523,6 +523,14 @@ aim and fire from your own mod.
 | `bool ClearAutopilotTarget(Entity grid)` | 12 | No API target: the block waits (flies its route, or loiters where it was engaged). |
 | `bool TryGetAutopilotAim(Entity grid, out float errorDeg, out bool inCone, out bool inRange, out float range, out float timeOfFlight)` | 12 | The angle between the fixed guns' axis (or the nose) and the target's lead point (deg), inside the block's aim cone (or the miss inside the target's size), the target inside the guns' range, the range (m) and the shot's time of flight (s). False: nothing aimed at now. |
 | `bool TryGetAutopilotPilot(Entity grid, out int mode, out int style, out int behaviour, out bool hasTarget, out int waypoint)` | 12 | The mode flying (3 flight hold, 4 navigate, 5 engage), the style (1 airplane, 2 helicopter, 3 six-axis), the behaviour active (1 attack run, 2 attack run U-turn, 3 broadside, 4 circle, 5 hover above, 6 hover below, 7 point at, 8 standoff, 9-11 pursuit lead / pure / lag, 12 extend), a target held, the next waypoint (-1 loitering). False: no pilot mode flying. |
+| `bool TryGetAutopilotEnemy(Entity grid, out bool enemy, out int targetFilter)` | 12 | The grid's Autopilot block: the grid is an **enemy** now (the game's hostile NPC owns it - by the block's Enemy switch or otherwise: its turrets and Engage fight players) and the block's **Target Filter** (0 hostile only, 1 hostile + neutral, 2 everything). The switch is the panel's (the world's `Autopilot.EnemyRule`, the owner checks); to change ownership yourself call the game's `OwnershipSessionComponent.TryTransferToNPC`. False: no Autopilot block. |
+
+**The target filter** applies to every source, with the game's own relation (`TargetingGridComponent.IsEligibleTarget`,
+the turrets' rule: `IRelations.GetRelationFromOwners` - hostile when exactly one owner is the hostile NPC; no owner: only a
+`PriorityTargetComponent`): hostile; neutral is not hostile and not the same owner or faction (`IFactions.InSameFaction`).
+The Targeting source's lists are hostile already; with them empty (no turret) or a wider filter, the block scans every 2 s for
+the nearest grid (5+ blocks) or player character within 4 km (never its own owner's). A named grid or an API entity the
+filter refuses is no target ("no target - X is neutral"); a GPS or API point is always taken.
 
 New `reason` values (`TryGetAutopilot`): 16 too slow to fly on the wings, 17 no air, 18 no waypoints, 19 not enough thrust
 across for six-axis, 20 the style set does not fit the ship.
@@ -634,6 +642,7 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Autopilot.Unattended` | world | bool | true |  | Allow unattended autopilot · Autopilot · basic | *(Unreleased)* A ship with nobody seated may keep its autopilot mode (a helicopter left in hover hold holds its hover); each block's "Keep Mode Unattended" chooses within it. Off: it lets go when the pilot leaves. |
 | `Autopilot.MaxLeanDeg` | world | float | 20 | 2..45 | Hover: most lean · Autopilot · advanced | *(Unreleased)* The most a hover leans to move or hold its place (deg). |
 | `Autopilot.ClimbRate` | world | float | 4 | 0.5..20 | Hover: climb rate · Autopilot · advanced | *(Unreleased)* The climb / descent rate the up / down keys ask for in hover or height hold, and the most it climbs or sinks to a new height (m/s). |
+| `Autopilot.EnemyRule` | world | int | 1 | 0..2 | Enemy ships from autopilot blocks · Autopilot · basic | *(Unreleased)* Who may switch an Autopilot block's Enemy toggle on (0 off, 1 creative or admin, 2 everyone): its ship becomes the game's hostile NPC's - its turrets and its Engage fight players. Only the ship's owner can; only creative or an admin can switch it back or change an enemy ship's panel. |
 | `Perf.FrameBudgetMs` | world | float | 1 | 0.1..16 | Aero time budget per frame · Performance (host) · advanced | The most aero takes of a simulation frame; past it, grids not piloted wait a few frames. |
 | `Perf.Workers` | world | int | 2 | 1..16 | Background threads · Performance (host) · advanced | Background cores for hull and force-table builds. |
 | `Perf.TableCache` | world | bool | true |  | Reuse force tables · Performance (host) · advanced | Reuse built force tables. |

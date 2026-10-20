@@ -4,7 +4,7 @@ namespace AeroMod;
 
 /// <summary>
 /// THE AUTOPILOT'S SETTINGS. The world's (AeroSettings, the "Autopilot" group: the host's caps - Enabled, Unattended, MaxLeanDeg,
-/// ClimbRate) and the client's readout; the rest are the DEFAULTS of a new Autopilot block's panel (Blocks/AeroAutopilotBlock*: each
+/// ClimbRate, EnemyRule) and the client's readout; the rest are the DEFAULTS of a new Autopilot block's panel (Blocks/AeroAutopilotBlock*: each
 /// block keeps its own, saved with it) and what the offline sim flies with. Engine-free: Tests/AutopilotSim and Tests/SettingsTests
 /// compile it. The flying numbers (gains, lean for a given push, how fast it tilts) are never settings: they come from what the mod
 /// measures of the ship (FlightDirector) - only limits and choices are.
@@ -20,6 +20,9 @@ public static class Autopilot
     public static float MaxLeanDeg = 20f;
     /// <summary>Hover / height hold: the climb and descent rate your up / down keys ask for, and the most it climbs to a new height (m/s).</summary>
     public static float ClimbRate = 4f;
+    /// <summary>Who may switch an Autopilot block's Enemy toggle on (its grid made a hostile NPC's: its turrets and Engage fight
+    /// players). Switching it off - and editing an enemy ship's panel - is always for creative or an admin only.</summary>
+    public static ApEnemyRule EnemyRule = ApEnemyRule.CreativeOrAdmin;
 
     // ── a new block's panel defaults (and the sim's) ──
     /// <summary>The envelope protection on every autopilot command (stall angle, g, the predicted loss of control, terrain
@@ -43,6 +46,9 @@ public static class Autopilot
     /// <summary>The engaged mode and its protections in the cockpit's speed readout ("312 m/s · AP HOVER POS ALT").</summary>
     public static bool Readout = true;
 }
+
+/// <summary>The world's rule for the Enemy toggle (Autopilot.EnemyRule; the saved setting is this number).</summary>
+public enum ApEnemyRule : byte { Off = 0, CreativeOrAdmin = 1, Everyone = 2 }
 
 /// <summary>The autopilot's fixed tuning shared by the game and the offline sim (one number, one place).</summary>
 public static class ApTuning

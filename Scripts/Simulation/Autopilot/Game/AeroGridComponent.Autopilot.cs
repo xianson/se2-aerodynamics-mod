@@ -71,6 +71,8 @@ public partial class AeroGridComponent
     internal ApGameTargets ApTargets; ApGunScan _apGuns; string _apRouteText; long _apRouteNext; int _apRestarts;
     /// <summary>The flight pilot of the block that flies (null: none) - the API's reads.</summary>
     internal ApPilot ApPilotNow => _apLink?.Pilot;
+    /// <summary>The Autopilot block that flies this grid (null: none chosen yet) - the API's reads.</summary>
+    internal AeroAutopilotComponent ApCtlNow => _apCtl;
     /// <summary>The target source (made on first use: the grid's step, or another mod's API call).</summary>
     internal ApGameTargets ApTargetsMade { get { var t = ApTargets; if (t != null) return t; Interlocked.CompareExchange(ref ApTargets, new ApGameTargets(this), null); return ApTargets; } }
 
@@ -177,7 +179,7 @@ public partial class AeroGridComponent
         s.GunAxis = _apGuns.Axis; s.MuzzleSpeed = _apGuns.Muzzle; s.GunRange = _apGuns.Range;
         s.Nose = _apGuns.Guns > 0 ? _apGuns.Axis : _apGuns.Nose;
         var tg = ApTargetsMade;
-        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? "";
+        tg.Src = panel.TargetSrc; tg.Text = panel.TargetText ?? ""; tg.Filter = panel.TargetFilter;
         var pilot = _apLink.Pilot;
         pilot.Targets = tg;
 
@@ -206,6 +208,7 @@ public partial class AeroGridComponent
             if (ReferenceEquals(b, ctl) && _apLink != null && ApPanel.IsPilotMode(b.Panel.Mode))
             {
                 _apLink.Pilot.View(out var v, fd?.Prot ?? ApProt.None);
+                v.Refused = ApTargets?.Refused;   // (a target the filter refused: "no target - ... is neutral")
                 b.ReportPilot(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, in v);
             }
             else if (ReferenceEquals(b, ctl)) b.Report(b.Panel.Mode, fd?.Reason ?? ApReason.None, flying, false, hasH, h, fd?.HeightRef ?? b.Panel.HeightRef, fd?.Prot ?? ApProt.None);

@@ -90,6 +90,21 @@ public static partial class AeroApi
         return true;
     }
 
+    /// <summary>(version 12) The grid's Autopilot block (the one that flies; else the first): whether the grid is an ENEMY now (the
+    /// game's hostile NPC owns it - by the block's Enemy switch or otherwise; its turrets and Engage fight players) and its target
+    /// filter (ApTargetFilter: 0 hostile only, 1 hostile + neutral, 2 everything - the game's own relation, as the turrets judge).
+    /// The switch itself is the block's panel (its world rule and its owner checks); another mod changes ownership through the
+    /// game (OwnershipSessionComponent.TryTransferToNPC). False: no Autopilot block on the grid.</summary>
+    public static bool TryGetAutopilotEnemy(Keen.VRage.DCS.Components.Entity grid, out bool enemy, out int targetFilter)
+    {
+        enemy = false; targetFilter = 0;
+        var aero = DesignProbe.ServerAero(grid);
+        var b = aero?.ApCtlNow;
+        if (b == null) { AeroAutopilotComponent[] all = aero?.ApBlocks; if (all == null || all.Length == 0) return false; b = all[0]; }
+        enemy = b.GridIsEnemy; targetFilter = (int)b.Panel.TargetFilter;
+        return true;
+    }
+
     /// <summary>(version 11) The FLIGHT PERFORMANCE of a flown grid now, from the mod's own whole-ship lift and drag over the angle
 
     /// of attack (the stall evaluation's sweep, a few times a second; Mach and density in) and its thrust: the most load the lift

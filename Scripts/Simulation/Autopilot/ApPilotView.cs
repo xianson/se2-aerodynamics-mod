@@ -15,6 +15,8 @@ public struct ApPilotView
     public int Wp, WpCount; public string WpName; public float WpDist, Eta;
     public float HeadingNow, HeightNow, SpeedNow, HeadingWant, HeightWant, SpeedWant; public bool HeadingOn, AltOn, SpeedOn;
     public ApProt Prot;
+    /// <summary>A target the filter refused (its words, held by the target source; null none).</summary>
+    public string Refused;
 
     public bool Same(in ApPilotView o) => o.Mode == Mode && o.Style == Style && o.Behaviour == Behaviour && o.Phase == Phase && o.Loitering == Loitering
         && o.Recovering == Recovering && o.Returning == Returning && o.HasTarget == HasTarget && ReferenceEquals(o.TargetName, TargetName)
@@ -22,7 +24,8 @@ public struct ApPilotView
         && (MathF.Abs(o.AimErrDeg - AimErrDeg) < 0.1f || (float.IsNaN(o.AimErrDeg) && float.IsNaN(AimErrDeg))) && o.Wp == Wp && o.WpCount == WpCount
         && ReferenceEquals(o.WpName, WpName) && MathF.Abs(o.WpDist - WpDist) < 10f && MathF.Abs(o.HeadingNow - HeadingNow) < 1f
         && MathF.Abs(o.HeightNow - HeightNow) < 1f && MathF.Abs(o.SpeedNow - SpeedNow) < 0.5f && o.Prot == Prot
-        && o.HeadingWant == HeadingWant && o.HeightWant == HeightWant && o.SpeedWant == SpeedWant && o.HeadingOn == HeadingOn && o.AltOn == AltOn && o.SpeedOn == SpeedOn;
+        && o.HeadingWant == HeadingWant && o.HeightWant == HeightWant && o.SpeedWant == SpeedWant && o.HeadingOn == HeadingOn && o.AltOn == AltOn && o.SpeedOn == SpeedOn
+        && ReferenceEquals(o.Refused, Refused);
 
     public static string StyleName(ApStyle s) => s switch { ApStyle.Airplane => "airplane", ApStyle.Helicopter => "helicopter", ApStyle.SixAxis => "six-axis", _ => "auto" };
 
@@ -52,6 +55,7 @@ public struct ApPilotView
             body = $"{BehaviourName(Behaviour)} on {(string.IsNullOrEmpty(TargetName) ? "target" : TargetName)} {Dist(Range)}, {side}";
             if (AimOn) body += float.IsFinite(AimErrDeg) ? $" · aim {AimErrDeg:F1}°{(InCone ? " IN CONE" : !InRange ? " (out of range)" : "")}" : "";
         }
+        else if (Mode == ApMode.Engage && !Returning && !string.IsNullOrEmpty(Refused)) body = "no target - " + Refused + (Loitering ? " - loitering" : "");
         else if (Loitering) body = Returning ? "back at the return point - loitering" : Mode == ApMode.Engage && WpCount == 0 ? "no target - loitering" : "loitering at the route's end";
         else if (Returning) body = $"returning - {Dist(WpDist)}, ETA {Time(Eta)}";
         else body = (Mode == ApMode.Engage ? "no target - " : "") + $"WP {Wp + 1}/{WpCount} {WpName} {Dist(WpDist)}, ETA {Time(Eta)}";

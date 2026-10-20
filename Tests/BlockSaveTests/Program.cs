@@ -129,12 +129,31 @@ static class Program
                   && g.AngleDeg == f.AngleDeg && g.AltOffsetM == f.AltOffsetM && g.Aggression == f.Aggression && g.Evasive && g.TargetSrc == f.TargetSrc && !g.AimOn
                   && g.MuzzleSpeed == f.MuzzleSpeed && g.ConeDeg == f.ConeDeg && g.HasHome && g.HomeX == f.HomeX && g.HomeY == f.HomeY && g.HomeZ == f.HomeZ && g.ReturnHome
                   && g.Route == f.Route && g.TargetText == f.TargetText, $"autopilot flight pilot round trip: '{key}'");
-            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 42, $"autopilot: one line, 41 values after the format ({key.Split(' ').Length - 1})");
+            Check(!key.Substring(AeroBlockSaveForm.AutopilotKey.Length).Contains('\n') && key.Split(' ').Length == 45, $"autopilot: one line, 44 values after the format ({key.Split(' ').Length - 1})");
             Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 4 0 0 10 1 3 3 15 1 1", out var old) && old.Mode == ApMode.Navigate && old.Style == ApStyle.Auto && old.Route == ""
                   && old.RangeM == ApPanel.Defaults.RangeM && old.AimOn, "autopilot: a key of the first release reads the pilot's defaults");
             Check(AeroBlockSaveForm.TryReadAutopilot(key.Replace(" 3 ", " 99 "), out var bad) && AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 5 0 0 10 1 3 3 15 1 1 9 NaN 1 -5 1 0 99999 1 0 1 0 0 77", out var bad2)
                   && bad2.Style == ApStyle.Auto && bad2.HeadingDeg == 0f && bad2.AltM == 0f && bad2.SpeedMs == ApPanel.SpeedMax && bad2.BankDeg == ApPanel.BankMin && bad2.Behaviour == ApBehaviour.Auto,
                   "autopilot: the pilot's unknown style / behaviour read as auto, NaN and out-of-range numbers clamped");
+        }
+        // the target filter and the Enemy toggle (2026-10-19, appended 42..44): round trip; an older key (41 values) reads hostile
+        // only, no enemy; an unknown filter reads hostile only; the owner before kept exactly (an identity's 64-bit number)
+        {
+            foreach (var flt in new[] { ApTargetFilter.Hostile, ApTargetFilter.HostileNeutral, ApTargetFilter.Everything })
+                foreach (bool en in new[] { false, true })
+                {
+                    var e = ApPanel.Defaults; e.Mode = ApMode.Engage; e.TargetFilter = flt; e.Enemy = en; e.EnemyPrevOwner = en ? 0x7123456789ABCDEFL : 0;
+                    string k = AeroBlockSaveForm.Autopilot(e);
+                    Check(AeroBlockSaveForm.TryReadAutopilot(k, out var e2) && e2.TargetFilter == flt && e2.Enemy == en && e2.EnemyPrevOwner == e.EnemyPrevOwner && e2.Mode == ApMode.Engage,
+                          $"autopilot: filter {flt}, enemy {en} round trip: '{k}'");
+                }
+            var f0 = ApPanel.Defaults; f0.Route = "a b"; string k41 = AeroBlockSaveForm.Autopilot(f0);
+            k41 = string.Join(' ', k41.Split(' ').Take(42));   // (the key as the first pilot release wrote it)
+            Check(AeroBlockSaveForm.TryReadAutopilot(k41, out var o41) && o41.TargetFilter == ApTargetFilter.Hostile && !o41.Enemy && o41.EnemyPrevOwner == 0 && o41.Route == "a b",
+                  $"autopilot: a key without the filter / enemy reads hostile only, no enemy: '{k41}'");
+            var f9 = ApPanel.Defaults; string k9 = AeroBlockSaveForm.Autopilot(f9); var w9 = k9.Split(' '); w9[42] = "9"; w9[44] = "x";
+            Check(AeroBlockSaveForm.TryReadAutopilot(string.Join(' ', w9), out var o9) && o9.TargetFilter == ApTargetFilter.Hostile && o9.EnemyPrevOwner == 0,
+                  "autopilot: an unknown filter reads hostile only, a bad owner number none");
         }
 
         Check(AeroBlockSaveForm.TryReadAutopilot("aero-autopilot:1 1", out var ap3) && ap3.Mode == ApMode.HoverHold && ap3.GLimit == ApPanel.Defaults.GLimit && ap3.Unattended,
