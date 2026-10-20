@@ -180,7 +180,7 @@ public partial class AeroGridComponent
         if (aero.IsServerScene)
         {
             if (!AeroSettings.SawServer) AeroSettings.SawServer = true;
-            AtmosphereProbe.Tick(aero);   // (the API's point query: the generator list, every ~10 s)
+            AtmosphereProbe.Tick(aero.Entity);   // (the API's point query: the generator list, every ~10 s)
             AeroSettings.Poll();          // (the settings files, every ~2 s)
         }
 

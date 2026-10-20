@@ -16,7 +16,8 @@
 - Other mods: any `AeroApi` member (the Orbital mod's build hints, HUD, railed entry, harness - see `docs/ARCHITECTURE.md` §8).
 - `OrbitalLink.TryGetEntryState2` (`StructureServer.TickStructureCore`), `OrbitalLink.TryGetGridEdits` (`StructureContacts`),
   `OrbitalLink.TryGetEntryState` (`AeroEntryFx.EntryStateAt`: `HeatScorch`), `OrbitalLink.TryQuickMove` (`Launch/QuickLaunch.Server.cs`).
-- `AtmosphereProbe.Tick` / `WithTail` (`AeroGridComponent.AeroSimJobCore`).
+- `AtmosphereProbe.Tick` (`AeroGridComponent.AeroSimJobCore`, and the server planets' carrier job - `Launch/QuickLaunch.Server.cs` -
+  so the point query answers with no grid) / `WithTail` (`AeroSimJobCore`).
 
 ## Threading
 `AeroApi` members may be called from any thread; they read published snapshots and take only small locks. `OrbitalLink`
