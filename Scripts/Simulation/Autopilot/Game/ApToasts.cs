@@ -41,12 +41,7 @@ public static class ApToasts
     {
         try
         {
-            session?.TryGet<IUserMessages>()?.DisplayMessage(new UserMessage
-            {
-                TitleId = LocKey.FromString("Autopilot"), ContentId = LocKey.FromString(text),
-                Type = UserMessageType.Game, TextTimeout = TimeSpan.FromSeconds(3),
-                MessageKey = StringId.Get("aero.autopilot"),   // (keyed: a new line replaces the last)
-            });
+            session?.TryGet<IUserMessages>()?.DisplayMessage(ModToast.Literal("Autopilot", text, 3, "aero.autopilot"));   // (keyed: a new line replaces the last)
         }
         catch { }
     }

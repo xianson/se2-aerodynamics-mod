@@ -200,12 +200,7 @@ public static partial class QuickLaunch
     {
         try
         {
-            session?.TryGet<IUserMessages>()?.DisplayMessage(new UserMessage
-            {
-                TitleId = LocKey.FromString("Quick launch"), ContentId = LocKey.FromString(text),
-                Type = UserMessageType.Game, TextTimeout = TimeSpan.FromSeconds(3),
-                MessageKey = StringId.Get("aero.quicklaunch"),   // (keyed: a new answer replaces the last)
-            });
+            session?.TryGet<IUserMessages>()?.DisplayMessage(ModToast.Literal("Quick launch", text, 3, "aero.quicklaunch"));   // (keyed: a new answer replaces the last)
         }
         catch { }
     }

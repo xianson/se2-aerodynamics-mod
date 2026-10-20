@@ -101,14 +101,9 @@ public static partial class SettingsTab
         try
         {
             var msgs = session.TryGet<IUserMessages>();
-            msgs?.DisplayMessage(new UserMessage
-            {
-                TitleId = LocKey.FromString(ModTitle + " settings"),
-                ContentId = LocKey.FromString("The in-game menu (Options > Mods) could not be added (" + why + "). Edit " + ClientPath
-                    + " (this PC) or " + WorldPath + " (host defaults): they apply while you play."),
-                Type = UserMessageType.Game, TextTimeout = TimeSpan.FromSeconds(12),
-                MessageKey = Keen.VRage.Library.Utils.StringId.Get("modsettings." + ModId),
-            });
+            msgs?.DisplayMessage(ModToast.Literal(ModTitle + " settings",
+                "The in-game menu (Options > Mods) could not be added (" + why + "). Edit " + ClientPath
+                + " (this PC) or " + WorldPath + " (host defaults): they apply while you play.", 12, "modsettings." + ModId));
         }
         catch { }
     }

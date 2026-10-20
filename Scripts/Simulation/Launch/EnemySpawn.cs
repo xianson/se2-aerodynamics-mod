@@ -317,12 +317,7 @@ public static partial class EnemySpawn
     {
         try
         {
-            session?.TryGet<IUserMessages>()?.DisplayMessage(new UserMessage
-            {
-                TitleId = LocKey.FromString("Test spawn"), ContentId = LocKey.FromString(text),
-                Type = UserMessageType.Game, TextTimeout = TimeSpan.FromSeconds(4),
-                MessageKey = StringId.Get("aero.testspawn"),   // (keyed: a new answer replaces the last)
-            });
+            session?.TryGet<IUserMessages>()?.DisplayMessage(ModToast.Literal("Test spawn", text, 4, "aero.testspawn"));   // (keyed: a new answer replaces the last)
         }
         catch { }
     }

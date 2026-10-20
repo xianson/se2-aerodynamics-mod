@@ -220,7 +220,7 @@ sealed class PanelLayoutPack : IScenarioPack
             Sim.Check(lines, "panel hints: every choice of every dropdown has its own one-line hint (under 80 characters)");
             // (no tooltip texts: in game a row's tooltip is always its label - the control panel's style binds ToolTip.Tip to
             //  Label; a member's documentation is editor-only. The hint rows explain the choices.)
-            Sim.Check(!Regex.IsMatch(src, @"Tips\(\)|MembersDocumentation") && !Regex.IsMatch(File.ReadAllText(Path.Combine(root, "Scripts", "Simulation", "Blocks", "ModDetailTypeInfo.cs")), @"IReadOnlyDictionary<string, string> tips"),
+            Sim.Check(!Regex.IsMatch(src, @"\bTips\(\)|MembersDocumentation") && !Regex.IsMatch(File.ReadAllText(Path.Combine(root, "Scripts", "Simulation", "Blocks", "ModDetailTypeInfo.cs")), @"IReadOnlyDictionary<string, string> tips"),
                 "panel hints: no tooltip texts handed to the panel (dead in game; the hint rows explain)");
         }
     }

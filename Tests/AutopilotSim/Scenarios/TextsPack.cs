@@ -16,6 +16,7 @@ sealed class TextsPack : IScenarioPack
     public void Register(ScenarioRegistry r)
     {
         r.Add("texts: every panel label, enum choice and block name is in the en-US texts file", true, Keys);
+        r.Add("texts: no toast passes its text as a localization key (every UserMessage through ModToast)", true, Toasts);
     }
 
     static string Root()
@@ -23,6 +24,37 @@ sealed class TextsPack : IScenarioPack
         var d = new DirectoryInfo(AppContext.BaseDirectory);
         while (d != null && !File.Exists(Path.Combine(d.FullName, "Assets", "Texts", "en-US", "AeroMod.loc-texts"))) d = d.Parent;
         return d?.FullName;
+    }
+
+    /// <summary>A toast's title and content are localization KEYS (UserMessage.TitleId / ContentId): a mod's sentence passed as one
+    /// logged two "Could not find key" warnings a toast. Every toast goes through Ui/ModToast.Literal (the game's own "{Title}" /
+    /// "{Content}" keys, the text as the parameter) - the code scanned: no UserMessage built anywhere else, no TitleId /
+    /// ContentId set to a LocKey from a string but ModToast's own two keys.</summary>
+    static void Toasts()
+    {
+        string root = Root();
+        if (root == null) { Sim.Check(false, "toasts: the mod's sources found"); return; }
+        var bad = new List<string>();
+        int files = 0;
+        foreach (var f in Directory.EnumerateFiles(Path.Combine(root, "Scripts"), "*.cs", SearchOption.AllDirectories))
+        {
+            string name = Path.GetFileName(f);
+            var lines = File.ReadAllLines(f);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string t = lines[i].Trim();
+                if (t.StartsWith("//")) continue;
+                bool built = Regex.IsMatch(t, @"new\s+UserMessage\b") && name != "ModToast.cs";
+                bool asKey = Regex.IsMatch(t, @"\b(TitleId|ContentId)\s*=\s*(LocKey\.FromString|new\s+LocKey)\b") && !Regex.IsMatch(t, @"FromString\((TitleKey|ContentKey)\)");
+                if (built || asKey) bad.Add($"{name}:{i + 1}");
+            }
+            files++;
+        }
+        string mt = Path.Combine(root, "Scripts", "Simulation", "Ui", "ModToast.cs");
+        string m = File.Exists(mt) ? File.ReadAllText(mt) : "";
+        Sim.Check(m.Contains("\"UserMessageFanfareTitle\"") && m.Contains("\"UserMessageFanfareContent\"") && m.Contains("[\"Title\"]") && m.Contains("[\"Content\"]"),
+            "toasts: ModToast shows the text through the game's bare-parameter keys ({Title} / {Content})");
+        Sim.Check(files > 50 && bad.Count == 0, $"toasts: no UserMessage outside ModToast, no title / content key made from a text ({files} files; {string.Join(", ", bad)})");
     }
 
     static void Keys()
