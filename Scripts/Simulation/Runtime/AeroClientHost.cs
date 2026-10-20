@@ -29,6 +29,7 @@ public partial class AeroClientHostComponent : Component, IInSceneListener
 /// <summary>
 /// The client's session-level work, once a frame, from the render camera (AeroClientHostComponent) - not from a grid:
 ///  - the settings: SawClient, the files' poll (~2 s), the Options screen's Mods tab (Ui/SettingsTab.cs: one caller per 250 ms);
+///  - the mod's en-US texts read into the game's table once a session (Ui/ModTexts.cs - the game reads them only at start-up);
 ///  - the HUD's Mach / autopilot readout (MachHud), creative quick launch's key and answer (QuickLaunch.ClientTick), the
 ///    autopilot's toasts (ApToasts), the airframe's creaks and cockpit shake (StructureFeel) - each the LOCAL player's, found
 ///    through the session (each has its own claim: one caller per its period).
@@ -41,6 +42,8 @@ public static class AeroClientHost
     /// <summary>Diagnostics (aeroget): frames run by the host / by a grid's fallback; the in-process server check.</summary>
     public static long HostFrames, FallbackFrames;
     public static string Status = "not ticked";
+    /// <summary>One of this mod's own en-US text keys (Assets/Texts/en-US/AeroMod.loc-texts): missing - the texts are read again.</summary>
+    public const string ModTextsProbe = "AeroModTexts_Probe";
     static long _hostAt;
     static object _session;
 
@@ -60,6 +63,7 @@ public static class AeroClientHost
             if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
             AeroSettings.Poll();   // (the settings files, every ~2 s)
             if (SettingsTab.Claim()) SettingsTab.Ticked(session);   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one per 250 ms)
+            ModTexts.Tick(session, ModTextsProbe);   // (the mod's en-US texts into the game's table, once a session - Ui/ModTexts.cs)
             MachHud.Tick(any);   // (the speed readout's Mach: not an effect - runs with the effects off too)
             QuickLaunch.ClientTick(any);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs)
             EnemySpawn.ClientTick(any);   // (the test spawn keys, the blueprint's load and the answer - Launch/EnemySpawn.cs)

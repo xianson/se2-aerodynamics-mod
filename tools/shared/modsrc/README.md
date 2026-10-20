@@ -10,7 +10,8 @@ these files. They are written ONCE, here (until 2026-10-19 in the Orbital repo, 
   (`Save/WorldCarriers.cs`: which saved text a world applies, when a world is over - planetless worlds too) and their test
   (`Tests/WorldCarrierTests/Program.cs`); the world-switch fix (`Reload/ScriptResultsCleanup.cs`,
   `ScriptResultsCleanup.Engine.cs`: the mod's entry out of the game's script results on unload) and its test
-  (`Tests/ReloadTests/Program.cs`). The namespace is a placeholder:
+  (`Tests/ReloadTests/Program.cs`); the mod's en-US texts read into the game's text table once a session (`Ui/ModTexts.cs`:
+  the game reads them only at start-up, before a world's mods load - each mod calls `ModTexts.Tick(session, <its probe key>)`). The namespace is a placeholder:
   `namespace __MOD__;` / `using __MOD__;` (those lines only) become `AeroMod` / `OrbitalMod` in the copies.
 - Never here: each mod's adapter (`Scripts/Simulation/Ui/SettingsTab.Mod.cs`: its id, title, files, registry calls) and its
   test project files (`*.csproj`). The two adapters' `ModId`s must differ (the check says so).
