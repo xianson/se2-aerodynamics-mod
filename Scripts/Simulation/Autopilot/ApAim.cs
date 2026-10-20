@@ -23,11 +23,18 @@ public sealed class ApTargetTrack
     Vector3 _vPrev; bool _hasPrev;
     public float Range, Closing, LosRate, AngleOff;
     public Vector3 Los;
+    /// <summary>(2026-10-19) The same target's motion estimated from its observed POSITIONS alone (ApMotionTrack: filtered position,
+    /// velocity, acceleration, turn rate, energy, confidence and age) - the formation and the combat slots read this; the
+    /// behaviours above keep the source's velocity.</summary>
+    public readonly ApMotionTrack Motion = new();
 
-    public void Clear() { Valid = false; _hasPrev = false; Acc = Vector3.Zero; Lost = 0f; Name = ""; Id = 0; }
+    public void Clear() { Valid = false; _hasPrev = false; Acc = Vector3.Zero; Lost = 0f; Name = ""; Id = 0; Motion.Reset(); }
 
     public void Update(in ApTargetFix f, in ApSense s, float dt)
     {
+        // (the observed-motion track: positions only; a new id starts it again)
+        if (f.Valid && Valid && f.Id != Id) Motion.Reset();
+        Motion.Step(f.Valid, f.Pos, dt, s.GravityTrue.LengthSquared() > 0f ? s.GravityTrue : s.Gravity);
         if (!f.Valid)
         {
             Lost += dt;
