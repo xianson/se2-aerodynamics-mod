@@ -99,7 +99,7 @@ public partial class AeroGridComponent
         }
         var s = ApSenseNow(wt, fd);
         s.Lim = ctl != null ? ApLimits.Of(ctl.Panel) : ApLimits.Defaults;
-        if (fd == null && (ask >= 0 || ctl != null)) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = _apTerrain; }
+        if (fd == null && (ask >= 0 || ctl != null)) { fd = Fd = new FlightDirector(); _apTerrain ??= new GridTerrain(this); fd.Terrain = new CombinedTerrain(_apTerrain, new PlanetTerrainQuery(new GamePlanetHeight())); }
         if (ctlChanged)
         {
             // (the block that flew is gone, dark or outranked: let go - a dark one's panel back to Off, as a lone block's, so it

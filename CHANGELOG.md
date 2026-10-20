@@ -24,6 +24,10 @@ was flown in game for this release. The commit hashes are on the integration bra
   aims by yaw and by height (25..100 % against a weaving target).
 - **Target:** the grid's own targeting (locked, else priority, else nearest seen by the turrets), a GPS marker, a grid
   by name, or another mod (`AeroApi` 12: `SetAutopilotTarget`, `TryGetAutopilotAim`, ...). Runs unpiloted.
+- **Terrain at any range on planets:** the autopilot reads the planet's own height (its generated surface) as well as the
+  ground rays, which see only near the ship: it looks 6 km ahead and 20 km down. A 300 m cliff at 300 m/s is seen 2970 m
+  off (the rays alone: 360 m); Plane2 navigating at 150 m into a 400 m cliff climbs from 1.1 km before it and keeps 146 m
+  (the rays alone: it flies into it). Dug holes and placed voxels are still the rays' only.
 - **Target Filter:** hostile only (default) / hostile + neutral / everything, on every target source, by the game's own
   relation (the turrets' rule). With no turret, or a wider filter, the block finds the nearest target within 4 km itself.
   A refused named grid says why ("no target - X is neutral").

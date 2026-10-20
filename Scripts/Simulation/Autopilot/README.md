@@ -9,7 +9,7 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 |---|---|
 | `FlightDirector.cs` | The core (engine-free): goals (`ApGoal`: attitude, hover, position, height, external), hover's speed loop -> lean (the integral finds a single tail's trim lean), height hold over the ground or along the gravity, the external goal source (`Track`, `Accel` flown with the lift - `LiftFlight` - or the thrust, `Attitude`), terrain response, the watch (reasons for letting go), the readout and words (`ApText`) |
 | `EnvelopeGuard.cs` | The reference governor (engine-free): stall margin (LiftPeak's), g limit, the predicted loss of control for the command before it is given; a bank never cut by the stall caps (the step's roll about the flow kept) |
-| `ApTerrain.cs` | `ITerrainQuery` (the ground below, a ray along the path) and `TerrainWatch` (height over the ground - its shape filtered, the ship's own motion not -, the ground's rise, the time to impact straight and along the bent path) |
+| `ApTerrain.cs` | `ITerrainQuery` (the ground below, a ray along the path), `PlanetTerrainQuery` (the same from a planet's height, `IPlanetHeight`: marched and bisected, normals from samples), `CombinedTerrain` (rays + planet: the nearer answer; `ILongRangeTerrain`) and `TerrainWatch` (height over the ground - its shape filtered, the ship's own motion not -, the ground's rise, the time to impact straight and along the bent path; 6 km ahead, 20 km below with the planet) |
 | `ApPerf.cs` | The flight performance (engine-free): `PerfSamples` (the stall sweep's lift and drag over the angle of attack), `FlightPerf` (load, turn rates, drag, excess thrust, speed after a pull, the angle for a lift) |
 | `ApTypes.cs` | `ApSense` (what the instruments show), `ApCommand` (the seam), the enums, `ApExternal` / `IApGoalSource`, `ApMath`, `LoacMath` (Loac.cs's arithmetic), `SideAuthority` |
 | `ApConfig.cs` | The world's caps and the client readout (`Autopilot.*`; the rest are a new block's panel defaults) and `ApTuning` (the one constant the game and the sim share) |
@@ -23,6 +23,7 @@ fly it through the real gyros, thrusters, rotors' cyclic and control surfaces. T
 | `Game/AeroGridComponent.Autopilot.cs` | Per grid: the server's flight director each tick before ThrustTorque (`AutopilotStep` from `AeroSimJob.AttitudeJob`), its instruments (`ApSenseNow`), the keys written in place (`ControlData.Movement`), the record (`ThrustTorque.ApPub`) - the client copy flies the same target and hands the server the pilot's keys and steering |
 | `Game/ApGameSense.cs` | The target in game (`ApGameTargets`: the grid's `TargetingGridComponent` - locked, priority, nearest; a GPS marker; a grid by name; the API's), GPS markers (`ApGps`: the owner's, then every player's), the fixed guns (`ApGunScan`: their axis, muzzle speed, range; the nose without guns: the block's front) |
 | `Game/ApEnemyGame.cs` | Ownership and relations in game: `OwnershipSessionComponent.TryTransferToNPC` / `TryTransferOwnership` (the block's server job, one at a time), `IsHostileNPC`, the in-process player (`LocalIdentity`, `IsCreative`), `ApRelationReader` (`IRelations.GetRelationFromOwners` - the turrets' rule -, `IFactions`, `PriorityTargetComponent`) |
+| `Game/PlanetHeight.cs` | The planet's height in game (`GamePlanetHeight`): `VoxelPlanetComponent.QuerySurfacePosition` by reflection (a closed delegate per planet), the generated shape at any range; GridTerrain's rays kept for what is near, dug or built |
 | `Game/GridTerrain.cs` | The terrain in game: `IPhysics.CastRay`, synchronous, own buffers (voxel colliders exist only near entities: a miss is "not known") |
 | `Game/AeroAutopilotComponent.cs` | The Autopilot block (server, injected by its prefabs): its panel under a lock, its status line, its step (registered with its own grid, which keeps the list: `AeroGridComponent.ApBlocks`) |
 | `Game/AeroAutopilotBlockDetailModel.cs` | Its terminal: the mode buttons (toolbar actions too), the status line, the setpoints and limits |
@@ -57,7 +58,8 @@ Pilot modes: `Scenarios/FlightPack.cs` (holds, TECS, routes, wind, loiter, terra
 behaviour on the plane, the gun helicopter and the six-axis gunship against straight / turning / weaving / accelerating
 targets; aim and time in the cone; the arbiter; the lead against a flown shot; the protection clipping a chase; idle patrol),
 `PilotBlockPack.cs` (the panel through the link; the saved form), `EnemyPack.cs` (the relations by the game's rule, mocked; the
-filter; the Enemy switch's rules and state over a mocked world; an enemy chasing the player, a drone's filter).
+filter; the Enemy switch's rules and state over a mocked world; an enemy chasing the player, a drone's filter), `PlanetTerrainPack.cs`
+(the planet's height mocked: the query, TerrainWatch's reach, a cliff flown with the rays alone and with the planet).
 
 `Tests/AutopilotSim` (in the gate; `-- full` the sweeps): the real core and protection over the game's thrust law and the
 mod's allocator / rotor trim / attitude law, on the dumped H25 helicopter (1.5x / 2.5x / 3x, one and two tails), VTOLs, and
