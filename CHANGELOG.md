@@ -54,6 +54,14 @@ was flown in game for this release. The commit hashes are on the integration bra
   longer locks into a deep stall (was: past 79 deg). Cost: +4-7 us per piloted grid per tick, no allocation.
 - `Tests/SurfaceStallTests`: before / after on single plates and dumped ships.
 
+### Flight assists
+
+- **New world settings group "Flight assists"**, every default realistic (nothing changes unless you turn it on). Presets
+  Realistic / Assisted / Forgiving (`Assists.Preset`, worked out from the values; Custom when they match none).
+- **Changes physics:** stall angle, lift kept past the stall, control bite past the stall (`Assists.StallAngleScale`,
+  `PostStallLift`, `SurfaceAuthority`). 1 is bit-identical to realistic.
+- `Gyros.TorqueScale` moved here (same name; saves unchanged).
+
 ## 1.0.4 - saving fixed on SE2 4.0
 
 - **A world with a newly placed aero block could not be saved** ("Failed save ... Serializing dead Entities ... AeroSurfaceSettingsComponent").

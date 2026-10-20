@@ -39,8 +39,9 @@ public static class FlightAssists
     /// <summary>One preset's values: protection, stall angle, post-stall lift, surface authority, offset thrust, gyro strength.</summary>
     public readonly struct Values
     {
-        public readonly bool Protection; public readonly float StallAngle, PostStallLift, SurfaceAuthority, OffsetThrust, Gyro;
-        public Values(bool p, float s, float l, float a, float o, float g) { Protection = p; StallAngle = s; PostStallLift = l; SurfaceAuthority = a; OffsetThrust = o; Gyro = g; }
+        // (named apart from the settings' fields: SettingsTests' no-code-writes scan reads an assignment to a same-named one as a write)
+        public readonly bool Protection; public readonly float StallAngle, Lift, Authority, OffsetThrust, Gyro;
+        public Values(bool p, float s, float l, float a, float o, float g) { Protection = p; StallAngle = s; Lift = l; Authority = a; OffsetThrust = o; Gyro = g; }
     }
 
     /// <summary>The preset's values (Custom: none - false). Realistic is every field's default (Gyros.TorqueScale's 0.25 is the
@@ -63,8 +64,8 @@ public static class FlightAssists
         for (int p = Realistic; p <= Forgiving; p++)
         {
             Preset(p, out var v);
-            if (v.Protection == StallProtection && Near(v.StallAngle, StallAngleScale) && Near(v.PostStallLift, PostStallLift)
-                && Near(v.SurfaceAuthority, SurfaceAuthority) && Near(v.OffsetThrust, OffsetThrustScale) && Near(v.Gyro, gyro)) return p;
+            if (v.Protection == StallProtection && Near(v.StallAngle, StallAngleScale) && Near(v.Lift, PostStallLift)
+                && Near(v.Authority, SurfaceAuthority) && Near(v.OffsetThrust, OffsetThrustScale) && Near(v.Gyro, gyro)) return p;
         }
         return Custom;
         static bool Near(float a, float b) => MathF.Abs(a - b) < 1e-4f;

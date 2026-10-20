@@ -58,6 +58,8 @@ public static partial class AeroSettings
         public int Order;
         /// <summary>A world value clients also draw from (the plasma's Mach pair): to be replicated once SE2 can.</summary>
         public bool ClientVisible;
+        /// <summary>Worked out from other settings (Assists.Preset): set through them, never written to the files or the save.</summary>
+        public bool Derived;
 
         /// <summary>The UI metadata, fluently after B / I / F.</summary>
         public Setting Ui(string label, string group, Tier tier, string unit = "", double step = 0, string[] choices = null)
@@ -83,7 +85,7 @@ public static partial class AeroSettings
     public static bool WorldWritable => SawServer || !SawClient;
 
     // the screen's sections, in order
-    const string GFlight = "Flight model", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
+    const string GFlight = "Flight model", GAssists = "Flight assists", GStructure = "Structure and damage", GHeat = "Re-entry heat", GPerf = "Performance (host)",
                  GHud = "HUD", GFeel = "Feel and audio", GFx = "Visual effects", GQuality = "Effects quality",
                  GLaunch = "Quick launch", GAutopilot = "Autopilot", GControls = "Controls";   // (a group is one scope: the menu keys sections by name)
     const Tier Basic = Tier.Basic, Advanced = Tier.Advanced, Hidden = Tier.Hidden;
@@ -105,9 +107,6 @@ public static partial class AeroSettings
         B("Aero.ThrustTorque", "world", false, () => ThrustTorque.Enabled, v => ThrustTorque.Enabled = v,
             "Thrusters off the centre of mass turn the ship (and steer to the pilot's target). Off: the game's own thrust, untouched.")
             .Ui("Off-centre thrust turns ships", GFlight, Basic);
-        F("Gyros.TorqueScale", "world", 0.05, 1, false, () => GyroBalance.TorqueScale, v => GyroBalance.TorqueScale = (float)v,
-            "Every gyroscope's torque, times this (1: vanilla). The game's own gyros made weaker, so the air, the control surfaces and off-centre thrust matter: a lopsided ship or a stall is no longer held straight by gyros alone.")
-            .Ui("Gyro strength", GFlight, Basic, "×", 0.05);
         B("Weather.Wind", "world", false, () => AeroWind.Enabled, v => AeroWind.Enabled = v,
             "The game's wind in the air the ship flies through (headwinds, crosswinds, gusts), in place of the game's own box-shaped wind push.")
             .Ui("Wind", GFlight, Basic);
@@ -138,6 +137,30 @@ public static partial class AeroSettings
         F("Gyros.SaturationSeconds", "world", 2, 120, false, () => GyroBalance.SaturationSeconds, v => GyroBalance.SaturationSeconds = (float)v,
             "Gyro saturation: seconds of full gyro torque in one direction before they are full (they start fading at half).")
             .Ui("Gyro momentum capacity", GFlight, Advanced, "s", 1);
+
+        // ── flight assists (2026-10-19, Lift/FlightAssists.cs: every default realistic - the mod's physics unchanged; the
+        //    preset sets them together and is worked out from them, never saved itself) ──
+        I("Assists.Preset", "world", FlightAssists.Custom, FlightAssists.Forgiving, false, () => FlightAssists.Matching(GyroBalance.TorqueScale), v => ApplyPreset((int)v),
+            "Sets the flight assists below together. Realistic: the mod's physics as they are. Assisted: stall protection in manual flight and stronger gyros, the air untouched. Forgiving: also a later, gentler stall, more control-surface bite past it and half the uncommanded offset-thrust torque (changes physics). Custom: the values match no preset (picking it changes nothing).")
+            .Ui("Flight assists", GAssists, Basic, choices: FlightAssists.PresetNames).Derived = true;
+        B("Assists.StallProtection", "world", false, () => FlightAssists.StallProtection, v => FlightAssists.StallProtection = v,
+            "Fly-by-wire stall protection in manual flight: the attitude you steer to is held short of the stall (the autopilot's angle-of-attack margin), under the autopilot's g limit, and short of what the controls can hold (the predicted loss of control) - the speed readout says STALL LIMIT / G LIMIT / CONTROL LIMIT while it holds you back. No physics change. Off: you can fly the ship into the stall.")
+            .Ui("Stall protection (manual flight)", GAssists, Basic);
+        F("Gyros.TorqueScale", "world", 0.05, 1, false, () => GyroBalance.TorqueScale, v => GyroBalance.TorqueScale = (float)v,
+            "Every gyroscope's torque, times this (1: vanilla). The game's own gyros made weaker, so the air, the control surfaces and off-centre thrust matter: a lopsided ship or a stall is no longer held straight by gyros alone.")
+            .Ui("Gyro strength", GAssists, Basic, "×", 0.05);
+        F("Assists.StallAngleScale", "world", 1, 2, false, () => FlightAssists.StallAngleScale, v => FlightAssists.StallAngleScale = (float)v,
+            "CHANGES PHYSICS: every wing's and control surface's stall angle, times this (1: realistic; 1.3: they stall 30 % later).")
+            .Ui("Stall angle (changes physics)", GAssists, Advanced, "×", 0.05);
+        F("Assists.PostStallLift", "world", 1, 3, false, () => FlightAssists.PostStallLift, v => FlightAssists.PostStallLift = (float)v,
+            "CHANGES PHYSICS: the lift a stalled wing or control surface keeps, times this - never more than it had at the stall (1: realistic).")
+            .Ui("Lift kept past the stall (changes physics)", GAssists, Advanced, "×", 0.05);
+        F("Assists.SurfaceAuthority", "world", 1, 3, false, () => FlightAssists.SurfaceAuthority, v => FlightAssists.SurfaceAuthority = (float)v,
+            "CHANGES PHYSICS: a control surface's deflection authority past its stall, times this (on top of the flat-plate model; 1: realistic). Under the stall: unchanged.")
+            .Ui("Control bite past the stall (changes physics)", GAssists, Advanced, "×", 0.05);
+        F("Assists.OffsetThrust", "world", 0, 1, false, () => FlightAssists.OffsetThrustScale, v => FlightAssists.OffsetThrustScale = (float)v,
+            "UNREALISTIC - REMOVES REAL TORQUE: the part of off-centre thrusters' torque that the attitude control could not cancel, times this (1: realistic; 0: none). The torque the attitude control asks the thrusters for is never touched. Without it the controller already cancels offset thrust honestly with the gyros and thrusters while they have the reach.")
+            .Ui("Uncancelled offset thrust (unrealistic)", GAssists, Advanced, "×", 0.05);
 
         // ── structure and damage ──
         B("Structure.Loads", "world", false, () => StructureLoads.Enabled, v => StructureLoads.Enabled = v,
@@ -446,6 +469,18 @@ public static partial class AeroSettings
     static double FullMach() => AeroEntryFx.OnsetMach * Math.Cbrt(AeroEntryFx.FullHeat / AeroEntryFx.OnsetHeat);
     static void SetFullMach(double m) => AeroEntryFx.FullHeat = (float)(AeroEntryFx.OnsetHeat * Math.Pow(m / AeroEntryFx.OnsetMach, 3));
     static void SetOnsetMach(double m) { double full = FullMach(); AeroEntryFx.OnsetMach = (float)m; SetFullMach(full); }   // (the full point stays put)
+
+    // ── the flight assists' preset (Assists.Preset: worked out from its members - FlightAssists.Matching - never saved itself) ──
+    /// <summary>A preset's values into its members, each through the store (so each is the player's value, saved with the world);
+    /// a member the host file forces keeps its value. Custom: nothing.</summary>
+    static void ApplyPreset(int p)
+    {
+        if (!FlightAssists.Preset(p, out var v)) return;
+        Member("Assists.StallProtection", v.Protection ? 1 : 0); Member("Gyros.TorqueScale", v.Gyro);
+        Member("Assists.StallAngleScale", v.StallAngle); Member("Assists.PostStallLift", v.Lift);
+        Member("Assists.SurfaceAuthority", v.Authority); Member("Assists.OffsetThrust", v.OffsetThrust);
+        static void Member(string name, double value) { if (!IsForced(name)) Set(name, value, out _, fromStorage: true); }
+    }
 
     static Setting Add(string name, string type, string scope, double min, double max, bool rebuild, Func<double> get, Action<double> set, string doc)
     {

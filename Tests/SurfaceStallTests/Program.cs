@@ -249,14 +249,14 @@ static partial class Program
         {
             Check(FlightAssists.Preset(p, out var v), $"preset {p}: has values");
             bool sp = FlightAssists.StallProtection; float sa = FlightAssists.StallAngleScale, pl = FlightAssists.PostStallLift, au = FlightAssists.SurfaceAuthority, ot = FlightAssists.OffsetThrustScale;
-            FlightAssists.StallProtection = v.Protection; FlightAssists.StallAngleScale = v.StallAngle; FlightAssists.PostStallLift = v.PostStallLift; FlightAssists.SurfaceAuthority = v.SurfaceAuthority; FlightAssists.OffsetThrustScale = v.OffsetThrust;
+            FlightAssists.StallProtection = v.Protection; FlightAssists.StallAngleScale = v.StallAngle; FlightAssists.PostStallLift = v.Lift; FlightAssists.SurfaceAuthority = v.Authority; FlightAssists.OffsetThrustScale = v.OffsetThrust;
             Check(FlightAssists.Matching(v.Gyro) == p, $"preset {FlightAssists.PresetNames[p]}: matches itself");
             Check(FlightAssists.Matching(v.Gyro + 0.05f) == FlightAssists.Custom, $"preset {FlightAssists.PresetNames[p]}: another gyro strength is custom");
             FlightAssists.StallProtection = sp; FlightAssists.StallAngleScale = sa; FlightAssists.PostStallLift = pl; FlightAssists.SurfaceAuthority = au; FlightAssists.OffsetThrustScale = ot;
         }
         Check(!FlightAssists.Preset(FlightAssists.Custom, out _), "preset Custom: no values of its own");
         FlightAssists.Preset(FlightAssists.Realistic, out var real);
-        Check(!real.Protection && real.StallAngle == 1f && real.PostStallLift == 1f && real.SurfaceAuthority == 1f && real.OffsetThrust == 1f && real.Gyro == GyroDefault, "preset Realistic: every field at the mod's default");
+        Check(!real.Protection && real.StallAngle == 1f && real.Lift == 1f && real.Authority == 1f && real.OffsetThrust == 1f && real.Gyro == GyroDefault, "preset Realistic: every field at the mod's default");
         Console.WriteLine($"\n== 4. flight assists: uncommanded offset torque, post-stall lift, stall angle, surface authority, presets checked");
     }
     const float GyroDefault = 0.25f;   // (GyroBalance.TorqueScale's default - SettingsTests checks the registry's against the field)

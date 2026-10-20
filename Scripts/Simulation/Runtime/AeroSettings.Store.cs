@@ -145,7 +145,7 @@ public static partial class AeroSettings
         var sb = new StringBuilder();
         foreach (var s in _all)
         {
-            if (s.Scope != scope) continue;
+            if (s.Scope != scope || s.Derived) continue;   // (a derived one - the assists' preset - is its members)
             double v = s.Stored;   // (the player's value, never a harness's direct write to the field)
             if (!all && v == s.Default) continue;
             if (all) sb.Append("# ").Append(s.Doc).Append(" (").Append(s.Type).Append(", default ").Append(Fmt(s, s.Default))

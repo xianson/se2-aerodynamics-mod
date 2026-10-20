@@ -43,6 +43,10 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   10 m/s and it stops where you let go) or just the height. A helicopter left hovering keeps hovering, also after a
   reload. Protected against stalls, overload, loss of control and the ground; it flies only through the ship's real
   controls.
+- **Flight assists** (off by default; Settings > Mods > Flight assists): presets Realistic / Assisted / Forgiving.
+  - Stall protection in manual flight: fly-by-wire limits on your steering. No physics change.
+  - Gentler stall and more control bite past it. Changes physics.
+  - Less uncancelled offset-thrust torque. Unrealistic.
 - **Quick launch (creative):** seated in a cockpit, `Ctrl` + `T` lifts the ship (and everything joined to it) 1 km
   over the ground, turns it level and sends it flying along its nose at cruise speed. Creative worlds only; never into
   the ground, never a station. Rebind it or turn it off under Settings > Mods > Aerodynamics (Controls, Quick launch).

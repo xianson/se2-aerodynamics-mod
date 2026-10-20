@@ -17,6 +17,9 @@
 // 9. WORLD UNLOAD: the host file's forced names do not carry over to the next world.
 // 10. NO CODE WRITES: outside the harness (Dev/, harness verb switches) no code writes a setting's field - a runtime state
 //    ("failed, off for the session") is a flag of its own (the Orbital Mod's ProxyAtmospheres, 2026-10-15).
+// 12. FLIGHT ASSISTS (2026-10-19): every default realistic (FlightAssists' Realistic preset); the preset sets its members through
+//    the store, is worked out from them (Custom when they match none) and is never saved itself; a forced member keeps its value;
+//    a group reset is realistic again.
 // 11. FILE POLL (2026-10-15, in a temp folder - never the player's): what the background poll reads is applied only on the
 //    next tick-thread Poll (setters touch tick-thread state); a forced poll applies at once; a world unload discards a
 //    host-file read still waiting. A Set made while the client file is being written stays marked: the next poll writes
@@ -35,7 +38,7 @@ static class Program
     static int _fails, _checks;
     static void Check(bool ok, string what) { _checks++; if (!ok) { _fails++; Console.WriteLine("FAIL " + what); } else if (Environment.GetEnvironmentVariable("VERBOSE") != null) Console.WriteLine("ok   " + what); }
 
-    static readonly string[] Groups = { "Flight model", "Structure and damage", "Re-entry heat", "Quick launch", "Autopilot", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality", "Controls" };
+    static readonly string[] Groups = { "Flight model", "Flight assists", "Structure and damage", "Re-entry heat", "Quick launch", "Autopilot", "Performance (host)", "HUD", "Feel and audio", "Visual effects", "Effects quality", "Controls" };
 
     static string Root()
     {
@@ -405,6 +408,46 @@ static class Program
         }
     }
 
+    // ── 12. flight assists ──
+    static double Get(string n) { AeroSettings.TryGet(n, out double v); return v; }
+    static bool Is(FlightAssists.Values v) => Get("Assists.StallProtection") == (v.Protection ? 1 : 0) && Get("Assists.StallAngleScale") == v.StallAngle
+        && Get("Assists.PostStallLift") == v.Lift && Get("Assists.SurfaceAuthority") == v.Authority && Get("Assists.OffsetThrust") == v.OffsetThrust
+        && Math.Abs(Get("Gyros.TorqueScale") - v.Gyro) < 1e-6;
+    static void Assists()
+    {
+        ResetAll();
+        var all = All();
+        FlightAssists.Preset(FlightAssists.Realistic, out var real);
+        FlightAssists.Preset(FlightAssists.Assisted, out var assisted);
+        FlightAssists.Preset(FlightAssists.Forgiving, out var forgiving);
+        Check(Is(real) && Get("Assists.Preset") == FlightAssists.Realistic, "assists: every default is the Realistic preset");
+        Check(!FlightAssists.StallProtection && FlightAssists.StallAngleScale == 1f && FlightAssists.PostStallLift == 1f && FlightAssists.SurfaceAuthority == 1f && FlightAssists.OffsetThrustScale == 1f,
+            "assists: realistic - protection off, every multiplier 1");
+        Check(all.Count(s => s.Derived) == 1 && all.Single(s => s.Derived).Name == "Assists.Preset", "assists: the preset is the only derived setting");
+        string[] members = { "Assists.StallProtection", "Gyros.TorqueScale", "Assists.StallAngleScale", "Assists.PostStallLift", "Assists.SurfaceAuthority", "Assists.OffsetThrust" };
+        Check(members.All(n => all.Any(s => s.Name == n && s.Group == "Flight assists" && s.Scope == "world")), "assists: every member in the Flight assists group (world)");
+        Check(AeroSettings.Set("Assists.Preset", FlightAssists.Assisted, out string why) && Is(assisted) && Get("Assists.Preset") == FlightAssists.Assisted, $"assists: Assisted sets its members ({why})");
+        string text = AeroSettings.Text("world", all: false);
+        Check(!text.Contains("Assists.Preset") && text.Contains("Assists.StallProtection = true" + NL) && text.Contains("Gyros.TorqueScale = 0.5" + NL), $"assists: the save holds the members, not the preset ('{text.Replace(NL, "|")}')");
+        Check(!AeroSettings.Text("world", all: true).Contains("Assists.Preset"), "assists: the world file never lists the preset");
+        AeroSettings.ResetScope("world");
+        Check(Is(real), "assists: a world reset is realistic");
+        AeroSettings.Apply(text, "world");
+        Check(Is(assisted) && Get("Assists.Preset") == FlightAssists.Assisted, "assists: the saved members load back as Assisted");
+        Check(AeroSettings.Set("Assists.PostStallLift", 1.2, out _) && Get("Assists.Preset") == FlightAssists.Custom, "assists: a member moved off - Custom");
+        Check(AeroSettings.Set("Assists.Preset", FlightAssists.Custom, out why) && Math.Abs(Get("Assists.PostStallLift") - 1.2) < 1e-6 && Get("Assists.StallProtection") == 1, $"assists: picking Custom changes nothing ({why}, {Get("Assists.PostStallLift")}, {Get("Assists.StallProtection")})");
+        Check(AeroSettings.Set("Assists.Preset", FlightAssists.Forgiving, out _) && Is(forgiving), "assists: Forgiving sets its members");
+        Check(AeroSettings.Set("Assists.Preset", FlightAssists.Realistic, out _) && Is(real) && AeroSettings.Text("world", all: false) == "", "assists: Realistic again - every member at its default, nothing to save");
+        // a member the host file forces keeps its value; the rest follow the preset
+        AeroSettings.ApplyHostFile("Gyros.TorqueScale = 0.3" + NL);
+        Check(AeroSettings.Set("Assists.Preset", FlightAssists.Assisted, out why) && Math.Abs(Get("Gyros.TorqueScale") - 0.3) < 1e-6 && Get("Assists.StallProtection") == 1 && Get("Assists.Preset") == FlightAssists.Custom,
+            $"assists: a forced member keeps its value, the others follow ({why})");
+        AeroSettings.ApplyHostFile("# nothing" + NL);
+        AeroSettings.Set("Assists.Preset", FlightAssists.Forgiving, out _);
+        Check(AeroSettings.ResetGroup("world", "Flight assists", out why) > 0 && why == null && Is(real) && Get("Assists.Preset") == FlightAssists.Realistic, $"assists: the group's reset is realistic ({why})");
+        ResetAll();
+    }
+
     // ── 7. denylist ──
     static readonly Regex Deny = new(@"^(Dev|Test|Debug|Probe|Trace)|Log$");
     static void Denylist(string root)
@@ -432,7 +475,7 @@ static class Program
     static int Main()
     {
         string root = Root();
-        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root); FilePoll();
+        Honest(root); Shape(); Every(); Text(); GroupsReset(); Authority(); Persistence(); ForcedUnload(); Denylist(root); NoCodeWrites(root); FilePoll(); Assists();
         Console.WriteLine($"SettingsTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
