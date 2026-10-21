@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The retractable gear's game-free core (Gear/): its sequence (doors, fold, when the real wheel exists, the ground and
-       weight gates) and its kinematics (leg, rod, actuator, doors, hub). -->
+       weight gates) and its kinematics (leg, rod, actuator, doors, hub); the magnetic gear's pad life, magnet gates and the
+       suspension's stiffness cap (Gear/MagPad.cs: MagPadTests.cs). -->
   <ItemGroup>
     <Compile Include="$(Sim)\Gear\*.cs" />
     <Compile Include="$(Sim)\Components\PatchDrag.cs" />

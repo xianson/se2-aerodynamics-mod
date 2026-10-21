@@ -501,6 +501,8 @@ public static class GridPhysics
             probe.Ignore.Clear();
             if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, probe.Ignore);
             probe.Ignore.Add(grid.DEntity);
+            var pads = grid.TryGet<AeroGridComponent>()?.PadBodies;   // (its magnetic gears' pads: joined to its wheels, not to it)
+            if (pads != null) foreach (var pad in pads) probe.Ignore.Add(pad);
             args.IgnoredEntities = probe.Ignore;   // (a copy, made after the last grow: never args.Dispose, the probe owns it)
         }
         physics.CastRay(probe.Hits, in args, CollisionPreset.Closest);

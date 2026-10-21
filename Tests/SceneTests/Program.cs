@@ -41,6 +41,7 @@ static class Program
         ["AeroThrustSettingsComponent.All"] = (true, "every thruster composition, client and server (EntityInjector: ThrusterComponent; its Server flag)"),
         ["AeroSurfaceSettingsComponent.All"] = (false, "the control surfaces' SERVER prefabs only (AeroBlockGuids.SurfaceServerPrefabs)"),
         ["AeroGearComponent.All"] = (false, "the gears' SERVER prefabs only (AeroBlockGuids.GearServerPrefabs)"),
+        ["AeroMagGearComponent.All"] = (false, "the magnetic gears' SERVER prefabs only (AeroBlockGuids.MagGearServerPrefabs; and only a server copy adds itself)"),
         ["AeroAirbrakeComponent.All"] = (false, "the airbrakes' SERVER prefabs only (AeroBlockGuids.AirbrakeServerPrefabs)"),
         ["AeroAutopilotComponent.All"] = (false, "the Autopilot blocks' SERVER prefabs only (AeroBlockGuids.AutopilotServerPrefabs)"),
         ["AeroPropulsorComponent.All"] = (true, "the propulsors' server AND client prefabs (PropulsorBlocks.ServerPrefabs / ClientPrefabs; its _server flag)"),

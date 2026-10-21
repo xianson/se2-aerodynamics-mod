@@ -142,6 +142,17 @@ public class InjectAeroComponents : Injections
             Add(entity, AeroBlockSave.Info(typeof(AeroGearComponent), AeroBlockSave.GearId));   // (saved with the block)
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
         }
+        // the magnetic gears (2026-10-20): the pad grid and its magnet, on the server; their hidden wheels never drawn on the clients
+        if (AeroBlockGuids.MagGearServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, AeroBlockSave.Info(typeof(AeroMagGearComponent), AeroBlockSave.MagGearId));   // (saved with the block)
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroMagGearComponent into magnetic gear server prefab '{entity.DebugName}'");
+        }
+        if (AeroBlockGuids.HiddenWheelClientPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, typeof(AeroHiddenWheelComponent));
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroHiddenWheelComponent into hidden wheel client prefab '{entity.DebugName}'");
+        }
         // the 3x3x3 airbrakes: the server opens them on the parking signal, the client turns their leaves
         if (AeroBlockGuids.AirbrakeServerPrefabs.Contains(entity.Guid))
         {

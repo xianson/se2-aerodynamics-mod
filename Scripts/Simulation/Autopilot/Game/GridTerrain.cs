@@ -40,6 +40,7 @@ internal sealed class GridTerrain : ITerrainQuery
         _probe.Ignore.Clear();
         if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, _probe.Ignore);
         _probe.Ignore.Add(grid.DEntity);
+        foreach (var pad in _aero.PadBodies) _probe.Ignore.Add(pad);   // (its magnetic gears' pads: joined to its wheels, not to it)
         args.IgnoredEntities = _probe.Ignore;   // (a copy of the buffer handle; the probe owns it - never args.Dispose)
         physics.CastRay(_probe.Hits, in args, CollisionPreset.Closest);
         if (_probe.Hits.Count == 0) return false;

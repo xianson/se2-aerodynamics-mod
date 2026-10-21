@@ -24,6 +24,7 @@ public partial class AeroWorldSettingsComponent
         if (c.Data.Scene?.DebugName == "Client") return;   // (the carrier is the server planets'; never answer from a client copy)
         AtmosphereProbe.Tick(c.Entity);   // (the API's point query with no grid in the world: a timestamp compare; ~10 s its list)
         EnemySpawn.ServerTick(c);   // (test spawns - Launch/EnemySpawn.Server.cs: three reads while there is nothing to do)
+        AeroMagGearComponent.ServerTick(c.Entity?.GetSession());   // (magnetic gear pads no gear claims: one read while there are none)
         if (!QuickLaunch.Asked) return;
         QuickLaunch.ServerStep(c);
     }
