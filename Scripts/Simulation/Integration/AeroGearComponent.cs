@@ -70,7 +70,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         try { _server = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { _server = true; }
         lock (All) All.Add(this);
     }
-    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
+    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); if (_server && Variant?.Foot != null) PadFootRemoved(); }
 
     // (before the physics step - the constraint's limits are written here, never while the solver runs)
     [Before(typeof(Keen.VRage.Core.Systems.Simulation))]
@@ -147,6 +147,11 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                 }
             }
         }
+
+        // a pad foot: its box collider, its orientation lock, its axle held (AeroGearComponent.PadFoot.cs)
+        _step = "padfoot";
+        if (_wc != null) PadFootStep(wheel);
+        PadDevStep(wheel);   // (the harness's recorder and pushes: Dev/AeroGearPadDev.cs - two reads while off)
 
         // collision: off deep in the well, back before the wheel leaves it
         _step = "collision";
@@ -326,7 +331,8 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                     sb.Append(" | ").Append(g.Seq.Down ? "down" : "up").Append($" p {g.Seq.Progress:F2} travel {g._travel:F2} m (wheel: measured {g._measured:F2}, game {(g._cm != null ? g._cm.CurrentSuspensionDistance : float.NaN):F2})")
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
-                      .Append(g._shockOn ? " AIRSHOCK on" : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
+                      .Append(g._shockOn ? " AIRSHOCK on" : "")
+                      .Append(g.Variant?.Foot != null ? (g._lockLife.Has ? " PAD locked level" : " PAD no lock") + (g._boxWheel != null ? " box" : " sphere") + (g.FootAttitude(out float tl, out _) ? $" tilt {tl:F1}" : "") : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();
         }

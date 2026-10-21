@@ -1,0 +1,73 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "858f6f57-27bd-4b43-9ccb-63fef344e883",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-9e34-0061-000000000001",
+      "Model": "{G}ae200001-ae00-9e34-0105-000000000001",
+      "Dummies": {
+        "$DeltaEncoded": true,
+        "Keys": [
+          "851464db-4855-4cc2-8779-dc4c9e3d271c",
+          "5de653ca-71e6-4b41-b8de-4b286338e2c7"
+        ],
+        "Changed": [
+          {
+            "Kind": "Update",
+            "Index": 0,
+            "Value": {
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.77562,
+                    "Y": 0.0,
+                    "Z": -0.0
+                  },
+                  "Orientation": {
+                    "X": -0.096531,
+                    "Y": 0.0,
+                    "Z": -0.0,
+                    "W": 0.99533
+                  }
+                }
+              },
+              "Scale": {
+                "X": 0.1,
+                "Y": 0.1,
+                "Z": 0.1
+              }
+            }
+          },
+          {
+            "Kind": "Update",
+            "Index": 1,
+            "Value": {
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0,
+                    "Y": -0.506,
+                    "Z": 0
+                  }
+                }
+              },
+              "Scale": {
+                "X": 2.502,
+                "Y": 0.1,
+                "Z": 2.502
+              }
+            }
+          }
+        ],
+        "Removed": []
+      }
+    },
+    "DefinitionType": "VRage:Keen.VRage.Game.Components.Models.ModelComponentDefinition",
+    "PriorityOverride": false
+  }
+}

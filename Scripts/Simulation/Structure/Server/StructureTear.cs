@@ -347,7 +347,7 @@ public static class StructureTear
     /// new constraint, as a delegate bound to it - made once per constraint, called without boxing (2026-10-15 review:
     /// PropertyInfo.GetValue boxed a bool per call, up to 6 anchors x 8 tears a tick). An open delegate cannot be typed:
     /// HavokConstraint is internal. Null: unreadable (the alive / body checks still guard).</summary>
-    static Func<bool> DestroyedOf(IPhysicsConstraint c)
+    internal static Func<bool> DestroyedOf(IPhysicsConstraint c)
     {
         if (c == null) return null;
         if (!_destroyedTried)

@@ -1,0 +1,168 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "EmissiveOff",
+        "MaterialReference": "d2648963-ef2b-442d-af7b-ee3d79dad677"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      },
+      {
+        "MaterialName": "Copper",
+        "MaterialReference": "87b4f3bd-8eb2-4a46-bf00-4662bed27260"
+      },
+      {
+        "MaterialName": "BrushedMetal",
+        "MaterialReference": "0c3be477-8bff-4e2c-8a0e-d7d842905ae9"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts01",
+        "MaterialReference": "0d1f9867-1aee-4388-b5bb-4a7ce0cdc5e2"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasFont_BarlowCondensed",
+        "MaterialReference": "481b2a1f-b394-4d99-b58a-1c370e013315"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims02",
+        "MaterialReference": "aa49b17e-58dc-4da8-8ba2-3bd643325681"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "GratingMetallic",
+        "MaterialReference": "2cc33fe2-00c5-4a64-a648-d1ea7aa8e3ee"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}a959c2c9-bafe-5f3e-b91d-554bbd84197d",
+        "UsedMaterials": [
+          "EmissiveOff",
+          "Chrome",
+          "PaintedMetalDarker",
+          "Copper",
+          "BrushedMetal",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Stickers02",
+          "AtlasFont_BarlowCondensed",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Trims02",
+          "PaintedMetalColorable",
+          "GratingMetallic"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": -0.251,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      },
+      {
+        "AssetReference": "{G}d132818a-faf9-5e6c-bc5a-b0da01a6e5d8",
+        "UsedMaterials": [
+          "Chrome",
+          "EmissiveOff",
+          "BrushedMetal",
+          "PaintedMetalDarker",
+          "Copper",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Stickers02",
+          "AtlasFont_BarlowCondensed",
+          "AtlasDecal_Stickers01",
+          "PaintedMetalColorable",
+          "GratingMetallic"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.125,
+            "Y": -0.376,
+            "Z": -0.125
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      },
+      {
+        "AssetReference": "{G}b69fdcd0-0929-5ce4-8bf2-a04676087d67",
+        "UsedMaterials": [
+          "Chrome",
+          "EmissiveOff",
+          "PaintedMetalDarker",
+          "Copper",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Stickers02",
+          "PaintedMetalColorable",
+          "BrushedMetal",
+          "GratingMetallic"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.125,
+            "Y": -0.376,
+            "Z": -0.125
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}87038c39-6121-52d9-a1c3-7db68ff4aa8e",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}
