@@ -121,7 +121,10 @@ public partial class AeroGridComponent
             PilotSenses(in wt, ctl, in panel, ref s);
             bool wasEngaged = fd.Engaged;
             _apLink.Before(fd, in panel, ctl.Working, in s, ref _apOut);
-            if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
+            // (the whole write-back - WriteBack skips an empty one. 2026-10-21: only a mode or height change was passed on, so what a
+            //  pilot mode caught at its engage - Cruise's heading, ALT and speed, the return point, a slot's saved state - never reached
+            //  the panel, and the next tick's SyncCfg flew the panel's stale numbers: Cruise from the ground held "ALT 0 m")
+            ctl.WriteBack(in _apOut);
             if (!wasEngaged && fd.Engaged) { _apSaid = ApReason.None; if (s.Piloted) ApNotes.Say(ApText.Engaged(fd.Goals, fd.HeightRef)); }
             else if (_apOut.ModeChanged && _apOut.Reason != ApReason.None) Say(_apOut.Reason, s.Piloted, force: true);
         }
@@ -137,7 +140,7 @@ public partial class AeroGridComponent
             var panel = ctl.Panel;
             _apOut = default;
             _apLink.After(fd, in panel, ref _apOut);
-            if (_apOut.ModeChanged || _apOut.HeightChanged) ctl.WriteBack(in _apOut);
+            ctl.WriteBack(in _apOut);
         }
         if (was && !fd.Engaged || fd.Reason != ApReason.None && fd.Reason != _apSaid) Say(fd.Reason, s.Piloted);
         if (fd.Engaged != _apWasEngaged) { Interlocked.Add(ref ApEngaged, fd.Engaged ? 1 : -1); _apWasEngaged = fd.Engaged; }

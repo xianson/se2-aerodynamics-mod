@@ -85,5 +85,10 @@ static class ToolbarResolveTests
         check(Regex.IsMatch(comp, @"void PanelRefresh\(\)[\s\S]{0,200}AvaloniaReflect\.Post\(m\.Refresh\)"), "autopilot panel: told on the UI thread (AvaloniaReflect.Post)");
         check(model.Contains("DetailModelPairing.Pair(this, _ap); _ap?.AttachModel(this);") && Regex.IsMatch(model, @"internal void Refresh\(\) \{ try \{ Changed\(\); \} catch \{ \} \}"),
             "autopilot panel: the model attaches itself as it is built, its Refresh notifies every shown field");
+        // (and the block's step hands the WHOLE write-back to the panel - the holds a pilot mode caught included; 2026-10-21 only a mode or
+        //  height change was passed on, and Cruise flew the panel's stale ALT)
+        string grid = File.ReadAllText(Path.Combine(sim, "Autopilot", "Game", "AeroGridComponent.Autopilot.cs"));
+        check(Regex.Matches(grid, @"(?m)^\s*ctl\.WriteBack\(in _apOut\);").Count == 2 && !Regex.IsMatch(grid, @"if \([^)]*_apOut\.[^)]*\) ctl\.WriteBack\(in _apOut\)"),
+            "autopilot block: the link's whole write-back (holds, home, slot state too) reaches the panel, before and after the step");
     }
 }
