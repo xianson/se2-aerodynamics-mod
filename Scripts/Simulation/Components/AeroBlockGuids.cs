@@ -30,20 +30,11 @@ public static class AeroBlockGuids
     public static readonly System.Collections.Generic.HashSet<Guid> GearServerPrefabs = new()
     {
         new("ae200001-ae00-9e01-0011-000000000001"), new("ae200001-ae00-9e02-0011-000000000001"), new("ae200001-ae00-9e03-0011-000000000001"), new("ae200001-ae00-9e04-0011-000000000001"),
-        new("ae200001-ae00-9e15-0011-000000000001"),   // (the magnetic gear: MagGear150Server - written out, a static declared below is not set yet here)
     };
     public static readonly System.Collections.Generic.HashSet<Guid> GearClientPrefabs = new()
     {
         new("ae200001-ae00-9e01-0012-000000000001"), new("ae200001-ae00-9e02-0012-000000000001"), new("ae200001-ae00-9e03-0012-000000000001"), new("ae200001-ae00-9e04-0012-000000000001"),
-        new("ae200001-ae00-9e15-0012-000000000001"),
     };
-
-    /// <summary>The MAGNETIC gears (2026-10-20; tools/meshgen/gen_maggear_defs.py): their server prefabs also get AeroMagGearComponent
-    /// (the pad grid, the magnet) - and AeroGearComponent with the wheeled gears' (GearServerPrefabs); their hidden wheels' client prefabs
-    /// AeroHiddenWheelComponent (the tyre never drawn).</summary>
-    public static readonly Guid MagGear150Server = new("ae200001-ae00-9e15-0011-000000000001");
-    public static readonly System.Collections.Generic.HashSet<Guid> MagGearServerPrefabs = new() { MagGear150Server };
-    public static readonly System.Collections.Generic.HashSet<Guid> HiddenWheelClientPrefabs = new() { new("ae200001-ae00-9e16-0066-000000000001") };
 
     // ── Airbrakes ──
     public static readonly Guid Airbrake_1x1       = new("ae200001-ae00-ab01-0001-000000000001");

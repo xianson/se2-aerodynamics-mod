@@ -3,14 +3,6 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
-## Unreleased - the magnetic landing gear
-
-- **Magnetic Landing Gear 1.5 m** (Aircraft Parts): the 1.5 m retractable gear's housing, leg and slide; its foot a vanilla
-  magnetic landing gear pad on a hidden 600 kg wheel. Lock with P or the panel's Lock; Auto-Lock on touchdown. Never locks
-  onto its own ship; retracting is refused while locked. The pad follows the ship's owner (the Enemy switch too).
-- Every gear: the stiffness slider's top is capped at 2.78x vanilla (was 3x): past that the suspension went unstable.
-- Offline: `Tests/GearTests` (pad life, magnet gates, stiffness cap), `Tests/BlockSaveTests` (its saved key). Not flown in game yet.
-
 ## Unreleased - the Autopilot panel, redone
 
 - Panel texts show in game (they were raw keys like "ApBehaviour_Auto"): the mod reads its texts into the game's table once a world.

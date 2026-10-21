@@ -53,7 +53,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     Entity _wheelSeen; IWheelConstraint _wc; float _vanillaMin, _vanillaMax;
     /// <summary>How far up its axis the wheel is held now (m; 0: down, the vanilla limits).</summary>
     float _travel;
-    bool _collisionOff, _axleHeld; EntityLayerData _wheelLayer;
+    bool _collisionOff; EntityLayerData _wheelLayer;
     // where the wheel was (block frame) at a known suspension distance - the strut is drawn where the wheel IS
     Vector3 _wheel0; float _s0; bool _wheelRef; float _measured = float.NaN;
     // the suspension's spring, off while the wheel is held up (its settings as they were when it left, put back down)
@@ -62,28 +62,8 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
 
     public float Extension => Seq.Fold();
     public float DoorsOpen => Seq.Doors();
-    /// <summary>Down or up (a magnetic gear refuses up while its magnet holds: RetractVeto, then Refused says why).</summary>
-    public void Command(bool down)
-    {
-        if (!down && Seq.Down && RetractVeto is string why) { Refused = why; AeroMagGearComponent.Say("Gear not retracted: " + why); return; }
-        Refused = ""; Seq.Command(down);
-    }
-    public void Toggle() => Command(!Seq.Down);
-
-    // ── the MAGNETIC gear's hooks (Integration/AeroMagGearComponent.cs, on the same block; null / false on a wheeled gear) ──
-    /// <summary>Set by the magnetic gear: retracting is refused, and why (its magnet holds).</summary>
-    internal volatile string RetractVeto;
-    /// <summary>The last refused command's reason (the terminal, the harness).</summary>
-    public string Refused = "";
-    /// <summary>Set by the magnetic gear: its pad is joined to the wheel - the wheel's collision stays off (the pad takes the ground)
-    /// and its axle is held (the pad keeps its attitude).</summary>
-    internal volatile bool PadJoined;
-    /// <summary>Set by the magnetic gear: the pad meets the ground (its magnet sees something) - the airshock's touch.</summary>
-    internal volatile bool PadContact;
-    /// <summary>How far the wheel is held up its axis (m; 0 down), the wheel's constraint and corner module (the magnetic gear).</summary>
-    internal float Travel => _travel;
-    internal IWheelConstraint WheelConstraint => _wc;
-    internal WheelCornerModuleComponent CornerModule => _cm;
+    public void Command(bool down) => Seq.Command(down);
+    public void Toggle() => Seq.Toggle();
 
     void IInSceneListener.OnAddedToScene()
     {
@@ -117,8 +97,6 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         if (_cm == null) return;
         if (!_hasKey && Entity.TryGet<CubeBlockComponent>() is CubeBlockComponent cb) { var bb = cb.AABB; _key = bb.Min + bb.Max; _hasKey = true; }
         if (DevCommand != _devSeen) { _devSeen = DevCommand; if (DevCommand == 1) Command(true); else if (DevCommand == 2) Command(false); else if (DevCommand == 3) Toggle(); }
-        // (a magnetic gear that locked while going up - the veto came after the command: back down while the leg is still out)
-        if (!Seq.Down && RetractVeto is string held && Seq.Progress > GearSequence.LegDown) { Seq.Command(true); Refused = held; AeroMagGearComponent.Say("Gear back down: " + held); }
 
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         float dt = _tick == 0 ? 0f : (float)Math.Min(0.1, (now - _tick) / (double)System.Diagnostics.Stopwatch.Frequency);
@@ -170,29 +148,13 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
             }
         }
 
-        // collision: off deep in the well, back before the wheel leaves it (a magnetic gear's hidden wheel: off too while its pad is
-        // joined - the pad takes the ground; on while there is no pad, so the gear still carries the ship: MagPadCollision)
+        // collision: off deep in the well, back before the wheel leaves it
         _step = "collision";
         if (wheel != null)
         {
             float offAt = Variant?.CollisionOffAt ?? 0.6f * retract;
-            bool want = Variant?.MagPad != null ? MagPadCollision.Wheel(PadJoined, _travel, offAt) : _travel < offAt;
-            if (!_collisionOff && !want) SetCollision(wheel, false);
-            else if (_collisionOff && want) SetCollision(wheel, true);
-        }
-
-        // the magnetic gear's axle: held while the pad is on (the vanilla brakes write the friction only when they change - so every
-        // step; let go when the pad goes - the vanilla brakes' next change rules again)
-        _step = "axle";
-        if (_wc != null && Variant?.MagPad is MagPadSpec mp)
-        {
-            if (PadJoined)
-            {
-                if (!_wc.FrictionEnabled) _wc.FrictionEnabled = true;
-                if (_wc.MaxFrictionTorque != mp.AxleHoldTorque) _wc.MaxFrictionTorque = mp.AxleHoldTorque;
-                _axleHeld = true;
-            }
-            else if (_axleHeld) { _wc.FrictionEnabled = false; _axleHeld = false; }
+            if (!_collisionOff && _travel >= offAt) SetCollision(wheel, false);
+            else if (_collisionOff && _travel < offAt) SetCollision(wheel, true);
         }
 
         // the stiffness: the terminal's slider x StiffnessScale (2026-10-16, the user: "increase the landing gear stiffness by
@@ -201,7 +163,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         _step = "stiffness";
         if (_wc != null && _travel <= 0f && !_springOff && !_shockOn)
         {
-            float want = GearStiffness.Strength(_cm.SuspensionStiffness, StiffnessScale);   // (capped: GearStiffness.MaxStrength)
+            float want = Math.Max(0f, _cm.SuspensionStiffness) * StiffnessScale;
             if (_wc.SuspensionStrengthFactor != want) _wc.SuspensionStrengthFactor = want;
         }
 
@@ -244,9 +206,8 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
 
     static EntityLayerData? _noCollision; static bool _layerLooked;
 
-    /// <summary>The "Ragdolls" entity layer (meets no grid, voxel, character or floating object): a stowed wheel's - and a magnetic
-    /// gear's stowed pad's (AeroMagGearComponent). Null: none in this game (nothing is switched off).</summary>
-    internal static EntityLayerData? NoCollisionLayer()
+    /// <summary>Off: the wheel onto the "Ragdolls" layer (it meets nothing a stowed wheel could); on: its own layer back.</summary>
+    void SetCollision(Entity wheel, bool on)
     {
         if (!_layerLooked)
         {
@@ -255,23 +216,17 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                 _noCollision = cfg.GetEntityLayerData(StringId.Get("Ragdolls"));
             if (_noCollision == null) Log.Default?.Info("[AERO-GEAR] no 'Ragdolls' entity layer: a stowed wheel keeps its collision");
         }
-        return _noCollision;
-    }
-
-    /// <summary>Off: the wheel onto the "Ragdolls" layer (it meets nothing a stowed wheel could); on: its own layer back.</summary>
-    void SetCollision(Entity wheel, bool on)
-    {
-        if (NoCollisionLayer() == null) return;
+        if (_noCollision == null) return;
         if (!on)
         {
             if (!wheel.Data.TryGet<EntityLayerData>(out _wheelLayer)) return;
             wheel.Data.Set(_noCollision.Value); _collisionOff = true;
-            Log.Default?.Info($"[AERO-GEAR] {_key} wheel {(Variant?.MagPad != null && PadJoined ? "under its pad" : "stowed")}: collision off");
+            Log.Default?.Info($"[AERO-GEAR] {_key} wheel stowed: collision off");
         }
         else
         {
             wheel.Data.Set(_wheelLayer); _collisionOff = false;
-            Log.Default?.Info($"[AERO-GEAR] {_key} wheel {(Variant?.MagPad != null ? "takes the ground (no pad)" : "leaving the well")}: collision on");
+            Log.Default?.Info($"[AERO-GEAR] {_key} wheel leaving the well: collision on");
         }
     }
 
@@ -284,10 +239,9 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     public static float ArmSeconds = 0.5f, ArmHeight = 0.3f, MinSink = 0.5f, SettleSink = 0.3f, SettleSeconds = 0.5f, HoldSeconds = 3f;
     public static float ShockDamping = 1f;
     /// <summary>The terminal's stiffness slider (0..1) x this is what the suspension gets: 1 vanilla, 3 a slider at the top is
-    /// three times the vanilla maximum - capped at GearStiffness.MaxStrength (2.78: the solver's effective tau 1.67; past ~1.5-2 the
-    /// suspension goes unstable, 2026-10-20). The airshock goes to the slider's top before a touchdown.</summary>
+    /// three times the vanilla maximum. The airshock goes to this (the slider's top) before a touchdown.</summary>
     public static float StiffnessScale = 3f;
-    static float ShockStrength => GearStiffness.Strength(1f, StiffnessScale);
+    static float ShockStrength => StiffnessScale;
     bool _shockOn; float _shockS, _shockD; double _shockTouch = -1, _shockCalm = -1;
     public string ShockState = "";
 
@@ -297,7 +251,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         bool usable = AirshockEnabled && Seq.Down && _travel <= 0f && !_springOff;
         var grid = Entity.GetTopLevelParent(); var aero = grid?.TryGet<AeroGridComponent>();
         double now = System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
-        bool contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>() || PadContact;
+        bool contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
         float sink = 0f, hWheel = float.MaxValue;
         if (aero != null && aero.GroundUpLocal.LengthSquared() > 0.5f)
         {
@@ -371,9 +325,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                     sb.Append(" | ").Append(g.Seq.Down ? "down" : "up").Append($" p {g.Seq.Progress:F2} travel {g._travel:F2} m (wheel: measured {g._measured:F2}, game {(g._cm != null ? g._cm.CurrentSuspensionDistance : float.NaN):F2})")
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
-                      .Append(g._shockOn ? " AIRSHOCK on" : "")
-                      .Append(g.Variant?.MagPad != null ? (g.PadJoined ? " pad joined" : " no pad") + (g.RetractVeto != null ? " (retract refused: locked)" : "") : "")
-                      .Append(g.Refused.Length > 0 ? " refused: " + g.Refused : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
+                      .Append(g._shockOn ? " AIRSHOCK on" : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();
         }

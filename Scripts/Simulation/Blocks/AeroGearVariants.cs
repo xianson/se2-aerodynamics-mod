@@ -18,30 +18,6 @@ public sealed class AeroGearVariant
     /// must be before its collision goes (m).</summary>
     public float RetractTravel, RetractSpeed = 2f, CollisionOffAt;
     public GearLayout Layout;
-    /// <summary>A MAGNETIC gear (its foot a spawned pad grid with a vanilla magnetic landing gear block: AeroMagGearComponent);
-    /// null: a wheeled gear.</summary>
-    public MagPadSpec MagPad;
-}
-
-/// <summary>A magnetic gear's pad (AeroMagGearComponent; tools/meshgen/gen_maggear_defs.py writes the matching definitions).</summary>
-public sealed class MagPadSpec
-{
-    /// <summary>The pad block's server prefab (the vanilla LandingGear100's: a 0.5 x 0.75 x 0.75 m magnetic pad, 158 kg).</summary>
-    public Guid PadPrefab;
-    /// <summary>Where the pad's magnetic face is in its grid's frame (m, along its down; the grid's local bounding box's bottom -
-    /// measured from the first pad that comes in and kept from then on: PadFace).</summary>
-    public float FaceY;
-    /// <summary>The face spawns this far above the hidden wheel's lowest point (m): the wheel holds the ship until the pad joins.</summary>
-    public float Clearance = 0.03f;
-    /// <summary>The hidden wheel's mass (kg; its WheelColliderDefinition's WheelMass - the definition is what counts) and the pad's: their
-    /// sum is the suspension's spring mass (GearStiffness.SpringRate - a light wheel under a heavy ship bottoms out).</summary>
-    public float WheelMass, PadMass;
-    /// <summary>The axle held this hard (N m) while the pad is on: the wheel cannot spin, so the pad keeps its attitude.</summary>
-    public float AxleHoldTorque = 1e9f;
-    /// <summary>The weight one gear is sized for (kg): its suspension's sag at the stiffness slider's top (GearTests).</summary>
-    public float RatedLoad;
-    /// <summary>The block's suspension stroke (m, the vanilla 1.5 m corner module's travel - GearTests' sag check).</summary>
-    public float Stroke;
 }
 
 /// <summary>
@@ -63,12 +39,6 @@ public static class AeroGearVariants
                 RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Gear(0.4f) },
         new() { Name = "Wheeled Landing Gear 1.5 m", Block = new("ae200001-ae00-9e02-0001-000000000001"), CornerModule = new("a9c8413a-751c-4d41-9913-e00e320ced95"), WheelRadius = 0.75f, Duration = 3.5f,
                 RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Gear(0.6f) },
-        // (2026-10-20: the MAGNETIC gear - the 1.5 m gear's housing, leg and slide, a hidden wheel on its suspension and a vanilla
-        //  magnetic landing gear block as its foot, AeroMagGearComponent; ids 9e15 the block, 9e16 its hidden wheel)
-        new() { Name = "Magnetic Landing Gear 1.5 m", Block = new("ae200001-ae00-9e15-0001-000000000001"), CornerModule = new("ae200001-ae00-9e16-0060-000000000001"), WheelRadius = 0.75f, Duration = 3.5f,
-                RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Gear(0.6f),
-                MagPad = new MagPadSpec { PadPrefab = new("8574735f-e98b-487e-9662-21435f0ce3ed"), FaceY = MagGearSizes.PadFaceY100, WheelMass = MagGearSizes.Wheel150,
-                                          PadMass = MagGearSizes.Pad100, RatedLoad = MagGearSizes.Rated150, Stroke = MagGearSizes.Stroke150 } },
         new() { Name = "Wheeled Landing Gear 2.5 m", Block = new("ae200001-ae00-9e03-0001-000000000001"), CornerModule = new("a240c373-8a4f-422b-83c2-caf6d609b121"), WheelRadius = 1.25f, Duration = 4f,
                 RetractTravel = 5.3707f, RetractSpeed = 3f, CollisionOffAt = OffAt, Layout = Gear(1f) },
     };
@@ -86,7 +56,6 @@ public static class AeroGearVariants
     /// bottom face at -1.25: s = (-1.25 - 0.1 - 1.26 + 5.272) / 0.98136.
     /// </summary>
     const float OffAt = 2.713f;
-
 
     static GearLayout Gear(float s)
     {

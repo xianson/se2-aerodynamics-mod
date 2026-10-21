@@ -418,7 +418,6 @@ public partial class AeroGridComponent : Component, IInSceneListener
         _dirty = true;
         _fullRebuildNeeded = true;
         _initialized = true;
-        PadOnAdded();   // (a magnetic gear's pad: no collision until its gear joins it - Grid/AeroGridComponent.GearPad.cs)
     }
 
     void IInSceneListener.OnBeforeRemovedFromScene()

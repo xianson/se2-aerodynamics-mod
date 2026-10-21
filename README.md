@@ -33,9 +33,6 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
   airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets,
   stackable solid rocket motors, and the Autopilot.
-- **Magnetic Landing Gear** (1.5 m): the retractable gear with a vanilla landing gear pad as its foot. Suspension, airshock
-  and retraction as the wheeled gear; the pad locks like a vanilla landing gear (P, Lock, or Auto-Lock), never onto its own
-  ship. Unlock before retracting. A destroyed pad comes back when the gear block is repaired.
 - **Structure and damage:** air, thrust, gyro and impact loads spread through the ship you fly. Overloaded sections
   wear, fatigue, bend, crack across and tear off, with creaks, shake and smoke.
 - **Rotor strikes:** rotors and props are damaged by what they hit, and damage it back. Weld to repair.

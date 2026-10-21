@@ -34,7 +34,7 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void AttitudeJob(AeroGridComponent aero, WorldTransform wt)
     {
-        if (!aero._initialized || !AeroSwitch.Enabled || aero.GearPad) return;
+        if (!aero._initialized || !AeroSwitch.Enabled) return;
         if (!ThrustTorque.Enabled || (aero._thrusterCache.Count == 0 && aero._gyroCache.Count == 0)) return;
         // (a quiet grid - the sim job's quiet path, this tick - was at rest for QuietAfter steps: ThrustTorque's rest branch
         //  ran each of them and darkened its flames; nothing to do until it stirs)
@@ -87,8 +87,6 @@ public partial class AeroGridComponent
         //  not armed yet: every server grid's parallel job wrote the shared word each tick, its cache line bouncing between
         //  the cores - now longer, through a crack's run, 2026-10-15 review)
         if (StructureTear.Work != 0 && aero.IsServerScene && System.Threading.Volatile.Read(ref StructureTear.Armed) == 0) StructureTear.Armed = 1;
-        // (a magnetic gear's pad grid: part of its ship, no aero of its own - Grid/AeroGridComponent.GearPad.cs)
-        if (aero._initialized && aero.PadStep()) return;
         // (HONEST DAMPENERS first: the game's gravity hold re-made as real thrust before anything reads this step's gravity -
         //  the contact balance below, the attitude job after - and before the physics step takes it: HonestDampeners.cs)
         if (aero._initialized) HonestDampeners.Step(aero, wt);

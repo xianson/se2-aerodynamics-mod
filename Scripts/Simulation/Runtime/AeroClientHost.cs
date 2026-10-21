@@ -68,7 +68,6 @@ public static class AeroClientHost
             QuickLaunch.ClientTick(any);   // (creative quick launch's key and answer - Launch/QuickLaunch.cs)
             EnemySpawn.ClientTick(any);   // (the test spawn keys, the blueprint's load and the answer - Launch/EnemySpawn.cs)
             ApToasts.ClientTick(any);   // (the autopilot's words to the pilot - Autopilot/Game/ApToasts.cs)
-            AeroMagGearComponent.ClientTick(any);   // (the magnetic gear's refusals - Integration/AeroMagGearComponent.cs: one read)
             StructureFeel.Tick(any);   // (the airframe's creaks and cockpit shake - Structure/Fx/StructureFeel.cs; its own switches)
         }
         catch (Exception e)

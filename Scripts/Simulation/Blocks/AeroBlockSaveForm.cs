@@ -13,8 +13,6 @@ namespace AeroMod;
 /// <item>control surface: "aero-surface:1 pitch yaw roll max trim" (1/0 1/0 1/0 deg deg)</item>
 /// <item>gear: "aero-gear:1 down airshock" (1/0 1/0)</item>
 /// <item>airbrake: "aero-airbrake:1 maxOpening" (deg)</item>
-/// <item>magnetic gear (2026-10-20, beside its gear key): "aero-maggear:1 autoLock padId lost" (1/0, 16 hex digits - 0: no pad yet,
-/// 1/0); the pad grid is found again by its name (MagPadNames), never by an entity reference</item>
 /// <item>thruster: "aero-thrust:1 attitudeFraction" (0..1; written only off the default 0.5)</item>
 /// <item>solid rocket nozzle: "aero-solidnozzle:1 lit level" (1; written only while it burns; level: its power level 0.5..1,
 /// latched at ignition - a key without one reads 1); format 2 (2026-10-20) appends "gimbal cone" (1/0, deg) - written so only when
@@ -40,7 +38,6 @@ public static class AeroBlockSaveForm
     public const int AutopilotFormat = 3;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
     public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
-    public const string MagGearKey = "aero-maggear:";
     /// <summary>The Enemy switch's owner before, one per grid of the ship (2026-10-19): "aero-enemyprev:1 index owner", its value
     /// THAT grid (an entity reference the save resolves - each grid is a bundle root).</summary>
     public const string EnemyPrevKey = "aero-enemyprev:";
@@ -88,18 +85,6 @@ public static class AeroBlockSaveForm
         string[] w = Values(key, GearKey, 2);
         if (w == null) return false;
         down = w[1] == "1"; airshock = w[2] == "1";
-        return true;
-    }
-
-    public static string MagGear(bool autoLock, ulong padId, bool lost)
-        => MagGearKey + Format + " " + B(autoLock) + " " + padId.ToString("x16", C) + " " + B(lost);
-
-    public static bool TryReadMagGear(string key, out bool autoLock, out ulong padId, out bool lost)
-    {
-        autoLock = true; padId = 0; lost = false;
-        string[] w = Values(key, MagGearKey, 3);
-        if (w == null || !ulong.TryParse(w[2], NumberStyles.AllowHexSpecifier, C, out padId)) return false;
-        autoLock = w[1] == "1"; lost = w[3] == "1";
         return true;
     }
 

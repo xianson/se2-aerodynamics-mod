@@ -36,7 +36,6 @@ internal sealed class ApGameObstacles
         var args = new AABBQueryArgs(box);
         _hits.Clear(); _joined.Clear();
         if (physics.HasBody(grid.DEntity)) physics.GetDirectlyConnectedBodies(grid.DEntity, _joined);
-        foreach (var pad in aero.PadBodies) _joined.Add(pad);   // (its magnetic gears' pads: joined to its wheels, not to it)
         physics.QueryAABB(_hits, in args, CollisionPreset.Bodies);   // (args own no buffer: never args.Dispose)
         var scene = grid.Scene;
         for (int i = 0; i < _hits.Count; i++)
@@ -47,7 +46,6 @@ internal sealed class ApGameObstacles
             if (e == null || !GridPhysics.Alive(e.Data)) continue;
             var top = e.GetTopLevelParent() ?? e;
             if (ReferenceEquals(top, grid) || (targetTop != null && ReferenceEquals(top, targetTop))) continue;
-            if (top.TryGet<AeroGridComponent>() is { GearPad: true }) continue;   // (any magnetic gear's pad: part of its own ship)
             var bb = BoundingBoxData.TryGetWorldAABB(e.Data);
             if (!bb.HasValue) continue;
             double r = (bb.Value.Max - bb.Value.Min).Length() * 0.5;

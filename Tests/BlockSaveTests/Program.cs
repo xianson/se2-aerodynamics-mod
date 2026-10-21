@@ -57,21 +57,6 @@ static class Program
                 string k = AeroBlockSaveForm.Gear(down, shock);
                 Check(AeroBlockSaveForm.TryReadGear(k, out bool d2, out bool s2) && d2 == down && s2 == shock, $"gear round trip '{k}'");
             }
-        // the magnetic gear (2026-10-20): auto-lock, the pad's id (any 64 bits, 0 = none yet), lost - and never read as a gear key
-        foreach (bool al in new[] { true, false })
-            foreach (bool lost in new[] { true, false })
-                foreach (ulong id in new ulong[] { 0, 1, 0x0123456789abcdefUL, ulong.MaxValue, 0x8000000000000000UL })
-                {
-                    string k = AeroBlockSaveForm.MagGear(al, id, lost);
-                    Check(k.StartsWith(AeroBlockSaveForm.MagGearKey + "1 ") && !k.Contains('\n') && k.Split(' ').Length == 4, $"maggear key shape '{k}'");
-                    Check(AeroBlockSaveForm.TryReadMagGear(k, out bool a2, out ulong i2, out bool l2) && a2 == al && i2 == id && l2 == lost, $"maggear round trip '{k}'");
-                    Check(!AeroBlockSaveForm.TryReadGear(k, out _, out _), $"a maggear key read as a gear key '{k}'");
-                    Check(AeroBlockSaveForm.Find(new Dictionary<string, int> { [AeroBlockSaveForm.Gear(true, true)] = 0, [k] = 0 }, AeroBlockSaveForm.MagGearKey) == k, "maggear key not found beside a gear key");
-                }
-        foreach (var bad in new[] { null, "", "aero-maggear:", "aero-maggear:1", "aero-maggear:1 1", "aero-maggear:1 1 zz 0", "aero-maggear:0 1 1 0", "aero-gear:1 1 1" })
-            Check(!AeroBlockSaveForm.TryReadMagGear(bad, out _, out _, out _), $"maggear read '{bad}'");
-        // (a later format may append values: read)
-        Check(AeroBlockSaveForm.TryReadMagGear("aero-maggear:2 0 00000000000000ff 1 extra", out bool a3, out ulong i3, out bool l3) && !a3 && i3 == 255 && l3, "a later maggear format not read");
         foreach (float f in Floats)
         {
             Check(AeroBlockSaveForm.TryReadAirbrake(AeroBlockSaveForm.Airbrake(f), out float b) && Same(b, f), $"airbrake round trip {f}");

@@ -39,7 +39,6 @@ internal static partial class AeroBlockSave   // (the dev counters and requests:
     internal static readonly System.Guid SolidNozzleId = new("ae205e77-1a65-4c0d-9b1e-0000000000b6");
     internal static readonly System.Guid BladesId = new("ae205e77-1a65-4c0d-9b1e-0000000000b7");   // (2026-10-17: rotor strikes - the blades' health)
     internal static readonly System.Guid AutopilotId = new("ae205e77-1a65-4c0d-9b1e-0000000000b8");   // (2026-10-19: the Autopilot block's panel)
-    internal static readonly System.Guid MagGearId = new("ae205e77-1a65-4c0d-9b1e-0000000000b9");   // (2026-10-20: the magnetic gear's pad id, auto-lock)
 
     /// <summary>The build info a saving component is injected with (its fixed id, a fresh default builder).</summary>
     internal static Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo Info(System.Type component, System.Guid id)
@@ -114,28 +113,6 @@ public partial class AeroGearComponent
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
     {
         string key = AeroBlockSaveForm.Gear(Seq.Down, AirshockEnabled);
-        ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KGear, key);
-    }
-}
-
-public partial class AeroMagGearComponent
-{
-    /// <summary>Took its pad's id and auto-lock from its own saved data.</summary>
-    internal bool RestoredFromBlockData;
-
-    [Keen.VRage.DCS.Annotations.Init]
-    private void InitBlockSave(EntityNameSessionComponentObjectBuilder ob)
-    {
-        string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.MagGearKey);
-        if (!AeroBlockSaveForm.TryReadMagGear(key, out bool autoLock, out ulong padId, out bool lost)) return;
-        AutoLock = autoLock; Life.Restore(padId, lost);   // (the pad is found again by its name - MagPadNames - never by reference)
-        RestoredFromBlockData = true; AeroBlockSave.CountRestored(AeroBlockSave.KGear, key);
-    }
-
-    [Keen.VRage.DCS.Annotations.Serializer]
-    private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
-    {
-        string key = AeroBlockSaveForm.MagGear(AutoLock, Life.Uid, Life.Lost);
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KGear, key);
     }
 }

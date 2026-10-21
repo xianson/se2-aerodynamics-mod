@@ -17,10 +17,10 @@ internal static class ServerDevReads
     /// <summary>Non-zero: something asked (the server step's one read).</summary>
     internal static volatile int Pending;
 
-    public const int Surfaces = 0, Gears = 1, Airbrakes = 2, MagGears = 3;
+    public const int Surfaces = 0, Gears = 1, Airbrakes = 2;
     const string Asked = "asked: the server step builds it - read it again";
-    static readonly int[] _want = new int[4];
-    static readonly string[] _last = { Asked, Asked, Asked, Asked };
+    static readonly int[] _want = new int[3];
+    static readonly string[] _last = { Asked, Asked, Asked };
 
     /// <summary>Any thread: the summary the server step built last (asked again now).</summary>
     internal static string Summary(int which)
@@ -58,7 +58,6 @@ internal static class ServerDevReads
         if (System.Threading.Interlocked.Exchange(ref _want[Surfaces], 0) != 0) System.Threading.Volatile.Write(ref _last[Surfaces], AeroSurfaceSettingsComponent.BuildSummary());
         if (System.Threading.Interlocked.Exchange(ref _want[Gears], 0) != 0) System.Threading.Volatile.Write(ref _last[Gears], AeroGearComponent.BuildSummary());
         if (System.Threading.Interlocked.Exchange(ref _want[Airbrakes], 0) != 0) System.Threading.Volatile.Write(ref _last[Airbrakes], AeroAirbrakeComponent.BuildSummary());
-        if (System.Threading.Interlocked.Exchange(ref _want[MagGears], 0) != 0) System.Threading.Volatile.Write(ref _last[MagGears], AeroMagGearComponent.BuildSummary());
         if (System.Threading.Interlocked.Exchange(ref _nearWant, 0) != 0)
         {
             // (AeroSurfaceSettingsComponent.All: the server prefabs' only - this scene's)
