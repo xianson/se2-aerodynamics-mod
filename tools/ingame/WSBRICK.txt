@@ -1,0 +1,27 @@
+# WSBRICK - the wheel shocks' test brick (tools/ingame/build_wheelbrick.py; do not edit by hand)
+# 2 x 4 x 2 heavy cubes: 56.1 t with its wheels, 14.02 t a wheel = 93 % of the wheel's rating (15.0 t)
+name WSBRICK
+ahead 40
+up 4
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 30 Forward Up   # heavy armour 2.5 m
+B b22450b6-ad1d-4902-a768-f54adb49516f 0 20 0 Forward Up charge=1   # Battery250 (the suspensions' power)
+B b3826409-8168-4219-a4e9-58d29b2fd8fa -5 -3 -4 Forward Up   # suspension L front
+B b3826409-8168-4219-a4e9-58d29b2fd8fa -5 -3 34 Forward Up   # suspension L back
+B b3826409-8168-4219-a4e9-58d29b2fd8fa 16 -3 -3 Backward Up   # suspension R front
+B b3826409-8168-4219-a4e9-58d29b2fd8fa 16 -3 35 Backward Up   # suspension R back

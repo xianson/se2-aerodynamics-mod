@@ -14,6 +14,23 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 - Every retractable gear: the stiffness slider's top is capped at 2.78x vanilla (was 3x): past that the suspension went unstable.
 
+## Unreleased - wheel shocks on every wheel (a stopgap)
+
+- Every wheel suspension on a simulated ship - vanilla wheels and the mod's gears - gets the **airshock** and an **oleo strut**,
+  until the game's own wheels take impacts better (SE2's suspension spring scales with the light wheel's mass and bottoms).
+- **Airshock:** firm damping just before a touchdown it sees coming (the wheel's sink rate and its height over the planet's
+  surface or the ground ray); the player's settings back once settled. It was the mod's gears only.
+- **Oleo:** a gas spring that stiffens near the end of its stroke and a damper (firmer extending), rated by the wheel's size,
+  never the ship: 1 m 15 t, 1.5 m 33.75 t, 2.5 m 93.75 t (diameter squared), at 2 g, at 60 % of the stroke; its force rises at
+  most 180 rated loads a second. Applied as equal and opposite impulses on the ship (at the mount) and the wheel; the game's own
+  spring drops to a quarter while it carries. Overloads still bottom.
+- Settings (world): `Wheels.Shocks` (Off / Airshock only / Airshock + oleo, default the last), `Wheels.OleoRating` (0.5-3);
+  advanced `Wheels.CompressionDamping`, `Wheels.ReboundDamping`, `Wheels.ForceRateCap`, `Wheels.ConstraintSpring`.
+- Offline (`Tests/WheelShockTests`, a time-stepped touchdown): at the rated load, 1 / 3 / 5 m/s, every vanilla size stays in
+  its stroke (1 m wheel 60 / 73 / 91 %), rebound under 0.5 m/s, settled in 0.2-0.6 s; vanilla and airshock-only bottom in every
+  case. Not flown in game yet (`tools/ingame/wheelshock_test.sh`: heavy armour bricks on four 1 m wheels - 27 / 93 / 204 % of
+  their rating - dropped at 1 / 3 / 5 m/s onto voxel ground and a static armour deck, shocks off vs on, with and without forward speed).
+
 ## Unreleased - the Autopilot panel, redone
 
 - Panel texts show in game (they were raw keys like "ApBehaviour_Auto"): the mod reads its texts into the game's table once a world.

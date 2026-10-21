@@ -54,6 +54,7 @@ projects in `Tests/`; keep game types out of them.
 | `ResourceContainerComponent` (tanks) | `AeroFuelMassComponent` |
 | `DiscoverablePlanetComponent` (server planets) | `AeroWorldSettingsComponent` (carries the world settings in the save) |
 | `CameraComponent` (the client's render camera: one entity, always in the client scene) | `AeroClientHostComponent` (the client's session tick, `Runtime/AeroClientHost.cs`: runs with no grid in the world) |
+| every prefab with a `WheelCornerModuleComponent` (vanilla wheels, the mod's gears) | `AeroWheelShockComponent` (server, at run time; not saved: the world's `Wheels.*` settings) |
 | the mod's control-surface / gear / airbrake prefabs (`AeroBlockGuids`) | `AeroSurfaceSettingsComponent` / `AeroFlapComponent`, `AeroGearComponent` / `AeroGearAnimComponent`, `AeroAirbrakeComponent` / `AeroAirbrakeAnimComponent` (server / client; the server ones saved with the block, section 11) |
 | the Autopilot block's server prefabs (`AeroBlockGuids.AutopilotServerPrefabs`) | `AeroAutopilotComponent` (its panel, saved with the block; it registers with its grid, whose attitude step flies it: `Autopilot/`) |
 

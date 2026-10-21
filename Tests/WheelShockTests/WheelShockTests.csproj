@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WHEEL SHOCKS' game-free laws (Gear/WheelOleo.cs, Gear/WheelAirshock.cs, 2026-10-20): the rating table, the oleo strut's gas
+       spring, damper, implicit step and rate cap, the stiffness cap, the airshock's arming - and a time-stepped two-body touchdown
+       (ship share + wheel + rigid ground + the suspension's hard limits, the wheel constraint's soft spring on the wheel's mass)
+       comparing vanilla, the airshock only and the airshock with the oleo (Sim.cs). -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Gear\WheelOleo.cs" />
+    <Compile Include="$(Sim)\Gear\WheelAirshock.cs" />
+  </ItemGroup>
+</Project>

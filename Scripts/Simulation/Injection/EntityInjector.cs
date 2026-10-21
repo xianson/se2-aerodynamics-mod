@@ -27,6 +27,7 @@ public class InjectAeroComponents : Injections
     private static int _thrusterCount;
     private static int _tankCount;
     private static int _flameCount;
+    private static int _wheelCount;
 
     public static void Please(PrefabDefinition entity)
     {
@@ -39,6 +40,7 @@ public class InjectAeroComponents : Injections
         bool isRenderCamera = false;   // (the client's render camera: the client's session tick, AeroClientHost)
         bool isServerBody = false;   // (a player's server character or spectator: carries the world's aero settings too)
         bool hasBodyCarrier = false;
+        bool hasWheel = false, hasShock = false;   // (a vanilla suspension: the game's wheels and the mod's gears)
 
         foreach (var type in composition.Types)
         {
@@ -59,6 +61,10 @@ public class InjectAeroComponents : Injections
                 isServerBody = true;
             if (type == typeof(AeroWorldBodyComponent))
                 hasBodyCarrier = true;   // (a composition two prefabs share: once)
+            if (type == typeof(Keen.Game2.Simulation.WorldObjects.CubeBlocks.MechanicalBlocks.Wheels.WheelCornerModuleComponent))
+                hasWheel = true;
+            if (type == typeof(AeroWheelShockComponent))
+                hasShock = true;   // (already injected: a shared composition)
         }
 
         if (isRenderCamera)
@@ -143,6 +149,14 @@ public class InjectAeroComponents : Injections
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroGearComponent), AeroBlockSave.GearId));   // (saved with the block)
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroGearComponent into gear server prefab '{entity.DebugName}'");
+        }
+        // WHEEL SHOCKS (2026-10-20): every suspension - the game's and the mod's gears - gets the airshock and the oleo strut
+        // (AeroWheelShockComponent: server only, at run time; not saved - the world's Wheels.* settings drive it)
+        if (hasWheel && !hasShock)
+        {
+            Add(entity, typeof(AeroWheelShockComponent));
+            if (_wheelCount < 3) Log.Default?.Info($"[AERO] Injected AeroWheelShockComponent into suspension prefab '{entity.DebugName}'");
+            _wheelCount++;
         }
         // the 3x3x3 airbrakes: the server opens them on the parking signal, the client turns their leaves
         if (AeroBlockGuids.AirbrakeServerPrefabs.Contains(entity.Guid))

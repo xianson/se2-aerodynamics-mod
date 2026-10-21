@@ -45,6 +45,9 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   | Retractable Gear (Plate) 2.5 m | 2.5 m | Magnetic plate 2.5 m | 2.50 x 0.51 x 2.50 | 1200 kg | 60 t |
 
   Stroke 0.125 / 0.25 / 0.4 / 0.6 m. "Sized for": the sag at the default stiffness stays within half the stroke.
+- **Wheel shocks (a stopgap until the game's wheels take impacts better):** every wheel and gear gets an airshock (firm
+  just before a touchdown) and an oleo strut rated for its size (1 m wheel 15 t, 1.5 m 34 t, 2.5 m 94 t at 2 g), so
+  landings stop bottoming and bouncing. `Wheels.Shocks`, `Wheels.OleoRating` (Settings > Mods > Wheels and landing gear).
 - **Structure and damage:** air, thrust, gyro and impact loads spread through the ship you fly. Overloaded sections
   wear, fatigue, bend, crack across and tear off, with creaks, shake and smoke.
 - **Rotor strikes:** rotors and props are damaged by what they hit, and damage it back. Weld to repair.
