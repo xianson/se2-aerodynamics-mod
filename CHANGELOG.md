@@ -3,6 +3,10 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - landing gear stiffness
+
+- Every retractable gear: the stiffness slider's top is capped at 2.78x vanilla (was 3x): past that the suspension went unstable.
+
 ## Unreleased - the Autopilot panel, redone
 
 - Panel texts show in game (they were raw keys like "ApBehaviour_Auto"): the mod reads its texts into the game's table once a world.
