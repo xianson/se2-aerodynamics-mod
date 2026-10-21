@@ -355,7 +355,7 @@ public static class WheelShockDev
         int bottomed = 0; float maxU = 0f;
         foreach (var kv in _wheels) { if (kv.Value.bottom > 0) bottomed++; maxU = MathF.Max(maxU, kv.Value.maxU); }
         sb.Append($"drop {_seen}: '{Name(_grid)}' mode {WheelShockSettings.Mode} touch {_touchV:F2} m/s forward {DevForward:F0} | maxcomp {maxU:F2} bottomed {bottomed} hull {_hull} rebound {_rebound:F2} bounces {_bounces} settle {(float.IsNaN(_settle) ? -1f : _settle):F2} peakF {_peakF:F2} W");
-        sb.Append($" | damage {(_integ0 > 0 ? 1.0 - integ / _integ0 : 0):F4} lost {_blocks0 - blocks} blocks | clear {_lastClear:F2} m before the touch");
+        sb.Append($" | damage {(_integ0 > 0 ? 1.0 - integ / _integ0 : 0):F4} lost {_blocks0 - blocks} blocks | clear {_lastClear:F2} m before contact");
         foreach (var kv in _wheels) sb.Append($" | wheel {kv.Key.Rating.Diameter:F1} m comp {kv.Value.maxU:F2} bottom {kv.Value.bottom}");
         foreach (var kv in _feet) sb.Append($" | foot {kv.Key.Variant?.Name} tilt {kv.Value.tilt:F2} rate {kv.Value.rate.X:F3} {kv.Value.rate.Y:F3} {kv.Value.rate.Z:F3}");
         DevResult = sb.ToString();

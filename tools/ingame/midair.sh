@@ -40,6 +40,10 @@ midair_setup() {
     pt=$(midair_point); tp=${pt%%|*}; lk=${pt##*|}
     [ -n "$tp" ] && [[ "$tp" == tp* ]] || { record "midair: the point $MIDAIR_UP m up" "no camera / planet in status.txt"; return 1; }
     note "midair: $tp, $lk"
+    # (no structure loads on the test grids: the mod's structure model tore the static deck and the rigs in the first runs -
+    #  'WSDECK: the cut ... failed whole', 383 of 793 blocks left; Structure.Damage back at the release)
+    MIDAIR_D0=$(ask "aerosetting Structure.Damage" | sed "s/.* = //" | tr -d " \r"); ask "aerosetting Structure.Damage 0" >/dev/null
+    note "midair: Structure.Damage $MIDAIR_D0 -> 0 for the run"
     ask "unseat" >/dev/null; ask "$tp" >/dev/null; sleep 0.3; ask "$lk" >/dev/null; sleep 0.3
     ask "gen spawn WSDECK.txt right=40 ahead=0 up=-6" >/dev/null
     poll 25 spawned WSDECK || { record "midair: the deck spawned" "$("$ORB" 'gen status' | tail -1 | cut -c1-140)"; return 1; }
@@ -91,6 +95,7 @@ rf() { sed -n "s/.* $1 \(-\?[0-9.]*\).*/\1/p" <<< "$R" | head -1; }
 imf() { sed -n "s/.* $1 \(-\?[0-9.]*\).*/\1/p" <<< "$I" | head -1; }
 
 midair_release() {
+    [ -n "${MIDAIR_D0:-}" ] && ask "aerosetting Structure.Damage $MIDAIR_D0" >/dev/null 2>&1
     ask "aeroset WheelShockDev.DevApproach false" "aeroset WheelShockDev.DevNoAero false" "aeroset WheelShockSettings.Mode 2" \
         "aeroset WheelShockDev.DevForward 0" "aeroset WheelShockDev.DevSink 3" "aeroset WheelShockDev.DevRecordSeconds 4" "aeroset WheelShockDev.DevGrid -" >/dev/null 2>&1
 }
