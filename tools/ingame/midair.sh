@@ -6,7 +6,7 @@
 #                   armour deck (build_wheelbrick.py: 11 x 72 light 2.5 m cubes, 27.5 x 180 m, a control seat on its right edge) -
 #                   spawned 40 m to the right; the player seated on it. Every rig is spawned from that seat (the same camera every
 #                   run), 10 m to its left, over the deck's middle; the deck runs 90 m ahead and behind (the forward drops alternate).
-#  rig NAME SPEC UP spawned from the seat (UP m above the seated camera), whole, levelled, its dampeners off (no thrust in the
+#  rig NAME SPEC UP spawned from the seat (12 m ahead, 10 m left, UP m above the seated camera - in its view), whole, levelled, its dampeners off (no thrust in the
 #                   ledger); its id in RIG.
 #  rig_del ID       removed (and its hinge heads / subgrids: gen owner's).
 #  dropm NAME MODE FWD SINK SECONDS   one midair drop (WheelShockDev: DevApproach 1, DevNoAero 1 - no air on the rig, the game's wind
@@ -60,7 +60,7 @@ midair_setup() {
 
 rig() {
     local name=$1 spec=$2 up=$3 w have want
-    ask "gen spawn $spec name=$name ahead=0 right=-10 up=$up" >/dev/null
+    ask "gen spawn $spec name=$name ahead=12 right=-10 up=$up" >/dev/null   # (12 m ahead, 10 m left: in the seated camera's view)
     poll 25 spawned "$name" || { record "midair: $name spawned" "$("$ORB" 'gen status' | tail -1 | cut -c1-140)"; RIG=""; return 1; }
     hold 2
     RIG=$(gid "$name")

@@ -126,7 +126,7 @@ drop() {
     if [ "${secs%.*}" -ge 3 ]; then expect "$k - settled under 2 s, no damage" "settle $st damage $dm lost $lost" all_of le 0 "$st" -- lt "$st" 2 -- lt "$dm" 0.001 -- eq "$lost" 0
     else expect "$k - no damage" "damage $dm lost $lost" all_of lt "$dm" 0.001 -- eq "$lost" 0; fi
 }
-secs_for() { case "$1" in 0) echo 4 ;; 10|-10) echo 3 ;; *) echo 1.2 ;; esac; }
+secs_for() { case "$1" in 0) echo 3 ;; 10|-10) echo 3 ;; *) echo 1.2 ;; esac; }
 
 echo "== A midair ($(el) s)"
 midair_setup || exit 1
@@ -137,6 +137,7 @@ if [ "$PART" != others ]; then
         for fwd in 0 45; do for mode in 0 2; do for v in $SINKS; do
             f=$fwd; [ "$fwd" != 0 ] && { f=$((fwd * flip)); flip=$((-flip)); }
             drop WSBRICK "$mode" "$f" "$v" "$(secs_for "$fwd")" "$([ "$v" = 5 ] && echo report || echo judge)"
+            [ "$DROPN" = 2 ] && mshot "WSBRICK after a 3 m/s drop, Shocks off"
         done; done; done
         for fwd in 0 45; do for v in $SINKS; do
             off=""; on=""

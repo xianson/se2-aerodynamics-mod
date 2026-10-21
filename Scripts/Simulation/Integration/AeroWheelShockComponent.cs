@@ -121,7 +121,15 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         bool usable = mode != WheelShockSettings.Off && AeroSwitch.Enabled && aero != null && aero.IsServerScene
                       && (_gear == null || _gear.ShockUsable) && GridPhysics.Alive(grid.Data);
         if (_wc == null && usable && !Resolve(wheel)) usable = false;
-        if (!usable) { LetGo(); return; }
+        if (!usable)
+        {
+            // (the readouts kept fresh while not taking part - Shocks Off, a gear stowing: the harness's records compare vanilla with
+            //  the shocks on the same numbers. 2026-10-21: they kept the last value from when the shocks last ran - vanilla's
+            //  compression read 0.00 / a constant, its contact stuck "on the ground" - and the off-vs-on comparison was not one)
+            Contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
+            float xr = _cm.CalculateSuspensionDistance(wheel); X = float.IsFinite(xr) ? xr : 0f; V = 0f;
+            LetGo(); return;
+        }
 
         // ── the state: compression, its rate, the wheel's sink and height ──
         var gd = grid.Data; var wd = wheel.Data;
