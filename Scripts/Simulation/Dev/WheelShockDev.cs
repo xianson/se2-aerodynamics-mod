@@ -65,7 +65,7 @@ public static class WheelShockDev
     static float _M; static Vector3 _g; static int _gN; static Vector3 _pPrev; static bool _hasPrev; static Vector3 _fAeroPrev;
     static readonly List<float> _fn = new(), _vUp = new(), _jcid = new();
     static readonly List<Vector3> _ft = new(), _p = new();
-    static float _lMax, _wMax, _aeroMax, _windMax;
+    static float _lMax, _wMax, _aeroMax, _windMax, _lastClear = float.NaN;
     static readonly Dictionary<AeroGearComponent, (float tilt0, float tilt, Vector3 rate)> _feet = new();
 
     /// <summary>The rig's linear momentum (the grid and its wheel bodies), its mass, the grid's angular momentum (world) and rate.</summary>
@@ -115,17 +115,22 @@ public static class WheelShockDev
         return j;
     }
 
-    /// <summary>The lowest tyre's clearance over the deck / ground (m; NaN: no ground seen): the grid's ground ray.</summary>
+    /// <summary>The lowest tyre's clearance over the deck (m; NaN: nothing under it): a ray straight down from each wheel's centre,
+    /// the rig's own bodies ignored, less the wheel's radius - cast every call (dev: the approach only). (The grid's own ground ray -
+    /// aero.GroundHeight, from the grid's origin, refreshed every 3-10 ticks - read metres high over the deck in the first midair run:
+    /// the approach came in at 3.7-8 m/s where 1 and 3 were asked.)</summary>
+    static readonly GridPhysics.GroundProbe _ray = new();
     static float Clearance(List<AeroWheelShockComponent> all, in WorldTransform gwt, Vector3 up)
     {
-        if (_aero == null || !(_aero.GroundHeight >= 0f)) return float.NaN;
         float h = float.MaxValue;
         foreach (var s in all)
         {
             if (!ReferenceEquals(s.Grid, _grid) || s.Module == null) continue;
             var we = s.Module.WheelEntity;
             if (we == null || !GridPhysics.Alive(we.Data)) continue;
-            h = MathF.Min(h, _aero.GroundHeight + Vector3.Dot((Vector3)(we.Data.GetWorldTransform().Position - gwt.Position), up) - s.Module.WheelRadius);
+            _ray.Cooldown = 0;
+            float d = GridPhysics.GetGroundDistance(_ray, we.Data.GetWorldTransform().Position, -up, _grid);
+            if (d >= 0f) h = MathF.Min(h, d - s.Module.WheelRadius);
         }
         return h < float.MaxValue ? h : float.NaN;
     }
@@ -179,7 +184,7 @@ public static class WheelShockDev
                 float sink = DevSink;
                 if (DevApproach)
                 {
-                    float h = Clearance(all, in wt, up);
+                    float h = Clearance(all, in wt, up); _lastClear = h;
                     if (float.IsFinite(h) && h > 0.6f) sink = MathF.Min(8f, DevSink + 2f * (h - 0.5f));
                 }
                 Vector3 vh = fwd - up * sink;
@@ -288,7 +293,7 @@ public static class WheelShockDev
         _wheels.Clear(); _ticks = 0; _touchTick = 0; _calm = 0; _off = 0; _bounces = 0; _hull = 0;
         _touchV = 0f; _rebound = 0f; _settle = float.NaN; _peakF = 0f; _maxSink = 0f;
         _fn.Clear(); _ft.Clear(); _p.Clear(); _vUp.Clear(); _jcid.Clear(); _feet.Clear();
-        _g = Vector3.Zero; _gN = 0; _hasPrev = false; _fAeroPrev = Vector3.Zero; _lMax = _wMax = _aeroMax = _windMax = 0f; DevImpact = "running";
+        _g = Vector3.Zero; _gN = 0; _hasPrev = false; _lastClear = float.NaN; _fAeroPrev = Vector3.Zero; _lMax = _wMax = _aeroMax = _windMax = 0f; DevImpact = "running";
         _aero = _grid.TryGet<AeroGridComponent>();
         if (_aero != null) _aero.DevNoAero = DevNoAero;
         (_integ0, _blocks0) = Integrity(_grid);
@@ -350,7 +355,7 @@ public static class WheelShockDev
         int bottomed = 0; float maxU = 0f;
         foreach (var kv in _wheels) { if (kv.Value.bottom > 0) bottomed++; maxU = MathF.Max(maxU, kv.Value.maxU); }
         sb.Append($"drop {_seen}: '{Name(_grid)}' mode {WheelShockSettings.Mode} touch {_touchV:F2} m/s forward {DevForward:F0} | maxcomp {maxU:F2} bottomed {bottomed} hull {_hull} rebound {_rebound:F2} bounces {_bounces} settle {(float.IsNaN(_settle) ? -1f : _settle):F2} peakF {_peakF:F2} W");
-        sb.Append($" | damage {(_integ0 > 0 ? 1.0 - integ / _integ0 : 0):F4} lost {_blocks0 - blocks} blocks");
+        sb.Append($" | damage {(_integ0 > 0 ? 1.0 - integ / _integ0 : 0):F4} lost {_blocks0 - blocks} blocks | clear {_lastClear:F2} m before the touch");
         foreach (var kv in _wheels) sb.Append($" | wheel {kv.Key.Rating.Diameter:F1} m comp {kv.Value.maxU:F2} bottom {kv.Value.bottom}");
         foreach (var kv in _feet) sb.Append($" | foot {kv.Key.Variant?.Name} tilt {kv.Value.tilt:F2} rate {kv.Value.rate.X:F3} {kv.Value.rate.Y:F3} {kv.Value.rate.Z:F3}");
         DevResult = sb.ToString();
