@@ -164,6 +164,10 @@ static class Program
             Check(MathF.Abs(PatchDrag.Force(v, 1.225f, 2f, Vector3.Normalize(new Vector3(0, 1, 1))).Z - f.Z * MathF.Sqrt(0.5f)) < 1f, "a plate at 45 deg is not cos 45 of it");
             Check(PatchDrag.Force(Vector3.Zero, 1.225f, 2f, Vector3.Zero) == Vector3.Zero && PatchDrag.Force(v, 0f, 2f, Vector3.Zero) == Vector3.Zero, "drag at rest or in vacuum");
         }
+        // the pad-foot gears (Gear/PadFoot.cs, gen_padgear_defs.py): PadFootTests.cs
+        { var (c, f) = PadFootTests.Run(); _checks += c; _fails += f; }
+        // the stiffness cap (Gear/GearStiffness.cs): StiffnessTests.cs
+        { var (c, f) = StiffnessTests.Run(); _checks += c; _fails += f; }
         Console.WriteLine($"GearTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

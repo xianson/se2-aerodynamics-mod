@@ -18,6 +18,10 @@ public sealed class AeroGearVariant
     /// must be before its collision goes (m).</summary>
     public float RetractTravel, RetractSpeed = 2f, CollisionOffAt;
     public GearLayout Layout;
+    /// <summary>A PAD-FOOT gear (its wheel a vanilla landing-gear mesh, held level: AeroGearComponent.PadFoot.cs); null: a wheeled gear.</summary>
+    public PadFootSpec Foot;
+    /// <summary>Its wheel's rotation about the axle is locked to the ship (pad feet only).</summary>
+    public bool LocksOrientation => Foot != null;
 }
 
 /// <summary>
@@ -41,6 +45,24 @@ public static class AeroGearVariants
                 RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Gear(0.6f) },
         new() { Name = "Wheeled Landing Gear 2.5 m", Block = new("ae200001-ae00-9e03-0001-000000000001"), CornerModule = new("a240c373-8a4f-422b-83c2-caf6d609b121"), WheelRadius = 1.25f, Duration = 4f,
                 RetractTravel = 5.3707f, RetractSpeed = 3f, CollisionOffAt = OffAt, Layout = Gear(1f) },
+        // (2026-10-20: the PAD-FOOT gears - the same housings, a vanilla landing-gear model as the foot: one per model, on the housing it
+        //  fits; tools/meshgen/gen_padgear_defs.py, its padgear_spec.json - GearTests checks these against it)
+        new() { Name = "Retractable Gear (Plate) 0.5 m", Block = new("ae200001-ae00-9e21-0001-000000000001"), CornerModule = new("ae200001-ae00-9e31-0068-000000000001"), WheelRadius = 0.25200f, Duration = 2.5f,
+                RetractTravel = 5.3707f * 0.2f, RetractSpeed = 3f * 0.2f, CollisionOffAt = OffAt * 0.2f, Layout = Gear(0.2f),
+                Foot = new PadFootSpec { Model = "Magneticplate50", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.12600f, 0.00000f), BoxHalf = new Vector3(0.25100f, 0.12600f, 0.25100f), Height = 0.25200f,
+                                         WheelMass = 150f, RatedLoad = 1500f, Stroke = 0.12500f } },
+        new() { Name = "Retractable Gear (Pad) 1 m", Block = new("ae200001-ae00-9e22-0001-000000000001"), CornerModule = new("ae200001-ae00-9e32-0068-000000000001"), WheelRadius = 1.00200f, Duration = 3f,
+                RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Gear(0.4f),
+                Foot = new PadFootSpec { Model = "LandingGear100", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.50100f, 0.00000f), BoxHalf = new Vector3(0.25100f, 0.50100f, 0.50100f), Height = 1.00200f,
+                                         WheelMass = 250f, RatedLoad = 5000f, Stroke = 0.25000f } },
+        new() { Name = "Retractable Gear (Pad) 1.5 m", Block = new("ae200001-ae00-9e23-0001-000000000001"), CornerModule = new("ae200001-ae00-9e33-0068-000000000001"), WheelRadius = 1.50120f, Duration = 3.5f,
+                RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Gear(0.6f),
+                Foot = new PadFootSpec { Model = "LandingGear500", Scale = 0.30000f, BoxCenter = new Vector3(0.00000f, -0.75060f, 0.00000f), BoxHalf = new Vector3(0.37890f, 0.75060f, 0.75090f), Height = 1.50120f,
+                                         WheelMass = 600f, RatedLoad = 20000f, Stroke = 0.40000f } },
+        new() { Name = "Retractable Gear (Plate) 2.5 m", Block = new("ae200001-ae00-9e24-0001-000000000001"), CornerModule = new("ae200001-ae00-9e34-0068-000000000001"), WheelRadius = 0.50600f, Duration = 4f,
+                RetractTravel = 5.3707f * 1.0f, RetractSpeed = 3f * 1.0f, CollisionOffAt = OffAt * 1.0f, Layout = Gear(1.0f),
+                Foot = new PadFootSpec { Model = "MagneticPlate250", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.25300f, 0.00000f), BoxHalf = new Vector3(1.25100f, 0.25300f, 1.25100f), Height = 0.50600f,
+                                         WheelMass = 1200f, RatedLoad = 60000f, Stroke = 0.60000f } },
     };
 
     /// <summary>

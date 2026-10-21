@@ -25,15 +25,18 @@ public static class AeroBlockGuids
         new("ae200001-ae00-c502-0011-000000000001"), new("ae200001-ae00-c503-0011-000000000001"),
     };
 
-    /// <summary>The retractable gears (0.5 / 1 / 1.5 / 2.5 m wheels; AeroGearVariants): their server prefabs (AeroGearComponent)
+    /// <summary>The retractable gears (0.5 / 1 / 1.5 / 2.5 m wheels, and the pad-foot ones; AeroGearVariants): their server prefabs (AeroGearComponent)
     /// and client prefabs (AeroGearAnimComponent) - Manipulator.Guid of their _Server / _Client partialdefs.</summary>
     public static readonly System.Collections.Generic.HashSet<Guid> GearServerPrefabs = new()
     {
         new("ae200001-ae00-9e01-0011-000000000001"), new("ae200001-ae00-9e02-0011-000000000001"), new("ae200001-ae00-9e03-0011-000000000001"), new("ae200001-ae00-9e04-0011-000000000001"),
+        // (the pad-foot gears, 2026-10-20: gen_padgear_defs.py)
+        new("ae200001-ae00-9e21-0011-000000000001"), new("ae200001-ae00-9e22-0011-000000000001"), new("ae200001-ae00-9e23-0011-000000000001"), new("ae200001-ae00-9e24-0011-000000000001"),
     };
     public static readonly System.Collections.Generic.HashSet<Guid> GearClientPrefabs = new()
     {
         new("ae200001-ae00-9e01-0012-000000000001"), new("ae200001-ae00-9e02-0012-000000000001"), new("ae200001-ae00-9e03-0012-000000000001"), new("ae200001-ae00-9e04-0012-000000000001"),
+        new("ae200001-ae00-9e21-0012-000000000001"), new("ae200001-ae00-9e22-0012-000000000001"), new("ae200001-ae00-9e23-0012-000000000001"), new("ae200001-ae00-9e24-0012-000000000001"),
     };
 
     // ── Airbrakes ──

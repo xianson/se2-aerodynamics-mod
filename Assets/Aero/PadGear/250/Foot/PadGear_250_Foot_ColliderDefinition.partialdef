@@ -1,0 +1,18 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "7591e314-3476-44d3-a29f-df3984324db0",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-9e34-0062-000000000001",
+      "WheelMass": 1200
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.MechanicalBlocks.Wheels.WheelColliderDefinition",
+    "PriorityOverride": false
+  }
+}

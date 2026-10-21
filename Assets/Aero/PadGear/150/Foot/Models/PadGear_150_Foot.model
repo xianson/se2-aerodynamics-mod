@@ -1,0 +1,165 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "BrushedMetal",
+        "MaterialReference": "0c3be477-8bff-4e2c-8a0e-d7d842905ae9"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "MetalDull",
+        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
+      },
+      {
+        "MaterialName": "Copper",
+        "MaterialReference": "87b4f3bd-8eb2-4a46-bf00-4662bed27260"
+      },
+      {
+        "MaterialName": "Plastic",
+        "MaterialReference": "ccf57c6c-f07d-430e-a67b-fcecc29b2d71"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts01",
+        "MaterialReference": "0d1f9867-1aee-4388-b5bb-4a7ce0cdc5e2"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims02",
+        "MaterialReference": "aa49b17e-58dc-4da8-8ba2-3bd643325681"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "EmissiveOff",
+        "MaterialReference": "d2648963-ef2b-442d-af7b-ee3d79dad677"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}af0a3cb4-018f-5684-a924-ad82aa5108c8",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "Chrome",
+          "BrushedMetal",
+          "AtlasDecal_Trims01",
+          "MetalDull",
+          "Copper",
+          "Plastic",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": -0.7512,
+            "Z": 0.0006
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 0.3
+        }
+      },
+      {
+        "AssetReference": "{G}ce1d2d35-ffd9-5d3f-b028-b03c14f76ffd",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "Chrome",
+          "PaintedMetalDarker",
+          "BrushedMetal",
+          "AtlasDecal_Trims01",
+          "Copper",
+          "Plastic",
+          "MetalDull",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Trims02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.0375,
+            "Y": -0.7887,
+            "Z": -0.0369
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 0.3
+        }
+      },
+      {
+        "AssetReference": "{G}fe58c7ae-29fb-51a0-a8ab-664e66a0ce1e",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "PaintedMetalDarker",
+          "BrushedMetal",
+          "Chrome",
+          "AtlasDecal_Trims01",
+          "Copper",
+          "Plastic",
+          "MetalDull",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Stickers01",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.0375,
+            "Y": -0.7887,
+            "Z": -0.0369
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 0.3
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}12dddefb-490b-5e2c-a972-ddae539541d1",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-9e20-0020-000000000001",
+    "Name": "Retractable Gear - Pad Foot",
+    "Description": "Retractable landing gear with a landing-gear pad for a foot: it rides a suspension, slides instead of rolling and folds into its bay.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-9e20-0022-000000000001",
+        "Value": "ae200001-ae00-9e20-0021-000000000001"
+      }
+    ]
+  }
+}

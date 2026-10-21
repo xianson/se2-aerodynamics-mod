@@ -33,6 +33,18 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
   airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets,
   stackable solid rocket motors, and the Autopilot.
+- **Retractable Gear - Pad Foot:** the retractable gear with a vanilla landing-gear model as its foot. It rides the suspension
+  (airshock, retraction, stiffness), stays level and slides instead of rolling. No magnet. The feet reuse vanilla meshes as
+  placeholders.
+
+  | Block | Housing | Foot (vanilla model) | Foot size (m) | Wheel body | Sized for |
+  |---|---|---|---|---|---|
+  | Retractable Gear (Plate) 0.5 m | 0.5 m | Magnetic plate 0.5 m | 0.50 x 0.25 x 0.50 | 150 kg | 1.5 t a gear |
+  | Retractable Gear (Pad) 1 m | 1 m | Landing gear (1 m) | 0.50 x 1.00 x 1.00 | 250 kg | 5 t |
+  | Retractable Gear (Pad) 1.5 m | 1.5 m | Landing gear (5 m), x0.3 | 0.76 x 1.50 x 1.50 | 600 kg | 20 t |
+  | Retractable Gear (Plate) 2.5 m | 2.5 m | Magnetic plate 2.5 m | 2.50 x 0.51 x 2.50 | 1200 kg | 60 t |
+
+  Stroke 0.125 / 0.25 / 0.4 / 0.6 m. "Sized for": the sag at the default stiffness stays within half the stroke.
 - **Structure and damage:** air, thrust, gyro and impact loads spread through the ship you fly. Overloaded sections
   wear, fatigue, bend, crack across and tear off, with creaks, shake and smoke.
 - **Rotor strikes:** rotors and props are damaged by what they hit, and damage it back. Weld to repair.

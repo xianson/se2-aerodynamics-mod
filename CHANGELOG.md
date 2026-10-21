@@ -3,6 +3,17 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - pad-foot landing gear
+
+- **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. Each foot is a vanilla
+  landing-gear model on the retractable gear's suspension: a box underfoot, held level by a constraint, sliding not rolling.
+  Placeholder meshes (vanilla, reused as is; the 1.5 m scaled).
+- Offline: `Tests/GearTests` (the lock's life, every variant's definitions, collider fit, sag). Not flown in game yet.
+
+## Unreleased - landing gear stiffness
+
+- Every retractable gear: the stiffness slider's top is capped at 2.78x vanilla (was 3x): past that the suspension went unstable.
+
 ## Unreleased - the Autopilot panel, redone
 
 - Panel texts show in game (they were raw keys like "ApBehaviour_Auto"): the mod reads its texts into the game's table once a world.

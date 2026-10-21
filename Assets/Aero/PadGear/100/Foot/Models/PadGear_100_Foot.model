@@ -1,0 +1,129 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "Chrome",
+        "MaterialReference": "3312f76c-b118-4616-bd95-adfb9b59a996"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      },
+      {
+        "MaterialName": "MetalDull",
+        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts01",
+        "MaterialReference": "0d1f9867-1aee-4388-b5bb-4a7ce0cdc5e2"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "EmissiveOff",
+        "MaterialReference": "d2648963-ef2b-442d-af7b-ee3d79dad677"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}c36e95f5-87c2-5597-bc58-43e77cdce8c4",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "Chrome",
+          "PaintedMetalDarker",
+          "MetalDull",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": -0.501,
+            "Z": -0.001
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      },
+      {
+        "AssetReference": "{G}17f978c0-5a39-5ff8-980a-b33f2152efa1",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "MetalDull",
+          "Chrome",
+          "PaintedMetalDarker",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.125,
+            "Y": -0.626,
+            "Z": -0.126
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      },
+      {
+        "AssetReference": "{G}96571b90-da4f-572c-9d88-57a8daf6e32d",
+        "UsedMaterials": [
+          "PaintedMetalColorable",
+          "Chrome",
+          "PaintedMetalDarker",
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Trims01",
+          "EmissiveOff"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": -0.125,
+            "Y": -0.626,
+            "Z": -0.126
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1.0
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}d9ebb2ee-6d56-5a41-8dcd-e5358ba9fd0e",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "1fa87190-7256-4125-9fda-29ce92b98f86",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-9e23-0011-000000000001",
+      "_entity": {
+        "Definition": "ae200001-ae00-9e23-0013-000000000001",
+        "ObjectBuilders": {
+          "$DeltaEncoded": true,
+          "Keys": [
+            "b7bf405c-71aa-46a1-a5ec-4c690f2ab7e3",
+            "e58b8f69-45da-40d4-82b0-f1a82564a53a",
+            "d358358e-30b3-484a-b8b8-2e5568c7298b",
+            "bc5652a0-1296-4040-adc3-a2b9c35d5afc",
+            "4f2bc5f9-6a6d-4347-a1eb-5937cbce6727",
+            "7ce342ce-6693-49d1-8032-30202ae29d3c",
+            "acfad556-a86e-44cc-8cb7-6df0ccf6bfd0"
+          ],
+          "Changed": [
+            {
+              "Kind": "Insert",
+              "Index": 5,
+              "Value": {
+                "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.MechanicalBlocks.Wheels.WheelCornerModuleObjectBuilder",
+                "SuspensionDamping": 0.5,
+                "SuspensionStiffness": 0.3,
+                "TangentialAccelerationRate": 1,
+                "CurrentSuspensionDistance": 0,
+                "IsParked": false,
+                "ResourceConsumptionState": "IdleAndSupplied"
+              }
+            },
+            {
+              "Kind": "Insert",
+              "Index": 6,
+              "Value": null
+            }
+          ],
+          "Removed": []
+        }
+      }
+    },
+    "DefinitionType": "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinition",
+    "PriorityOverride": false
+  }
+}

@@ -1,0 +1,22 @@
+# PADRIG - one of each pad-foot gear under a STATIC 3 x 3 heavy-armour platform 10 m up (2026-10-20; padgear_test.sh phase A,
+# padgear_reload.sh): each foot's box and lock made, level while still, retracted and extended. The catalog's boxes: 0.5 m gear
+# -1..1 x -1..1 x -3..3 (y -6), 1 m -2..2 x -2..2 x -6..6 (y -7), 1.5 m -3..3 x -3..3 x -9..9 (y -8), 2.5 m -5..5 x -5..5 x -15..15
+# (y -10): each top meets the cubes' bottom (-5); the feet hang free, clear of each other.
+name PADRIG
+ahead 30
+up 10
+static 1
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 -10 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 0 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 10 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 -10 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 -10 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # ArmorHeavyCube (2.5 m)
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # ArmorHeavyCube (2.5 m)
+B 7046873e-c9fe-408c-96c8-53a7f0e62bcd 0 7 0 Forward Up charge=1   # Battery150 on the centre cube's top (the gears' power)
+B ae200001-ae00-9e21-0011-000000000001 -10 -6 -10 Forward Up   # Retractable Gear (Plate) 0.5 m
+B ae200001-ae00-9e22-0011-000000000001 -10 -7 10 Forward Up   # Retractable Gear (Pad) 1 m
+B ae200001-ae00-9e23-0011-000000000001 10 -8 0 Forward Up   # Retractable Gear (Pad) 1.5 m
+B ae200001-ae00-9e24-0011-000000000001 0 -10 0 Forward Up   # Retractable Gear (Plate) 2.5 m
