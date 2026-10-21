@@ -163,6 +163,7 @@ static class Program
         Check(Text("Grid/AeroSimJob.cs").Contains("if (aero.IsServerScene && AeroBlockSave.DevPending != 0) AeroBlockSave.DevStep(aero.Data.Scene);"), "AeroBlockSave.DevStep: called from the server grid's own step");
         Check(!Regex.IsMatch(Text("Dev/AeroBlockSaveDev.cs"), @"\bset\s*\{[^}]*\.All\b"), "AeroBlockSave.DevSet / DevDump: the setters only queue (no block list walked from the harness's thread)");
         DesignSnapshotTests.Run(Check);
+        ToolbarResolveTests.Run(Check, sim);
 
         // ── 5. the client's session tick (2026-10-19): session-level client work runs from the render camera, never only from a
         //       grid - with no client grid the settings menu never appeared (unless the Orbital Mod ticked the shared tab) ──

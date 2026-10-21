@@ -15,6 +15,8 @@ public class EntityInjector : SimpleDefinitionPostProcessor<PrefabDefinition>
     public override void PostProcess(PrefabDefinition definition)
     {
         ScriptResultsCleanup.Ensure();   // (the world-switch fix: runs on every world load, before any entity - Reload/)
+        // (a mod panel button on a toolbar: its model type found by name - Blocks/ToolbarTypeResolve.cs; out when this project unloads)
+        if (ToolbarTypeResolve.Hook()) ScriptResultsCleanup.OwnProjectUnloading += ToolbarTypeResolve.Unhook;
         InjectAeroComponents.Please(definition);
     }
 }
