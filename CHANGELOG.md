@@ -15,6 +15,13 @@ was flown in game for this release. The commit hashes are on the integration bra
   way to point that face at the target. Movement always wins; the safety limits still clip. Replaces Point At, Broadside and the
   aim switch - old saves convert (Point At: Keep distance + nose; Broadside: Circle it + a side; aim on: the nose).
 - Toolbar: every mode is still an action; existing toolbars keep working.
+- Toolbar: mod panel buttons on a toolbar work again (they showed blank and did nothing: the game could not find a mod's panel type).
+- **Cruise from the ground** climbs off it: it catches the terrain minimum (at least 20 m), not the 0 m it sits at. With no ground
+  in sight at rest, the ground is taken as right under it.
+- Over terrain lower than the planet's shape the height over the ground is the rays' (it read 0 m and the terrain minimum climbed hard).
+- **Follow ship:** the terrain minimum is never above the leader's own height over the ground - a low leader's slot is reachable.
+  The floor protection still holds.
+- The panel shows the Enemy switch's result as it happens (it showed "switching..." for seconds), and a mode let go or a height caught.
 
 ## Unreleased - test spawns (creative / admin)
 

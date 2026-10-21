@@ -70,11 +70,17 @@ public sealed class PlanetTerrainQuery : ITerrainQuery
         return (Vector3)n;
     }
 
+    /// <summary>(2026-10-21) A point this far (m) under the generated surface is no ship's: the generated shape is not what is here
+    /// (a basin below it, a dug hole) - "not known", the rays' answer stands. In game 2026-10-20 a ship over terrain lower than the
+    /// planet's shape read 0 m over the ground (the height clipped to 0) and its terrain minimum climbed it hard; ahead, "a hit at
+    /// 0 m" did the same.</summary>
+    public const double UnderTolerance = 1.0;
+
     public bool Below(Vector3D p, Vector3 down, float reach, out float height, out Vector3 normal)
     {
         height = 0f; normal = -down;
         if (!Height(p, 0, out double above, out var c, out double r)) return false;
-        if (above > reach) return false;
+        if (above > reach || above < -UnderTolerance) return false;
         height = (float)Math.Max(0, above);
         normal = NormalAt(p, c, r, 0, Math.Clamp(height * 0.05f, 10f, 100f));
         return true;
@@ -84,6 +90,7 @@ public sealed class PlanetTerrainQuery : ITerrainQuery
     {
         distance = 0f; normal = -dir;
         if (!(length > 0f) || !Height(p, 0, out double a0, out var c, out double r)) return false;
+        if (a0 < -UnderTolerance) return false;   // (under the generated shape: not what is here - the rays')
         if (a0 <= 0) { normal = NormalAt(p, c, r, 0, 10f); return true; }
         double step = Math.Max(10.0, length / 48.0), prev = 0;
         for (double t = step; t <= length + 1e-3; t += step)

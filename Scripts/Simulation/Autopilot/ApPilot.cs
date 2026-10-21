@@ -49,6 +49,11 @@ public sealed class ApPilot : IApGoalSource
     Vector3D _home, _station; bool _hasStation;
     Vector3 _upL = Vector3.UnitY, _noseL = -Vector3.UnitZ;
     Vector3 _upW = Vector3.UnitY; bool _terrainUp;
+    /// <summary>The last ground seen, as a height along the up (world): the height over the ground while none is in sight (Agl).</summary>
+    double _gUp; bool _hasG;
+    /// <summary>(2026-10-21) Engaged under this height over the ground (m), or at rest with no ground in sight: on the ground - the
+    /// height caught is a climb off it (TakeoffM, at least the terrain minimum), not the 0 m it sits at.</summary>
+    public const float GroundedM = 3f, RestSpeed = 0.5f, TakeoffM = 20f;
 
     float _cruise, _time, _jinkIn, _gunEl;
  int _jx = 1, _jy = 1; uint _rng = 2463534242u;
@@ -144,7 +149,15 @@ public sealed class ApPilot : IApGoalSource
         }
         if (mode == ApMode.Navigate && _route.Count == 0 && !Cfg.ReturnHome) { why = ApReason.NoWaypoints; return false; }
         Mode = mode; Style = st;
-        float agl = s.Agl;
+        // (the height over the ground now: the watch's, the ground ray's, else the terrain asked straight down - the planet's height
+        //  reaches far; none, at rest in gravity: on the ground, its ground caught under it. In game 2026-10-20 Cruise engaged
+        //  over a ground out of sight caught "ALT 0 m" and the ship never left the ground)
+        _upW = up; _hasG = false;
+        float agl = RealAgl(in s);
+        if (agl < 0f && Fd?.Terrain != null && g > 1e-2f && Fd.Terrain.Below(s.Pos, -up, TerrainWatch.BelowReachLong, out float tb, out _) && float.IsFinite(tb)) agl = MathF.Max(0f, tb - s.Belly);
+        bool grounded = agl >= 0f ? agl < GroundedM : g > 1e-2f && s.Vel.Length() < RestSpeed;
+        if (agl < 0f && grounded) agl = 0f;
+        if (agl >= 0f) { _gUp = Vector3D.Dot(s.Pos, (Vector3D)up) - agl; _hasG = true; }
         Alt.Reset(s.Pos, up, agl >= 0f ? agl : 0f);
         Tecs.Reset(); Bh.Reset(); Arb.Reset(); T.Clear(); Formation.Reset(); _slotWas = (ApBehaviour)255; SlotText = null; _dfBan = _rgBan = false;
         Wp = 0; _wpFrom = s.Pos; _loiter = false; _hasStation = false; _time = 0f;
@@ -160,11 +173,11 @@ public sealed class ApPilot : IApGoalSource
         {
             Vector3 vh = ApMath.Flat(s.Vel, up);
             Vector3 dir = vh.LengthSquared() > 4f ? vh : ApMath.Flat(Vector3.Transform(_noseL, s.Orient), up);
-            CapHeading = MathF.Round(ApCompass.Heading(dir, up)); CapAlt = MathF.Round(MathF.Max(0f, h)); CapSpeed = st == ApStyle.Airplane ? MathF.Round(air) : 0f;
+            CapHeading = MathF.Round(ApCompass.Heading(dir, up)); CapAlt = MathF.Round(CatchAlt(h, agl, grounded)); CapSpeed = st == ApStyle.Airplane ? MathF.Round(air) : 0f;
             Cfg.HeadingDeg = CapHeading; Cfg.AltM = CapAlt; Cfg.SpeedMs = CapSpeed; _cruise = CapSpeed;
             CapturedHolds = true;
         }
-        else if (Cfg.AltM <= 0f) { CapAlt = MathF.Round(MathF.Max(0f, h)); Cfg.AltM = CapAlt; CapHeading = Cfg.HeadingDeg; CapSpeed = Cfg.SpeedMs; CapturedHolds = true; }
+        else if (Cfg.AltM <= 0f) { CapAlt = MathF.Round(CatchAlt(h, agl, grounded)); Cfg.AltM = CapAlt; CapHeading = Cfg.HeadingDeg; CapSpeed = Cfg.SpeedMs; CapturedHolds = true; }
         CapturedHome = false;
         if (Cfg.HasHome) _home = new Vector3D(Cfg.HomeX, Cfg.HomeY, Cfg.HomeZ);
         else { _home = s.Pos; CapturedHome = true; }
@@ -177,7 +190,26 @@ public sealed class ApPilot : IApGoalSource
         float agl = Agl(in s);
         return Mode != ApMode.Engage && Cfg.HeightRef == ApHeightRef.Ground && agl >= 0f ? agl : alt;
     }
-    float Agl(in ApSense s) => Fd != null && Fd.Ground.HasGround ? Fd.Ground.Agl : s.Agl;
+    /// <summary>The ground under the ship as seen now (the watch's, else the ground ray's; -1 none).</summary>
+    float RealAgl(in ApSense s) => Fd != null && Fd.Ground.HasGround ? Fd.Ground.Agl : s.Agl;
+    /// <summary>The height over the ground: as seen now (and kept as the last ground seen), else over the last ground seen (the
+    /// flight director's own rule for its holds: GroundUp), else -1.</summary>
+    float Agl(in ApSense s)
+    {
+        float a = RealAgl(in s);
+        double pu = Vector3D.Dot(s.Pos, (Vector3D)_upW);
+        if (a >= 0f) { _gUp = pu - a; _hasG = true; return a; }
+        return _hasG ? (float)Math.Max(0.0, pu - _gUp) : -1f;
+    }
+
+    /// <summary>The height caught at an engage (in the panel's reference): the one it has - on the ground a climb off it (TakeoffM,
+    /// at least the terrain minimum); over a known ground never under the terrain minimum (which it would climb to anyway).</summary>
+    float CatchAlt(float h, float agl, bool grounded)
+    {
+        float c = MathF.Max(0f, h), min = Cfg.MinAglM > 0f ? Cfg.MinAglM : 0f;
+        if (grounded) return MathF.Max(c, MathF.Max(min, TakeoffM));
+        return agl >= 0f ? MathF.Max(c, min) : c;
+    }
 
     public bool Step(in ApSense s, ref ApExternal x)
     {
@@ -277,6 +309,10 @@ public sealed class ApPilot : IApGoalSource
         //    (the combat ceiling in the altimeter, the hard deck over the ground - the deck wins) ──
         float hDem = goal.Height;
         float need = Cfg.MinAglM;
+        // (2026-10-21) FOLLOW SHIP: the terrain minimum never above the leader's own height over the ground (the ground under the
+        // follower stands for the leader's) - a 60 m minimum kept a follower out of a low leader's slot. The floor (FloorM) still holds.
+        if (Mode == ApMode.Engage && T.Valid && ActiveBh == ApBehaviour.Formation && agl >= 0f && need > 0f)
+            need = MathF.Min(need, MathF.Max(0f, agl + Vector3.Dot((Vector3)(T.Pos - s.Pos), up)));
         float hd0 = hDem;
         if (Mode == ApMode.Engage && T.Valid && !direct)
         {
