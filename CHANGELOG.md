@@ -13,6 +13,7 @@ was flown in game for this release. The commit hashes are on the integration bra
 ## Unreleased - landing gear stiffness
 
 - Every retractable gear: the stiffness slider's top is capped at 2.78x vanilla (was 3x): past that the suspension went unstable.
+- The same cap on every wheel's spring the wheel shocks write (one cap for all: `Gear/GearStiffness.cs`).
 
 ## Unreleased - wheel shocks on every wheel (a stopgap)
 

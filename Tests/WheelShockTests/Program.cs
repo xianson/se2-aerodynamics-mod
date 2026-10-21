@@ -67,9 +67,9 @@ static class Program
         }
         // 3. the stiffness cap
         {
-            Check(Near(WheelShockSettings.MaxStrength * WheelShockSettings.SolverTau, 1.67f, 1e-4f), "the cap is an effective tau of 1.67");
-            Check(WheelShockSettings.CapStrength(3f) == WheelShockSettings.MaxStrength && WheelShockSettings.CapStrength(-1f) == 0f && WheelShockSettings.CapStrength(1f) == 1f, "CapStrength");
-            Check(Near(WheelShockSettings.ConstraintSpringRate(1f, 200f, 1f / 60f), 0.6f * 200f * 3600f, 1f), "the constraint's spring: factor x tau x m_wheel / dt^2 (432 kN/m for a 1 m wheel)");
+            Check(Near(GearStiffness.MaxStrength * GearStiffness.SolverTau, 1.67f, 1e-4f), "the cap is an effective tau of 1.67 (GearStiffness: one cap, every wheel)");
+            Check(GearStiffness.Cap(3f) == GearStiffness.MaxStrength && GearStiffness.Cap(-1f) == 0f && GearStiffness.Cap(1f) == 1f && GearStiffness.Cap(GearStiffness.Strength(1f, 3f)) == GearStiffness.Strength(1f, 3f), "Cap (and the gear's Strength within it)");
+            Check(Near(GearStiffness.SpringRate(1f, 200f, 1f / 60f), 0.6f * 200f * 3600f, 1f), "the constraint's spring: factor x tau x m_wheel / dt^2 (432 kN/m for a 1 m wheel)");
         }
         // 4. the step: guards, the implicit solve, the rate cap
         {

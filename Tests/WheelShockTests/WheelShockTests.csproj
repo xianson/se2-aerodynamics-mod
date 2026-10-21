@@ -6,5 +6,6 @@
   <ItemGroup>
     <Compile Include="$(Sim)\Gear\WheelOleo.cs" />
     <Compile Include="$(Sim)\Gear\WheelAirshock.cs" />
+    <Compile Include="$(Sim)\Gear\GearStiffness.cs" />
   </ItemGroup>
 </Project>

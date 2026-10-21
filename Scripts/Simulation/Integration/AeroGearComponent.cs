@@ -132,7 +132,6 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                 // the spring off first (2026-10-13: on a flying ship the wheel stopped about halfway up - the suspension's
                 // spring, pulling it back to its rest the harder the further it is held, beat the limits; IWheelConstraint:
                 // "zero means no soft suspension force ... the suspension only reacts at the hard limits")
-                if (_shockOn) { _wc.SuspensionStrengthFactor = _shockS; _wc.SuspensionDampingFactor = _shockD; _shockOn = false; }
                 if (!_springOff) { _springStrength = _wc.SuspensionStrengthFactor; _springDamping = _wc.SuspensionDampingFactor; _wc.SuspensionStrengthFactor = 0f; _springOff = true; }
                 // (held at that height: Min = Max = +travel. Measured in game 2026-10-13 (LimitMode, all four writings,
                 //  the 1 m gear, the game's own CurrentSuspensionDistance after a retract): travel / travel -> +2.15 (up, in
@@ -166,7 +165,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         // a lot ... not the defaults, just the max") - the vanilla slider tops out at 1; down and not held by the airshock or
         // the retraction, the constraint gets the scaled value
         _step = "stiffness";
-        if (_wc != null && _travel <= 0f && !_springOff && !_shockOn && !ShockOwned)
+        if (_wc != null && _travel <= 0f && !_springOff && !ShockOwned)
         {
             float want = GearStiffness.Strength(_cm.SuspensionStiffness, StiffnessScale);   // (capped: GearStiffness.MaxStrength)
             if (_wc.SuspensionStrengthFactor != want) _wc.SuspensionStrengthFactor = want;
@@ -233,19 +232,14 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     }
 
     // ── AIRSHOCK (2026-10-15, the user: SE1's suspension setting that anticipated ground impacts - "right now it's
-    //    impossible to land"): the gear down and the grid coming down, the wheel's suspension goes stiff and fully damped
-    //    just before it touches (within ArmSeconds of contact at the sink rate now, or ArmHeight above the ground) so the
-    //    hit is taken over its whole travel without bottoming or bouncing; the player's damping / stiffness come back once it
-    //    has settled on the wheel (in contact and barely sinking for SettleSeconds) or HoldSeconds after the touch. ──
+    //    impossible to land"): since 2026-10-20 every wheel's (Gear/WheelAirshock.cs, run by AeroWheelShockComponent - this gear's
+    //    wheel too); the gear keeps its switch (saved with the block) and its readout. ──
     public bool AirshockEnabled = true;   // (saved with the block since 2026-10-15: AeroBlockSave)
-    public static float ArmSeconds = 0.5f, ArmHeight = 0.3f, MinSink = 0.5f, SettleSink = 0.3f, SettleSeconds = 0.5f, HoldSeconds = 3f;
-    public static float ShockDamping = 1f;
     /// <summary>The terminal's stiffness slider (0..1) x this is what the suspension gets: 1 vanilla, 3 a slider at the top is
     /// three times the vanilla maximum - capped at GearStiffness.MaxStrength (2.78: the solver's effective tau 1.67; past ~1.5-2 the
     /// suspension goes unstable, 2026-10-20). The airshock goes to the slider's top before a touchdown.</summary>
     public static float StiffnessScale = 3f;
-    static float ShockStrength => GearStiffness.Strength(1f, StiffnessScale);
-    bool _shockOn; float _shockS, _shockD; double _shockTouch = -1, _shockCalm = -1;
+    /// <summary>The wheel shocks' word for this gear's wheel (AeroWheelShockComponent writes it; the dev summary shows it).</summary>
     public string ShockState = "";
 
     /// <summary>The wheel carries the ship: in contact (the game's own) or its suspension compressed.</summary>
@@ -288,7 +282,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                     sb.Append(" | ").Append(g.Seq.Down ? "down" : "up").Append($" p {g.Seq.Progress:F2} travel {g._travel:F2} m (wheel: measured {g._measured:F2}, game {(g._cm != null ? g._cm.CurrentSuspensionDistance : float.NaN):F2})")
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
-                      .Append(g._shockOn ? " AIRSHOCK on" : "")
+                      .Append(g.ShockOwned ? " SHOCKS hold the spring" : "")
                       .Append(g.Variant?.Foot != null ? (g._lockLife.Has ? " PAD locked level" : " PAD no lock") + (g._boxWheel != null ? " box" : " sphere") + (g.FootAttitude(out float tl, out _) ? $" tilt {tl:F1}" : "") : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();

@@ -31,16 +31,8 @@ public static class WheelShockSettings
     /// the player's x this - low, so the two do not fight (the constraint keeps the hard limits and the wheel's return in the air).</summary>
     public static float ConstraintSpringShare = 0.25f;
 
-    /// <summary>The solver's tau (SolverSettings.Tau; the wheel constraint's strength factor scales it).</summary>
-    public const float SolverTau = 0.6f;
-    /// <summary>The highest effective tau (factor x SolverTau) the mod writes: past ~1.5-2 the suspension pumps energy in.</summary>
-    public const float MaxEffectiveTau = 1.67f;
-    /// <summary>The highest strength factor written (2.78).</summary>
-    public const float MaxStrength = MaxEffectiveTau / SolverTau;
-    /// <summary>A strength factor capped (never negative, never past MaxStrength).</summary>
-    public static float CapStrength(float strength) => strength > 0f ? Math.Min(strength, MaxStrength) : 0f;
-    /// <summary>The wheel constraint's own spring rate (N/m) at a strength factor: factor x tau x the wheel's mass / dt^2.</summary>
-    public static float ConstraintSpringRate(float strength, float wheelMass, float dt) => strength * SolverTau * wheelMass / (dt * dt);
+    // (the stiffness cap - the solver's tau, the highest effective tau, the spring rate a factor gives - is GearStiffness's, one for
+    //  every wheel and gear: Gear/GearStiffness.cs)
 }
 
 /// <summary>

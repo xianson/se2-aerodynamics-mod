@@ -57,9 +57,9 @@ sealed class Sim
             bool armed = false;
             if (Mode != Kind.Vanilla) { shock.Step(true, contact, -vs, h, t); armed = shock.Armed; }
             float strength = Slider, damping = DampSlider;
-            if (Mode == Kind.Airshock && armed) { strength = WheelShockSettings.MaxStrength; damping = WheelAirshock.ShockDamping; }
+            if (Mode == Kind.Airshock && armed) { strength = GearStiffness.MaxStrength; damping = WheelAirshock.ShockDamping; }
             if (Mode == Kind.Oleo) { strength = Slider * WheelShockSettings.ConstraintSpringShare; if (armed) damping = WheelAirshock.ShockDamping; }
-            strength = WheelShockSettings.CapStrength(strength);
+            strength = GearStiffness.Cap(strength);
             if (Mode == Kind.Oleo)
             {
                 float mass = contact ? WheelOleo.GroundMass(m, m, 1) : WheelOleo.AirMass(m, mw);
@@ -71,7 +71,7 @@ sealed class Sim
             // 2. the physics
             vs -= G * Dt; vw -= G * Dt;
             {
-                float k = strength * WheelShockSettings.SolverTau * mred / (Dt * Dt), c = damping * mred / Dt;
+                float k = strength * GearStiffness.SolverTau * mred / (Dt * Dt), c = damping * mred / Dt;
                 float p = (k * x + c * v) * Dt;   // (extending: the ship up, the wheel down)
                 if (x <= 0f && v <= 0f) p = 0f;   // (on its lower limit the soft spring pushes nothing: the limit row holds it)
                 vs += p / m; vw -= p / mw;

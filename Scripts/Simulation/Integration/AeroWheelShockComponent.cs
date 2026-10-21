@@ -21,7 +21,7 @@ namespace AeroMod;
 /// parking, power and limits untouched; what this adds:
 ///  - THE AIRSHOCK (WheelAirshock: armed from the wheel's own sink rate and its tyre's height over the ground - the planet's
 ///    surface, GamePlanetHeight, and the grid's ground ray, the nearer): the wheel constraint's damping factor to full
-///    (ShockDamping) before the touch and, airshock only, its strength to the cap (WheelShockSettings.MaxStrength, an effective tau
+///    (ShockDamping) before the touch and, airshock only, its strength to the cap (GearStiffness.MaxStrength, an effective tau
 ///    of 1.67); the player's values back once settled;
 ///  - THE OLEO (Airshock + oleo; WheelOleo / WheelRating: rated by the wheel's size, stroke and mass, never the ship): an absolute
 ///    spring-damper along the suspension axis, from the compression (the corner module's own CalculateSuspensionDistance, fresh)
@@ -157,8 +157,8 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         // ── the constraint's factors (written only when they change) ──
         float baseS = PlayerStrength(), baseD = Math.Max(0f, _cm.SuspensionDamping);
         float wantS, wantD = armed ? WheelAirshock.ShockDamping : baseD;
-        if (mode == WheelShockSettings.AirshockOnly) wantS = armed ? WheelShockSettings.MaxStrength : baseS;
-        else wantS = WheelShockSettings.CapStrength(baseS * Math.Clamp(WheelShockSettings.ConstraintSpringShare, 0f, 1f));
+        if (mode == WheelShockSettings.AirshockOnly) wantS = armed ? GearStiffness.MaxStrength : baseS;
+        else wantS = GearStiffness.Cap(baseS * Math.Clamp(WheelShockSettings.ConstraintSpringShare, 0f, 1f));
         Write(wantS, wantD);
 
         // ── the oleo ──
@@ -182,7 +182,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     {
         float s = Math.Max(0f, _cm.SuspensionStiffness);
         if (_gear != null) s *= AeroGearComponent.StiffnessScale;
-        return WheelShockSettings.CapStrength(s);
+        return GearStiffness.Cap(s);
     }
 
     void Write(float s, float d)
