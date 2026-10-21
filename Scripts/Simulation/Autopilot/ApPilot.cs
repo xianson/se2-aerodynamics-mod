@@ -54,6 +54,10 @@ public sealed class ApPilot : IApGoalSource
     /// <summary>(2026-10-21) Engaged under this height over the ground (m), or at rest with no ground in sight: on the ground - the
     /// height caught is a climb off it (TakeoffM, at least the terrain minimum), not the 0 m it sits at.</summary>
     public const float GroundedM = 3f, RestSpeed = 0.5f, TakeoffM = 20f;
+    /// <summary>(2026-10-21) Engaged with no ground known yet (in game the ground ray answers a moment later - Cruise at 33 m caught
+    /// "ALT 0 m"): the height is caught again when a ground is first seen within this long (s), unless the panel's number changed.</summary>
+    public const float CatchWaitS = 3f;
+    float _catchFor, _catchAlt;
 
     float _cruise, _time, _jinkIn, _gunEl;
  int _jx = 1, _jy = 1; uint _rng = 2463534242u;
@@ -168,7 +172,7 @@ public sealed class ApPilot : IApGoalSource
         float h = HeightIn(in s, up, Alt.Height(s.Pos, up));
         // (the speed: the panel's, or the one it has - a hovering style's chase speed when none is set)
         _cruise = st == ApStyle.Airplane ? (Cfg.SpeedMs > 0f ? Cfg.SpeedMs : air) : (Cfg.SpeedMs > 0f ? Cfg.SpeedMs : 0f);
-        CapturedHolds = false;
+        CapturedHolds = false; _catchFor = 0f;
         if (mode == ApMode.FlightHold)
         {
             Vector3 vh = ApMath.Flat(s.Vel, up);
@@ -176,8 +180,9 @@ public sealed class ApPilot : IApGoalSource
             CapHeading = MathF.Round(ApCompass.Heading(dir, up)); CapAlt = MathF.Round(CatchAlt(h, agl, grounded)); CapSpeed = st == ApStyle.Airplane ? MathF.Round(air) : 0f;
             Cfg.HeadingDeg = CapHeading; Cfg.AltM = CapAlt; Cfg.SpeedMs = CapSpeed; _cruise = CapSpeed;
             CapturedHolds = true;
+            if (agl < 0f) { _catchFor = CatchWaitS; _catchAlt = CapAlt; }
         }
-        else if (Cfg.AltM <= 0f) { CapAlt = MathF.Round(CatchAlt(h, agl, grounded)); Cfg.AltM = CapAlt; CapHeading = Cfg.HeadingDeg; CapSpeed = Cfg.SpeedMs; CapturedHolds = true; }
+        else if (Cfg.AltM <= 0f) { CapAlt = MathF.Round(CatchAlt(h, agl, grounded)); Cfg.AltM = CapAlt; CapHeading = Cfg.HeadingDeg; CapSpeed = Cfg.SpeedMs; CapturedHolds = true; if (agl < 0f) { _catchFor = CatchWaitS; _catchAlt = CapAlt; } }
         CapturedHome = false;
         if (Cfg.HasHome) _home = new Vector3D(Cfg.HomeX, Cfg.HomeY, Cfg.HomeZ);
         else { _home = s.Pos; CapturedHome = true; }
@@ -217,6 +222,19 @@ public sealed class ApPilot : IApGoalSource
         float g = s.Gravity.Length(), gT = (s.GravityTrue.LengthSquared() > 0f ? s.GravityTrue : s.Gravity).Length();
         Vector3 up = g > 1e-2f ? -s.Gravity / g : Vector3.UnitY; _upW = up;
         float alt = Alt.Height(s.Pos, up), h = HeightIn(in s, up, alt), agl = Agl(in s);
+        if (_catchFor > 0f)
+        {
+            // (engaged with no ground known: the first ground seen soon after - the altimeter's datum on it, the height caught again)
+            _catchFor -= dt;
+            if (agl >= 0f && MathF.Abs(Cfg.AltM - _catchAlt) < 0.5f)
+            {
+                _catchFor = 0f;
+                Alt.Reset(s.Pos, up, agl);
+                alt = Alt.Height(s.Pos, up); h = HeightIn(in s, up, alt);
+                CapAlt = MathF.Round(CatchAlt(h, agl, agl < GroundedM)); Cfg.AltM = CapAlt;
+                CapHeading = Cfg.HeadingDeg; CapSpeed = Cfg.SpeedMs; CapturedHolds = true;
+            }
+        }
         float air = s.AirVel.Length();
         HeightNow = h; SpeedNow = Style == ApStyle.Airplane ? air : ApMath.Flat(s.Vel, up).Length();
         HeadingNow = ApCompass.Heading(ApMath.Flat(s.Vel, up).LengthSquared() > 4f ? s.Vel : Vector3.Transform(_noseL, s.Orient), up);

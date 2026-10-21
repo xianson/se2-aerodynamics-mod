@@ -15,6 +15,7 @@ sealed class CruiseGroundPack : IScenarioPack
         r.Add("cruise from the ground, no ground in sight: the ground caught under it, a climb off it", true, () => FromGround(sees: false));
         r.Add("cruise over terrain lower than the planet's shape: the rays' ground, no runaway climb", true, UnderShape);
         r.Add("follow ship low: the terrain minimum never above the leader's own height", true, FollowLow);
+        r.Add("cruise engaged before the ground is seen: caught again when it is", true, LateGround);
     }
 
     /// <summary>No terrain at all (the rays blind, no planet).</summary>
@@ -115,5 +116,28 @@ sealed class CruiseGroundPack : IScenarioPack
         Sim.Check(MathF.Abs(with.lead - 25f) < 4f, $"follow ship low: the leader holds 25 m ({with.lead:F1})");
         Sim.Check(with.hi < 40f && MathF.Abs(with.hi - none.hi) < 3f && MathF.Abs(with.err - none.err) < 3f,
             $"follow ship low: the default terrain minimum ({ApPanel.Defaults.MinAglM:F0} m) keeps the follower no higher than with none - {with.lo:F1}..{with.hi:F1} m vs {none.lo:F1}..{none.hi:F1} m, slot error {with.err:F1} vs {none.err:F1} m");
+    }
+
+    /// <summary>In game 2026-10-21 (f1): Cruise engaged at 33 m over the ground, drifting at 1 m/s, the ground ray and the planet not
+    /// answering at that tick - "ALT 0 m" caught. Here every ground source is blind for the first second after the engage.</summary>
+    static void LateGround()
+    {
+        var r = new Run("cruise before the ground is seen", Ships.Heli(3f));
+        var blind = new Blind(); var rays = new PlanetTerrainPack.BlindRays { T = r.P.Terrain, Reach = 400f };
+        r.P.Fd.Terrain = blind; r.P.AglReach = -1f;
+        r.P.P = new Vector3D(0, 33 + r.P.S.Bottom, 0); r.P.V = new Vector3(1f, 0f, 0f);
+        var p = ApPanel.Defaults; p.Unattended = true; p.HeightRef = ApHeightRef.Ground;
+        r.P.AddBlock(p);
+        r.P.Panel.Mode = ApMode.FlightHold;
+        r.Fly(1f / 60f);
+        float first = r.P.Panel.AltM;
+        r.Fly(1f);
+        r.P.Fd.Terrain = rays; r.P.AglReach = 400f;   // (the ground seen)
+        r.Fly(2f);
+        float caught = r.P.Panel.AltM;
+        r.Fly(40f);
+        Sim.Note($"cruise before the ground is seen: caught {first:F0} m blind, {caught:F0} m once the ground was seen (33 m over it, minimum {p.MinAglM:F0}); after 40 s {r.P.Agl:F1} m");
+        Sim.Check(MathF.Abs(caught - p.MinAglM) < 1f && MathF.Abs(r.P.Agl - p.MinAglM) < 6f, $"cruise before the ground is seen: the height caught again over the ground ({caught:F0} m, flown {r.P.Agl:F1} m; the minimum {p.MinAglM:F0})");
+        Program.LedgerPublic(r, false);
     }
 }
