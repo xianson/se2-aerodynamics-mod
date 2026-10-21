@@ -17,7 +17,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   advanced `Wheels.CompressionDamping`, `Wheels.ReboundDamping`, `Wheels.ForceRateCap`, `Wheels.ConstraintSpring`.
 - Offline (`Tests/WheelShockTests`, a time-stepped touchdown): at the rated load, 1 / 3 / 5 m/s, every vanilla size stays in
   its stroke (1 m wheel 60 / 73 / 91 %), rebound under 0.5 m/s, settled in 0.2-0.6 s; vanilla and airshock-only bottom in every
-  case. Not flown in game yet (`tools/ingame/wheelshock_test.sh`: the Tu-134 Big, 1 / 3 / 5 m/s, 0 and 45 m/s forward).
+  case. Not flown in game yet (`tools/ingame/wheelshock_test.sh`: heavy armour bricks on four 1 m wheels - 27 / 93 / 204 % of
+  their rating - dropped at 1 / 3 / 5 m/s onto voxel ground and a static armour deck, shocks off vs on, with and without forward speed).
 
 ## Unreleased - the Autopilot panel, redone
 

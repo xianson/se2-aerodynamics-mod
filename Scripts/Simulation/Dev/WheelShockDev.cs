@@ -41,10 +41,11 @@ public static class WheelShockDev
     static readonly Dictionary<AeroWheelShockComponent, (float maxU, int bottom)> _wheels = new();
 
     /// <summary>A drop asked or running (the wheels' jobs arm the apply job every tick then).</summary>
-    internal static bool Active => _phase != 0 || DevDrop != _seen;
+    internal static bool Active => _phase != 0 || DevDrop != _seen || _parkedAsked;
 
     internal static void Step(List<AeroWheelShockComponent> all)
     {
+        if (_parkedAsked) Parked(all);
         if (DevDrop != _seen) { _seen = DevDrop; Begin(all); }
         if (_phase == 0) return;
         if (_grid == null || !GridPhysics.Alive(_grid.Data)) { End("the grid is gone"); return; }
@@ -100,6 +101,26 @@ public static class WheelShockDev
                 break;
             }
         }
+    }
+
+    /// <summary>The named grid's wheels at rest (harness: read it, read it again - built on the server step after it was asked):
+    /// "wheels N ground G maxcomp U" - how many shocked wheels, how many on the ground, the deepest compression of a stroke.</summary>
+    public static string DevParked { get { _parkedAsked = true; return _parked; } }
+    static volatile bool _parkedAsked; static string _parked = "asked";
+
+    static void Parked(List<AeroWheelShockComponent> all)
+    {
+        _parkedAsked = false;
+        string want = (DevGrid ?? "").Replace('_', ' ').Trim();
+        int n = 0, ground = 0; float maxU = 0f; Entity grid = null;
+        foreach (var s in all)
+        {
+            if (s.Grid == null || !s.Rating.Valid) continue;
+            if (grid == null && (want.Length == 0 || string.Equals(Name(s.Grid), want, StringComparison.OrdinalIgnoreCase))) grid = s.Grid;
+            if (!ReferenceEquals(s.Grid, grid)) continue;
+            n++; if (s.Contact) ground++; maxU = MathF.Max(maxU, s.X / s.Rating.Stroke);
+        }
+        _parked = grid == null ? $"no grid '{want}'" : $"'{Name(grid)}' wheels {n} ground {ground} maxcomp {maxU:F2} rated {(n > 0 ? all.Find(x => ReferenceEquals(x.Grid, grid) && x.Rating.Valid).Rating.RatedMass / 1000f : 0f):F1} t";
     }
 
     static void Begin(List<AeroWheelShockComponent> all)
@@ -170,7 +191,7 @@ public static class WheelShockDev
         var sb = new System.Text.StringBuilder();
         int bottomed = 0; float maxU = 0f;
         foreach (var kv in _wheels) { if (kv.Value.bottom > 0) bottomed++; maxU = MathF.Max(maxU, kv.Value.maxU); }
-        sb.Append($"drop {_seen}: mode {WheelShockSettings.Mode} touch {_touchV:F2} m/s forward {DevForward:F0} | maxcomp {maxU:F2} bottomed {bottomed} hull {_hull} rebound {_rebound:F2} bounces {_bounces} settle {(float.IsNaN(_settle) ? -1f : _settle):F2} peakF {_peakF:F2} W");
+        sb.Append($"drop {_seen}: '{Name(_grid)}' mode {WheelShockSettings.Mode} touch {_touchV:F2} m/s forward {DevForward:F0} | maxcomp {maxU:F2} bottomed {bottomed} hull {_hull} rebound {_rebound:F2} bounces {_bounces} settle {(float.IsNaN(_settle) ? -1f : _settle):F2} peakF {_peakF:F2} W");
         sb.Append($" | damage {(_integ0 > 0 ? 1.0 - integ / _integ0 : 0):F4} lost {_blocks0 - blocks} blocks");
         foreach (var kv in _wheels) sb.Append($" | wheel {kv.Key.Rating.Diameter:F1} m comp {kv.Value.maxU:F2} bottom {kv.Value.bottom}");
         DevResult = sb.ToString();

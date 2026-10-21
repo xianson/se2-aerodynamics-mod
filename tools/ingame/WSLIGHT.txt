@@ -1,0 +1,15 @@
+# WSLIGHT - the wheel shocks' test brick (tools/ingame/build_wheelbrick.py; do not edit by hand)
+# 2 x 2 x 1 heavy cubes: 16.2 t with its wheels, 4.04 t a wheel = 27 % of the wheel's rating (15.0 t)
+name WSLIGHT
+ahead 40
+up 4
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # heavy armour 2.5 m
+B b22450b6-ad1d-4902-a768-f54adb49516f 0 10 0 Forward Up charge=1   # Battery250 (the suspensions' power)
+B b3826409-8168-4219-a4e9-58d29b2fd8fa -5 -3 -4 Forward Up   # suspension L front
+B b3826409-8168-4219-a4e9-58d29b2fd8fa -5 -3 14 Forward Up   # suspension L back
+B b3826409-8168-4219-a4e9-58d29b2fd8fa 16 -3 -3 Backward Up   # suspension R front
+B b3826409-8168-4219-a4e9-58d29b2fd8fa 16 -3 15 Backward Up   # suspension R back
