@@ -40,6 +40,7 @@ static class Program
         ["AeroGridComponent.Live"] = (true, "every grid composition, client and server (EntityInjector: CubeGridComponent)"),
         ["AeroThrustSettingsComponent.All"] = (true, "every thruster composition, client and server (EntityInjector: ThrusterComponent; its Server flag)"),
         ["AeroSurfaceSettingsComponent.All"] = (false, "the control surfaces' SERVER prefabs only (AeroBlockGuids.SurfaceServerPrefabs)"),
+        ["AeroWheelShockComponent.All"] = (false, "every suspension prefab, but only the SERVER scene's copies are added (OnAddedToScene returns first on a client scene)"),
         ["AeroGearComponent.All"] = (false, "the gears' SERVER prefabs only (AeroBlockGuids.GearServerPrefabs)"),
         ["AeroAirbrakeComponent.All"] = (false, "the airbrakes' SERVER prefabs only (AeroBlockGuids.AirbrakeServerPrefabs)"),
         ["AeroAutopilotComponent.All"] = (false, "the Autopilot blocks' SERVER prefabs only (AeroBlockGuids.AutopilotServerPrefabs)"),

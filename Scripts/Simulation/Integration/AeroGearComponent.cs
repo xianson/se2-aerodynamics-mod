@@ -161,14 +161,11 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         // a lot ... not the defaults, just the max") - the vanilla slider tops out at 1; down and not held by the airshock or
         // the retraction, the constraint gets the scaled value
         _step = "stiffness";
-        if (_wc != null && _travel <= 0f && !_springOff && !_shockOn)
+        if (_wc != null && _travel <= 0f && !_springOff && !_shockOn && !ShockOwned)
         {
             float want = Math.Max(0f, _cm.SuspensionStiffness) * StiffnessScale;
             if (_wc.SuspensionStrengthFactor != want) _wc.SuspensionStrengthFactor = want;
         }
-
-        _step = "airshock";
-        Airshock(wheel);
 
         _step = "publish";
         Publish();
@@ -244,46 +241,6 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     static float ShockStrength => StiffnessScale;
     bool _shockOn; float _shockS, _shockD; double _shockTouch = -1, _shockCalm = -1;
     public string ShockState = "";
-
-    void Airshock(Entity wheel)
-    {
-        if (_wc == null || wheel == null) return;
-        bool usable = AirshockEnabled && Seq.Down && _travel <= 0f && !_springOff;
-        var grid = Entity.GetTopLevelParent(); var aero = grid?.TryGet<AeroGridComponent>();
-        double now = System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
-        bool contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
-        float sink = 0f, hWheel = float.MaxValue;
-        if (aero != null && aero.GroundUpLocal.LengthSquared() > 0.5f)
-        {
-            var gwt = grid.Data.GetWorldTransform();
-            sink = -Vector3.Dot(WorldTransform.TransformDirectionInv(aero.LastLinVel, gwt), aero.GroundUpLocal);
-            if (aero.GroundHeight >= 0f)
-            {
-                var rel = WorldTransform.GetRelativeTransform(wheel.Data.GetWorldTransform(), gwt);
-                hWheel = aero.GroundHeight + Vector3.Dot((Vector3)rel.Position, aero.GroundUpLocal) - (Variant?.WheelRadius ?? 1.25f);
-            }
-        }
-        if (!_shockOn)
-        {
-            bool coming = usable && !contact && sink > MinSink && (hWheel <= ArmHeight || hWheel / sink <= ArmSeconds);
-            if (!coming) return;
-            _shockS = _wc.SuspensionStrengthFactor; _shockD = _wc.SuspensionDampingFactor;
-            _wc.SuspensionStrengthFactor = ShockStrength; _wc.SuspensionDampingFactor = ShockDamping;
-            _shockOn = true; _shockTouch = -1; _shockCalm = -1;
-            ShockState = $"armed: {hWheel:F2} m up, sinking {sink:F1} m/s";
-            Log.Default?.Info($"[AERO-GEAR] {_key} airshock armed: wheel {hWheel:F2} m above the ground, sinking {sink:F1} m/s");
-            return;
-        }
-        if (contact && _shockTouch < 0) _shockTouch = now;
-        bool calm = contact && MathF.Abs(sink) < SettleSink;
-        if (calm) { if (_shockCalm < 0) _shockCalm = now; } else _shockCalm = -1;
-        bool done = !usable || (_shockCalm >= 0 && now - _shockCalm >= SettleSeconds) || (_shockTouch >= 0 && now - _shockTouch >= HoldSeconds)
-                    || (!contact && sink < 0f && _shockTouch < 0);   // (pulled up before touching)
-        if (!done) return;
-        _wc.SuspensionStrengthFactor = _shockS; _wc.SuspensionDampingFactor = _shockD; _shockOn = false;
-        ShockState = _shockTouch >= 0 ? "settled" : "released";
-        Log.Default?.Info($"[AERO-GEAR] {_key} airshock {ShockState}: suspension back to stiffness {_shockS:F2}, damping {_shockD:F2}");
-    }
 
     /// <summary>The wheel carries the ship: in contact (the game's own) or its suspension compressed.</summary>
     bool WeightOnWheel()
