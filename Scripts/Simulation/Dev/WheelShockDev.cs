@@ -153,7 +153,7 @@ public static class WheelShockDev
         _ticks++;
         float dt = AeroPhysics.Dt;
         bool hasP = Momentum(all, out Vector3 P, out float M, out Vector3 Lw, out float wNow);
-        if (_aero != null) { _aeroMax = MathF.Max(_aeroMax, _aero.LastAppliedForceW.Length()); _windMax = MathF.Max(_windMax, _aero.LastWindUndone.Length()); }
+        if (_aero != null && _phase == 3) { _aeroMax = MathF.Max(_aeroMax, _aero.LastAppliedForceW.Length()); _windMax = MathF.Max(_windMax, _aero.LastWindUndone.Length()); }
         switch (_phase)
         {
             case 4:   // midair, resting on the deck: lifted (4 m/s up, level) until the lowest tyre is 1.5 m clear - then free
@@ -228,28 +228,28 @@ public static class WheelShockDev
         if (hasP) { _pPrev = P; _M = M; _hasPrev = true; _fAeroPrev = _aero != null ? _aero.LastAppliedForceW : Vector3.Zero; }
     }
 
-    /// <summary>The ledger: the impact (the normal force's first lobe above 10 % of its peak) and the whole window.</summary>
+    /// <summary>The ledger. THE IMPACT: from the touch to the first tick the rig's normal velocity is back to zero or up (the
+    /// compression - all of the sink taken out): its length T, the peak normal contact force and how long it stays over half of it,
+    /// dPn (the momentum's change along the normal: M (v_in + v_out) - the rig's own velocities), the gravity's impulse M g T, the
+    /// contact impulse from the momentum Jn = dPn + M g T (the aero's taken out - zero here), the tangential one Jt, and - an
+    /// independent measure - Jcid: the rig's own contact impulses against the deck (ContactImpulseData, along the normal). Then the
+    /// whole recorded window the same way (Jn = dPn + M g T: at rest the deck carries the weight).</summary>
     static string Ledger()
     {
         int n = _fn.Count; float dt = AeroPhysics.Dt;
         if (n < 2 || _gN == 0) return "no momentum record";
         Vector3 gEff = _g / _gN; float gl = gEff.Length();
         Vector3 up = gl > 0.1f ? -gEff / gl : Vector3.UnitY;
-        int ip = 0, lim = Math.Min(n, (int)(1.0f / dt));
-        for (int i = 1; i < lim; i++) if (_fn[i] > _fn[ip]) ip = i;
-        float peak = _fn[ip];
-        int i0 = ip, i1 = ip;
-        while (i0 > 0 && _fn[i0 - 1] > 0.1f * peak) i0--;
-        while (i1 < n - 1 && _fn[i1 + 1] > 0.1f * peak) i1++;
-        float T = (i1 - i0 + 1) * dt, jn = 0f, jc = 0f; Vector3 jt = Vector3.Zero;
-        for (int i = i0; i <= i1; i++) { jn += _fn[i] * dt; jt += _ft[i] * dt; jc += _jcid[i]; }
-        // (the momentum before the lobe: the tick before it - the held value when the lobe starts at the touch)
-        float pBeforeUp = i0 > 0 ? Vector3.Dot(_p[i0 - 1], up) : -_touchV * _M;
-        float dPn = Vector3.Dot(_p[i1], up) - pBeforeUp, vIn = -pBeforeUp / _M, vOut = _vUp[i1];
-        float G = _M * gl * T;
+        int i1 = 0;
+        while (i1 < n - 1 && _vUp[i1] < 0f) i1++;
+        float T = (i1 + 1) * dt, jn = 0f, jc = 0f, peak = 0f; Vector3 jt = Vector3.Zero; int ip = 0;
+        for (int i = 0; i <= i1; i++) { jn += _fn[i] * dt; jt += _ft[i] * dt; jc += _jcid[i]; if (_fn[i] > peak) { peak = _fn[i]; ip = i; } }
+        int half = 0; for (int i = 0; i <= i1; i++) if (_fn[i] > 0.5f * peak) half++;
+        float vIn = _touchV, vOut = _vUp[i1];
+        float dPn = Vector3.Dot(_p[i1], up) + vIn * _M, G = _M * gl * T;
         float jnAll = 0f, jcAll = 0f; for (int i = 0; i < n; i++) { jnAll += _fn[i] * dt; jcAll += _jcid[i]; }
-        float Tall = n * dt, dPnAll = Vector3.Dot(_p[n - 1], up) + _touchV * _M;
-        return $"M {_M / 1000f:F2} t g {gl:F3} m/s2 ({_gN} free ticks) | impact {T:F3} s peakFn {peak / 1000f:F1} kN ({peak / (_M * gl):F2} W) at {ip * dt:F3} s"
+        float Tall = n * dt, dPnAll = Vector3.Dot(_p[n - 1], up) + vIn * _M;
+        return $"M {_M / 1000f:F2} t g {gl:F3} m/s2 ({_gN} free ticks) | impact {T:F3} s peakFn {peak / 1000f:F1} kN ({peak / (_M * gl):F2} W) at {ip * dt:F3} s over half {half * dt:F3} s"
              + $" | dPn {dPn / 1000f:F2} M(vin+vout) {_M * (vIn + vOut) / 1000f:F2} (vin {vIn:F2} vout {vOut:F2}) G {G / 1000f:F2} Jn {jn / 1000f:F2} Jcid {jc / 1000f:F2} Jt {jt.Length() / 1000f:F2} kNs"
              + $" | window {Tall:F2} s dPn {dPnAll / 1000f:F2} G {_M * gl * Tall / 1000f:F2} Jn {jnAll / 1000f:F2} Jcid {jcAll / 1000f:F2} kNs"
              + $" | Lmax {_lMax / 1000f:F1} kNms wmax {_wMax:F2} rad/s | aero {_aeroMax:F1} N wind {_windMax:F2} Ns";

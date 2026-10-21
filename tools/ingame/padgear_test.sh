@@ -9,7 +9,7 @@
 #                                              it - only when nobody plays. REFUSES unless the launch world is an 'Orbital Test...'
 #                                              world (it spawns test grids into the world it loads).
 #        tools/ingame/padgear_test.sh --release only the dev overrides back in the running game (after a killed run)
-# env: HARNESS, DEADLINE s (420), ARGS (the launch args file), NOLAUNCH=1, AXES (the lock axes swept: "3 4 5"), PART (rig | drops | all),
+# env: HARNESS, DEADLINE s (420), ARGS (the launch args file), NOLAUNCH=1, AXES (the lock axes swept: "3 5 6" - 6 all angular), PART (rig | drops | all),
 #      MIDAIR_UP (2000 m)
 # needs: THIS build deployed to the game's mod folder (scripts + the content build: tools/shared/build_mod_content.py)
 #
@@ -26,7 +26,7 @@
 #  C  the run's log: no gear fault, no exception in our code, no Havok assertion; the test grids removed at the end.
 #  release (also from the EXIT trap): PadRecord off, PadHop / PadPush 0, PadLockAxis back, gears down, the drop's dev values, gen clear.
 SUITE=padgear_test; GENCLEAR=1; source "$(dirname "$0")/padlib.sh"
-AXES=${AXES:-3 4 5}; PART=${PART:-all}; AXIS0=$(grep -o 'PadLockAxis = [0-9]' "$MOD/Scripts/Simulation/Integration/AeroGearComponent.PadFoot.cs" | grep -o '[0-9]$')
+AXES=${AXES:-3 5 6}; PART=${PART:-all}; AXIS0=$(grep -o 'PadLockAxis = [0-9]' "$MOD/Scripts/Simulation/Integration/AeroGearComponent.PadFoot.cs" | grep -o '[0-9]$')
 [ "${1:-}" = "--release" ] && { release; exit 0; }
 W=$(startof < "$ARGS" 2>/dev/null)
 case "$W" in "Orbital Test"*) ;; *) echo "REFUSED: the launch world is '$W' (-start: in $ARGS) - not an 'Orbital Test...' world."; exit 2 ;; esac

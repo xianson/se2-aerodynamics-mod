@@ -49,8 +49,9 @@ midair_setup() {
         r=$(ask "seatid $DECK"); echo "$r" | grep -q "^seating" && break
     done
     sleep 2.5
-    expect "midair: the static deck spawned and the player seated on it ($r)" "$r" bash -c "[[ '$r' == seating* ]]"
+    expect "midair: the static deck spawned and the player seated on it ($r)" "$r" bash -c "[[ '$r' == seating* ]]" || return 1
     hold 2
+    mshot seated
 }
 
 rig() {
@@ -71,6 +72,8 @@ rig_del() {
     ask "griddel $1" >/dev/null; for x in $h; do ask "griddel $x" >/dev/null; done; hold 1
 }
 
+# mshot NAME: an engine shot of what the seated player sees (the path noted)
+mshot() { local p; p=$("$ORB" --eshot 1 "shotui on" | grep -a "engine shot:" | sed 's/engine shot: //' | tr -d '\r'); note "shot $1: $p"; }
 dropdone() { local p r; p=$(val WheelShockDev.DevPhase); r=$(val WheelShockDev.DevResult); [ "$p" = "idle" ] && [[ "$r" == "drop $1:"* ]] && [[ "$r" != *running* ]]; }
 DROPN=${DROPN:-0}
 dropm() {

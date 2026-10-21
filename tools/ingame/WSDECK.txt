@@ -795,4 +795,4 @@ B 2eacbbf2-d8fb-4a78-91dc-7b492517ef97 50 0 320 Forward Up
 B 2eacbbf2-d8fb-4a78-91dc-7b492517ef97 50 0 330 Forward Up
 B 2eacbbf2-d8fb-4a78-91dc-7b492517ef97 50 0 340 Forward Up
 B 2eacbbf2-d8fb-4a78-91dc-7b492517ef97 50 0 350 Forward Up
-B a029b001-36b5-4508-b05b-0223662d91a5 40 10 0 Forward Up   # ControlSeat250 - the player's seat
+B a029b001-36b5-4508-b05b-0223662d91a5 40 7 0 Forward Up   # ControlSeat250 - the player's seat (y 7: on the cube's top, as APTEST's)

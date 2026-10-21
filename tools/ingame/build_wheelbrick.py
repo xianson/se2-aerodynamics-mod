@@ -100,7 +100,7 @@ def deck(nx=11, nz=72):
     for ix in range(x0, x0 + nx):
         for iz in range(z0, z0 + nz):
             lines.append(f"B {LIGHT[0]} {10 * ix} 0 {10 * iz} Forward Up")
-    lines.append(f"B {SEAT} {10 * (x0 + nx - 2)} 10 0 Forward Up   # ControlSeat250 - the player's seat")
+    lines.append(f"B {SEAT} {10 * (x0 + nx - 2)} 7 0 Forward Up   # ControlSeat250 - the player's seat (y 7: on the cube's top, as APTEST's)")
     return lines
 
 

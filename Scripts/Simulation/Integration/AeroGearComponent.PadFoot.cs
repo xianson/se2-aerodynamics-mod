@@ -26,7 +26,7 @@ public partial class AeroGearComponent
     /// <summary>Harness: the foot's box collider (true) or the corner module's sphere (false) - new wheels only.</summary>
     public static bool PadBoxCollider = true;
     /// <summary>Harness: the 6-DOF axis the lock fixes (3 AngularX: the twist about its first axis, the axle; 4, 5 the others - for
-    /// finding the engine's axis order in game). New locks only.</summary>
+    /// finding the engine's axis order in game; 6 all three angular axes). New locks only.</summary>
     public static int PadLockAxis = 3;
     /// <summary>Harness: no orientation lock (the axle friction alone).</summary>
     public static bool PadLockEnabled = true;
@@ -93,7 +93,7 @@ public partial class AeroGearComponent
         if (_padLock == null) { _padStatus = "lock refused"; return false; }
         _padLockDead = StructureTear.DestroyedOf(_padLock); _padLockGrid = grid; PadLocks++;
         _padStatus = "locked level";
-        Log.Default?.Info($"[AERO-GEAR] {_key} pad foot: orientation lock on (axis {(ConstraintAxisIdentifier)PadLockAxis})");
+        Log.Default?.Info($"[AERO-GEAR] {_key} pad foot: orientation lock on (axis {(PadLockAxis == 6 ? "all angular" : ((ConstraintAxisIdentifier)PadLockAxis).ToString())})");
         return true;
     }
 

@@ -69,6 +69,7 @@ public sealed class PadLockLife
     {
         var a = new bool[6];
         if (lockedAxis >= 3 && lockedAxis < 6) a[lockedAxis] = true;
+        else if (lockedAxis == 6) a[3] = a[4] = a[5] = true;   // (6: every angular axis - the foot's whole orientation held to the ship)
         return a;
     }
 }

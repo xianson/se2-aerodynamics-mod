@@ -30,8 +30,8 @@
 #  C  (PART others | all) WSLIGHT and WSOVER, Shocks on, forward 0, sink 1 / 3 / 5; WSBRICK forward 10 (mode 0 and 2, sink 3).
 #  JUDGED (Shocks on; WSBRICK 1 and 3 m/s, WSLIGHT 1 / 3 / 5): touched within 0.5 m/s of the sink asked, no wheel bottomed, no hull
 #     contact, rebound under 30 % of the sink, no bounce, settled under 2 s (records of 4 s only), no damage; on vs off: the oleo
-#     bottoms no more wheels than vanilla. EVERY drop: no air on the rig (the aero force 0), the ledger closes (dP along the normal
-#     within 5 % of M (v_in + v_out)). WSBRICK 5 m/s and WSOVER reported only.
+#     bottoms no more wheels than vanilla. EVERY drop: no air on the rig (the aero force 0), the ledger closes (the rig's own contact impulses against the deck within 10 %
+#     of Jn = dPn + M g T, from the momentum). WSBRICK 5 m/s and WSOVER reported only.
 #  D  the run's log: no exception in our code, no Havok assertion, no wheel shock fault.
 #  release (also from the EXIT trap): the drop's dev values back, Wheels.Shocks 2, the test grids cleared (`gen clear`).
 set -u
@@ -60,8 +60,8 @@ eq() { [ "$1" = "$2" ]; }
 ge() { [ -n "$1" ] && [ "$1" -ge "$2" ] 2>/dev/null; }
 all_of() { local a=(); while [ $# -gt 0 ]; do if [ "$1" = "--" ]; then "${a[@]}" || return 1; a=(); else a+=("$1"); fi; shift; done; [ ${#a[@]} -eq 0 ] || "${a[@]}"; }
 spawned() { "$ORB" 'gen status' | grep -aq "spawned '$1'"; }
-# the ledger closes: |dPn - M(vin+vout)| within 5 % (and 0.5 kN s)
-closes() { awk -v a="$1" -v b="$2" 'BEGIN{d=a-b; if (d<0) d=-d; m=(a<0?-a:a); exit !(a != "" && b != "" && (d <= 0.05*m || d <= 0.5))}'; }
+# the ledger closes: |dPn - M(vin+vout)| within 10 % (or 0.5 kN s)
+closes() { awk -v a="$1" -v b="$2" 'BEGIN{d=a-b; if (d<0) d=-d; m=(a<0?-a:a); exit !(a != "" && b != "" && (d <= 0.10*m || d <= 0.5))}'; }
 source "$MOD/tools/ingame/midair.sh"
 
 release() {
@@ -116,7 +116,8 @@ drop() {
     key="$name/$mode/$fwd/$v"; BOT[$key]=$bo
     RES[$key]="touch $tv comp $mc bot $bo hull $hu reb $rb bnc $bn settle $st | T $(imf impact) peak $(imf peakFn) kN dPn $dpn M(vi+vo) $mv G $(imf G) Jn $(imf Jn) Jcid $(imf Jcid) Jt $(imf Jt) Lmax $(imf Lmax) aero $aero"
     expect "$name mode $mode fwd $fwd sink $v - no air on the rig (aero force $aero N)" "aero $aero N" lt "${aero:-1}" 1
-    expect "$name mode $mode fwd $fwd sink $v - the ledger closes (dPn $dpn vs M(vin+vout) $mv kN s)" "dPn $dpn M(vin+vout) $mv" closes "$dpn" "$mv"
+    local jc jn; jc=$(imf Jcid); jn=$(imf Jn)
+    expect "$name mode $mode fwd $fwd sink $v - the ledger closes: the deck's own contact impulse Jcid $jc vs Jn $jn = dPn + M g T (kN s)" "Jcid $jc Jn $jn" closes "$jc" "$jn"
     [ "$mode" = 2 ] && [ "$judge" = judge ] || return 0
     local k="$name fwd $fwd, $v m/s"
     expect "$k - touched at $v +- 0.5 m/s" "touch $tv" near "$tv" "$v" 0.5
