@@ -1,0 +1,23 @@
+# MAGTEST - the magnetic landing gear's test ship (2026-10-20; tools/ingame/maggear_test.sh). A 3 x 3 platform of 2.5 m heavy
+# armour cubes (30 t: a Tu-134 at landing weight is ~40 t), a charged 1.5 m battery, three Magnetic Landing Gear 1.5 m in a
+# tricycle (mains under the left / right cubes 0.75 m behind the centre, the nose 3 m ahead). Cells: 0.25 m; a cube's box is
+# its cell -4..5, the gear's -2..3 x -2..3 x -8..9 (its top face at cell 3 meets the cubes' bottom at -4). Dynamic: it drops
+# onto its pads (they come in with the gear down and join; Auto-Lock locks them on touchdown).
+#   cp tools/ingame/MAGTEST.txt %TEMP%/OrbitalMod/gen/   then   gen spawn MAGTEST.txt [ahead= up= right= name=]; gen whole
+name MAGTEST
+ahead 40
+up 5
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 -10 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 0 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf -10 0 10 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 -10 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 -10 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # armour cube 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # armour cube 2.5 m
+B 7046873e-c9fe-408c-96c8-53a7f0e62bcd 0 7 0 Forward Up charge=1   # Battery150 on the centre cube's top (the gears' power)
+B ae200001-ae00-9e15-0011-000000000001 -10 -8 3 Forward Up   # Magnetic Landing Gear 1.5 m - left main (its top under the left cubes)
+B ae200001-ae00-9e15-0011-000000000001 10 -8 3 Forward Up   # right main
+B ae200001-ae00-9e15-0011-000000000001 0 -8 -12 Forward Up   # nose
