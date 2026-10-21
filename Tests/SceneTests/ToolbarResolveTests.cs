@@ -3,7 +3,8 @@
 // (two copies of the mod, as two world loads leave in one process) with a stand-in model, both loaded, and the game's own call
 // made from this assembly: none before the hook; the copy hooked answers for its namespace only; a newer copy wins over a stale
 // one still hooked; unhooked, nothing answers. And the wiring: EntityInjector hooks it and unhooks it with the world-switch fix,
-// every panel model of the mod is in the namespace answered.
+// every panel model of the mod is in the namespace answered. And the Autopilot panel told of what the block's step changes (the
+// Enemy switch done, a mode or height written back) on the UI thread.
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -69,5 +70,20 @@ static class ToolbarResolveTests
             if (!Regex.IsMatch(code, @"^namespace AeroMod;", RegexOptions.Multiline)) { allOurs = false; Console.WriteLine("  (not in AeroMod: " + f + ")"); }
         }
         check(models >= 6 && allOurs, $"toolbar types: every panel model ({models}) is in the namespace answered ({"AeroMod."})");
+
+        // THE OPEN PANEL TOLD (2026-10-21): the Autopilot panel re-reads its fields only when told; the block's step tells it when the
+        // Enemy switch is done (or refused) and when it writes a mode or height back - on the UI thread, never from the step itself
+        string comp = File.ReadAllText(Path.Combine(sim, "Autopilot", "Game", "AeroAutopilotComponent.cs"));
+        string model = File.ReadAllText(Path.Combine(sim, "Autopilot", "Game", "AeroAutopilotBlockDetailModel.cs"));
+        check(Regex.IsMatch(comp, @"wrote = _enemy\.Step\([^;]*;\s*\}[^
+]*
+(\s*//[^
+]*
+)*\s*if \(_enemy\.GridIsEnemy != isEnemy \|\| _enemy\.Text\(\) != said\) PanelRefresh\(\);"),
+            "autopilot panel: told when the Enemy switch is done or its words change (EnemyStep)");
+        check(Regex.IsMatch(comp, @"if \(o\.ModeChanged \|\| o\.HeightChanged \|\| o\.HoldsChanged\) PanelRefresh\(\);"), "autopilot panel: told when the step writes a mode or a height back (WriteBack)");
+        check(Regex.IsMatch(comp, @"void PanelRefresh\(\)[\s\S]{0,200}AvaloniaReflect\.Post\(m\.Refresh\)"), "autopilot panel: told on the UI thread (AvaloniaReflect.Post)");
+        check(model.Contains("DetailModelPairing.Pair(this, _ap); _ap?.AttachModel(this);") && Regex.IsMatch(model, @"internal void Refresh\(\) \{ try \{ Changed\(\); \} catch \{ \} \}"),
+            "autopilot panel: the model attaches itself as it is built, its Refresh notifies every shown field");
     }
 }

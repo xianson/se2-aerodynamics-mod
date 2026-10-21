@@ -115,6 +115,23 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
             if (o.HomeChanged) { _panel.HasHome = true; _panel.HomeX = o.Home.X; _panel.HomeY = o.Home.Y; _panel.HomeZ = o.Home.Z; }
             if (o.SlotSavedChanged) { if (o.DfSaved != null) _panel.DfSaved = o.DfSaved; if (o.RgSaved != null) _panel.RgSaved = o.RgSaved; }   // (the combat slots' own saved state)
         }
+        if (o.ModeChanged || o.HeightChanged || o.HoldsChanged) PanelRefresh();   // (the open panel shows the mode let go, the heights caught)
+    }
+
+    // ── the open panel told (2026-10-21): the panel re-reads its fields only when told (PropertyChanged - a mod model has no
+    //    generated [Notify] binding), and only the terminal's own edits told it: the Enemy switch's "switching..." stayed ~5 s
+    //    after the ship had changed hands, a mode let go or a height caught by the step showed late. Now what the block's step
+    //    changes is told too - on the UI thread (AvaloniaReflect.Post; none: a dedicated server, no panel) ──
+    WeakReference<AeroAutopilotBlockDetailModel> _model;
+    /// <summary>The block's panel model as it is built (the model's ctor): the one told of the step's changes.</summary>
+    internal void AttachModel(AeroAutopilotBlockDetailModel m) { if (m != null) _model = new WeakReference<AeroAutopilotBlockDetailModel>(m); }
+    /// <summary>Panel refreshes posted (diagnostics, the harness).</summary>
+    internal static int PanelRefreshes;
+    void PanelRefresh()
+    {
+        var w = _model;
+        if (w == null || !w.TryGetTarget(out var m)) return;
+        if (AvaloniaReflect.Post(m.Refresh)) Interlocked.Increment(ref PanelRefreshes);
     }
 
     void Wake() { var a = _aero; if (a != null) a.ApBlockWants = true; }
@@ -148,12 +165,15 @@ public partial class AeroAutopilotComponent : Component, IInSceneListener
         lock (_lock) { en = _panel.Enemy; prev = _panel.EnemyPrevOwner; }
         bool wasEnemy = en;
         bool wrote;
+        string said = _enemy.Text(); bool isEnemy = _enemy.GridIsEnemy;
         lock (_enemyLock)
         {
             var o = Own();
             if (_enemyLoaded.Count > 0) { foreach (var (g, ow) in _enemyLoaded) _enemy.Prev[o.KeyOf(g)] = ow; _enemyLoaded.Clear(); }
             wrote = _enemy.Step(o, Autopilot.EnemyRule, ref en, ref prev);
         }
+        // (the switch done, refused or its words changed: the open panel shows it now, not "switching..." until something else tells it)
+        if (_enemy.GridIsEnemy != isEnemy || _enemy.Text() != said) PanelRefresh();
         if (wrote)
         {
             lock (_lock) { _panel.Enemy = en; _panel.EnemyPrevOwner = prev; }

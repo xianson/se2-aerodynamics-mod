@@ -64,7 +64,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
     [Keen.VRage.DCS.Annotations.Component]
     private AeroAutopilotComponent _ap;
 
-    public AeroAutopilotBlockDetailModel() { DetailModelPairing.Pair(this, _ap); }
+    public AeroAutopilotBlockDetailModel() { DetailModelPairing.Pair(this, _ap); _ap?.AttachModel(this); }
 
     ApPanel P => _ap?.Panel ?? ApPanel.Defaults;
     void Edit(AeroAutopilotComponent.PanelEdit e) { _ap?.Edit(e); Changed(); }
@@ -411,4 +411,7 @@ public partial class AeroAutopilotBlockDetailModel : BlockDetailModel
         nameof(HeightM), nameof(OverGround), nameof(AltOverGround), nameof(HeadingDeg), nameof(AltM), nameof(SpeedMs),
     };
     void Changed() { foreach (var n in _notify) OnPropertyChanged(n); }
+    /// <summary>The block's step changed what the panel shows (the Enemy switch done, a mode let go, a height caught): told on the
+    /// UI thread (AeroAutopilotComponent.PanelRefresh).</summary>
+    internal void Refresh() { try { Changed(); } catch { } }
 }
