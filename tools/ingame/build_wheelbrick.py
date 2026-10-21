@@ -8,8 +8,8 @@ Mod's harness (`gen spawn FILE [name= ahead= up= right=]`, Orbital Dev/GridGen.c
     WSLIGHT  2 x 2 x 1 cubes  ~16 t   ~4 t a wheel  (27 %)
     WSOVER   3 x 4 x 3 cubes  ~123 t  ~31 t a wheel (204 %)
   The long side runs along +Z (the wheels roll that way: WheelShockDev.DevNose 1).
-  DECK: WSDECK, a STATIC slab of 2.5 m light armour cubes, 24 x 40 (60 x 100 m), its top face at the grid's +1.5 m, centred on x and
-  running from z -20 m to +80 m (the drops' forward roll goes +Z).
+  DECK: WSDECK, the MIDAIR deck (2026-10-21; midair.sh): a STATIC slab of 2.5 m light armour cubes, 11 x 72 (27.5 x 180 m), centred,
+  top face at +1.25 m, a control seat on its right edge - spawned 2 km up, the rigs dropped onto it.
 
 THE WHEELS (a parameter - swap them for the pad-gear variants of feat/a-maggear later):
   --wheel vanilla100 (default): WheelCornerModule100 (prefab b3826409-..., raw cell box [0,-1,0]..[0,1,1], 43 kg, its 200 kg wheel)
@@ -85,13 +85,22 @@ def brick(name, nx, nz, ny, w, ahead=40, up=4):
     return lines, mass, share
 
 
-def deck(nx=24, nz=40):
-    lines = ["# WSDECK - the wheel shocks' static landing deck (tools/ingame/build_wheelbrick.py): 2.5 m light armour, "
-             f"{nx} x {nz} ({nx * 2.5:.0f} x {nz * 2.5:.0f} m), top face at +1.5 m; x centred, z from -20 m to +80 m",
+SEAT = "a029b001-36b5-4508-b05b-0223662d91a5"                  # ControlSeat250 (2.5 m)
+
+
+def deck(nx=11, nz=72):
+    """The MIDAIR deck (2026-10-21, tools/ingame/midair.sh): STATIC, 2.5 m light armour, nx x nz cubes centred on the grid's origin
+    (11 x 72: 27.5 x 180 m), its top face at +1.25 m, a control seat on the top at its right edge (x +10 m, z 0) facing the grid's
+    forward (-Z): the player sits there and every rig is spawned from that camera, 10 m to its left, over the deck's middle - the
+    forward drops alternate +Z / -Z along its length."""
+    x0, z0 = -(nx // 2), -(nz // 2)
+    lines = ["# WSDECK - the midair impact deck (tools/ingame/build_wheelbrick.py; tools/ingame/midair.sh): 2.5 m light armour, "
+             f"{nx} x {nz} ({nx * 2.5:.1f} x {nz * 2.5:.0f} m), STATIC, top face at +1.25 m, centred; a control seat at x +10 m",
              "name WSDECK", "ahead 40", "up 0", "static 1"]
-    for ix in range(-(nx // 2), nx - nx // 2):
-        for iz in range(-8, nz - 8):
+    for ix in range(x0, x0 + nx):
+        for iz in range(z0, z0 + nz):
             lines.append(f"B {LIGHT[0]} {10 * ix} 0 {10 * iz} Forward Up")
+    lines.append(f"B {SEAT} {10 * (x0 + nx - 2)} 10 0 Forward Up   # ControlSeat250 - the player's seat")
     return lines
 
 
@@ -114,7 +123,7 @@ def main():
         open(os.path.join(a.out, name + ".txt"), "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
         print(f"{name}: {mass / 1000:.1f} t, {share / 1000:.2f} t a wheel ({share / w['rated'] * 100:.0f} % of {w['rated'] / 1000:.1f} t)")
     open(os.path.join(a.out, "WSDECK.txt"), "w", encoding="utf-8", newline="\n").write("\n".join(deck()) + "\n")
-    print("WSDECK: 960 light armour cubes, static")
+    print("WSDECK: the midair deck (static), a control seat")
 
 
 if __name__ == "__main__":

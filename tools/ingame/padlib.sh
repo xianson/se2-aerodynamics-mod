@@ -48,8 +48,10 @@ release() {
     [ -n "$RELEASED" ] && return; RELEASED=1
     alive || { echo "== release: no game running"; return; }
     local r=("aeroset AeroGearComponent.PadRecord false" "aeroset AeroGearComponent.PadHop 0" "aeroset AeroGearComponent.PadPush 0"
-             "aeroset AeroGearComponent.DevCommand 1" "aeroset AeroGearComponent.DevCommand 0" ${GENCLEAR:+"gen clear"})
-    echo "== release: ${#r[@]} overrides (dev probes off, gears down${GENCLEAR:+, the test grids removed})"
+             "aeroset AeroGearComponent.DevCommand 1" "aeroset AeroGearComponent.DevCommand 0" "aeroset AeroGearComponent.PadLockAxis ${AXIS0:-3}"
+             "aeroset WheelShockDev.DevApproach false" "aeroset WheelShockDev.DevNoAero false" "aeroset WheelShockSettings.Mode 2"
+             "aeroset WheelShockDev.DevForward 0" "aeroset WheelShockDev.DevSink 3" "aeroset WheelShockDev.DevRecordSeconds 4" ${GENCLEAR:+"gen clear"})
+    echo "== release: ${#r[@]} overrides (dev probes off, the lock axis back, the midair drop's values back, gears down${GENCLEAR:+, the test grids removed})"
     ask "${r[@]}" | paste -d'|' <(printf '%s\n' "${r[@]}") - | sed 's/^/   /; s/|/  =>  /' | cut -c1-140
 }
 summary_all() {

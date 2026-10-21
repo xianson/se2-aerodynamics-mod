@@ -75,7 +75,8 @@ public partial class AeroGridComponent
     [MustHave(typeof(AeroGridComponent))]
     private static void WindUndoJob(AeroGridComponent aero, WorldTransform wt)
     {
-        if (!aero._initialized || !AeroSwitch.Enabled || !AeroWind.Enabled || !aero.AeroForcesApplied) return;
+        if (!aero._initialized || !AeroSwitch.Enabled) return;
+        if (!aero.DevNoAero && (!AeroWind.Enabled || !aero.AeroForcesApplied)) return;   // (a dev no-air grid: the game's wind always taken back)
         aero.LastWindUndone = AeroWind.UndoGameForce(aero.Data, wt);
     }
 
@@ -278,8 +279,9 @@ public partial class AeroGridComponent
 
         aero.LastAeroTorque = Vector3.Zero; aero.LastSurfaceTorque = Vector3.Zero;
         Vector3 appliedF = Vector3.Zero, appliedT = Vector3.Zero;   // (the structure's air loads: StructureServer)
-        aero.AeroForcesApplied = aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn;
-        if (aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn)
+        aero.AeroForcesApplied = aero.HasResult && mass > 0f && !AeroEntryFx.TestForcesOn && !aero.DevNoAero;
+        aero.LastAppliedForceW = Vector3.Zero; aero.LastAppliedTorqueL = Vector3.Zero;
+        if (aero.AeroForcesApplied)
         {
             // (the world's drag / lift multipliers - AeroSettings, server - on the model's result: 1 / 1 is the model as is)
             Vector3 forceLocal = aero.LastResult.Force, torqueLocal = aero.LastResult.Torque;
@@ -310,6 +312,7 @@ public partial class AeroGridComponent
             long tap = AeroCost.Start();
             AeroPhysics.ApplyForceAndTorque(aero.Entity, wt, worldForce, torqueLocal, dt);
             AeroCost.Apply.Stop(tap);
+            aero.LastAppliedForceW = worldForce; aero.LastAppliedTorqueL = torqueLocal;
             appliedF = forceLocal; appliedT = torqueLocal;
         }
         // the structure and the hull's heat (StructureServer.cs: a background evaluation a few times a second)

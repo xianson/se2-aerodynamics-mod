@@ -107,6 +107,18 @@ public partial class AeroGearComponent
         _padLock = null; _padLockDead = null; _padLockGrid = null; _boxWheel = null;
     }
 
+    /// <summary>The foot's turn rate relative to the ship in the foot's own frame (rad/s: X its Right - the axle the lock fixes by
+    /// default -, Y its Up, Z its Backward) - the harness's lock-axis readout (WheelShockDev).</summary>
+    internal bool FootRates(out Vector3 relLocal)
+    {
+        relLocal = Vector3.Zero;
+        var wheel = _cm?.WheelEntity; var grid = Entity?.GetTopLevelParent();
+        if (Variant?.Foot == null || wheel == null || grid == null || !GridPhysics.Alive(wheel.Data) || !GridPhysics.Alive(grid.Data)) return false;
+        if (!GridPhysics.TryGetVelocity(wheel.Data, out _, out Vector3 wA) || !GridPhysics.TryGetVelocity(grid.Data, out _, out Vector3 gA)) return false;
+        relLocal = Vector3.Transform(wA - gA, Quaternion.Inverse(wheel.Data.GetWorldTransform().Orientation));
+        return true;
+    }
+
     /// <summary>The foot's tilt off its block's up (deg) and its turn rate about the axle relative to the ship (rad/s) - the harness.</summary>
     internal bool FootAttitude(out float tiltDeg, out float spin)
     {

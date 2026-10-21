@@ -88,6 +88,8 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     internal WheelRating Rating => _rating;
     internal bool ShockArmed => _shock.Armed;
     internal WheelCornerModuleComponent Module => _cm;
+    /// <summary>The mod's gear this wheel is (null: a vanilla wheel) - the harness's foot readout.</summary>
+    internal AeroGearComponent Gear => _gear;
 
     void IInSceneListener.OnAddedToScene()
     {

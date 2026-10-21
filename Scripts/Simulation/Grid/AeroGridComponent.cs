@@ -307,6 +307,10 @@ public partial class AeroGridComponent : Component, IInSceneListener
     /// <summary>The wind at the grid (world m/s; AeroWind), whether aero applied its forces last tick (the game's own wind
     /// push is then taken back), and the impulse taken back (world N s).</summary>
     internal Vector3 LastWind, LastWindUndone; internal bool AeroForcesApplied;
+    /// <summary>DEV (harness only - WheelShockDev's midair drops): no air on this grid - the model's force and torque not applied, no
+    /// structure air loads, the game's own wind push taken back. The wheel shocks, the gears and the ground ray stay on. The force /
+    /// torque applied last tick (world N / local N m; zero when none) are kept for the drop's momentum ledger.</summary>
+    internal bool DevNoAero; internal Vector3 LastAppliedForceW, LastAppliedTorqueL;
     private int _subPartCheck; private bool _isSubPart;
     /// <summary>For AeroCost's 'top grid' line.</summary>
     internal int FacesNow => _surface?.FaceCount > 0 ? _surface.FaceCount : _lastFaces;
