@@ -51,7 +51,7 @@ public partial class AeroGearComponent
                 j += c.ImpulseMagnitude;
                 if (c.OtherBody.Equals(grid.DEntity)) { own++; continue; }
                 bool foot = false;
-                lock (All) foreach (var g in All) { var w = g._cm?.WheelEntity; if (w != null && w.DEntity.Equals(c.OtherBody)) { foot = true; break; } }
+                lock (All) foreach (var og in All) { var w = og._cm?.WheelEntity; if (w != null && w.DEntity.Equals(c.OtherBody)) { foot = true; break; } }
                 if (foot) feet++; else { other++; if (what.Length == 0) what = c.OtherBody.ToString(); }
             }
         Vector3 vw = Vector3.Zero, vg = Vector3.Zero;
