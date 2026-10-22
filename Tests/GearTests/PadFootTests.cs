@@ -98,6 +98,17 @@ static class PadFootTests
             Check(MathF.Abs(Vector3.Dot(d, axis) - x) < 1e-3f && (d - axis * Vector3.Dot(d, axis)).Length() < 1e-3f, $"spawn pose {k}: A - B is not the compression {x:F3} along the axis ({Vector3.Dot(d, axis):F3}, off it {(d - axis * Vector3.Dot(d, axis)).Length():F4})");
             Check(MathF.Abs(PadSlider.Compression((Vector3D)R4(a), (Vector3D)R4(b), axis) - x) < 1e-3f, $"spawn pose {k}: Compression()");
         }
+        // the engine's prismatic: Forward (-row 3) the strut, Right (row 1) the perpendicular, a proper rotation; the spawn poses meet too
+        var pm = PadSlider.PrismaticFrame(p, q);
+        Check(NearV(-R3(pm), Vector3.Transform(Vector3.Up, q)) && NearV(R1(pm), Vector3.Transform(Vector3.Right, q)) && NearV(R4(pm), p) && NearV(Vector3.Cross(R1(pm), R2(pm)), R3(pm)), "the prismatic frame: Forward the strut, Right the perpendicular, right-handed");
+        for (int k = 0; k < 20; k++)
+        {
+            var qb = RandQ(rnd); var qp = RandQ(rnd); var pb = new Vector3(k, -k, 2f * k); var pp = new Vector3(0.1f * k, 0.2f, -0.3f); float x = 0.03f * k - 0.2f;
+            Matrix block = Pose(pb, qb), attach = Pose(Vector3.Transform(Vector3.Up, qi) * x + pi, qi), pivot = Pose(pp, qp);
+            Matrix a = PadSlider.PrismaticFrame(pp, qp) * (Matrix.Invert(pivot) * attach * block), b = PadSlider.PrismaticFrame(pi, qi) * block;
+            Vector3 d = R4(a) - R4(b), axis = -R3(b);
+            Check(NearV(R1(a), R1(b), 1e-4f) && NearV(R3(a), R3(b), 1e-4f) && MathF.Abs(Vector3.Dot(d, axis) - x) < 1e-3f && (d - axis * Vector3.Dot(d, axis)).Length() < 1e-3f, $"prismatic spawn pose {k}: the frames do not meet / x along Forward");
+        }
         // the modes: LinearX limited, the other five fixed (ConstraintAxisMode: 1 Limited, 2 Fixed)
         Check(PadSlider.Modes.Length == 6 && PadSlider.Modes[0] == 1 && PadSlider.Modes.Skip(1).All(v => v == 2), "the modes: the strut limited, every other axis fixed");
         // the limits: down [-extra, stroke]; up the well held at the travel; the sense
@@ -128,7 +139,7 @@ static class PadFootTests
         int n = 0;
         // (every variant in the C#: a Foot only on the pad gears - their slider and box are for pads only)
         // (each entry: from its "new() { Name =" to the next one or the array's end)
-        var all = Regex.Matches(src, @"new\(\) \{ Name = ""([^""]+)"", Block = new\(""([0-9a-f-]+)""\), CornerModule = new\(""([0-9a-f-]+)""\)(.*?)(?=new\(\) \{ Name =|
+        var all = Regex.Matches(src, @"new\(\) \{ Name = ""([^""]+)"", Block = new\(""([0-9a-f-]+)""\), CornerModule = new\(""([0-9a-f-]+)""\)(.*?)(?=new\(\) \{ Name =|?
     \};)", RegexOptions.Singleline);
         Check(all.Count >= 8, $"variants read from AeroGearVariants.cs ({all.Count})");
         foreach (Match m in all)

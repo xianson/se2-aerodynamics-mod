@@ -181,7 +181,9 @@ public static class WheelShockDev
                 d = (float)Vector3D.Dot(wp - dwt.Position, (Vector3D)dup) - DeckTop;
             }
             else d = Ray(all, wp, -up * RayLength);
-            if (d >= 0f || _deck != null) h = MathF.Min(h, d - s.Module.WheelRadius);
+            // (a pad foot: its origin is the foot's top, its sole Height below - the corner module's WheelRadius is its puck's)
+            float below = s.Gear?.Foot != null ? s.Gear.Foot.Height : s.Module.WheelRadius;
+            if (d >= 0f || _deck != null) h = MathF.Min(h, d - below);
         }
         return h < float.MaxValue ? h : float.NaN;
     }

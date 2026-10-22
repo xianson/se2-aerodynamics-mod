@@ -115,6 +115,17 @@ public static class PadSlider
         return new Matrix(up.X, up.Y, up.Z, 0f, right.X, right.Y, right.Z, 0f, third.X, third.Y, third.Z, 0f, position.X, position.Y, position.Z, 1f);
     }
 
+    /// <summary>The engine's own PRISMATIC (PrismaticConstraintArgs: the sliding axis its pivot's Forward - minus row 3 -, the
+    /// perpendicular its Right - row 1 - the point row 4; every rotation and the two other translations fixed by the joint itself):
+    /// row 1 frame Right, row 2 row 3 x row 1, row 3 minus the frame's Up (so Forward is the strut, + compressing).</summary>
+    public static Matrix PrismaticFrame(Vector3 position, Quaternion orientation)
+    {
+        Vector3 up = Vector3.Normalize(Vector3.Transform(Vector3.Up, orientation));
+        Vector3 right = Vector3.Normalize(Vector3.Transform(Vector3.Right, orientation));
+        Vector3 back = -up, second = Vector3.Cross(back, right);
+        return new Matrix(right.X, right.Y, right.Z, 0f, second.X, second.Y, second.Z, 0f, back.X, back.Y, back.Z, 0f, position.X, position.Y, position.Z, 1f);
+    }
+
     /// <summary>The axis modes (ConstraintAxisIdentifier order LinearX..AngularZ): 1 Limited, 2 Fixed (ConstraintAxisMode) - LinearX
     /// limited, everything else fixed.</summary>
     public static readonly int[] Modes = { 1, 2, 2, 2, 2, 2 };

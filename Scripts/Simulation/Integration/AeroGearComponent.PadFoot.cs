@@ -39,13 +39,16 @@ public partial class AeroGearComponent
     /// <summary>Harness: the slider in the engine's constraint group (false: the direct solver with the ship's other grouped constraints -
     /// stiffer) or excluded from it (true: the iterative solver, as the vanilla wheel constraint). New sliders only.</summary>
     public static bool PadSliderExcluded = false;
+    /// <summary>The slider's kind (new sliders only): 0 the engine's own prismatic joint (PrismaticConstraintArgs - default since
+    /// 2026-10-21: the 6-DOF's fixed angular rows let a foot tilt 26 deg on a 1.8 m/s touchdown in game), 1 the 6-DOF as a prismatic.</summary>
+    public static int PadSliderKind = 0;
     /// <summary>Harness: false keeps the vanilla wheel constraint (the slider alone made - double-constrained: a comparison only).</summary>
     public static bool PadReleaseVanilla = true;
     public static int PadSliders, PadSlidersLost, PadBoxes, PadReleased;
     public static string PadFault = "";
 
     readonly PadSliderLife _sliderLife = new();
-    IPhysicsConstraint _slider; ISixDegreesOfFreedomConstraint _slider6; Func<bool> _sliderDead; Entity _sliderGrid;
+    IPhysicsConstraint _slider; ISixDegreesOfFreedomConstraint _slider6; IPrismaticConstraint _sliderP; Func<bool> _sliderDead; Entity _sliderGrid;
     float _sliderLo = float.NaN, _sliderHi = float.NaN;
     Entity _boxWheel; IPhysicsCollider _box, _oldBox; Entity _oldBoxWheel;
     Entity _releasedWheel; volatile bool _releaseQueued; volatile bool _inScene;
@@ -54,7 +57,7 @@ public partial class AeroGearComponent
     string _padStatus = "";
 
     /// <summary>The foot rides the slider (the gear's step: the travel's limits, ShockUsable).</summary>
-    internal bool PadHeld => _sliderLife.Has && _slider6 != null;
+    internal bool PadHeld => _sliderLife.Has && (_slider6 != null || _sliderP != null);
     /// <summary>The foot's strut (its stroke and extra): the shocks' pad branch rates the foot with it.</summary>
     internal PadFootSpec Foot => Variant?.Foot;
 
@@ -85,7 +88,7 @@ public partial class AeroGearComponent
 
         // the slider
         var did = _sliderLife.Step(alive ? wheel : null, _sliderDead != null && _sliderDead());
-        if (!_sliderLife.Has && _slider != null) { _slider = null; _slider6 = null; _sliderDead = null; _sliderGrid = null; PadSlidersLost++; }   // (gone with its body)
+        if (!_sliderLife.Has && _slider != null) { _slider = null; _slider6 = null; _sliderP = null; _sliderDead = null; _sliderGrid = null; PadSlidersLost++; }   // (gone with its body)
         if (did == PadSliderDo.Create) _sliderLife.Made(wheel, MakeSlider(physics, wheel, foot));
 
         // the vanilla wheel constraint released once the slider holds this wheel
@@ -96,7 +99,12 @@ public partial class AeroGearComponent
         {
             PadSlider.Limits(_travel, foot.Stroke, PadExtra(foot), out float min, out float max);
             PadSlider.ToAxis(min, max, PadSliderSense, out float lo, out float hi);
-            if (lo != _sliderLo || hi != _sliderHi) { _slider6.SetAxisLimits(ConstraintAxisIdentifier.LinearX, lo, hi); _sliderLo = lo; _sliderHi = hi; }
+            if (lo != _sliderLo || hi != _sliderHi)
+            {
+                if (_sliderP != null) { _sliderP.MinLinearLimit = lo; _sliderP.MaxLinearLimit = hi; }
+                else _slider6.SetAxisLimits(ConstraintAxisIdentifier.LinearX, lo, hi);
+                _sliderLo = lo; _sliderHi = hi;
+            }
         }
     }
 
@@ -123,27 +131,39 @@ public partial class AeroGearComponent
         if (grid == null || !GridPhysics.Alive(grid.Data) || !physics.HasBody(wheel.DEntity) || !physics.HasBody(grid.DEntity)) return false;
         if (!PadFrames() || !Entity.Data.TryGet<RelativeTransform>(out var blockRel)) return false;
         var mount = blockRel * _padSusp.IdleTransform;   // (as the corner module builds its constraint's B)
-        var args = new SixDegreesOfFreedomConstraintArgs
-        {
-            PivotA = PadSlider.Frame(foot.PivotPosition, foot.PivotOrientation),
-            PivotB = PadSlider.Frame(mount.Position, mount.Orientation),
-            ExcludeFromGroup = PadSliderExcluded,
-        };
-        for (int i = 0; i < 6; i++) args.SetAxisMode((ConstraintAxisIdentifier)i, (ConstraintAxisMode)PadSlider.Modes[i]);
         // the travel now: down - the stroke; a gear loaded up (the saved sequence) - held where the foot is
         float x = _cm.CalculateSuspensionDistance(wheel);
         if (Seq.Progress < 1f && float.IsFinite(x)) _travel = Math.Clamp(x, 0f, Variant?.RetractTravel ?? 2.5f);
         PadSlider.Limits(_travel, foot.Stroke, PadExtra(foot), out float min, out float max);
         PadSlider.ToAxis(min, max, PadSliderSense, out float lo, out float hi);
-        args.SetAxisLimits(ConstraintAxisIdentifier.LinearX, lo, hi);
-        _slider = physics.AllocateConstraint(wheel.DEntity, grid.DEntity, args);   // (A the foot, constrained to B the ship)
-        if (_slider == null || !_slider.TryGet<ISixDegreesOfFreedomConstraint>(out _slider6)) { _padStatus = "slider refused"; _slider = null; return false; }
+        Matrix pa, pb; int kind = PadSliderKind;
+        if (kind == 1)
+        {
+            var args = new SixDegreesOfFreedomConstraintArgs
+            {
+                PivotA = pa = PadSlider.Frame(foot.PivotPosition, foot.PivotOrientation),
+                PivotB = pb = PadSlider.Frame(mount.Position, mount.Orientation),
+                ExcludeFromGroup = PadSliderExcluded,
+            };
+            for (int i = 0; i < 6; i++) args.SetAxisMode((ConstraintAxisIdentifier)i, (ConstraintAxisMode)PadSlider.Modes[i]);
+            args.SetAxisLimits(ConstraintAxisIdentifier.LinearX, lo, hi);
+            _slider = physics.AllocateConstraint(wheel.DEntity, grid.DEntity, args);   // (A the foot, constrained to B the ship)
+            if (_slider == null || !_slider.TryGet<ISixDegreesOfFreedomConstraint>(out _slider6)) { _padStatus = "slider refused"; _slider = null; return false; }
+        }
+        else
+        {
+            pa = PadSlider.PrismaticFrame(foot.PivotPosition, foot.PivotOrientation);
+            pb = PadSlider.PrismaticFrame(mount.Position, mount.Orientation);
+            var args = new PrismaticConstraintArgs(in pa, in pb) { Limits = new Vector2(lo, hi), ExcludeFromGroup = PadSliderExcluded };
+            _slider = physics.AllocateConstraint(wheel.DEntity, grid.DEntity, args);
+            if (_slider == null || !_slider.TryGet<IPrismaticConstraint>(out _sliderP)) { _padStatus = "slider refused"; _slider = null; return false; }
+        }
         _sliderLo = lo; _sliderHi = hi;
         _sliderDead = StructureTear.DestroyedOf(_slider); _sliderGrid = grid; PadSliders++;
         _padStatus = "slider";
-        Log.Default?.Info($"[AERO-GEAR] {_key} pad foot: slider on (x {x:F3} m, limits {min:F3}..{max:F3} m, axis {lo:F3}..{hi:F3}, sense {PadSliderSense}, {(PadSliderExcluded ? "excluded from" : "in")} the group); "
-            + $"A pos ({foot.PivotPosition.X:F3}, {foot.PivotPosition.Y:F3}, {foot.PivotPosition.Z:F3}) twist {Row(args.PivotA.Row1)} swing {Row(args.PivotA.Row2)}; "
-            + $"B pos ({mount.Position.X:F3}, {mount.Position.Y:F3}, {mount.Position.Z:F3}) twist {Row(args.PivotB.Row1)} swing {Row(args.PivotB.Row2)}");
+        Log.Default?.Info($"[AERO-GEAR] {_key} pad foot: slider on ({(kind == 1 ? "6-DOF" : "prismatic")}, x {x:F3} m, limits {min:F3}..{max:F3} m, axis {lo:F3}..{hi:F3}, sense {PadSliderSense}, {(PadSliderExcluded ? "excluded from" : "in")} the group); "
+            + $"A pos ({foot.PivotPosition.X:F3}, {foot.PivotPosition.Y:F3}, {foot.PivotPosition.Z:F3}) rows {Row(pa.Row1)} {Row(pa.Row2)} {Row(pa.Row3)}; "
+            + $"B pos ({mount.Position.X:F3}, {mount.Position.Y:F3}, {mount.Position.Z:F3}) rows {Row(pb.Row1)} {Row(pb.Row2)} {Row(pb.Row3)}");
         return true;
     }
     static string Row(Vector4 r) => $"({r.X:F3}, {r.Y:F3}, {r.Z:F3})";
@@ -199,7 +219,7 @@ public partial class AeroGearComponent
         var wheel = _cm?.WheelEntity;
         bool bodies = _slider != null && wheel != null && GridPhysics.Alive(wheel.Data) && _sliderGrid != null && GridPhysics.Alive(_sliderGrid.Data);
         if (_sliderLife.Removing(bodies, dead) == PadSliderDo.Destroy) GridPhysics.Physics?.DestroyConstraint(_slider);
-        _slider = null; _slider6 = null; _sliderDead = null; _sliderGrid = null; _boxWheel = null; _sliderLo = _sliderHi = float.NaN;
+        _slider = null; _slider6 = null; _sliderP = null; _sliderDead = null; _sliderGrid = null; _boxWheel = null; _sliderLo = _sliderHi = float.NaN;
     }
 
     /// <summary>The foot's turn rate relative to the ship in the foot's own frame (rad/s: X its Right, Y its Up, Z its Backward) - the
