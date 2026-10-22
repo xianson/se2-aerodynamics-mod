@@ -69,6 +69,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
     {
         try { _server = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { _server = true; }
         lock (All) All.Add(this);
+        _inScene = true;
     }
     void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); if (_server && Variant?.Foot != null) PadFootRemoved(); }
 
@@ -105,8 +106,9 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
 
         _step = "constraint";
         var wheel = _cm.WheelEntity;
-        if (!ReferenceEquals(wheel, _wheelSeen)) { _wheelSeen = wheel; _wc = null; _collisionOff = false; _travel = 0f; _wheelRef = false; _springOff = false; }
-        if (wheel != null && _wc == null) Resolve();
+        bool pad = Variant?.Foot != null;
+        if (!ReferenceEquals(wheel, _wheelSeen)) { _wheelSeen = wheel; _wc = null; _resolved = false; _collisionOff = false; _travel = 0f; _wheelRef = false; _springOff = false; _padFrames = false; }
+        if (wheel != null && !_resolved) Resolve();
 
         // the sequence: the wheel always exists, so it never asks for one
         _step = "sequence";
@@ -119,7 +121,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         float target = (1f - GearSequence.Fold(Seq.Progress)) * retract;
         float step = (Variant?.RetractSpeed ?? 2f) * dt;
         _travel = Math.Clamp(target, _travel - step, _travel + step);
-        if (_wc != null)
+        if (_wc != null && !pad)
         {
             if (_travel <= 1e-3f)
             {
@@ -147,9 +149,9 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
             }
         }
 
-        // a pad foot: its box collider, its orientation lock, its axle held (AeroGearComponent.PadFoot.cs)
+        // a pad foot: its box collider, its slider (the travel's limits), the vanilla wheel constraint released (AeroGearComponent.PadFoot.cs)
         _step = "padfoot";
-        if (_wc != null) PadFootStep(wheel);
+        if (pad) { if (_travel <= 1e-3f) _travel = 0f; PadFootStep(wheel); }
         PadDevStep(wheel);   // (the harness's recorder and pushes: Dev/AeroGearPadDev.cs - two reads while off)
 
         // collision: off deep in the well, back before the wheel leaves it
@@ -165,7 +167,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         // a lot ... not the defaults, just the max") - the vanilla slider tops out at 1; down and not held by the airshock or
         // the retraction, the constraint gets the scaled value
         _step = "stiffness";
-        if (_wc != null && _travel <= 0f && !_springOff && !ShockOwned)
+        if (_wc != null && !pad && _travel <= 0f && !_springOff && !ShockOwned)
         {
             float want = GearStiffness.Strength(_cm.SuspensionStiffness, StiffnessScale);   // (capped: GearStiffness.MaxStrength)
             if (_wc.SuspensionStrengthFactor != want) _wc.SuspensionStrengthFactor = want;
@@ -178,30 +180,43 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
 
     // ── the engine ──
 
-    static FieldInfo _constraintField; static bool _fieldLooked;
+    static FieldInfo _constraintField, _suspensionField; static bool _fieldLooked;
+    bool _resolved;
+
+    static void LookFields()
+    {
+        _fieldLooked = true;
+        const BindingFlags f = BindingFlags.Instance | BindingFlags.NonPublic;
+        _constraintField = typeof(WheelCornerModuleComponent).GetField("_constraint", f);
+        _suspensionField = typeof(WheelCornerModuleComponent).GetField("_suspension", f);
+        if (_constraintField == null) Log.Default?.Info("[AERO-GEAR] WheelCornerModuleComponent._constraint not found: gears cannot retract");
+        if (_suspensionField == null) Log.Default?.Info("[AERO-GEAR] WheelCornerModuleComponent._suspension not found: pad feet get no slider");
+    }
 
     /// <summary>The live wheel constraint (WheelCornerModuleComponent._constraint, private - REFLECTION_AND_WHITELIST
-    /// §3.9) and the limits vanilla gave it.</summary>
+    /// §3.9) and the limits vanilla gave it; a pad foot: only where its wheel is (its slider is its own - PadFootStep).</summary>
     void Resolve()
     {
-        if (!_fieldLooked)
-        {
-            _fieldLooked = true;
-            _constraintField = typeof(WheelCornerModuleComponent).GetField("_constraint", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (_constraintField == null) Log.Default?.Info("[AERO-GEAR] WheelCornerModuleComponent._constraint not found: gears cannot retract");
-        }
+        if (!_fieldLooked) LookFields();
+        if (Variant?.Foot != null) { _resolved = true; RefWheel(); return; }
         if (_constraintField?.GetValue(_cm) is IPhysicsConstraint c && c.TryGet<IWheelConstraint>(out var wc))
         {
+            _resolved = true;
             _wc = wc; _vanillaMin = wc.MinSuspensionLimit; _vanillaMax = wc.MaxSuspensionLimit;
             Last = $"wheel constraint: limits {_vanillaMin:F2}..{_vanillaMax:F2} m";
-            // (once per wheel: where it is in the block's frame - the model's dummies are checked against it)
-            var w = _cm.WheelEntity;
-            if (w != null)
-            {
-                var rel = WorldTransform.GetRelativeTransform(w.Data.GetWorldTransform(), Entity.Data.GetWorldTransform());
-                _wheel0 = (Vector3)rel.Position; _s0 = _cm.CurrentSuspensionDistance; _wheelRef = true;
-                Log.Default?.Info($"[AERO-GEAR] {_key} wheel in block frame (suspension at {_s0:F3} m): pos ({rel.Position.X:F3}, {rel.Position.Y:F3}, {rel.Position.Z:F3}) rot ({rel.Orientation.X:F3}, {rel.Orientation.Y:F3}, {rel.Orientation.Z:F3}, {rel.Orientation.W:F3}); limits {_vanillaMin:F2}..{_vanillaMax:F2}");
-            }
+            RefWheel();
+        }
+    }
+
+    void RefWheel()
+    {
+        // (once per wheel: where it is in the block's frame - the model's dummies are checked against it)
+        var w = _cm.WheelEntity;
+        if (w != null)
+        {
+            var rel = WorldTransform.GetRelativeTransform(w.Data.GetWorldTransform(), Entity.Data.GetWorldTransform());
+            _wheel0 = (Vector3)rel.Position; _s0 = _cm.CurrentSuspensionDistance; _wheelRef = true;
+            Log.Default?.Info($"[AERO-GEAR] {_key} wheel in block frame (suspension at {_s0:F3} m): pos ({rel.Position.X:F3}, {rel.Position.Y:F3}, {rel.Position.Z:F3}) rot ({rel.Orientation.X:F3}, {rel.Orientation.Y:F3}, {rel.Orientation.Z:F3}, {rel.Orientation.W:F3}); limits {_vanillaMin:F2}..{_vanillaMax:F2}");
         }
     }
 
@@ -258,7 +273,8 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         // IS on its spring, the game's own reading (2026-10-13, the user: "the arm should go where the wheel is"). (Not the
         // wheel's world position less the grid's: in flight the two are a physics step apart and at speed that is tenths of a
         // metre along the slide - the stowed leg stopped short of flat. Kept as a diagnostic: _measured, in Summary.)
-        float compression = _travel > 0f ? _travel : Math.Max(0f, _cm.CurrentSuspensionDistance);
+        // (a pad foot: the slider's own range - down to -Extra, the foot hanging below its rest)
+        float compression = _travel > 0f ? _travel : Variant?.Foot != null ? _cm.CurrentSuspensionDistance : Math.Max(0f, _cm.CurrentSuspensionDistance);
         var w = _cm.WheelEntity; var layout = Variant?.Layout;
         if (_wheelRef && w != null && layout != null && layout.RakedSlide)
         {
@@ -283,7 +299,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
                       .Append(g.ShockOwned ? " SHOCKS hold the spring" : "")
-                      .Append(g.Variant?.Foot != null ? (g._lockLife.Has ? " PAD locked level" : " PAD no lock") + (g._boxWheel != null ? " box" : " sphere") + (g.FootAttitude(out float tl, out _) ? $" tilt {tl:F1}" : "") : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
+                      .Append(g.Variant?.Foot != null ? (g.PadHeld ? " PAD slider" : " PAD no slider") + (ReferenceEquals(g._releasedWheel, g._cm?.WheelEntity) && g._cm?.WheelEntity != null ? " alone" : " +wheel") + (g._boxWheel != null ? " box" : " sphere") + (g.FootAttitude(out float tl, out _) ? $" tilt {tl:F1}" : "") + $" lim {g._sliderLo:F2}..{g._sliderHi:F2}" : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();
         }

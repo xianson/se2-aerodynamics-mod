@@ -7,8 +7,9 @@ housings, leg and slide - their model, breakable and subpart definitions referen
 WHEEL is the foot: a copy of the vanilla wheel prefab of that size whose model is the landing-gear mesh (the SDK's FBX, copied in -
 a straight reuse of a vanilla mesh as a PLACEHOLDER: no kitbash, nothing reshaped; scaled whole where the housing needs it) and
 whose collider is a flat puck the corner module can fit a cylinder to (DetermineWheelRadius); the mod swaps the body's collider for a
-box of the foot's bounds and holds its attitude with a constraint (Integration/AeroGearComponent.PadFoot.cs). The wheel is heavy
-(WheelMass, per size: the suspension's spring grows with it - GearStiffness) and its corner module has no drive and no steering.
+box of the foot's bounds, holds it on ONE slider constraint (the vanilla wheel constraint released) and carries it on the oleo strut
+(Integration/AeroGearComponent.PadFoot.cs). The foot is heavy
+(WheelMass, per size) and its corner module has no drive and no steering.
 
 The numbers the scripts use are written to padgear_spec.json beside this file (AeroGearVariants must match: Tests/GearTests).
 
@@ -56,21 +57,21 @@ WHEELS = {
 
 # THE VARIANTS: one per vanilla landing-gear model. bounds: the LOD0 FBX's own (VRage axes, m - measured in Blender, lgprobe);
 # t0: the vanilla .model's LOD0 translation; scale: whole-mesh scale to fit the housing. mass: the wheel body (kg; the vanilla
-# wheels: 1 m 200, 1.5 m 300, 2.5 m 500); rated: the weight one gear is sized for (kg) - its sag at the default stiffness within
-# half its stroke (GearTests). name: the block (the game appends the size).
+# wheels: 1 m 200, 1.5 m 300, 2.5 m 500); rated: the mass one gear carries at 2 g (kg) - the vanilla wheel of its housing's
+# (WheelRating.RatedFor: 0.5 / 1 / 1.5 / 2.5 m - the oleo strut carries it, PadFootSpec's table). name: the block (the game appends the size).
 VARIANTS = [
     dict(size="050", sid="9e21", wid="9e31", wheel="100", name="Retractable Gear (Plate)", model="Magneticplate50",
          dir=r"MagneticPlates\50\Models\NonFractured", lods=["Magneticplate50", "Magneticplate50_LOD1", "Magneticplate50_LOD2"],
-         lo=(-0.251, -0.126, -0.251), hi=(0.251, 0.126, 0.251), scale=1.0, mass=150, rated=1500),
+         lo=(-0.251, -0.126, -0.251), hi=(0.251, 0.126, 0.251), scale=1.0, mass=150, rated=3750),
     dict(size="100", sid="9e22", wid="9e32", wheel="100", name="Retractable Gear (Pad)", model="LandingGear100",
          dir=r"LandingGear\LandingGear\100\Models\NonFractured", lods=["LandingGear100", "LandingGear100_LOD1", "LandingGear100_LOD2"],
-         lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=1.0, mass=250, rated=5000),
+         lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=1.0, mass=250, rated=15000),
     dict(size="150", sid="9e23", wid="9e33", wheel="150", name="Retractable Gear (Pad)", model="LandingGear500",
          dir=r"LandingGear\LandingGear\500\Models\NonFractured", lods=["LandingGear500", "LandingGear500_LOD1", "LandingGear500_LOD2"],
-         lo=(-1.263, -2.500, -2.505), hi=(1.263, 2.504, 2.501), scale=0.3, mass=600, rated=20000),
+         lo=(-1.263, -2.500, -2.505), hi=(1.263, 2.504, 2.501), scale=0.3, mass=600, rated=33750),
     dict(size="250", sid="9e24", wid="9e34", wheel="250", name="Retractable Gear (Plate)", model="MagneticPlate250",
          dir=r"MagneticPlates\250\Models\NonFractured", lods=["MagneticPlate250", "MagneticPlate250_LOD1", "MagneticPlate250_LOD2"],
-         lo=(-1.251, -0.255, -1.251), hi=(1.251, 0.251, 1.251), scale=1.0, mass=1200, rated=60000),
+         lo=(-1.251, -0.255, -1.251), hi=(1.251, 0.251, 1.251), scale=1.0, mass=1200, rated=93750),
 ]
 KIND, GROUP = G("9e20", 0x20), G("9e20", 0x21)
 SUBCATEGORY = "ae200001-ae00-0000-0002-000000000001"   # (the Wheeled Landing Gear's)

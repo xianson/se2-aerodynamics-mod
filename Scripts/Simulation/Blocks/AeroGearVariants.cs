@@ -18,10 +18,8 @@ public sealed class AeroGearVariant
     /// must be before its collision goes (m).</summary>
     public float RetractTravel, RetractSpeed = 2f, CollisionOffAt;
     public GearLayout Layout;
-    /// <summary>A PAD-FOOT gear (its wheel a vanilla landing-gear mesh, held level: AeroGearComponent.PadFoot.cs); null: a wheeled gear.</summary>
+    /// <summary>A PAD-FOOT gear (its wheel a vanilla landing-gear mesh on one slider: AeroGearComponent.PadFoot.cs); null: a wheeled gear.</summary>
     public PadFootSpec Foot;
-    /// <summary>Its wheel's rotation about the axle is locked to the ship (pad feet only).</summary>
-    public bool LocksOrientation => Foot != null;
 }
 
 /// <summary>
@@ -50,19 +48,23 @@ public static class AeroGearVariants
         new() { Name = "Retractable Gear (Plate) 0.5 m", Block = new("ae200001-ae00-9e21-0001-000000000001"), CornerModule = new("ae200001-ae00-9e31-0068-000000000001"), WheelRadius = 0.25200f, Duration = 2.5f,
                 RetractTravel = 5.3707f * 0.2f, RetractSpeed = 3f * 0.2f, CollisionOffAt = OffAt * 0.2f, Layout = Gear(0.2f),
                 Foot = new PadFootSpec { Model = "Magneticplate50", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.12600f, 0.00000f), BoxHalf = new Vector3(0.25100f, 0.12600f, 0.25100f), Height = 0.25200f,
-                                         WheelMass = 150f, RatedLoad = 1500f, Stroke = 0.12500f } },
+                                         WheelMass = 150f, RatedLoad = 3750f, Stroke = 0.12500f,
+                                         PivotPosition = new Vector3(0.13262f, 0.00000f, 0.00000f), PivotOrientation = new Quaternion(-0.096531f, 0.0f, -0.0f, 0.99533f) } },
         new() { Name = "Retractable Gear (Pad) 1 m", Block = new("ae200001-ae00-9e22-0001-000000000001"), CornerModule = new("ae200001-ae00-9e32-0068-000000000001"), WheelRadius = 1.00200f, Duration = 3f,
                 RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Gear(0.4f),
                 Foot = new PadFootSpec { Model = "LandingGear100", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.50100f, 0.00000f), BoxHalf = new Vector3(0.25100f, 0.50100f, 0.50100f), Height = 1.00200f,
-                                         WheelMass = 250f, RatedLoad = 5000f, Stroke = 0.25000f } },
+                                         WheelMass = 250f, RatedLoad = 15000f, Stroke = 0.25000f,
+                                         PivotPosition = new Vector3(0.36025f, -0.12267f, 0.02402f), PivotOrientation = new Quaternion(-0.096531f, 0.0f, -0.0f, 0.99533f) } },
         new() { Name = "Retractable Gear (Pad) 1.5 m", Block = new("ae200001-ae00-9e23-0001-000000000001"), CornerModule = new("ae200001-ae00-9e33-0068-000000000001"), WheelRadius = 1.50120f, Duration = 3.5f,
                 RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Gear(0.6f),
                 Foot = new PadFootSpec { Model = "LandingGear500", Scale = 0.30000f, BoxCenter = new Vector3(0.00000f, -0.75060f, 0.00000f), BoxHalf = new Vector3(0.37890f, 0.75060f, 0.75090f), Height = 1.50120f,
-                                         WheelMass = 600f, RatedLoad = 20000f, Stroke = 0.40000f } },
+                                         WheelMass = 600f, RatedLoad = 33750f, Stroke = 0.40000f,
+                                         PivotPosition = new Vector3(0.42654f, 0.00000f, -0.00001f), PivotOrientation = new Quaternion(-0.096531f, 0.0f, -0.0f, 0.99533f) } },
         new() { Name = "Retractable Gear (Plate) 2.5 m", Block = new("ae200001-ae00-9e24-0001-000000000001"), CornerModule = new("ae200001-ae00-9e34-0068-000000000001"), WheelRadius = 0.50600f, Duration = 4f,
                 RetractTravel = 5.3707f * 1.0f, RetractSpeed = 3f * 1.0f, CollisionOffAt = OffAt * 1.0f, Layout = Gear(1.0f),
                 Foot = new PadFootSpec { Model = "MagneticPlate250", Scale = 1.00000f, BoxCenter = new Vector3(0.00000f, -0.25300f, 0.00000f), BoxHalf = new Vector3(1.25100f, 0.25300f, 1.25100f), Height = 0.50600f,
-                                         WheelMass = 1200f, RatedLoad = 60000f, Stroke = 0.60000f } },
+                                         WheelMass = 1200f, RatedLoad = 93750f, Stroke = 0.60000f,
+                                         PivotPosition = new Vector3(0.77562f, 0.00000f, 0.00000f), PivotOrientation = new Quaternion(-0.096531f, 0.0f, -0.0f, 0.99533f) } },
     };
 
     /// <summary>

@@ -43,6 +43,10 @@ namespace AeroMod;
 /// The mod's own gears (AeroGearComponent): the same, while the gear is down and not held up (ShockUsable); its per-block airshock
 /// switch is honoured; while this owns the spring (ShockOwned) the gear does not write its stiffness. Off: the player's values
 /// written back once, nothing else.
+/// THE PAD FEET (2026-10-21, AeroGearComponent.PadFoot.cs): no wheel constraint - the gear's slider holds the foot, its limits the
+/// strut's end stops (-Extra .. stroke) - so the oleo is the foot's only spring: it carries whatever Wheels.Shocks and the aero switch
+/// say (the airshock's arming still follows the mode), rated by the foot (PadFootSpec.Rating: the housing's wheel's load), its
+/// compression and rate from the two bodies along the strut (CalculateSuspensionDistance is the geometry, never the constraint).
 /// Reflection (docs/REFLECTION_AND_WHITELIST.md §3.9): WheelCornerModuleComponent._constraint (as the gear) and ._suspension
 /// (the suspension's idle frame and axis - its public SuspensionInfo record), each read once per wheel.
 /// </summary>
@@ -118,15 +122,18 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         if (!_looked) { _looked = true; _cm = Entity?.TryGet<WheelCornerModuleComponent>(); _gear = Entity?.TryGet<AeroGearComponent>(); }
         if (_cm == null) return;
         var wheel = _cm.WheelEntity;
-        if (!ReferenceEquals(wheel, _wheelSeen)) { _wheelSeen = wheel; _wc = null; _lastF = 0f; Disarm(); }
+        if (!ReferenceEquals(wheel, _wheelSeen)) { _wheelSeen = wheel; _wc = null; _ok = false; _lastF = 0f; Disarm(); }
         if (wheel == null || !GridPhysics.Alive(wheel.Data)) { Grid = null; Grounded = false; Contact = false; return; }
         var grid = Entity.GetTopLevelParent();
         Grid = grid;
         var aero = grid?.TryGet<AeroGridComponent>();
         int mode = WheelShockSettings.Mode;
-        bool usable = mode != WheelShockSettings.Off && AeroSwitch.Enabled && aero != null && aero.IsServerScene
+        // (a pad foot: the oleo is its only spring - it carries whatever the world's shocks setting and the aero switch say; the
+        //  airshock's arming follows the mode as on every wheel)
+        bool pad = _gear?.Foot != null;
+        bool usable = (pad || mode != WheelShockSettings.Off && AeroSwitch.Enabled && aero != null && aero.IsServerScene)
                       && (_gear == null || _gear.ShockUsable) && GridPhysics.Alive(grid.Data);
-        if (_wc == null && usable && !Resolve(wheel)) usable = false;
+        if (!_ok && usable && !Resolve(wheel)) usable = false;
         if (!usable)
         {
             // (the readouts kept fresh while not taking part - Shocks Off, a gear stowing: the harness's records compare vanilla with
@@ -161,7 +168,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         float sink = -Vector3.Dot(wrb.LinearVelocity, up);
 
         // ── the airshock ──
-        bool allowShock = _gear == null || _gear.AirshockEnabled;
+        bool allowShock = (_gear == null || _gear.AirshockEnabled) && mode != WheelShockSettings.Off;
         double now = System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
         float h = float.MaxValue;
         if (allowShock && !_shock.Armed && !contact && sink > WheelAirshock.MinSink) h = Height(aero, gwt, wpos, up);
@@ -188,7 +195,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         if (mode == WheelShockSettings.AirshockOleo) Limit(-_rating.Extra); else if (_limitOwned) Limit(_minLimit0);
 
         // ── the oleo ──
-        if (mode != WheelShockSettings.AirshockOleo) { _lastF = 0f; Grounded = false; return; }
+        if (mode != WheelShockSettings.AirshockOleo && !pad) { _lastF = 0f; Grounded = false; return; }
         float dt = AeroPhysics.Dt;
         float mAt = MassAt(in srb, in smass, in gwt, mount, axis);
         Grounded = contact;
@@ -276,7 +283,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     float Height(AeroGridComponent aero, in WorldTransform gwt, Vector3D wpos, Vector3 up)
     {
         float r = _cm.WheelRadius, h = float.MaxValue;
-        if (aero.GroundHeight >= 0f)
+        if (aero != null && aero.GroundHeight >= 0f)
             h = aero.GroundHeight + Vector3.Dot((Vector3)(wpos - gwt.Position), up) - r;
         _height ??= new GamePlanetHeight();
         if (_height.Surface(wpos, 1, out var c, out double R))
@@ -307,6 +314,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
             }
         }
         if (_constraintField == null || _suspensionField == null || _suspensionField.FieldType != typeof(WheelCornerModuleComponent.SuspensionInfo)) return false;
+        if (_gear?.Foot != null) return ResolvePad(wheel);
         if (!(_constraintField.GetValue(_cm) is IPhysicsConstraint c) || !c.TryGet<IWheelConstraint>(out var wc)) return false;
         _susp = (WheelCornerModuleComponent.SuspensionInfo)_suspensionField.GetValue(_cm);
         float stroke = _susp.LineOfTravel.Length;
@@ -315,12 +323,31 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         _rating = WheelRating.Of(_cm.WheelRadius, stroke, wm, WheelShockSettings.OleoRating, Extension());
         _minLimit0 = wc.MinSuspensionLimit; _ratedExt = WheelShockSettings.Extension;
         if (!_rating.Valid) { Faults++; LastFault = "unrated wheel: " + _rating; return false; }
-        _wc = wc; _ratedScale = WheelShockSettings.OleoRating;
+        _wc = wc; _ok = true; _ratedScale = WheelShockSettings.OleoRating;
         Interlocked.Increment(ref Resolved);
         if (Resolved <= 8) Log.Default?.Info($"[AERO-SHOCK] {_rating}; limits {wc.MinSuspensionLimit:F2}..{wc.MaxSuspensionLimit:F2}");
         return true;
     }
     float _ratedScale, _ratedExt;
+    /// <summary>Resolved: the wheel's frame and rating known (a vanilla wheel: its constraint too; a pad foot has none - its slider is
+    /// the gear's).</summary>
+    bool _ok;
+
+    /// <summary>A pad foot (2026-10-21): the suspension's frame (for the axis and the mount), the rating the foot's (PadFootSpec.Rating -
+    /// the housing's wheel's load, its stroke, its body's mass, the slider's extra stroke); no wheel constraint (released: the gear's slider
+    /// holds the foot, its limits the strut's end stops).</summary>
+    bool ResolvePad(Entity wheel)
+    {
+        var foot = _gear.Foot;
+        _susp = (WheelCornerModuleComponent.SuspensionInfo)_suspensionField.GetValue(_cm);
+        _rating = foot.Rating(WheelShockSettings.OleoRating, WheelShockSettings.Extension);
+        _ratedExt = WheelShockSettings.Extension; _ratedScale = WheelShockSettings.OleoRating;
+        if (!_rating.Valid) { Faults++; LastFault = "unrated pad foot: " + _rating; return false; }
+        _ok = true;
+        Interlocked.Increment(ref Resolved);
+        if (Resolved <= 8) Log.Default?.Info($"[AERO-SHOCK] pad foot: {_rating}; the slider's stops {-_rating.Extra:F3}..{_rating.Stroke:F3} m");
+        return true;
+    }
     /// <summary>The strut's extra stroke for this wheel (a share of its travel): Wheels.OleoExtension on the game's wheels; 0 on the
     /// mod's gears (their limits are the gear's: its retraction, its pad foot).</summary>
     float Extension() => _gear != null ? 0f : WheelShockSettings.Extension;
@@ -328,8 +355,9 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     /// <summary>A changed Wheels.OleoRating / Wheels.OleoExtension re-rates the wheel (the apply job, once a second).</summary>
     internal void Rerate()
     {
-        if (_wc == null || (_ratedScale == WheelShockSettings.OleoRating && _ratedExt == WheelShockSettings.Extension)) return;
-        _rating = WheelRating.Of(_cm.WheelRadius, _rating.Stroke, _rating.WheelMass, WheelShockSettings.OleoRating, Extension());
+        if (!_ok || (_ratedScale == WheelShockSettings.OleoRating && _ratedExt == WheelShockSettings.Extension)) return;
+        if (_gear?.Foot != null) _rating = _gear.Foot.Rating(WheelShockSettings.OleoRating, WheelShockSettings.Extension);
+        else _rating = WheelRating.Of(_cm.WheelRadius, _rating.Stroke, _rating.WheelMass, WheelShockSettings.OleoRating, Extension());
         _ratedScale = WheelShockSettings.OleoRating; _ratedExt = WheelShockSettings.Extension;
     }
 
@@ -379,7 +407,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
             sb.Append($"mode {WheelShockSettings.Mode} wheels {Wheels} resolved {Resolved} armed {ArmedNow} arms {Arms} faults {Faults} {LastFault}");
             lock (All)
                 foreach (var s in All)
-                    if (s._wc != null)
+                    if (s._ok)
                         sb.Append($" | {s._rating.Diameter:F1} m x {s.X:F3}/{s._rating.Stroke:F2} v {s.V:F2} F {s.F / Math.Max(1f, s._rating.RatedWeight):F2}W {(s.Contact ? "ground" : "air")}{(s._shock.Armed ? " ARMED" : "")} S {s.WrittenS:F2} D {s.WrittenD:F2}");
             return sb.ToString();
         }

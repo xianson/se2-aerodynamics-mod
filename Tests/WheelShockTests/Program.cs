@@ -276,6 +276,47 @@ static class Program
                 }
             }
         }
+        // 13. THE PAD FEET ON THEIR SLIDER (2026-10-21, Gear/PadFoot.cs): the foot is held by one slider whose LinearX limits are the
+        //     strut's end stops (-Extra .. Stroke) and nothing else along it - the sim's oleo mode with the constraint's row off (its
+        //     share 0) IS that slider: the strut alone springs, the limits stop. Each pad at its rating (the housing's wheel's: PadFootSpec)
+        //     on four feet at 2 g, 1 / 3 / 5 m/s, and the 33 t rig (11 t on each of three 1.5 m pads). The spec (as the wheels'): 3 m/s
+        //     within 80 % of the stroke, peak under 3 g beyond the weight, rebound under 30 %; 1 m/s settles; 5 m/s may brush the end.
+        //     The 0.5 m plate's strut (0.125 + 0.05 m) is too short for a 3 g stop from 3 m/s at 2 g (v^2 / 2a needs 0.15 m at a
+        //     perfect 3 g): judged on its stroke and rebound only, its peak reported. The rig's share (a third of the rating) is stiffer
+        //     in g (the gas preload against a light load: 3.2 g at 3 m/s) - the peak gated at the rating only.
+        {
+            float share0 = WheelShockSettings.ConstraintSpringShare; WheelShockSettings.ConstraintSpringShare = 0f;
+            Console.WriteLine("== the pad feet on their slider (the oleo, the limits the end stops):");
+            var pads = new (string name, float housing, float stroke, float mass)[] { ("Plate 0.5 m", 0.5f, 0.125f, 150f), ("Pad 1 m", 1f, 0.25f, 250f), ("Pad 1.5 m", 1.5f, 0.40f, 600f), ("Plate 2.5 m", 2.5f, 0.60f, 1200f) };
+            foreach (var (name, housing, stroke, mass) in pads)
+            {
+                var foot = new PadFootSpec { RatedLoad = WheelRating.RatedFor(housing), Stroke = stroke, WheelMass = mass };
+                var r = foot.Rating(1f, WheelShockSettings.Extension);
+                bool shortStrut = r.StrutStroke < 0.2f;
+                foreach (var (what, load) in new[] { ("rated", r.RatedMass), name == "Pad 1.5 m" ? ("the 33 t rig's 11 t", 11000f) : ("", 0f) })
+                {
+                    if (load <= 0f) continue;
+                    Console.WriteLine($"  {name} ({r}) at {what}:");
+                    foreach (float v in new[] { 1f, 3f, 5f })
+                    {
+                        var sim = new Sim { Mode = Sim.Kind.Oleo, Rating = r, ShipMass = load, Wheels = 4, Sink = v, Seconds = 3f }.Run();
+                        Console.WriteLine($"    {v} m/s  {sim.Line()}");
+                        Check(sim.Finite && sim.Bounces == 0, $"pad {name} {what} {v} m/s: finite, no bounce");
+                        if (v == 1f) Check(!sim.Bottomed && !float.IsNaN(sim.SettleTime) && sim.SettleTime < 1f, $"pad {name} {what} 1 m/s: settled {sim.SettleTime:F2} s, no bottom");
+                        if (v == 3f)
+                        {
+                            Check(sim.MaxComp <= 0.8f * r.Stroke && !sim.Bottomed, $"pad {name} {what} 3 m/s: {sim.MaxComp / r.Stroke:P0} of the stroke (want <= 80 %)");
+                            Check(sim.Rebound < 0.3f * v, $"pad {name} {what} 3 m/s: rebound {sim.Rebound:F2} m/s (want < 30 %)");
+                            Check(shortStrut || what != "rated" || sim.PeakG < 3f, $"pad {name} {what} 3 m/s: peak {sim.PeakG:F2} g beyond the weight (want < 3)");
+                        }
+                        if (v == 5f) Check(sim.BottomSteps <= 3, $"pad {name} {what} 5 m/s: at the end {sim.BottomSteps} steps (want <= 3)");
+                    }
+                }
+                float sag = WheelOleo.SagFor(r, r.RatedMass, WheelRating.DesignG);
+                Check(Near(sag / r.Stroke, 0.58f, 0.01f), $"pad {name}: rests at {sag / r.Stroke:P0} of its stroke at the rating (want 58 %, as the wheels)");
+            }
+            WheelShockSettings.ConstraintSpringShare = share0;
+        }
         Console.WriteLine($"WheelShockTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }

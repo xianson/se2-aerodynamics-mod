@@ -12,6 +12,7 @@ public partial class AeroGearComponent
     /// stiffness.</summary>
     internal volatile bool ShockOwned;
 
-    /// <summary>The wheel takes part in the shocks: the gear down, its wheel not held up (no retraction, its spring on).</summary>
-    internal bool ShockUsable => Seq.Down && _travel <= 0f && !_springOff && _wc != null;
+    /// <summary>The wheel takes part in the shocks: the gear down, its wheel not held up (no retraction, its spring on); a pad foot:
+    /// down, not held up, on its slider (the oleo is its only spring - AeroWheelShockComponent's pad branch).</summary>
+    internal bool ShockUsable => Seq.Down && _travel <= 0f && (Variant?.Foot != null ? PadHeld : !_springOff && _wc != null);
 }
