@@ -29,10 +29,11 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Settings (world): `Wheels.Shocks` (Off / Airshock only / Airshock + oleo, default the last), `Wheels.OleoRating` (0.5-3);
   advanced `Wheels.CompressionDamping`, `Wheels.ReboundDamping`, `Wheels.ForceRateCap`, `Wheels.ConstraintSpring`,
   `Wheels.OleoExtension`.
-- Offline (`Tests/WheelShockTests`, a time-stepped touchdown): at the rated load, 1 / 3 / 5 m/s, every vanilla size stays in
-  its stroke (1 m wheel 60 / 73 / 91 %), rebound under 0.5 m/s, settled in 0.2-0.6 s; vanilla and airshock-only bottom in every
-  case. Not flown in game yet (`tools/ingame/wheelshock_test.sh`: heavy armour bricks on four 1 m wheels - 27 / 93 / 204 % of
-  their rating - dropped at 1 / 3 / 5 m/s onto voxel ground and a static armour deck, shocks off vs on, with and without forward speed).
+- Offline (`Tests/WheelShockTests`): the touchdown stepped as the game steps it (4 solver substeps, matched to the in-game per-tick
+  trace) - at the rated load on four wheels, 1 / 3 / 5 m/s use 58 / 66 / 77 % of the stroke, 2.9 g beyond the weight at 3 m/s.
+- In game (midair deck, WSBRICK 57 t on four 1 m wheels, straight down, shocks on / off): 1 m/s 64 % / bottomed, 3 m/s 69 % (peak
+  2.6 g beyond the weight, rebound 0.06 m/s, settled 0.4 s) / bottomed with the hull on the deck, 5 m/s 90 % no bottom / bottomed
+  with the hull on the deck. WSLIGHT (27 %) 25-62 %; WSOVER (204 %) holds 1 and 3 m/s, bottoms at 5 m/s, hull clear.
 
 ## Unreleased - the Autopilot panel, redone
 
