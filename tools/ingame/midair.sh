@@ -2,7 +2,7 @@
 # midair.sh - THE MIDAIR IMPACT RIG (2026-10-21, the user: "spawn it midair and with relative velocities, measure change in momentum";
 # "make sure there's no aero interference"). Sourced by padgear_test.sh and wheelshock_test.sh after the harness library (testlib.sh):
 # no flat ground needed, any 'Orbital Test...' world on a planet.
-#  midair_setup     the player 2 km (MIDAIR_UP) straight up from where the world loads them, looking level; WSDECK - a STATIC flat
+#  midair_setup     the player 4 km (MIDAIR_UP) straight up from where the world loads them, looking level; WSDECK - a STATIC flat
 #                   armour deck (build_wheelbrick.py: 11 x 72 light 2.5 m cubes, 27.5 x 180 m, a control seat on its right edge) -
 #                   spawned 40 m to the right; the player seated on it. Every rig is spawned from that seat (the same camera every
 #                   run), 10 m to its left, over the deck's middle; the deck runs 90 m ahead and behind (the forward drops alternate).
@@ -13,7 +13,7 @@
 #                   taken back; the shocks and the gears on): lifted clear if it rests on the deck, FreeTicks free (the gravity measured),
 #                   the approach, then free and recorded for SECONDS. R: DevResult (per wheel / foot), I: DevImpact (the momentum ledger).
 #  midair_release   the drop's dev values back (DevApproach / DevNoAero off), Wheels.Shocks 2.
-MIDAIR_UP=${MIDAIR_UP:-2000}
+MIDAIR_UP=${MIDAIR_UP:-4000}
 
 gid() { local i x; for i in 1 2 3 4 5 6 7 8; do x=$("$ORB" "findgrids $1" | grep -a "> findgrids" | tail -1 | grep -oE "[0-9]+=$1([ (]|$)" | tail -1 | cut -d= -f1); [ -n "$x" ] && { echo "$x"; return; }; sleep 1; done; }
 
@@ -44,10 +44,16 @@ midair_setup() {
     #  'WSDECK: the cut ... failed whole', 383 of 793 blocks left; Structure.Damage back at the release)
     MIDAIR_D0=$(ask "aerosetting Structure.Damage" | sed "s/.* = //" | tr -d " \r"); ask "aerosetting Structure.Damage 0" >/dev/null
     note "midair: Structure.Damage $MIDAIR_D0 -> 0 for the run"
-    ask "unseat" >/dev/null; ask "$tp" >/dev/null; sleep 0.3; ask "$lk" >/dev/null; sleep 0.3
+    # (tplevel, not tp + look: `look` frames the camera on the world's +Y - the deck came out upside down where the planet's up is -Y)
+    ask "unseat" >/dev/null; ask "${tp/tp /tplevel }" >/dev/null; sleep 0.3
     ask "gen spawn WSDECK.txt right=40 ahead=0 up=-6" >/dev/null
     poll 25 spawned WSDECK || { record "midair: the deck spawned" "$("$ORB" 'gen status' | tail -1 | cut -c1-140)"; return 1; }
     DECK=$(gid WSDECK)
+    # (the game turns a static grid with no voxel under it dynamic ~12 s after its spawn - "No supporting voxel found for grid":
+    #  the deck fell 1-2 km under the rigs in the first runs. Waited for, then made static again: the harness's gridstatic)
+    for k in $(seq 1 30); do grep -aq "No supporting voxel found for grid: WSDECK" "$(LOGF)" && break; sleep 1; done
+    note "midair: deck $DECK $(ask "gridstatic $DECK on")"; sleep 1
+    expect "midair: the deck static again" "$("$ORB" "findgrids WSDECK" | grep -a "> findgrids" | tail -1 | cut -c1-120)" bash -c "'$ORB' 'findgrids WSDECK' | grep -a '> findgrids' | tail -1 | grep -q 'WSDECK(static)'" || return 1
     for k in 1 2 3 4; do
         ask "tpgrid $DECK 3" >/dev/null; sleep 0.4
         r=$(ask "seatid $DECK"); echo "$r" | grep -q "^seating" && break
@@ -67,7 +73,8 @@ rig() {
     w=$(ask "gen whole" | sed 's/ || /\n/g' | grep -a "'$name'" | head -1 | cut -c1-200)
     have=$(sed -n 's/.*: \([0-9]*\) of \([0-9]*\) blocks.*/\1/p' <<< "$w"); want=$(sed -n 's/.*: \([0-9]*\) of \([0-9]*\) blocks.*/\2/p' <<< "$w")
     expect "midair: $name spawned whole" "${w:-no gen whole line}" ge "${have:-0}" "${want:-1}"
-    ask "gridlevel $RIG" "griddamp $RIG off" >/dev/null; hold 2
+    hold 1   # (it hovers on its dampeners where it spawned until its first drop - dropm turns them off; levelled by the drop itself:
+             #  WheelShockDev.Level - the harness's gridlevel moved a fresh grid ~0.8 km)
 }
 
 rig_del() {
@@ -83,6 +90,7 @@ DROPN=${DROPN:-0}
 dropm() {
     local name=$1 mode=$2 fwd=$3 v=$4 secs=$5
     DROPN=$((DROPN + 1))
+    [ -n "${RIG:-}" ] && ask "griddamp $RIG off" >/dev/null   # (no thrust in the ledger)
     ask "aeroset WheelShockDev.DevApproach true" "aeroset WheelShockDev.DevNoAero true" "aeroset WheelShockSettings.Mode $mode" \
         "aeroset WheelShockDev.DevGrid $name" "aeroset WheelShockDev.DevSink $v" "aeroset WheelShockDev.DevForward $fwd" \
         "aeroset WheelShockDev.DevRecordSeconds $secs" "aeroset WheelShockDev.DevDrop $DROPN" >/dev/null

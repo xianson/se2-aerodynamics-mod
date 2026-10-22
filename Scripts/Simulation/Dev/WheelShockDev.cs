@@ -6,6 +6,9 @@ using Keen.Game2.Simulation.WorldObjects.CubeGrids;
 using Keen.VRage.Core;
 using Keen.VRage.Core.Game.Components;
 using Keen.VRage.Physics.Data;
+using Keen.VRage.Core.Game.GameSystems.Queries;
+using Keen.VRage.Physics;
+using Keen.VRage.Physics.Queries;
 
 namespace AeroMod;
 
@@ -120,6 +123,32 @@ public static class WheelShockDev
     /// aero.GroundHeight, from the grid's origin, refreshed every 3-10 ticks - read metres high over the deck in the first midair run:
     /// the approach came in at 3.7-8 m/s where 1 and 3 were asked.)</summary>
     static readonly GridPhysics.GroundProbe _ray = new();
+    const float RayLength = 60f;
+    /// <summary>Midair: the deck by name (DevDeck: WSDECK - build_wheelbrick.py's, its top face DeckTop m over its origin), found at
+    /// each drop's start; the clearance is the wheels' height over its top plane (the rays did not see it in game: a ray from a wheel
+    /// with the rig's own bodies ignored found nothing in 60 m - 2026-10-21).</summary>
+    public static string DevDeck = "WSDECK";
+    public const float DeckTop = 1.25f;
+    static Entity _deck;
+    /// <summary>One closest-hit ray, the rig's own bodies (the grid and its wheels) ignored - and only those: the engine's
+    /// GetDirectlyConnectedBodies (the grid ground ray's ignore list) took in the deck the rig was resting on, so the lift never saw
+    /// it (2026-10-21, "never lifted clear (clear NaN)"). The hit distance, or -1.</summary>
+    static float Ray(List<AeroWheelShockComponent> all, Vector3D from, Vector3 ray)
+    {
+        var physics = GridPhysics.Physics;
+        if (physics == null) return -1f;
+        _ray.Hits.Clear(); _ray.Ignore.Clear();
+        _ray.Ignore.Add(_grid.DEntity);
+        foreach (var s in all)
+        {
+            var we = s.Module?.WheelEntity;
+            if (ReferenceEquals(s.Grid, _grid) && we != null && GridPhysics.Alive(we.Data)) _ray.Ignore.Add(we.DEntity);
+        }
+        var args = new RayCastArgs(in from, ray);
+        args.IgnoredEntities = _ray.Ignore;
+        physics.CastRay(_ray.Hits, in args, CollisionPreset.Closest);
+        return _ray.Hits.Count > 0 ? (float)(_ray.Hits[0].Fraction * ray.Length()) : -1f;
+    }
     static float Clearance(List<AeroWheelShockComponent> all, in WorldTransform gwt, Vector3 up)
     {
         float h = float.MaxValue;
@@ -128,9 +157,17 @@ public static class WheelShockDev
             if (!ReferenceEquals(s.Grid, _grid) || s.Module == null) continue;
             var we = s.Module.WheelEntity;
             if (we == null || !GridPhysics.Alive(we.Data)) continue;
-            _ray.Cooldown = 0;
-            float d = GridPhysics.GetGroundDistance(_ray, we.Data.GetWorldTransform().Position, -up, _grid);
-            if (d >= 0f) h = MathF.Min(h, d - s.Module.WheelRadius);
+            Vector3D wp = we.Data.GetWorldTransform().Position;
+            float d;
+            if (_deck != null && GridPhysics.Alive(_deck.Data))
+            {
+                // (the deck's top plane: its origin + DeckTop along its own up - the deck is static and flat)
+                var dwt = _deck.Data.GetWorldTransform();
+                Vector3 dup = Vector3.Transform(Vector3.Up, dwt.Orientation);
+                d = (float)Vector3D.Dot(wp - dwt.Position, (Vector3D)dup) - DeckTop;
+            }
+            else d = Ray(all, wp, -up * RayLength);
+            if (d >= 0f || _deck != null) h = MathF.Min(h, d - s.Module.WheelRadius);
         }
         return h < float.MaxValue ? h : float.NaN;
     }
@@ -163,7 +200,8 @@ public static class WheelShockDev
         {
             case 4:   // midair, resting on the deck: lifted (4 m/s up, level) until the lowest tyre is 1.5 m clear - then free
             {
-                float h = Clearance(all, in wt, up);
+                float h = Clearance(all, in wt, up); _lastClear = h;
+                if ((_ticks & 7) == 0) { int nw = 0; foreach (var s in all) if (ReferenceEquals(s.Grid, _grid) && s.Module?.WheelEntity != null) nw++; DevPhase = $"lift clear {h:F2} m wheels {nw} deck {(_deck != null ? 1 : 0)} contact {(anyWheel ? 1 : 0)}{(anyHull ? 1 : 0)}"; }
                 if (float.IsFinite(h) && h >= 1.5f && !anyWheel && !anyHull) { _phase = 1; _ticks = 0; DevPhase = "free"; break; }
                 Hold(ref rb, in mass, in wt, all, up * 4f);
                 if (_ticks > 300) End("never lifted clear");
@@ -185,6 +223,7 @@ public static class WheelShockDev
                 if (DevApproach)
                 {
                     float h = Clearance(all, in wt, up); _lastClear = h;
+                    if ((_ticks & 7) == 0) DevPhase = $"approach clear {h:F2} m vUp {vUp:F2} contact {(anyWheel ? 1 : 0)}{(anyHull ? 1 : 0)}";
                     if (float.IsFinite(h) && h > 0.6f) sink = MathF.Min(8f, DevSink + 2f * (h - 0.5f));
                 }
                 Vector3 vh = fwd - up * sink;
@@ -295,6 +334,10 @@ public static class WheelShockDev
         _fn.Clear(); _ft.Clear(); _p.Clear(); _vUp.Clear(); _jcid.Clear(); _feet.Clear();
         _g = Vector3.Zero; _gN = 0; _hasPrev = false; _lastClear = float.NaN; _fAeroPrev = Vector3.Zero; _lMax = _wMax = _aeroMax = _windMax = 0f; DevImpact = "running";
         _aero = _grid.TryGet<AeroGridComponent>();
+        _deck = null;
+        if (DevApproach && !string.IsNullOrEmpty(DevDeck))
+            foreach (var e in _grid.GetSession().GetEntitiesOfType<CubeGridComponent>())
+                if (string.Equals(Name(e), DevDeck, StringComparison.OrdinalIgnoreCase)) { _deck = e; break; }
         if (_aero != null) _aero.DevNoAero = DevNoAero;
         (_integ0, _blocks0) = Integrity(_grid);
         var gd = _grid.Data;
@@ -307,9 +350,40 @@ public static class WheelShockDev
         Vector3 nose = Vector3.Transform(new Vector3(0, 0, DevNose >= 0 ? 1 : -1), wt.Orientation);
         Vector3 fwd = nose - up * Vector3.Dot(nose, up);
         fwd = fwd.LengthSquared() > 1e-4f ? Vector3.Normalize(fwd) * DevForward : Vector3.Zero;
+        if (DevApproach) Level(all, in wt, up);
         if (!DevApproach) Hold(ref rb, in mass, in wt, all, fwd + up * MathF.Sqrt(2f * gl * MathF.Max(0.05f, DevRise)));
         _phase = DevApproach ? 4 : 1; DevPhase = DevApproach ? "lift" : "rising";
-        DevResult = $"drop {_seen}: running ({Name(_grid)}, sink {DevSink} m/s, forward {DevForward} m/s)";
+        string where = "";
+        if (_deck != null) { var dwt = _deck.Data.GetWorldTransform(); var rel = Vector3D.Transform(wt.Position - dwt.Position, QuaternionD.Inverse((QuaternionD)dwt.Orientation)); where = $", at ({rel.X:F1}, {rel.Y:F1}, {rel.Z:F1}) m in the deck's frame, the deck's up . gravity's {Vector3.Dot(Vector3.Transform(Vector3.Up, dwt.Orientation), up):F3}"; }
+        DevResult = $"drop {_seen}: running ({Name(_grid)}, sink {DevSink} m/s, forward {DevForward} m/s{where})";
+    }
+
+    /// <summary>Midair: the rig turned level (its top along the gravity's up, its heading kept) about its origin - the grid and its
+    /// wheel bodies together, at rest. A rig spawned from the seated camera takes the camera's pitch (~8-11 deg); the harness's
+    /// gridlevel moved a fresh grid ~0.8 km to a stale place (2026-10-21), so the drop levels it itself.</summary>
+    static void Level(List<AeroWheelShockComponent> all, in WorldTransform wt, Vector3 up)
+    {
+        Vector3 f = Vector3.Transform(Vector3.Forward, wt.Orientation);
+        Vector3 h = f - up * Vector3.Dot(f, up);
+        if (h.LengthSquared() < 1e-6f) return;
+        var target = Quaternion.CreateFromForwardUp(Vector3.Normalize(h), up);
+        var turn = Quaternion.Normalize(target * Quaternion.Inverse(wt.Orientation));
+        if (MathF.Abs(turn.W) > 0.99999f) return;
+        Vector3D c = wt.Position;
+        void Move(Entity e)
+        {
+            var t = e.Data.GetWorldTransform();
+            Vector3D rel = t.Position - c;
+            e.Data.SetWorldTransform(new WorldTransform(c + Vector3D.Transform(rel, (QuaternionD)turn), Quaternion.Normalize(turn * t.Orientation)));
+            ref RigidBodyData rb = ref e.Data.TryGetWritePtr<RigidBodyData>();
+            if (!Unsafe.IsNullRef(in rb)) { rb.LinearVelocity = Vector3.Zero; rb.AngularVelocity = Vector3.Zero; }
+        }
+        Move(_grid);
+        foreach (var s in all)
+        {
+            var w = s.Module?.WheelEntity;
+            if (ReferenceEquals(s.Grid, _grid) && w != null && GridPhysics.Alive(w.Data)) Move(w);
+        }
     }
 
     /// <summary>The grid's velocity set, level (no spin), and its wheels' bodies at the grid's velocity at their centres.</summary>
@@ -349,7 +423,7 @@ public static class WheelShockDev
         _phase = 0; DevPhase = "idle";
         if (_aero != null) _aero.DevNoAero = false;   // (the air back on the rig: a drop's fixture only)
         DevImpact = why != null ? "aborted" : $"drop {_seen}: " + Ledger();
-        if (why != null) { DevResult = $"drop {_seen}: aborted - {why}"; return; }
+        if (why != null) { DevResult = $"drop {_seen}: aborted - {why} (clear {_lastClear:F2} m)"; return; }
         var (integ, blocks) = Integrity(_grid);
         var sb = new System.Text.StringBuilder();
         int bottomed = 0; float maxU = 0f;
