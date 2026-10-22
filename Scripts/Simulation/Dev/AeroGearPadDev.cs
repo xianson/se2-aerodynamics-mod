@@ -43,13 +43,21 @@ public partial class AeroGearComponent
         _traceLeft--;
         float x = _cm.CalculateSuspensionDistance(wheel);
         FootAttitude(out float tilt, out float spin);
-        int own = 0, other = 0; float j = 0f;
+        int own = 0, other = 0, feet = 0; float j = 0f; string what = "";
         if (wheel.Data.TryGet<ContactImpulseData>(out var cid))
-            foreach (var c in cid.ImpulsesFromLastFrame) { if (!(c.ImpulseMagnitude > 0f)) continue; if (c.OtherBody.Equals(grid.DEntity)) own++; else other++; j += c.ImpulseMagnitude; }
+            foreach (var c in cid.ImpulsesFromLastFrame)
+            {
+                if (!(c.ImpulseMagnitude > 0f)) continue;
+                j += c.ImpulseMagnitude;
+                if (c.OtherBody.Equals(grid.DEntity)) { own++; continue; }
+                bool foot = false;
+                lock (All) foreach (var g in All) { var w = g._cm?.WheelEntity; if (w != null && w.DEntity.Equals(c.OtherBody)) { foot = true; break; } }
+                if (foot) feet++; else { other++; if (what.Length == 0) what = c.OtherBody.ToString(); }
+            }
         Vector3 vw = Vector3.Zero, vg = Vector3.Zero;
         GridPhysics.TryGetVelocity(wheel.Data, out vw, out _); GridPhysics.TryGetVelocity(grid.Data, out vg, out _);
         Vector3 g = GridPhysics.GetGravityDirection(grid.Data); Vector3 up = g.LengthSquared() > 1e-4f ? -Vector3.Normalize(g) : Vector3.UnitY;
-        Log.Default?.Info($"[AERO-PADTRACE] {_key} {Variant.Name} t{PadTraceTicks - _traceLeft} x {x:F3} lim {_sliderLo:F2}..{_sliderHi:F2} tilt {tilt:F1} w {spin:F2} dv {(vw - vg).Length():F2} vUp {Vector3.Dot(vg, up):F2} contacts own {own} other {other} J {j:F0}");
+        Log.Default?.Info($"[AERO-PADTRACE] {_key} {Variant.Name} t{PadTraceTicks - _traceLeft} x {x:F3} lim {_sliderLo:F2}..{_sliderHi:F2} tilt {tilt:F1} w {spin:F2} dv {(vw - vg).Length():F2} vUp {Vector3.Dot(vg, up):F2} contacts own {own} feet {feet} other {other} {what} J {j:F0}");
     }
 
     void PadDevStep(Entity wheel)
