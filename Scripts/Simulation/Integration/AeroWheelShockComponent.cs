@@ -20,16 +20,19 @@ namespace AeroMod;
 /// scene, per Wheels.Shocks (WheelShockSettings.Mode). The vanilla wheel stays the vanilla wheel - its rolling, steering, brakes,
 /// parking, power and limits untouched; what this adds:
 ///  - THE AIRSHOCK (WheelAirshock: armed from the wheel's own sink rate and its tyre's height over the ground - the planet's
-///    surface, GamePlanetHeight, and the grid's ground ray, the nearer): the wheel constraint's damping factor to full
-///    (ShockDamping) before the touch and, airshock only, its strength to the cap (GearStiffness.MaxStrength, an effective tau
-///    of 1.67); the player's values back once settled;
+///    surface, GamePlanetHeight, and the grid's ground ray, the nearer): airshock only, the wheel constraint's damping factor to
+///    full (ShockDamping) before the touch and its strength to the cap (GearStiffness.MaxStrength, an effective tau of 1.67); the
+///    player's values back once settled. (With the oleo the arming only times the readouts: the constraint's row stays off - its
+///    full damping cancelled the strut's push, 2026-10-21);
 ///  - THE OLEO (Airshock + oleo; WheelOleo / WheelRating: rated by the wheel's size, stroke and mass, never the ship): an absolute
 ///    spring-damper along the suspension axis, from the compression (the corner module's own CalculateSuspensionDistance, fresh)
 ///    and its rate (the wheel body's velocity against the ship's at the mount - read now, not a step-old difference). Its force is
 ///    a PAIR OF IMPULSES - the ship +F along the axis at the suspension's mount, the wheel -F at its centre - equal and opposite, a
 ///    modelled strut (no force from nowhere: on the ground the wheel's contact carries it, as it carries the constraint's). While
-///    it carries, the wheel constraint's own soft spring is the player's x WheelShockSettings.ConstraintSpringShare (0.25): low,
-///    so the two springs do not fight; the constraint keeps its hard limits (an overload bottoms there) and the wheel's return.
+///    it carries, the wheel constraint's own soft spring and damping are the player's x WheelShockSettings.ConstraintSpringShare
+///    (0: off - its damping row cancelled up to 45 % of the strut's push, measured in game 2026-10-21); the constraint keeps its
+///    hard limits (an overload bottoms there), its lower one moved down by the strut's extra stroke (WheelRating.Extra,
+///    Wheels.OleoExtension; the game's wheels only - the wheel hangs that much lower) and put back when the shocks let go.
 ///    Why impulses and not the engine's spring-damper motor (ISpringDamperConstraintMotor, N/m): a motor needs a constraint of its
 ///    own between the wheel and the ship beside the wheel constraint (a prismatic one would lock the wheel's roll and steering, a
 ///    six-degree one is a new body pair the game's wheel code does not know), it is linear (no gas stiffening, no asymmetric
@@ -170,13 +173,19 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
 
         // ── the constraint's factors (written only when they change) ──
         float baseS = PlayerStrength(), baseD = Math.Max(0f, _cm.SuspensionDamping);
-        float wantS, wantD = armed ? WheelAirshock.ShockDamping : baseD;
-        if (mode == WheelShockSettings.AirshockOnly) wantS = armed ? GearStiffness.MaxStrength : baseS;
-        else wantS = GearStiffness.Cap(baseS * Math.Clamp(WheelShockSettings.ConstraintSpringShare, 0f, 1f));
-        if (float.IsFinite(WheelShockDev.DevConstraintS)) wantS = GearStiffness.Cap(WheelShockDev.DevConstraintS);   // (dev: the diagnosis)
-        if (float.IsFinite(WheelShockDev.DevConstraintD)) wantD = Math.Max(0f, WheelShockDev.DevConstraintD);
+        float wantS, wantD;
+        if (mode == WheelShockSettings.AirshockOnly) { wantS = armed ? GearStiffness.MaxStrength : baseS; wantD = armed ? WheelAirshock.ShockDamping : baseD; }
+        else
+        {
+            // (the oleo carries: the constraint's own spring and damping at the share - 0 by default. Its damping row cancelled up to
+            //  45 % of the strut's push in game: WheelShockSettings' summary. The airshock's full damping is not written here.)
+            float share = Math.Clamp(WheelShockSettings.ConstraintSpringShare, 0f, 1f);
+            wantS = GearStiffness.Cap(baseS * share); wantD = baseD * share;
+        }
         Write(wantS, wantD);
-        if (_wc != null && _wc.MinSuspensionLimit != WheelShockDev.DevMinLimit) _wc.MinSuspensionLimit = WheelShockDev.DevMinLimit;   // (dev: 0 - the game's)
+        // (the oleo's extra stroke: the constraint's lower limit at -Extra while the oleo owns the wheel - it hangs that much lower;
+        //  the gear's own wheels keep theirs, Extra 0)
+        if (mode == WheelShockSettings.AirshockOleo) Limit(-_rating.Extra); else if (_limitOwned) Limit(_minLimit0);
 
         // ── the oleo ──
         if (mode != WheelShockSettings.AirshockOleo) { _lastF = 0f; Grounded = false; return; }
@@ -184,7 +193,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         float mAt = MassAt(in srb, in smass, in gwt, mount, axis);
         Grounded = contact;
         float m = contact ? WheelOleo.GroundMass(mAt, smass.Mass, GridGrounded) : WheelOleo.AirMass(mAt, wmass.Mass);
-        float vStar = contact ? v - dt * Vector3.Dot(g, axis) : v;
+        float vStar = contact ? v - WheelOleo.SubstepGravity * dt * Vector3.Dot(g, axis) : v;
         float f = WheelOleo.Step(_rating, x, v, vStar, m, dt, ref _lastF, out float raw);
         F = f; FRaw = raw;
         if (f > 0f)
@@ -217,6 +226,15 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         return GearStiffness.Cap(s);
     }
 
+    /// <summary>The constraint's lower suspension limit (m; written only when it changes - the game's own is _minLimit0).</summary>
+    void Limit(float min)
+    {
+        if (_wc == null || _wc.MinSuspensionLimit == min) return;
+        _wc.MinSuspensionLimit = min;
+        _limitOwned = min != _minLimit0;
+    }
+    float _minLimit0; bool _limitOwned;
+
     void Write(float s, float d)
     {
         if (_wc == null) return;
@@ -231,6 +249,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     {
         PendJ = 0f; _lastF = 0f; Grounded = false;
         Disarm();
+        if (_limitOwned) Limit(_minLimit0);
         if (!_owned) return;
         _owned = false;
         if (_gear != null) { _gear.ShockOwned = false; return; }   // (the gear writes its own: stowing it saves and restores them)
@@ -293,21 +312,25 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         float stroke = _susp.LineOfTravel.Length;
         if (!(stroke > 0.01f)) stroke = wc.MaxSuspensionLimit;
         float wm = wheel.Data.TryGet<RigidBodyMassProperties>(out var wmp) ? wmp.Mass : 0f;
-        _rating = WheelRating.Of(_cm.WheelRadius, stroke, wm, WheelShockSettings.OleoRating);
+        _rating = WheelRating.Of(_cm.WheelRadius, stroke, wm, WheelShockSettings.OleoRating, Extension());
+        _minLimit0 = wc.MinSuspensionLimit; _ratedExt = WheelShockSettings.Extension;
         if (!_rating.Valid) { Faults++; LastFault = "unrated wheel: " + _rating; return false; }
         _wc = wc; _ratedScale = WheelShockSettings.OleoRating;
         Interlocked.Increment(ref Resolved);
         if (Resolved <= 8) Log.Default?.Info($"[AERO-SHOCK] {_rating}; limits {wc.MinSuspensionLimit:F2}..{wc.MaxSuspensionLimit:F2}");
         return true;
     }
-    float _ratedScale;
+    float _ratedScale, _ratedExt;
+    /// <summary>The strut's extra stroke for this wheel (a share of its travel): Wheels.OleoExtension on the game's wheels; 0 on the
+    /// mod's gears (their limits are the gear's: its retraction, its pad foot).</summary>
+    float Extension() => _gear != null ? 0f : WheelShockSettings.Extension;
 
-    /// <summary>A changed Wheels.OleoRating re-rates the wheel (the apply job, once a second).</summary>
+    /// <summary>A changed Wheels.OleoRating / Wheels.OleoExtension re-rates the wheel (the apply job, once a second).</summary>
     internal void Rerate()
     {
-        if (_wc == null || _ratedScale == WheelShockSettings.OleoRating) return;
-        _rating = WheelRating.Of(_cm.WheelRadius, _rating.Stroke, _rating.WheelMass, WheelShockSettings.OleoRating);
-        _ratedScale = WheelShockSettings.OleoRating;
+        if (_wc == null || (_ratedScale == WheelShockSettings.OleoRating && _ratedExt == WheelShockSettings.Extension)) return;
+        _rating = WheelRating.Of(_cm.WheelRadius, _rating.Stroke, _rating.WheelMass, WheelShockSettings.OleoRating, Extension());
+        _ratedScale = WheelShockSettings.OleoRating; _ratedExt = WheelShockSettings.Extension;
     }
 
     // ── the apply job (one a tick, single threaded: AeroGridComponent.WheelShockApplyJob) ──

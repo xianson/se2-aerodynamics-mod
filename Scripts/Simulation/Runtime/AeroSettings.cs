@@ -355,7 +355,7 @@ public static partial class AeroSettings
             "Every wheel suspension on a simulated ship (the game's wheels and the mod's gears): the AIRSHOCK firms the suspension just before a touchdown it sees coming (sink rate and height), the OLEO adds a strut rated for the wheel's size (a gas spring that stiffens near the end of its stroke and a damper) so a ship at its wheels' rating lands without bottoming or bouncing. A stopgap until the game's own wheels take impacts better. Off: the game's own suspension.")
             .Ui("Wheel shocks", GWheels, Basic, choices: new[] { "Off", "Airshock only", "Airshock + oleo" });
         F("Wheels.OleoRating", "world", 0.5, 3, false, () => WheelShockSettings.OleoRating, v => WheelShockSettings.OleoRating = (float)v,
-            "Every wheel's rated load, times this (1: a 1 m wheel carries 15 t, 1.5 m 34 t, 2.5 m 94 t - with the diameter squared - at 2 g, at 60 % of its stroke). Higher: stiffer struts for heavier ships.")
+            "Every wheel's rated load, times this (1: a 1 m wheel carries 15 t, 1.5 m 34 t, 2.5 m 94 t - with the diameter squared - at 2 g, at 58 % of its stroke). Higher: stiffer struts for heavier ships.")
             .Ui("Oleo strut rating", GWheels, Basic, "×", 0.05);
         F("Wheels.CompressionDamping", "world", 0.1, 3, false, () => WheelShockSettings.CompressionDamping, v => WheelShockSettings.CompressionDamping = (float)v,
             "The oleo's damping while it compresses, as a share of critical damping for its rated load (higher: firmer touchdowns, less stroke used).")
@@ -367,8 +367,11 @@ public static partial class AeroSettings
             "How fast the oleo's force may rise, in rated loads a second (the hit spread over physics steps). 0: no cap.")
             .Ui("Oleo force rise limit", GWheels, Advanced, "loads/s", 10);
         F("Wheels.ConstraintSpring", "world", 0, 1, false, () => WheelShockSettings.ConstraintSpringShare, v => WheelShockSettings.ConstraintSpringShare = (float)v,
-            "With the oleo on, the game's own suspension spring is the terminal's stiffness times this (low: the two springs do not fight; the game's keeps its limits and the wheel's return).")
+            "With the oleo on, the game's own suspension spring and damping are the terminal's times this (0: off - the game's damping took a share of the oleo's push; it keeps its limits).")
             .Ui("Game spring share with the oleo", GWheels, Advanced, "×", 0.05);
+        F("Wheels.OleoExtension", "world", 0, 1, false, () => WheelShockSettings.Extension, v => WheelShockSettings.Extension = (float)v,
+            "The oleo's extra stroke below the suspension's own travel, a share of it (0.4: a 1 m wheel hangs 0.1 m lower with the oleo on and takes a touchdown over 1.4 x its stroke). The game's wheels; the mod's gears keep their own.")
+            .Ui("Oleo extra stroke", GWheels, Advanced, "× travel", 0.05);
 
         // ── test spawn (2026-10-20: Ctrl+Shift+I an enemy missile, Ctrl+Shift+O an enemy bogey - Launch/EnemySpawn.cs; the server reads these) ──
         I("Spawn.Allowed", "world", 0, 2, false, () => EnemySpawn.Allowed, v => EnemySpawn.Allowed = (int)v,

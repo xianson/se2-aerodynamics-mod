@@ -57,9 +57,11 @@ public static class WheelShockDev
     /// impulse against the deck (N s, along up, the previous step's), armed, the constraint's factors written.</summary>
     public static bool DevTrace;
     public static int DevTraceTicks = 100;
-    /// <summary>Diagnosis overrides (NaN / 0: none): the wheel constraint's strength / damping factor written while the shocks own it,
-    /// and its lower suspension limit (negative: the wheel hangs lower).</summary>
-    public static float DevConstraintS = float.NaN, DevConstraintD = float.NaN, DevMinLimit = 0f;
+    /// <summary>MOTION BY POSITIONS (2026-10-21): the game steps 4 substeps a tick and the strut's impulse lands at the tick's start, so
+    /// the velocities read between ticks are not the motion (at rest under the strut the ship reads -0.11 m/s and, after the
+    /// impulse, +0.19 - it does not move): the rebound, the settle and the wheels' compression rates here are from positions.</summary>
+    static Vector3D _posPrev; static bool _hasPos;
+    static readonly Dictionary<AeroWheelShockComponent, float> _xPrev = new();
     static readonly List<string> _trace = new();
     static int _traceRec;
     public static int DevDrop;
@@ -206,8 +208,10 @@ public static class WheelShockDev
         float vUp = Vector3.Dot(rb.LinearVelocity, up);
         _ticks++;
         float dt = AeroPhysics.Dt;
+        float vPos = _hasPos ? (float)Vector3D.Dot(wt.Position - _posPrev, (Vector3D)up) / dt : vUp;   // (the motion: positions)
+        _posPrev = wt.Position; _hasPos = true;
         bool hasP = Momentum(all, out Vector3 P, out float M, out Vector3 Lw, out float wNow);
-        if (DevTrace && (_phase == 2 || _phase == 3)) TraceTick(all, up, vUp);
+        if (DevTrace && (_phase == 2 || _phase == 3)) TraceTick(all, up, vUp, vPos);
         if (_aero != null && _phase == 3) { _aeroMax = MathF.Max(_aeroMax, _aero.LastAppliedForceW.Length()); _windMax = MathF.Max(_windMax, _aero.LastWindUndone.Length()); }
         switch (_phase)
         {
@@ -263,17 +267,18 @@ public static class WheelShockDev
                     _feet[gr] = (e.tilt0, MathF.Max(e.tilt, MathF.Abs(tl - e.tilt0)), Vector3.Max(e.rate, Vector3.Abs(rr)));
                 }
                 float t = (_ticks - _touchTick) * AeroPhysics.Dt;
-                _rebound = MathF.Max(_rebound, vUp); _maxSink = MathF.Max(_maxSink, -vUp);
+                if (_ticks > _touchTick + 1) { _rebound = MathF.Max(_rebound, vPos); _maxSink = MathF.Max(_maxSink, -vPos); }
                 if (anyHull) _hull++;
                 if (!anyWheel) { _off++; if (_off == 3) _bounces++; } else _off = 0;
-                bool still = MathF.Abs(vUp) < 0.1f && anyWheel;
+                bool still = MathF.Abs(vPos) < 0.1f && anyWheel;
                 foreach (var s in all)
                 {
                     if (!ReferenceEquals(s.Grid, _grid) || !s.Rating.Valid) continue;
                     float u = s.X / s.Rating.Stroke;
                     _wheels.TryGetValue(s, out var w);
                     _wheels[s] = (MathF.Max(w.maxU, u), w.bottom + (u >= 0.98f ? 1 : 0));
-                    if (MathF.Abs(s.V) >= 0.05f) still = false;
+                    if (!_xPrev.TryGetValue(s, out float xp) || MathF.Abs(s.X - xp) >= 0.05f * dt) still = false;
+                    _xPrev[s] = s.X;
                     _peakF = MathF.Max(_peakF, s.F / s.Rating.RatedWeight);
                 }
                 _calm = still ? _calm + 1 : 0;
@@ -285,13 +290,13 @@ public static class WheelShockDev
         if (hasP) { _pPrev = P; _M = M; _hasPrev = true; _fAeroPrev = _aero != null ? _aero.LastAppliedForceW : Vector3.Zero; }
     }
 
-    static void TraceTick(List<AeroWheelShockComponent> all, Vector3 up, float vUp)
+    static void TraceTick(List<AeroWheelShockComponent> all, Vector3 up, float vUp, float vPos)
     {
         if (_phase == 2) { if (_trace.Count >= 8) _trace.RemoveAt(0); }
         else if (_traceRec++ >= DevTraceTicks) return;
         var sb = new System.Text.StringBuilder(260);
         sb.Append(_phase == 2 ? "a " : "r ").Append(_phase == 3 ? _ticks - _touchTick : _ticks);
-        sb.Append(($" vu {vUp:F3} hull {Cid(_grid.Data, all, up):F0}"));
+        sb.Append(($" vu {vUp:F3} vp {vPos:F3} hull {Cid(_grid.Data, all, up):F0}"));
         foreach (var s in all)
         {
             if (!ReferenceEquals(s.Grid, _grid) || !s.Rating.Valid) continue;
@@ -362,7 +367,7 @@ public static class WheelShockDev
         if (_grid == null) { DevResult = $"drop {_seen}: no grid '{want}' with shocked wheels"; DevPhase = "idle"; _phase = 0; return; }
         _wheels.Clear(); _ticks = 0; _touchTick = 0; _calm = 0; _off = 0; _bounces = 0; _hull = 0;
         _touchV = 0f; _rebound = 0f; _settle = float.NaN; _peakF = 0f; _maxSink = 0f;
-        _trace.Clear(); _traceRec = 0;
+        _trace.Clear(); _traceRec = 0; _hasPos = false; _xPrev.Clear();
         _fn.Clear(); _ft.Clear(); _p.Clear(); _vUp.Clear(); _jcid.Clear(); _feet.Clear();
         _g = Vector3.Zero; _gN = 0; _hasPrev = false; _lastClear = float.NaN; _fAeroPrev = Vector3.Zero; _lMax = _wMax = _aeroMax = _windMax = 0f; DevImpact = "running";
         _aero = _grid.TryGet<AeroGridComponent>();
@@ -470,7 +475,7 @@ public static class WheelShockDev
         if (DevTrace)
         {
             float rw = 0f; foreach (var k in _wheels.Keys) { rw = k.Rating.RatedWeight; break; }
-            Log.Default?.Info($"[AERO-SHOCK-TRACE] d{_seen} mode {WheelShockSettings.Mode} sink {DevSink} M {_M:F0} kg rated {rw:F0} N S {DevConstraintS} D {DevConstraintD} min {DevMinLimit} | cols: x v F/W Fraw/W contact Wv Sv Jc armed S D");
+            Log.Default?.Info($"[AERO-SHOCK-TRACE] d{_seen} mode {WheelShockSettings.Mode} sink {DevSink} M {_M:F0} kg rated {rw:F0} N spring share {WheelShockSettings.ConstraintSpringShare} extension {WheelShockSettings.Extension} damping {WheelShockSettings.CompressionDamping}/{WheelShockSettings.ReboundDamping} | cols: x v F/W Fraw/W contact Wv Sv Jc armed S D");
             foreach (var line in _trace) Log.Default?.Info($"[AERO-SHOCK-TRACE] d{_seen} {line}");
         }
     }

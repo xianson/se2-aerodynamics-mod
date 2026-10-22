@@ -22,11 +22,13 @@ was flown in game for this release. The commit hashes are on the integration bra
 - **Airshock:** firm damping just before a touchdown it sees coming (the wheel's sink rate and its height over the planet's
   surface or the ground ray); the player's settings back once settled. It was the mod's gears only.
 - **Oleo:** a gas spring that stiffens near the end of its stroke and a damper (firmer extending), rated by the wheel's size,
-  never the ship: 1 m 15 t, 1.5 m 33.75 t, 2.5 m 93.75 t (diameter squared), at 2 g, at 60 % of the stroke; its force rises at
+  never the ship: 1 m 15 t, 1.5 m 33.75 t, 2.5 m 93.75 t (diameter squared), at 2 g, at 58 % of the stroke; its force rises at
   most 180 rated loads a second. Applied as equal and opposite impulses on the ship (at the mount) and the wheel; the game's own
-  spring drops to a quarter while it carries. Overloads still bottom.
+  suspension spring and damping are off while it carries (its damping ate up to 45 % of the strut's push). The game's wheels
+  hang 40 % of their travel lower with it on (0.1 m on a 1 m wheel): the extra stroke for the touchdown. Overloads still bottom.
 - Settings (world): `Wheels.Shocks` (Off / Airshock only / Airshock + oleo, default the last), `Wheels.OleoRating` (0.5-3);
-  advanced `Wheels.CompressionDamping`, `Wheels.ReboundDamping`, `Wheels.ForceRateCap`, `Wheels.ConstraintSpring`.
+  advanced `Wheels.CompressionDamping`, `Wheels.ReboundDamping`, `Wheels.ForceRateCap`, `Wheels.ConstraintSpring`,
+  `Wheels.OleoExtension`.
 - Offline (`Tests/WheelShockTests`, a time-stepped touchdown): at the rated load, 1 / 3 / 5 m/s, every vanilla size stays in
   its stroke (1 m wheel 60 / 73 / 91 %), rebound under 0.5 m/s, settled in 0.2-0.6 s; vanilla and airshock-only bottom in every
   case. Not flown in game yet (`tools/ingame/wheelshock_test.sh`: heavy armour bricks on four 1 m wheels - 27 / 93 / 204 % of
