@@ -50,7 +50,7 @@ all_of() { local a=(); while [ $# -gt 0 ]; do if [ "$1" = "--" ]; then "${a[@]}"
 release() {
     [ -n "$RELEASED" ] && return; RELEASED=1
     alive || { echo "== release: no game running"; return; }
-    local r=("aeroset AeroGearComponent.PadRecord false" "aeroset AeroGearComponent.PadHop 0" "aeroset AeroGearComponent.PadPush 0"
+    local r=("aeroset AeroGearComponent.PadRecord false" "aeroset AeroGearComponent.PadHop 0" "aeroset AeroGearComponent.PadPush 0" "aeroset AeroGearComponent.PadTraceTicks 0"
              "aeroset AeroGearComponent.DevCommand 1" "aeroset AeroGearComponent.DevCommand 0"
              "aeroset WheelShockDev.DevApproach false" "aeroset WheelShockDev.DevNoAero false" "aeroset WheelShockSettings.Mode 2"
              "aeroset WheelShockDev.DevForward 0" "aeroset WheelShockDev.DevSink 3" "aeroset WheelShockDev.DevRecordSeconds 4"

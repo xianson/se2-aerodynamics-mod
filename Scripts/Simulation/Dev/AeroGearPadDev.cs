@@ -29,11 +29,35 @@ public partial class AeroGearComponent
 
     float _rTilt, _rSpin, _rComp, _rTouch = float.NaN, _rRebound; bool _rBottom, _rAir; int _rLost0;
 
+    /// <summary>Harness: per-tick trace of every pad foot for PadTraceTicks ticks after its slider is made (or PadTraceNow bumped) -
+    /// "[AERO-PADTRACE]": the compression, its rate, the tilt, the foot's speed against the ship, the ship's vertical speed, the foot's
+    /// contacts this step (own grid / other) and their summed impulse.</summary>
+    public static int PadTraceTicks = 0, PadTraceNow;
+    int _traceLeft, _traceSeen, _traceMade;
+
+    void PadTrace(Entity wheel, Entity grid)
+    {
+        if (PadTraceTicks <= 0) return;
+        if (_traceSeen != PadTraceNow || _traceMade != _sliderLife.Created) { _traceSeen = PadTraceNow; _traceMade = _sliderLife.Created; _traceLeft = PadTraceTicks; }
+        if (_traceLeft <= 0 || wheel == null || !GridPhysics.Alive(wheel.Data)) return;
+        _traceLeft--;
+        float x = _cm.CalculateSuspensionDistance(wheel);
+        FootAttitude(out float tilt, out float spin);
+        int own = 0, other = 0; float j = 0f;
+        if (wheel.Data.TryGet<ContactImpulseData>(out var cid))
+            foreach (var c in cid.ImpulsesFromLastFrame) { if (!(c.ImpulseMagnitude > 0f)) continue; if (c.OtherBody.Equals(grid.DEntity)) own++; else other++; j += c.ImpulseMagnitude; }
+        Vector3 vw = Vector3.Zero, vg = Vector3.Zero;
+        GridPhysics.TryGetVelocity(wheel.Data, out vw, out _); GridPhysics.TryGetVelocity(grid.Data, out vg, out _);
+        Vector3 g = GridPhysics.GetGravityDirection(grid.Data); Vector3 up = g.LengthSquared() > 1e-4f ? -Vector3.Normalize(g) : Vector3.UnitY;
+        Log.Default?.Info($"[AERO-PADTRACE] {_key} {Variant.Name} t{PadTraceTicks - _traceLeft} x {x:F3} lim {_sliderLo:F2}..{_sliderHi:F2} tilt {tilt:F1} w {spin:F2} dv {(vw - vg).Length():F2} vUp {Vector3.Dot(vg, up):F2} contacts own {own} other {other} J {j:F0}");
+    }
+
     void PadDevStep(Entity wheel)
     {
         if (Variant?.Foot == null) return;
         var grid = Entity.GetTopLevelParent();
         if (grid == null) return;
+        PadTrace(wheel, grid);
         if (PadHop != 0f || PadPush != 0f)
         {
             float up = PadHop, fwd = PadPush; PadHop = 0f; PadPush = 0f;

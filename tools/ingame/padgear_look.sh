@@ -22,7 +22,7 @@ fi
 L=$(LOGF); MARK=0; [ -n "${NOLAUNCH:-}" ] && MARK=$(wc -l < "$L")
 since() { tail -n +"$((MARK + 1))" "$L"; }
 poll 60 gridsup || { record "the harness answers" "findgrids unanswered"; exit 1; }
-set_ AeroGearComponent.PadSliderKind "$KIND"; set_ AeroGearComponent.PadRecord true
+set_ AeroGearComponent.PadSliderKind "$KIND"; set_ AeroGearComponent.PadRecord true; set_ AeroGearComponent.PadTraceTicks "${TRACE:-0}"
 record "loaded ($(el) s), slider kind $(val AeroGearComponent.PadSliderKind)" ""
 source "$MOD/tools/ingame/midair.sh"
 ask "encon off" >/dev/null
@@ -30,6 +30,7 @@ midair_setup || exit 1
 games() { gear | tr '|' '\n' | grep "PAD " | sed -n 's/.* game \(-\?[0-9.]*\)).*/\1/p'; }
 shots() {   # shots GRID LABEL DIST_KM
     local b
+    [ "${SHOTS:-1}" = 1 ] || return 0
     for b in 0 90 180 270; do ask "cam grid $1 $3 $b 10" >/dev/null; sleep 1.2; mshot "$2 bearing $b"; done
     ask "cam grid $1 $3 45 -25" >/dev/null; sleep 1.2; mshot "$2 from below"
     ask "cam off" >/dev/null
@@ -46,6 +47,8 @@ shots "$PR" PADRIG 0.02
 case $LOOK_RIG in PADR050) pl="7 12 -10" ;; PADR100) pl="8 14 -12" ;; PADR150) pl="9 18 -14" ;; *) pl="12 22 -14" ;; esac
 rig_del "$PR"
 rig "$LOOK_RIG" "$LOOK_RIG.txt" $pl || exit 1
+hold 6; note "$LOOK_RIG after 6 s: $("$ORB" "findgrids $LOOK_RIG" | grep -a "> findgrids" | tail -1 | cut -c1-200) | compressions $(games | tr '
+' ' ')"
 dropm "$LOOK_RIG" 2 0 1 3 || true
 note "$LOOK_RIG drop: $(echo "$R" | cut -c1-400)"
 hold 2; set_ AeroGearComponent.PadReset 2; hold 3
