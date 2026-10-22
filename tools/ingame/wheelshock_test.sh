@@ -22,7 +22,8 @@
 #                                                   'Orbital Test...' world (it spawns test grids into the world it loads).
 #        tools/ingame/wheelshock_test.sh --release  only the dev overrides back in the running game (after a killed run)
 # env: HARNESS (the Orbital Mod's tools/harness), DEADLINE s (470), ARGS (the launch args file), NOLAUNCH=1 (the game already
-#      running), PART (brick | others | all), SINKS ("1 3 5"), WHEEL (build_wheelbrick.py's args), MIDAIR_UP (2000 m)
+#      running), PART (brick | others | all), SINKS ("1 3 5"), FWDS ("0 45"), FLIP0 (-1: the first forward run's sign), WHEEL
+#      (build_wheelbrick.py's args), MIDAIR_UP (4000 m)
 # needs: THIS build deployed to the game's mod folder.
 #
 #  A  midair: the deck spawned 2 km up, the player seated on it.
@@ -130,16 +131,16 @@ secs_for() { case "$1" in 0) echo 3 ;; 10|-10) echo 3 ;; *) echo 1.2 ;; esac; }
 
 echo "== A midair ($(el) s)"
 midair_setup || exit 1
-flip=1
+flip=${FLIP0:--1}   # (the first forward run toward the deck's far end from where the rig hovers - in game it spawns ~65 m toward one end)
 if [ "$PART" != others ]; then
     echo "== B WSBRICK ($(el) s)"
     if rig WSBRICK WSBRICK.txt 2; then
-        for fwd in 0 45; do for mode in 0 2; do for v in $SINKS; do
+        for fwd in ${FWDS:-0 45}; do for mode in 0 2; do for v in $SINKS; do
             f=$fwd; [ "$fwd" != 0 ] && { f=$((fwd * flip)); flip=$((-flip)); }
             drop WSBRICK "$mode" "$f" "$v" "$(secs_for "$fwd")" "$([ "$v" = 5 ] && echo report || echo judge)"
             [ "$DROPN" = 2 ] && mshot "WSBRICK after a 3 m/s drop, Shocks off"
         done; done; done
-        for fwd in 0 45; do for v in $SINKS; do
+        for fwd in ${FWDS:-0 45}; do for v in $SINKS; do
             off=""; on=""
             for k in "${!BOT[@]}"; do case "$k" in WSBRICK/0/$fwd/$v|WSBRICK/0/-$fwd/$v) off=${BOT[$k]} ;; WSBRICK/2/$fwd/$v|WSBRICK/2/-$fwd/$v) on=${BOT[$k]} ;; esac; done
             [ -n "$off" ] && [ -n "$on" ] && expect "WSBRICK fwd $fwd, $v m/s - the oleo bottoms no more wheels than vanilla ($on vs $off)" "on $on off $off" le "$on" "$off"
