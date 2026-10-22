@@ -44,7 +44,7 @@
             "Kind": "Update",
             "Index": 3,
             "Value": {
-              "Definition": "ae200001-ae00-9e04-0015-000000000001"
+              "Definition": "ae200001-ae00-9e21-0033-000000000001"
             }
           },
           {
@@ -73,7 +73,7 @@
             "Kind": "Insert",
             "Index": 10,
             "Value": {
-              "Definition": "ae200001-ae00-9e04-0017-000000000001",
+              "Definition": "ae200001-ae00-9e21-0034-000000000001",
               "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsComponent"
             }
           }

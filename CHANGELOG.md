@@ -5,10 +5,12 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 ## Unreleased - pad-foot landing gear
 
-- **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. Each foot is a vanilla
-  landing-gear model on the retractable gear's suspension: a box underfoot, held level by a constraint, sliding not rolling.
-  Placeholder meshes (vanilla, reused as is; the 1.5 m scaled).
-- Offline: `Tests/GearTests` (the lock's life, every variant's definitions, collider fit, sag). Not flown in game yet.
+- **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. The suspension runs on the
+  vanilla wheel of the housing's size, never drawn, its bottom on the foot's sole; the foot (a vanilla landing-gear model, a visual
+  subpart) is hinged at the ankle pin and turned to the ground the wheel touches (its contact normal), and folds flat into the bay
+  with the leg. Placeholder meshes (vanilla, reused as is; the 1.5 m scaled). (Replaces the earlier wheel-as-foot with a box
+  collider and an orientation lock, which tumbled under load.)
+- Offline: `Tests/GearTests` (the ankle's IK, every variant's definitions and geometry, sag). Not flown in game yet.
 
 ## Unreleased - landing gear stiffness
 

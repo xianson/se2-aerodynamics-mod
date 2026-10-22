@@ -259,13 +259,7 @@ public static class WheelShockDev
                     _fn.Add(fn); _ft.Add(f - up * fn); _p.Add(P); _vUp.Add(Vector3.Dot(P, up) / M); _jcid.Add(ContactUp(all, up));
                     _lMax = MathF.Max(_lMax, Lw.Length()); _wMax = MathF.Max(_wMax, wNow); _M = M;
                 }
-                foreach (var s in all)
-                {
-                    var gr = s.Gear;
-                    if (!ReferenceEquals(s.Grid, _grid) || gr == null || !gr.FootAttitude(out float tl, out _) || !gr.FootRates(out var rr)) continue;
-                    (float tilt0, float tilt, Vector3 rate) e = _feet.TryGetValue(gr, out var fe) ? fe : (tl, 0f, Vector3.Zero);
-                    _feet[gr] = (e.tilt0, MathF.Max(e.tilt, MathF.Abs(tl - e.tilt0)), Vector3.Max(e.rate, Vector3.Abs(rr)));
-                }
+                // (the pad feet: client subparts since 2026-10-21 - their ankle is read on the client: AeroGearAnimComponent.LastAnkleDeg)
                 float t = (_ticks - _touchTick) * AeroPhysics.Dt;
                 if (_ticks > _touchTick + 1) { _rebound = MathF.Max(_rebound, vPos); _maxSink = MathF.Max(_maxSink, -vPos); }
                 if (anyHull) _hull++;

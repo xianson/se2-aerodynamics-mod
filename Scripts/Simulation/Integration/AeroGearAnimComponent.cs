@@ -22,7 +22,7 @@ namespace AeroMod;
 /// </summary>
 public partial class AeroGearAnimComponent : Component, IInSceneListener
 {
-    enum Role { Leg, Rod, ActuatorCylinder, ActuatorRod, Door }
+    enum Role { Leg, Rod, ActuatorCylinder, ActuatorRod, Door, Foot }
 
     sealed class Part { public Entity Entity; public RelativeTransform Rest; public Role Role; public int Door; }
 
@@ -32,6 +32,10 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
     int _childCount = -1;
     internal Vector3I _key; internal bool _hasKey;
     internal ThrustTorque.Published _match; internal long _recheckAt;
+    // the pad foot's ankle (rad, FootIk) and the frame clock it follows on
+    internal float _ankle; long _ankleTick;
+    /// <summary>Harness: the last foot's ankle angle (deg) and its target (deg).</summary>
+    public static float LastAnkleDeg, LastAnkleWantDeg;
 
     void IInSceneListener.OnAddedToScene() { }
     void IInSceneListener.OnBeforeRemovedFromScene() { _parts.Clear(); _childCount = -1; }
@@ -59,8 +63,9 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
         var grid = c.Entity?.GetTopLevelParent();
         if (grid == null) return;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (!ThrustTorque.GearState(grid, c._key, ref c._match, ref c._recheckAt, now, out float progress, out float compression))
+        if (!ThrustTorque.GearState(grid, c._key, ref c._match, ref c._recheckAt, now, out float progress, out float compression, out Vector3 groundGrid))
             progress = 1f;   // (no state yet: as built - down)
+        float dt = c._ankleTick == 0 ? 0f : (float)((now - c._ankleTick) / (double)System.Diagnostics.Stopwatch.Frequency); c._ankleTick = now;
         float fold = GearSequence.Fold(progress), doors = GearSequence.DoorsAt(progress, true);
         foreach (var p in c._parts)
         {
@@ -81,6 +86,21 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
                 var act = layout.Actuator(cylRest, rodRest, fold);
                 pose = p.Role == Role.ActuatorCylinder ? act.cylinder : act.rod;
             }
+            if (p.Role == Role.Foot)
+            {
+                // on the rod (as the rod's own parts), then turned about its ankle (its own origin) by the IK angle
+                pose = layout.RakedSlide ? layout.RakedRod(rest, compression) : layout.OnRod(rest, fold, compression);
+                var q = layout.RakedSlide ? layout.RakedTurn(compression) : layout.LegTurn(fold);
+                Vector3 axis = Vector3.Transform(layout.HingeAxis, q);
+                Vector3 up = Vector3.Transform(Vector3.Transform(Vector3.UnitY, rest.Orientation), q);
+                Vector3 n = Vector3.Zero;
+                if (groundGrid.LengthSquared() > 0.5f && c.Entity.Data.TryGet<RelativeTransform>(out var blockRel))
+                    n = Vector3.Transform(groundGrid, Quaternion.Inverse(blockRel.Orientation));
+                float want = FootIk.Want(up, n, axis, progress);
+                c._ankle = FootIk.Follow(c._ankle, want, dt);
+                pose = new GearPose(pose.Position, Quaternion.Normalize(FootIk.Turn(axis, c._ankle) * pose.Orientation));
+                LastAnkleDeg = c._ankle * 180f / MathF.PI; LastAnkleWantDeg = want * 180f / MathF.PI;
+            }
             p.Entity.Data.Set(new RelativeTransform(pose.Position, pose.Orientation));
         }
     }
@@ -100,7 +120,8 @@ public partial class AeroGearAnimComponent : Component, IInSceneListener
             var part = new Part { Entity = k, Rest = rt };
             Vector3 at = rt.Position;
             bool Near(Vector3 v) => (v - at).LengthSquared() < 0.05f * 0.05f;
-            if (Near(layout.HingePoint)) part.Role = Role.Leg;
+            if (layout.HasFoot && Near(layout.FootPoint)) part.Role = Role.Foot;
+            else if (Near(layout.HingePoint)) part.Role = Role.Leg;
             else if (Near(layout.DeployedHub)) part.Role = Role.Rod;
             else if (Near(layout.ActuatorBase)) part.Role = Role.ActuatorCylinder;
             else if (Near(layout.ActuatorLegEnd)) part.Role = Role.ActuatorRod;

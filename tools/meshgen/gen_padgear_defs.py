@@ -3,12 +3,12 @@ then "landing gear models available"): Assets/Aero/PadGear/<size>/.
 
 One gear per vanilla landing-gear model in SE2 4.0 (GameData/Vanilla: the magnetic landing gears LandingGear100 / LandingGear500 and
 the magnetic plates Magneticplate50 / MagneticPlate250), each on the Wheeled Landing Gear housing it fits (gen_gear_defs.py's
-housings, leg and slide - their model, breakable and subpart definitions referenced by GUID, nothing copied). The suspension's
-WHEEL is the foot: a copy of the vanilla wheel prefab of that size whose model is the landing-gear mesh (the SDK's FBX, copied in -
-a straight reuse of a vanilla mesh as a PLACEHOLDER: no kitbash, nothing reshaped; scaled whole where the housing needs it) and
-whose collider is a flat puck the corner module can fit a cylinder to (DetermineWheelRadius); the mod swaps the body's collider for a
-box of the foot's bounds and holds its attitude with a constraint (Integration/AeroGearComponent.PadFoot.cs). The wheel is heavy
-(WheelMass, per size: the suspension's spring grows with it - GearStiffness) and its corner module has no drive and no steering.
+housings, leg and slide - their model, breakable and subpart definitions referenced by GUID, nothing copied). The gear.s
+FOOT is a visual subpart of the block (the landing-gear mesh - the SDK's FBX, copied in - a straight reuse of a vanilla mesh as a
+PLACEHOLDER: no kitbash, nothing reshaped; scaled whole where the housing needs it), hinged at the ankle pin and turned by the client
+to the ground the suspension's wheel touches (Gear/FootIk.cs, AeroGearAnimComponent). The suspension's WHEEL (2026-10-21) is the
+vanilla wheel of the housing's size, never drawn (AeroHiddenWheelComponent), its pivot at its centre and its rest moved so its bottom
+is the foot's sole; heavier (WheelMass), its corner module with no drive and no steering.
 
 The numbers the scripts use are written to padgear_spec.json beside this file (AeroGearVariants must match: Tests/GearTests).
 
@@ -92,23 +92,33 @@ def housing(size):
     return out
 
 
+FOOT_DROP = 0.08   # (GearLayout.FootDrop: the ankle pin this far below the rod's hub along the leg)
+WHEEL_R = {"100": 0.5, "150": 0.75, "250": 1.25}   # (the vanilla wheels' radii: the hidden wheel's)
+DT_FOOT = G("9e20", 0x30)                            # (the foot subpart's dummy type)
+
+
 def layout(v):
-    """The foot in its wheel's frame (the wheel turned as the block: its pivot dummy is the rest dummy's turn): the mesh scaled, its
-    top centre at the wheel's origin, which the suspension puts on the rod hub (the pivot = attach(0) - hub); the box and the puck."""
-    s = v["scale"]; lo, hi = v["lo"], v["hi"]
-    t0 = v["t0"]
+    """2026-10-21 (the user: "go back to wheel suspension ... a separate, physics-off landing gear entity where the invisible wheel is.
+    the landing gear and hinge IK to the wheel contact surface normal"): the FOOT is a visual subpart of the block (no collider) hinged
+    at its ANKLE PIN - FOOT_DROP below the rod's hub along the leg (block model space, as the dummies) - its mesh's top centre there,
+    hanging along the block's -Y; the suspension's WHEEL is the vanilla wheel of that size, never drawn (AeroHiddenWheelComponent),
+    its pivot moved to its centre and its rest moved so its bottom is the foot's sole (gear down, unloaded): the foot stands where
+    the wheel touches. The client turns the foot about the ankle to the wheel's ground normal (FootIk)."""
+    s = v["scale"]; lo, hi = v["lo"], v["hi"]; t0 = v["t0"]
     top = ((lo[0] + hi[0]) / 2 + t0[0], hi[1] + t0[1], (lo[2] + hi[2]) / 2 + t0[2])   # (model space: LOD0 raw + its translation)
     T = tuple(-s * c for c in top)
-    w = tuple(s * (hi[i] - lo[i]) for i in range(3))
-    H = w[1]
-    rest_p, rest_q, travel = housing(v["size"])["Wheel Rest Position"]
-    hub = housing(v["size"])["GearRodHub"][0]
+    w = tuple(s * (hi[i] - lo[i]) for i in range(3)); H = w[1]
+    hd = housing(v["size"])
+    rest_p0, rest_q, travel = hd["Wheel Rest Position"]
+    hub = hd["GearRodHub"][0]; hinge = hd["GearLegHinge"][0]
+    d = tuple(hub[i] - hinge[i] for i in range(3)); dl = math.sqrt(sum(c * c for c in d)); legdir = tuple(c / dl for c in d)
+    foot = tuple(hub[i] + legdir[i] * FOOT_DROP for i in range(3))
+    sole = (foot[0], foot[1] - H, foot[2])
+    r = WHEEL_R[v["wheel"]]
+    centre = (sole[0], sole[1] + r, sole[2])                       # (the wheel's centre, idle: its bottom on the sole)
     up = qrot(rest_q, (0.0, 1.0, 0.0))
-    attach0 = tuple(rest_p[i] - travel / 2 * up[i] for i in range(3))
-    pivot = tuple(attach0[i] - hub[i] for i in range(3))
-    r = 0.5 * min(w[0], w[2])
-    return dict(T=T, t0=t0, H=H, size=w, box_center=(0.0, -H / 2, 0.0), box_half=(w[0] / 2, H / 2, w[2] / 2),
-                pivot=pivot, pivot_q=rest_q, travel=travel, puck_r=r, puck_h=0.4 * r, puck_y=-H + r)
+    rest_p = tuple(centre[i] + travel / 2 * up[i] for i in range(3))   # (the suspension's idle point is rest - travel/2 x up)
+    return dict(T=T, t0=t0, H=H, size=w, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
 
 
 def vanilla_model(v):
@@ -150,17 +160,13 @@ def write_puck(path_gltf, name, r, h, y, n=24):
 
 
 def foot_model(v, L, d, rel):
-    """The foot's FBX (LOD0..2) copied from the SDK, its puck collider, its .model (the vanilla mesh, scaled, top centre at 0)."""
+    """The foot's FBX (LOD0..2) copied from the SDK and its .model (the vanilla mesh, scaled, top centre at 0) - visual only, no collider."""
     src = os.path.join(SDK, v["dir"]); md = os.path.join(d, "Models"); os.makedirs(md, exist_ok=True)
     ids = []
     for stem in v["lods"]:
         out = os.path.join(md, stem + ".fbx"); shutil.copy(os.path.join(src, stem + ".fbx"), out)
         fid = ggd.file_id(os.path.join(rel, "Models", stem + ".fbx")); ids.append(fid); ggd.write(out + ".meta", ggd.file_meta(fid))
     N = f"PadGear_{v['size']}_Foot"
-    col = os.path.join(md, N + "_collision.gltf")
-    write_puck(col, N + "_Collision", L["puck_r"], L["puck_h"], L["puck_y"])
-    for f in (col, os.path.join(md, N + "_collision.bin")):
-        ggd.write(f + ".meta", ggd.file_meta(ggd.file_id(os.path.join(rel, "Models", os.path.basename(f)))))
     vm = vanilla_model(v)
     last = {m["MaterialName"] for m in vm["MaterialAssignments"] if m["MaterialName"].endswith("_LastLOD")}
     mats = [m for m in vm["MaterialAssignments"] if m["MaterialName"] not in last]
@@ -175,25 +181,58 @@ def foot_model(v, L, d, rel):
     path = os.path.join(md, N + ".model")
     ggd.write(path, {"$Bundles": {"System.Runtime": "1.0.0.0", "VRage": "2.0.1.118"}, "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
                      "$Value": {"MaterialAssignments": mats, "MaterialStateOverrides": [], "GeometryAssets": geo, "SnapToGrid": False, "SuggestedModelSize": None,
-                                "CollisionShapesAsset": {"AssetReference": "{G}" + ggd.file_id(os.path.join(rel, "Models", os.path.basename(col))),
-                                                         "GroupsByFracture": [], "GeneratePreciseCollider": True}}})
+                                "CollisionShapesAsset": {"AssetReference": None, "GroupsByFracture": [], "GeneratePreciseCollider": False}}})
     ggd.write(path + ".meta", ggd.asset_meta(m, ("P_MODEL", 40), N + ".vrm"))
     return m
 
 
+def foot_subpart(v, d, m):
+    """The foot as a client subpart (as the leg and the rod: gen_gear_defs.own_model): prefab, composite, model component."""
+    N = f"PadGear_{v['size']}_Foot"; sid = v["sid"]
+    pref, comp, mcd = G(sid, 0x30), G(sid, 0x31), G(sid, 0x32)
+    sp = os.path.join(d, "Subparts")
+    ggd.definition(os.path.join(sp, f"{N}_Client.def"), {"$Bundles": ggd.B_VRAGE,
+        "$Type": "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinitionObjectBuilder",
+        "$Value": {"Guid": pref, "_entity": {"Definition": comp, "ObjectBuilders": ggd.SUBPART_OB(), "DebugName": "Root"}}}, pref, False)
+    ggd.definition(os.path.join(sp, f"{N}_Client_Composite.def"), {"$Bundles": ggd.B_GAME,
+        "$Type": "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinitionObjectBuilder",
+        "$Value": {"Guid": comp, "TagSlots": [{"$Key": t, "$Value": k_} for t, k_, _ in ggd.SUBPART_COMPONENTS],
+                   "Components": [{"Key": k_, "Value": {"Definition": mcd if t == "ModelComponent" else None, "Type": ty}} for t, k_, ty in ggd.SUBPART_COMPONENTS]}},
+        comp, False)
+    ggd.definition(os.path.join(sp, f"{N}_ModelComponentDefinition.def"), {"$Bundles": ggd.B_VRAGE,
+        "$Type": "VRage:Keen.VRage.Game.Components.Models.ModelComponentDefinitionObjectBuilder",
+        "$Value": {"Guid": mcd, "Model": "{G}" + m, "Dummies": []}}, mcd, False)
+    return pref
+
+
+def block_model(v, L, d, foot_pref):
+    """The pad gear's own block model and subparts: the housing's (gen_gear_defs.own_model) with its wheel rest moved under the
+    foot's sole (the hidden wheel) and a Foot dummy at the ankle pin; the subparts: the housing's leg and rod, and the foot."""
+    hsid = ggd.SIZES[v["size"]]["sid"]; sid = v["sid"]; N = f"PadGear_{v['size']}"
+    bmd, csp = G(sid, 0x33), G(sid, 0x34)
+    hkeys = [G(hsid, 0x41 + i) for i in range(3)]
+    foot = ggd.dummy("GearFoot", [round(c, 5) for c in L["foot"]], DT_FOOT)
+    ggd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), ggd.partial(G(hsid, 0x15), {"Guid": bmd,
+        "Dummies": {"$DeltaEncoded": True, "Keys": hkeys + [G(sid, 0x35)], "Changed": [
+            {"Kind": "Update", "Index": 0, "Value": {"Transform": {"Transform": {"Position": dict(zip("XYZ", (round(c, 5) for c in L["rest_p"])))}}}},
+            {"Kind": "Insert", "Index": 3, "Value": foot}], "Removed": []}},
+        "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition"), bmd, True)
+    ggd.definition(os.path.join(d, f"{N}_ConditionalSubPartsDefinition.def"), {"$Bundles": ggd.B_GAME,
+        "$Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsDefinitionObjectBuilder",
+        "$Value": {"Guid": csp, "SubParts": {ggd.DT_LEG: G(hsid, 0x18), ggd.DT_ROD: G(hsid, 0x1b), DT_FOOT: foot_pref}, "MeshPartsToHideWhenActive": []}}, csp, False)
+    return bmd, csp
+
+
 def foot_wheel(v, L, d, m):
-    """The foot as the suspension's wheel: the vanilla wheel's definitions with this model (its pivot dummy turned as the wheel rest
-    dummy: the foot spawns level), a heavy collider, and a corner module with no drive and no steering."""
-    W = WHEELS[v["wheel"]]; wid = v["wid"]; N = f"PadGear_{v['size']}_Foot"
+    """The suspension's HIDDEN wheel: the vanilla wheel's definitions (its model kept, never drawn - AeroHiddenWheelComponent on its
+    client prefab), its pivot dummy moved to its centre (the suspension's point is the wheel's centre: under the foot), its body
+    heavier (WheelMass), and a corner module with no drive and no steering."""
+    W = WHEELS[v["wheel"]]; wid = v["wid"]; N = f"PadGear_{v['size']}_HiddenWheel"
     mcd, col, scomp, spref, ccomp, cpref, bind, module = (G(wid, 0x61 + i) for i in range(8))
-    q = L["pivot_q"]; p = L["pivot"]; H = L["H"]; sz = L["size"]
-    ggd.definition(os.path.join(d, f"{N}_ModelComponentDefinition.partialdef"), ggd.partial(W["mcd"], {"Guid": mcd, "Model": "{G}" + m,
+    ggd.definition(os.path.join(d, f"{N}_ModelComponentDefinition.partialdef"), ggd.partial(W["mcd"], {"Guid": mcd,
         "Dummies": {"$DeltaEncoded": True, "Keys": W["dkeys"], "Changed": [
-            {"Kind": "Update", "Index": 0, "Value": {"Transform": {"Transform": {"Position": dict(zip("XYZ", (round(c, 5) for c in p))), "Orientation": dict(zip("XYZW", q))}},
-                                                     "Scale": {"X": 0.1, "Y": 0.1, "Z": 0.1}}},
-            {"Kind": "Update", "Index": 1, "Value": {"Transform": {"Transform": {"Position": {"X": 0, "Y": round(-H, 5), "Z": 0}}},
-                                                     "Scale": {"X": round(sz[0], 4), "Y": 0.1, "Z": round(sz[2], 4)}}}],
-            "Removed": []}}, "VRage:Keen.VRage.Game.Components.Models.ModelComponentDefinition", ggd.B_VRAGE), mcd, True)
+            {"Kind": "Update", "Index": 0, "Value": {"Transform": {"Transform": {"Position": {"X": 0, "Y": 0, "Z": 0}}}}}], "Removed": []}},
+        "VRage:Keen.VRage.Game.Components.Models.ModelComponentDefinition", ggd.B_VRAGE), mcd, True)
     ggd.definition(os.path.join(d, f"{N}_ColliderDefinition.partialdef"), ggd.partial(W["collider"], {"Guid": col, "WheelMass": v["mass"]},
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.MechanicalBlocks.Wheels.WheelColliderDefinition"), col, True)
     ggd.definition(os.path.join(d, f"{N}_ServerComposition.partialdef"), ggd.partial(W["scomp"], {"Guid": scomp, "Components": {"$DeltaEncoded": True,
@@ -214,10 +253,10 @@ def foot_wheel(v, L, d, m):
     return module, spref, cpref
 
 
-def block(v, d, module, icon):
+def block(v, d, module, icon, bmd, csp):
     """The block: the housing size's composition (gen_gear_defs.gen_size, own model) on the foot's corner module."""
     B = ggd.BASE; size = v["size"]; sid = v["sid"]; hs = ggd.SIZES[size]; hsid = hs["sid"]; N = f"PadGear_{size}"
-    model, brk, csp = G(hsid, 0x15), G(hsid, 0x16), G(hsid, 0x17)
+    model, brk = bmd, G(hsid, 0x16)
     fbd, bind, spref, cpref, scomp, ccomp = G(sid, 0x1), G(sid, 0x10), G(sid, 0x11), G(sid, 0x12), G(sid, 0x13), G(sid, 0x14)
     ggd.definition(os.path.join(d, f"{N}.partialdef"), ggd.partial(B["binding"], {"Guid": bind, "ServerComposite": scomp, "ClientPrefab": cpref},
         "VRage:Keen.VRage.Multiplayer.Data.PrefabBindingDefinition", ggd.B_VRAGE), bind, True)
@@ -295,7 +334,9 @@ def main():
     for v in VARIANTS:
         L = spec[v["size"]]; d = os.path.join(root, v["size"]); rel = os.path.join(ROOT_REL, v["size"], "Foot")
         m = foot_model(v, L, os.path.join(d, "Foot"), rel)
+        fpref = foot_subpart(v, os.path.join(d, "Foot"), m)
         module, wsp, wcp = foot_wheel(v, L, os.path.join(d, "Foot"), m)
+        bmd, csp = block_model(v, L, d, fpref)
         icon = None
         if os.path.exists(icon_path(v)):
             irel = os.path.join(ROOT_REL, v["size"], "Icon", f"PadGear_{v['size']}_Icon.png")
@@ -303,10 +344,10 @@ def main():
             icon = "{G}" + ggd.file_id(irel)
         else:
             icon = ggd.SIZES[v["size"]].get("icon") or "{G}" + ggd.file_id(os.path.join("Aero", "RetractableGear", v["size"], "Icon", f"RetractableGear_{v['size']}_Icon.png"))
-        bsp, bcp = block(v, d, module, icon)
+        bsp, bcp = block(v, d, module, icon, bmd, csp)
         spec[v["size"]].update(name=v["name"], model=v["model"], scale=v["scale"], mass=v["mass"], rated=v["rated"],
                                block_server=bsp, block_client=bcp, block=G(v["sid"], 0x1), module=module, wheel_server=wsp, wheel_client=wcp,
-                               default_stiffness=DEFAULT_STIFFNESS)
+                               default_stiffness=DEFAULT_STIFFNESS, foot_subpart=fpref, block_model=bmd, subparts=csp)
     ggd.definition(os.path.join(root, "PadGear_BlockKind.def"), {"$Bundles": ggd.B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
         "$Value": {"Guid": KIND, "Name": "Retractable Gear - Pad Foot",
@@ -316,6 +357,8 @@ def main():
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",
         "$Value": {"Guid": GROUP, "Name": "Retractable Gear - Pad Foot", "Order": 3,
                    "Subcategories": [{"Key": G("9e20", 0x23), "Value": SUBCATEGORY}], "BlockKinds": []}}, GROUP, False)
+    ggd.definition(os.path.join(root, "PadGear_GearFoot_DummyTypeDefinition.def"), {"$Bundles": ggd.B_VRAGE,
+        "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder", "$Value": {"Guid": DT_FOOT}}, DT_FOOT, False)
     for rt, dirs, _ in os.walk(root):
         for dn in dirs:
             rel = os.path.relpath(os.path.join(rt, dn), os.path.join(ROOT, "Assets"))
@@ -325,7 +368,7 @@ def main():
         json.dump(spec, f, indent=1, default=list)
     print(f"generated {sum(len(f) for _, _, f in os.walk(root))} files under {root}")
     for k, L in spec.items():
-        print(f"  {k}: {L['name']} {L['model']} x{L['scale']} foot {L['size'][0]:.2f} x {L['H']:.2f} x {L['size'][2]:.2f} m, pivot {[round(c, 3) for c in L['pivot']]}, puck r {L['puck_r']:.3f}")
+        print(f"  {k}: {L['name']} {L['model']} x{L['scale']} foot {L['size'][0]:.2f} x {L['H']:.2f} x {L['size'][2]:.2f} m at {[round(c, 3) for c in L['foot']]}, hidden wheel r {L['wheel_r']} centre {[round(c, 3) for c in L['wheel_centre']]}")
 
 
 if __name__ == "__main__": main()

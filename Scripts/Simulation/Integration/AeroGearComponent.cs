@@ -70,7 +70,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         try { _server = !string.Equals(Data.Scene?.DebugName, "Client", StringComparison.Ordinal); } catch { _server = true; }
         lock (All) All.Add(this);
     }
-    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); if (_server && Variant?.Foot != null) PadFootRemoved(); }
+    void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
 
     // (before the physics step - the constraint's limits are written here, never while the solver runs)
     [Before(typeof(Keen.VRage.Core.Systems.Simulation))]
@@ -147,9 +147,9 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
             }
         }
 
-        // a pad foot: its box collider, its orientation lock, its axle held (AeroGearComponent.PadFoot.cs)
+        // a pad foot: nothing on the server - its wheel is the suspension's (hidden on the clients), the foot a client subpart turned to
+        // the ground normal this gear publishes (AeroGearAnimComponent / FootIk)
         _step = "padfoot";
-        if (_wc != null) PadFootStep(wheel);
         PadDevStep(wheel);   // (the harness's recorder and pushes: Dev/AeroGearPadDev.cs - two reads while off)
 
         // collision: off deep in the well, back before the wheel leaves it
@@ -265,7 +265,23 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
             var rel = WorldTransform.GetRelativeTransform(w.Data.GetWorldTransform(), Entity.Data.GetWorldTransform());
             _measured = _s0 + Vector3.Dot((Vector3)rel.Position - _wheel0, Vector3.Normalize(layout.RakeAxis));
         }
-        ThrustTorque.PublishGear(aero, grid.Data.GetWorldTransform(), _key, Seq.Progress, compression);
+        var gwt = grid.Data.GetWorldTransform();
+        ThrustTorque.PublishGear(aero, gwt, _key, Seq.Progress, compression, Variant?.Foot != null ? GroundNormal(w, gwt) : Vector3.Zero);
+    }
+
+    /// <summary>The wheel's ground contact normal (grid-local unit; zero: not touching): its contact impulses' normals (world, into the
+    /// wheel - the surface's outward normal) weighted by their impulse, from the wheel body's own ContactImpulseData (as
+    /// StructureContacts reads it - the raw WheelContactData's inline buffer is not copied). For the pad-foot gears' feet (the clients
+    /// turn the foot about its ankle hinge to it: AeroGearAnimComponent).</summary>
+    static Vector3 GroundNormal(Entity wheel, in WorldTransform gwt)
+    {
+        if (wheel == null || !GridPhysics.Alive(wheel.Data) || !wheel.Data.TryGet<Keen.VRage.Physics.Data.ContactImpulseData>(out var ci)) return Vector3.Zero;
+        Vector3 sum = Vector3.Zero;
+        foreach (var c in ci.ImpulsesFromLastFrame)
+            if (c.ImpulseMagnitude > 0f) sum += c.Normal * c.ImpulseMagnitude;
+        float l = sum.Length();
+        if (!(l > 1e-6f)) return Vector3.Zero;
+        return WorldTransform.TransformDirectionInv(sum / l, gwt);
     }
 
     /// <summary>Harness: every gear's state - as the server step built it after the previous read (ServerDevReads,
@@ -283,7 +299,7 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
                       .Append(g._wc != null ? $" limits {g._wc.MinSuspensionLimit:F2}..{g._wc.MaxSuspensionLimit:F2}" : " no constraint")
                       .Append(g._cm?.WheelEntity != null ? " wheel" : " NO WHEEL").Append(g._collisionOff ? " collision off" : "")
                       .Append(g.ShockOwned ? " SHOCKS hold the spring" : "")
-                      .Append(g.Variant?.Foot != null ? (g._lockLife.Has ? " PAD locked level" : " PAD no lock") + (g._boxWheel != null ? " box" : " sphere") + (g.FootAttitude(out float tl, out _) ? $" tilt {tl:F1}" : "") : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
+                      .Append(g.Variant?.Foot != null ? " PAD" : "").Append(g.ShockState.Length > 0 ? " (shock " + g.ShockState + ")" : "").Append(g.Seq.Held.Length > 0 ? " held: " + g.Seq.Held : "").Append(g.Last.Length > 0 ? " (" + g.Last + ")" : "");
             }
             return sb.ToString();
         }

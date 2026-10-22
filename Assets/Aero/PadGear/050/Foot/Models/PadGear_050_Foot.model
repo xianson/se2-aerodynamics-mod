@@ -114,9 +114,9 @@
     "SnapToGrid": false,
     "SuggestedModelSize": null,
     "CollisionShapesAsset": {
-      "AssetReference": "{G}aecd5df3-efad-5643-9824-d4c8356c672e",
+      "AssetReference": null,
       "GroupsByFracture": [],
-      "GeneratePreciseCollider": true
+      "GeneratePreciseCollider": false
     }
   }
 }

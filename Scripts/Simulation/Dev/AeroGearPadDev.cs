@@ -13,10 +13,9 @@ namespace AeroMod;
 ///  - HOP (aeroset AeroGearComponent.PadHop V, m/s): the first pad gear's ship and everything joined to it (its feet:
 ///    QuickLaunchMove.MoveSet) get V straight up, once - it lands at V: a touchdown at a known sink rate.
 ///  - PUSH (aeroset AeroGearComponent.PadPush V, m/s): the same ship V along its block's forward, level, once - the feet slide.
-///  - RECORDER (aeroset AeroGearComponent.PadRecord true; PadReset n starts a window): per pad gear, from its server step - the foot's
-///    largest tilt off its block's up (deg), its largest turn rate about the axle against the ship (rad/s), the deepest compression
+///  - RECORDER (aeroset AeroGearComponent.PadRecord true; PadReset n starts a window): per pad gear, from its server step - the deepest compression
 ///    and a bottom-out (98 % of the stroke), the ship's sink rate at the first contact after it was airborne and its largest rebound
-///    (m/s), the lock lost (count). aeroget AeroGearComponent.PadRecordResult (rebuilt twice a second while recording).
+///    (m/s). aeroget AeroGearComponent.PadRecordResult (rebuilt twice a second while recording).
 /// </summary>
 public partial class AeroGearComponent
 {
@@ -27,7 +26,7 @@ public partial class AeroGearComponent
     static int _padResetSeen;
     static double _padResultAt;
 
-    float _rTilt, _rSpin, _rComp, _rTouch = float.NaN, _rRebound; bool _rBottom, _rAir; int _rLost0;
+    float _rComp, _rTouch = float.NaN, _rRebound; bool _rBottom, _rAir;
 
     void PadDevStep(Entity wheel)
     {
@@ -41,7 +40,6 @@ public partial class AeroGearComponent
         }
         if (!PadRecord) return;
         if (PadReset != _padResetSeen) { _padResetSeen = PadReset; ResetPadRecorders(); }
-        if (FootAttitude(out float tilt, out float spin)) { _rTilt = MathF.Max(_rTilt, tilt); _rSpin = MathF.Max(_rSpin, MathF.Abs(spin)); }
         float comp = _cm != null ? _cm.CurrentSuspensionDistance : 0f;
         _rComp = MathF.Max(_rComp, comp);
         if (comp >= 0.98f * Variant.Foot.Stroke) _rBottom = true;
@@ -59,7 +57,7 @@ public partial class AeroGearComponent
 
     static void ResetPadRecorders()
     {
-        lock (All) foreach (var g in All) { g._rTilt = g._rSpin = g._rComp = g._rRebound = 0f; g._rTouch = float.NaN; g._rBottom = g._rAir = false; g._rLost0 = g._lockLife.Lost; }
+        lock (All) foreach (var g in All) { g._rComp = g._rRebound = 0f; g._rTouch = float.NaN; g._rBottom = g._rAir = false; }
         _padResultAt = 0;
     }
 
@@ -76,10 +74,10 @@ public partial class AeroGearComponent
                 if (g.Variant?.Foot == null) continue;
                 n++;
                 sb.Append(" | ").Append(g.Variant.Name)
-                  .Append($" tilt {g._rTilt:F2} spin {g._rSpin:F3} comp {g._rComp:F3} bottom {(g._rBottom ? 1 : 0)}")
-                  .Append($" touch {(float.IsNaN(g._rTouch) ? "-" : g._rTouch.ToString("F2"))} rebound {g._rRebound:F2} lost {g._lockLife.Lost - g._rLost0} lock {(g._lockLife.Has ? 1 : 0)}");
+                  .Append($" comp {g._rComp:F3} bottom {(g._rBottom ? 1 : 0)}")
+                  .Append($" touch {(float.IsNaN(g._rTouch) ? "-" : g._rTouch.ToString("F2"))} rebound {g._rRebound:F2}");
             }
-        PadRecordResult = $"rec {n} pad gears locks {PadLocks} boxes {PadBoxes}" + sb;
+        PadRecordResult = $"rec {n} pad gears (the foot's ankle: client, aeroget AeroGearAnimComponent.LastAnkleDeg)" + sb;
     }
 
     /// <summary>The ship and everything joined to it: up (against the gravity) and forward (its block's, level) at these speeds.</summary>

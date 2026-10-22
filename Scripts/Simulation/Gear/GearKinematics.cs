@@ -26,6 +26,11 @@ public sealed class GearLayout
     public float StowAngle;
     /// <summary>The hub with the gear down and the suspension unloaded.</summary>
     public Vector3 DeployedHub;
+    /// <summary>A pad-foot gear (2026-10-21): its foot's ankle pin - FootDrop below the rod's hub along the leg (gear down, unloaded),
+    /// where the foot subpart's dummy sits (and so how it is told from the rod) and about which it turns (FootIk).</summary>
+    public bool HasFoot;
+    public const float FootDrop = 0.08f;
+    public Vector3 FootPoint => DeployedHub + LegDirection * FootDrop;
     /// <summary>The actuator's anchors (with the gear down): on the block, and on the leg.</summary>
     public Vector3 ActuatorBase, ActuatorLegEnd;
     public DoorLayout[] Doors = Array.Empty<DoorLayout>();

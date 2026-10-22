@@ -641,7 +641,7 @@ public static class ThrustTorque
     internal sealed class FlapTable { public float[] Angle; public readonly Dictionary<Vector3I, int> Index = new(); }
     /// <summary>The grid's retractable gears (AeroGearComponent): progress 0 up .. 1 down and the suspension's compression
     /// (m) by block AABB Min + Max - the index replaced when a gear is new to it, the values written in place.</summary>
-    internal sealed class GearTable { public float[] Progress, Compression; public readonly Dictionary<Vector3I, int> Index = new(); }
+    internal sealed class GearTable { public float[] Progress, Compression; public Vector3[] Normal; public readonly Dictionary<Vector3I, int> Index = new(); }
     /// <summary>The grid's helicopter rotors (RotorCyclic.Publish, every server step): RotorStride floats per rotor by block
     /// AABB Min + Max - the index replaced when a rotor is new to it, the values written in place (AeroRotorAnimComponent).</summary>
     internal sealed class RotorTable { public float[] V; public readonly Dictionary<Vector3I, int> Index = new(); }
@@ -796,6 +796,11 @@ public static class ThrustTorque
     /// <summary>Server: one gear's state this step (from its own job - the gears of a grid run in parallel: the table is
     /// grown under the record's lock). Keeps the record fresh while the grid is parked (nothing else publishes then).</summary>
     internal static void PublishGear(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float progress, float compression)
+        => PublishGear(aero, wt, key, progress, compression, Vector3.Zero);
+
+    /// <summary>Server: as above, with the wheel's ground contact normal (grid-local unit; zero: not touching) - the pad-foot gears'
+    /// feet are turned to it on the clients (AeroGearAnimComponent, the foot's hinge).</summary>
+    internal static void PublishGear(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float progress, float compression, Vector3 normal)
     {
         if (!aero.IsServerScene) return;
         var p = Record(aero, wt);
@@ -808,14 +813,14 @@ public static class ThrustTorque
                 if (t == null || !t.Index.TryGetValue(key, out i))
                 {
                     int n = t?.Progress.Length ?? 0;
-                    var nt = new GearTable { Progress = new float[n + 1], Compression = new float[n + 1] };
-                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Progress, nt.Progress, n); Array.Copy(t.Compression, nt.Compression, n); }
+                    var nt = new GearTable { Progress = new float[n + 1], Compression = new float[n + 1], Normal = new Vector3[n + 1] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Progress, nt.Progress, n); Array.Copy(t.Compression, nt.Compression, n); Array.Copy(t.Normal, nt.Normal, n); }
                     nt.Index[key] = i = n;
                     p.Gears = t = nt;
                 }
             }
         }
-        t.Progress[i] = progress; t.Compression[i] = compression;
+        t.Progress[i] = progress; t.Compression[i] = compression; t.Normal[i] = normal;
     }
 
     /// <summary>Server: one rotor's state this step (RotorCyclic.Publish; one grid's rotors from its one attitude job - grown under
@@ -946,8 +951,12 @@ public static class ThrustTorque
 
     /// <summary>A client gear's state from its grid's server record (false: none matched); matched as the flaps.</summary>
     internal static bool GearState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float progress, out float compression)
+        => GearState(grid, key, ref kept, ref recheckAt, now, out progress, out compression, out _);
+
+    /// <summary>As above, with the wheel's ground contact normal (grid-local unit; zero: not touching).</summary>
+    internal static bool GearState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float progress, out float compression, out Vector3 normal)
     {
-        progress = compression = 0f;
+        progress = compression = 0f; normal = Vector3.Zero;
         if (kept == null || kept.Gone || now >= recheckAt)
         {
             recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
@@ -956,7 +965,7 @@ public static class ThrustTorque
         }
         var t = kept.Gears;
         if (t == null || !t.Index.TryGetValue(key, out int i) || (uint)i >= (uint)t.Progress.Length) return false;
-        progress = t.Progress[i]; compression = t.Compression[i];
+        progress = t.Progress[i]; compression = t.Compression[i]; normal = t.Normal != null && (uint)i < (uint)t.Normal.Length ? t.Normal[i] : Vector3.Zero;
         return true;
     }
 

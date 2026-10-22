@@ -5,20 +5,21 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AeroMod;
 
-/// <summary>The pad-foot gears (Gear/PadFoot.cs, tools/meshgen/gen_padgear_defs.py): the orientation lock's life and axes, and per
-/// variant - the C# variant against the generator's spec, the generated definitions (collider mass, corner module with no drive and no
-/// steering, the foot's pivot turned as its housing's wheel rest, the block on the module), the puck a cylinder the corner module can
-/// fit (DetermineWheelRadius / WheelColliderComponent: radius above half its length) with the sphere's bottom at the sole, the box,
-/// and the suspension's sag at the rated load.</summary>
+/// <summary>The pad-foot gears (2026-10-21: the vanilla suspension on a HIDDEN wheel, the foot a visual subpart hinged at the ankle and
+/// turned to the wheel's ground normal - Gear/FootIk.cs, Gear/PadFoot.cs, tools/meshgen/gen_padgear_defs.py): the ankle's IK, and per
+/// variant - the C# variant against the generator's spec, the hidden wheel (the vanilla wheel's model, its pivot at its centre, its
+/// bottom on the foot's sole, its corner module with no drive and no steering, its client prefab hidden), the pad block's own model
+/// (the wheel rest moved under the sole, the foot's dummy at the ankle pin) and subparts (leg, rod, foot), and the sag at the rated load.</summary>
 static class PadFootTests
 {
     static int _checks, _fails;
     static void Check(bool ok, string what) { _checks++; if (!ok) { _fails++; if (_fails <= 25) Console.WriteLine("FAIL pad: " + what); } }
     static readonly CultureInfo C = CultureInfo.InvariantCulture;
+    const float Deg = MathF.PI / 180f;
 
     public static (int checks, int fails) Run()
     {
-        Life();
+        Ankle();
         string root = Root();
         Check(root != null, "the mod's tree found above the test");
         if (root != null) Variants(root);
@@ -32,33 +33,36 @@ static class PadFootTests
         return d?.FullName;
     }
 
-    static void Life()
+    /// <summary>FootIk: the ankle turns the sole onto the ground across the hinge, clamped; nothing in the air or folding; follows smoothly.</summary>
+    static void Ankle()
     {
-        var a = PadLockLife.FixedAxes();
-        Check(a.Length == 6 && a[3] && !a[0] && !a[1] && !a[2] && !a[4] && !a[5], "the lock fixes only the twist about the axle (AngularX), nothing linear");
-        Check(!PadLockLife.FixedAxes(1)[1], "a linear axis can be fixed");
-        object w1 = new(), w2 = new();
-        var l = new PadLockLife();
-        Check(l.Step(null, false) == PadLockDo.Nothing && !l.Has, "a lock with no wheel");
-        Check(l.Step(w1, false) == PadLockDo.Create, "no lock on a new wheel");
-        l.Made(w1, false);
-        Check(!l.Has && l.Step(w1, false) == PadLockDo.Create, "a refused lock not tried again");
-        l.Made(w1, true);
-        for (int i = 0; i < 50; i++) Check(l.Step(w1, false) == PadLockDo.Nothing && l.Has, "a lock made twice on the same wheel");
-        Check(l.Step(w2, false) == PadLockDo.Create && !l.Has && l.Lost == 1, "a new wheel (a load, a new body): the old lock not forgotten / the new one not made");
-        l.Made(w2, true);
-        Check(l.Step(w2, true) == PadLockDo.Create && l.Lost == 2, "a lock the engine destroyed not made again");
-        l.Made(w2, true);
-        Check(l.Step(null, false) == PadLockDo.Nothing && !l.Has, "the wheel gone: its lock kept");
-        l.Step(w1, false); l.Made(w1, true);
-        Check(l.Created == 4, "locks made: " + l.Created);
-        var r = new PadLockLife(); r.Step(w1, false); r.Made(w1, true);
-        Check(r.Removing(true, false) == PadLockDo.Destroy && !r.Has, "removal: a live lock not destroyed");
-        r.Step(w1, false); r.Made(w1, true);
-        Check(r.Removing(false, false) == PadLockDo.Nothing, "removal: destroyed with its bodies gone (the engine asserts)");
-        r.Step(w1, false); r.Made(w1, true);
-        Check(r.Removing(true, true) == PadLockDo.Nothing, "removal: destroyed twice");
-        Check(new PadLockLife().Removing(true, false) == PadLockDo.Nothing, "removal: destroyed a lock never made");
+        Vector3 up = Vector3.UnitY, axis = Vector3.UnitX;
+        Check(FootIk.Target(up, up, axis) == 0f, "level ground: no turn");
+        Check(FootIk.Target(up, Vector3.Zero, axis) == 0f, "no ground: no turn");
+        foreach (float a in new[] { -30f, -10f, 5f, 20f })
+        {
+            var n = Vector3.Transform(up, Quaternion.CreateFromAxisAngle(axis, a * Deg));
+            float t = FootIk.Target(up, n, axis);
+            Check(MathF.Abs(t - a * Deg) < 1e-4f, $"a {a} deg slope across the hinge: {t / Deg:F3} deg");
+            // the turned sole's normal is the ground's
+            var turned = Vector3.Transform(up, FootIk.Turn(axis, t));
+            Check(Vector3.Dot(turned, n) > 0.9999f, $"a {a} deg slope: the turned foot lies on it");
+        }
+        var steep = Vector3.Transform(up, Quaternion.CreateFromAxisAngle(axis, 60f * Deg));
+        Check(MathF.Abs(FootIk.Target(up, steep, axis) - FootIk.MaxAngle) < 1e-5f, "a 60 deg slope: clamped to MaxAngle");
+        var side = Vector3.Transform(up, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 25f * Deg));
+        Check(MathF.Abs(FootIk.Target(up, side, axis)) < 1e-4f, "a slope along the hinge: a hinge cannot follow it");
+        Check(FootIk.Target(up, -up, axis) == 0f, "ground beyond a quarter turn: no turn");
+        var slope = Vector3.Transform(up, Quaternion.CreateFromAxisAngle(axis, 15f * Deg));
+        Check(FootIk.Want(up, slope, axis, 1f) > 0.2f && FootIk.Want(up, slope, axis, 0.98f) == 0f && FootIk.Want(up, slope, axis, 0f) == 0f,
+              "only fully down does the foot follow the ground: folding / stowed it sits square on its rod (flat in the well)");
+        float now = 0f, want = 20f * Deg;
+        for (int i = 0; i < 6; i++) now = FootIk.Follow(now, want, 1f / 60f);
+        Check(now > 0f && now < want, "the ankle follows over frames, not in one");
+        for (int i = 0; i < 120; i++) now = FootIk.Follow(now, want, 1f / 60f);
+        Check(MathF.Abs(now - want) < 1e-3f, "and reaches its target");
+        { float f = FootIk.Follow(0.3f, 0f, 5f); Check(f > 0f && f < 0.3f, $"a long frame (clamped to 0.1 s) moves part way, never past ({f:F3})"); }
+        Check(FootIk.Turn(Vector3.Zero, 1f) == Quaternion.Identity, "no axis: no turn");
     }
 
     static float F(JsonElement e) => (float)e.GetDouble();
@@ -68,16 +72,17 @@ static class PadFootTests
     {
         var spec = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "tools", "meshgen", "padgear_spec.json"))).RootElement;
         string src = File.ReadAllText(Path.Combine(root, "Scripts", "Simulation", "Blocks", "AeroGearVariants.cs"));
+        string guids = File.ReadAllText(Path.Combine(root, "Scripts", "Simulation", "Components", "AeroBlockGuids.cs"));
         int n = 0;
-        // (every variant in the C#: a Foot only on the pad gears - their lock and box are for pads only)
-        // (each entry: from its "new() { Name =" to the next one or the array's end)
         var all = Regex.Matches(src, @"new\(\) \{ Name = ""([^""]+)"", Block = new\(""([0-9a-f-]+)""\), CornerModule = new\(""([0-9a-f-]+)""\)(.*?)(?=new\(\) \{ Name =|
     \};)", RegexOptions.Singleline);
         Check(all.Count >= 8, $"variants read from AeroGearVariants.cs ({all.Count})");
         foreach (Match m in all)
         {
             bool foot = m.Groups[4].Value.Contains("Foot = new PadFootSpec");
-            Check(foot == m.Groups[1].Value.StartsWith("Retractable Gear ("), $"{m.Groups[1].Value}: a Foot {(foot ? "on a wheeled gear" : "missing on a pad gear")}");
+            bool pad = m.Groups[1].Value.StartsWith("Retractable Gear (");
+            Check(foot == pad, $"{m.Groups[1].Value}: a Foot {(foot ? "on a wheeled gear" : "missing on a pad gear")}");
+            Check(m.Groups[4].Value.Contains("Layout = Pad(Gear(") == pad, $"{m.Groups[1].Value}: the foot's layout (Pad) {(pad ? "missing" : "on a wheeled gear")}");
         }
         foreach (var p in spec.EnumerateObject())
         {
@@ -90,49 +95,57 @@ static class PadFootTests
             string body = cs.Groups[4].Value;
             Check(cs.Groups[1].Value.StartsWith(name + " ") && cs.Groups[3].Value == L.GetProperty("module").GetString(), $"{size}: name / corner module differ from the spec");
             float Num(string key) { var mm = Regex.Match(body, key + @" = (-?[0-9.]+)f"); return mm.Success ? float.Parse(mm.Groups[1].Value, C) : float.NaN; }
-            float[] Vec(string key) { var mm = Regex.Match(body, key + @" = new Vector3\((-?[0-9.]+)f?, (-?[0-9.]+)f?, (-?[0-9.]+)f?\)"); return mm.Success ? new[] { 1, 2, 3 }.Select(i => float.Parse(mm.Groups[i].Value, C)).ToArray() : null; }
-            bool Near(float a, float b) => MathF.Abs(a - b) < 1e-3f;
-            float H = F(L.GetProperty("H"));
-            Check(Near(Num("WheelRadius"), H) && Near(Num("Height"), H), $"{size}: height / wheel radius {Num("Height")} vs {H}");
-            Check(Near(Num("WheelMass"), F(L.GetProperty("mass"))) && Near(Num("RatedLoad"), F(L.GetProperty("rated"))) && Near(Num("Stroke"), F(L.GetProperty("travel"))), $"{size}: mass / rated / stroke differ");
-            var bc = Vec("BoxCenter"); var bh = Vec("BoxHalf"); var sbc = V(L.GetProperty("box_center")); var sbh = V(L.GetProperty("box_half"));
-            Check(bc != null && bh != null && Enumerable.Range(0, 3).All(i => Near(bc[i], sbc[i]) && Near(bh[i], sbh[i]) && bh[i] > 0.05f), $"{size}: the box differs or is flat");
-            Check(Near(sbc[1] - sbh[1], -H) && Near(sbc[1] + sbh[1], 0f), $"{size}: the box is not the foot (top at the hub, sole at -H)");
+            bool Near(float a, float b, float tol = 1e-3f) => MathF.Abs(a - b) < tol;
+            float H = F(L.GetProperty("H")), r = F(L.GetProperty("wheel_r"));
+            Check(Near(Num("Height"), H), $"{size}: the foot's height {Num("Height")} vs {H}");
+            Check(Near(Num("WheelRadius"), r), $"{size}: WheelRadius {Num("WheelRadius")} is not the hidden wheel's {r}");
+            Check(Near(Num("WheelMass"), F(L.GetProperty("mass"))) && Near(Num("Stroke"), F(L.GetProperty("travel"))), $"{size}: mass / stroke differ");
 
-            // the definitions
+            // the geometry: the foot at the ankle pin (FootDrop below the rod's hub along the leg), the wheel's bottom on its sole
             string d = Path.Combine(root, "Assets", "Aero", "PadGear", size);
-            string fd = Path.Combine(d, "Foot");
-            JsonElement Man(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(fd, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");
-            string N = $"PadGear_{size}_Foot";
-            Check(F(Man(N + "_ColliderDefinition.partialdef").GetProperty("WheelMass")) == F(L.GetProperty("mass")), $"{size}: the collider's WheelMass is not the spec's");
-            var mod = Man($"PadGear_{size}_WheelCornerModuleDefinition.partialdef");
-            Check(mod.GetProperty("Guid").GetString() == L.GetProperty("module").GetString() && mod.GetProperty("WheelPrefab").GetString() == L.GetProperty("wheel_server").GetString(), $"{size}: the corner module is not the foot's");
-            Check(F(mod.GetProperty("MaxTorque")) == 0f && F(mod.GetProperty("MaxSteeringAngle")) == 0f, $"{size}: the foot's corner module drives or steers");
-            var mcd = Man(N + "_ModelComponentDefinition.partialdef");
-            var piv = mcd.GetProperty("Dummies").GetProperty("Changed")[0].GetProperty("Value").GetProperty("Transform").GetProperty("Transform");
-            var q = piv.GetProperty("Orientation"); var sq = V(L.GetProperty("pivot_q"));
-            Check(Near(F(q.GetProperty("X")), sq[0]) && Near(F(q.GetProperty("W")), sq[3]), $"{size}: the pivot is not turned as the wheel rest (the foot would spawn tilted)");
-            var hous = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Assets", "Aero", "RetractableGear", size, $"RetractableGear_{size}_BlockModelDefinition.partialdef"))).RootElement;
-            var rest = hous.GetProperty("$Value").GetProperty("Manipulator").GetProperty("Dummies").GetProperty("Changed").EnumerateArray()
-                .First(c => c.GetProperty("Value").GetProperty("Name").GetString() == "Wheel Rest Position").GetProperty("Value").GetProperty("Transform").GetProperty("Transform").GetProperty("Orientation");
-            Check(Near(F(rest.GetProperty("X")), sq[0]) && Near(F(rest.GetProperty("W")), sq[3]), $"{size}: the spec's pivot turn is not the housing's wheel rest");
-            string scomp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ServerComposition.partialdef"));
-            Check(scomp.Contains(L.GetProperty("module").GetString()) && scomp.Contains("WheelCornerModuleComponent"), $"{size}: the block is not on the foot's corner module");
-            string pdef = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_PowerableBlockDefinition.partialdef"));
-            string iconMeta = Path.Combine(d, "Icon", $"PadGear_{size}_Icon.png.meta");
-            string iconId = File.Exists(iconMeta) ? JsonDocument.Parse(File.ReadAllText(iconMeta)).RootElement.GetProperty("$Value").GetProperty("AssetID").GetString() : "?";
-            Check(pdef.Contains("\"" + name + "\"") && pdef.Contains("{G}" + iconId) && File.Exists(Path.Combine(d, "Icon", $"PadGear_{size}_Icon.png")), $"{size}: the block's name or its rendered icon");
+            var hous = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Assets", "Aero", "RetractableGear", size, $"RetractableGear_{size}_BlockModelDefinition.partialdef"))).RootElement
+                .GetProperty("$Value").GetProperty("Manipulator").GetProperty("Dummies").GetProperty("Changed").EnumerateArray().Select(c => c.GetProperty("Value")).ToArray();
+            Vector3 Dum(string nm) { var t = hous.First(v => v.GetProperty("Name").GetString() == nm).GetProperty("Transform").GetProperty("Transform").GetProperty("Position"); return new Vector3(F(t.GetProperty("X")), F(t.GetProperty("Y")), F(t.GetProperty("Z"))); }
+            Vector3 hub = Dum("GearRodHub"), hinge = Dum("GearLegHinge");
+            var lay = new GearLayout { HingePoint = hinge, DeployedHub = hub, HingeAxis = Vector3.UnitX };
+            var foot = V(L.GetProperty("foot")); var sole = V(L.GetProperty("sole")); var centre = V(L.GetProperty("wheel_centre"));
+            Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), lay.FootPoint) < 1e-3f, $"{size}: the foot's dummy is not GearLayout.FootPoint (the ankle pin)");
+            Check(Near(sole[1], foot[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], foot[0]) && Near(centre[2], foot[2]),
+                  $"{size}: the hidden wheel's bottom is not the foot's sole (under it)");
 
-            // the puck: a cylinder about Y the corner module fits (radius above half its length), the sphere's bottom at the sole
-            var gl = JsonDocument.Parse(File.ReadAllText(Path.Combine(fd, "Models", N + "_collision.gltf"))).RootElement;
-            int count = gl.GetProperty("accessors")[0].GetProperty("count").GetInt32();
-            var bin = File.ReadAllBytes(Path.Combine(fd, "Models", N + "_collision.bin"));
-            var pts = Enumerable.Range(0, count).Select(i => new Vector3(BitConverter.ToSingle(bin, i * 12), BitConverter.ToSingle(bin, i * 12 + 4), BitConverter.ToSingle(bin, i * 12 + 8))).ToArray();
-            float r = pts.Max(v => MathF.Sqrt(v.X * v.X + v.Z * v.Z)), rmin = pts.Min(v => MathF.Sqrt(v.X * v.X + v.Z * v.Z));
-            float y0 = pts.Min(v => v.Y), y1 = pts.Max(v => v.Y), cy = (y0 + y1) / 2;
-            Check(count >= 24 && r - rmin < 1e-4f && r > 0.05f, $"{size}: the puck is not round ({rmin:F3}..{r:F3})");
-            Check(r > (y1 - y0) * 0.5f, $"{size}: the puck fails the cylinder fit (radius {r:F3} vs half length {(y1 - y0) / 2:F3})");
-            Check(Near(cy - r, -H), $"{size}: the corner module's sphere bottom {cy - r:F3} is not the sole {-H:F3}");
+            // the pad block's own model: the wheel rest moved, the foot's dummy at the ankle pin; its subparts: leg, rod, foot
+            JsonElement Man(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(d, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");
+            var bmd = Man($"PadGear_{size}_BlockModelDefinition.partialdef");
+            Check(bmd.GetProperty("Guid").GetString() == L.GetProperty("block_model").GetString(), $"{size}: the block model's GUID is not the spec's");
+            var ch = bmd.GetProperty("Dummies").GetProperty("Changed").EnumerateArray().ToArray();
+            var restPos = ch.First(c => c.GetProperty("Kind").GetString() == "Update").GetProperty("Value").GetProperty("Transform").GetProperty("Transform").GetProperty("Position");
+            var rp = V(L.GetProperty("rest_p"));
+            Check(Near(F(restPos.GetProperty("Y")), rp[1]) && Near(F(restPos.GetProperty("Z")), rp[2]), $"{size}: the wheel rest is not moved under the sole");
+            var fd = ch.First(c => c.GetProperty("Kind").GetString() == "Insert").GetProperty("Value");
+            var fdp = fd.GetProperty("Transform").GetProperty("Transform").GetProperty("Position");
+            Check(fd.GetProperty("Name").GetString() == "GearFoot" && Near(F(fdp.GetProperty("Y")), foot[1]), $"{size}: no GearFoot dummy at the ankle pin");
+            string csp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ConditionalSubPartsDefinition.def"));
+            Check(csp.Contains(L.GetProperty("foot_subpart").GetString()), $"{size}: the foot is not one of the block's subparts");
+            string scomp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ServerComposition.partialdef"));
+            Check(scomp.Contains(L.GetProperty("module").GetString()) && scomp.Contains(L.GetProperty("block_model").GetString()), $"{size}: the block is not on its own model and the hidden wheel's corner module");
+
+            // the hidden wheel: the vanilla model kept, its pivot at its centre, its mass, no drive / steering, its client prefab hidden
+            string wd = Path.Combine(d, "Foot");
+            JsonElement WMan(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");
+            string W = $"PadGear_{size}_HiddenWheel";
+            var mcd = WMan(W + "_ModelComponentDefinition.partialdef");
+            Check(!mcd.TryGetProperty("Model", out _), $"{size}: the hidden wheel's model is not the vanilla wheel's");
+            var piv = mcd.GetProperty("Dummies").GetProperty("Changed")[0].GetProperty("Value").GetProperty("Transform").GetProperty("Transform").GetProperty("Position");
+            Check(F(piv.GetProperty("X")) == 0f && F(piv.GetProperty("Y")) == 0f && F(piv.GetProperty("Z")) == 0f, $"{size}: the hidden wheel's pivot is not its centre");
+            Check(F(WMan(W + "_ColliderDefinition.partialdef").GetProperty("WheelMass")) == F(L.GetProperty("mass")), $"{size}: the hidden wheel's mass is not the spec's");
+            var mod = WMan($"PadGear_{size}_WheelCornerModuleDefinition.partialdef");
+            Check(mod.GetProperty("WheelPrefab").GetString() == L.GetProperty("wheel_server").GetString() && F(mod.GetProperty("MaxTorque")) == 0f && F(mod.GetProperty("MaxSteeringAngle")) == 0f,
+                  $"{size}: the corner module is not the hidden wheel's, or drives / steers");
+            Check(guids.Contains(L.GetProperty("wheel_client").GetString()), $"{size}: its hidden wheel's client prefab is not in AeroBlockGuids.HiddenWheelClientPrefabs (it would be drawn)");
+            var fm = JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, "Models", $"PadGear_{size}_Foot.model"))).RootElement.GetProperty("$Value").GetProperty("CollisionShapesAsset");
+            Check(fm.GetProperty("AssetReference").ValueKind == JsonValueKind.Null, $"{size}: the foot has a collider (it is visual only)");
+            string pdef = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_PowerableBlockDefinition.partialdef"));
+            Check(pdef.Contains("\"" + name + "\""), $"{size}: the block's name");
 
             // the sag at the rated load: the default stiffness within half the stroke, the slider's top a few cm
             float mass = F(L.GetProperty("mass")), rated = F(L.GetProperty("rated")), stroke = F(L.GetProperty("travel")), dt = 1f / 60f;
