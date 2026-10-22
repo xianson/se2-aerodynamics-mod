@@ -50,6 +50,18 @@ public static class WheelShockDev
     /// <summary>The last drop's momentum ledger (midair or not): one line.</summary>
     public static string DevImpact = "none";
     public const int FreeTicks = 12;
+    /// <summary>THE PER-TICK TRACE (2026-10-21, the shocks' diagnosis): every tick of the approach's last 8 and of the record's first
+    /// DevTraceTicks, logged at the drop's end ("[AERO-SHOCK-TRACE] dN ..."): the grid's vertical speed, its hull's contact impulse
+    /// against the deck, and per wheel the compression, its rate, the strut's force and its force before the rate cap (rated
+    /// weights), the contact, the wheel body's and the ship's (at the mount) velocities along the axis, the wheel's own contact
+    /// impulse against the deck (N s, along up, the previous step's), armed, the constraint's factors written.</summary>
+    public static bool DevTrace;
+    public static int DevTraceTicks = 100;
+    /// <summary>Diagnosis overrides (NaN / 0: none): the wheel constraint's strength / damping factor written while the shocks own it,
+    /// and its lower suspension limit (negative: the wheel hangs lower).</summary>
+    public static float DevConstraintS = float.NaN, DevConstraintD = float.NaN, DevMinLimit = 0f;
+    static readonly List<string> _trace = new();
+    static int _traceRec;
     public static int DevDrop;
     public static string DevPhase = "idle", DevResult = "none";
 
@@ -195,6 +207,7 @@ public static class WheelShockDev
         _ticks++;
         float dt = AeroPhysics.Dt;
         bool hasP = Momentum(all, out Vector3 P, out float M, out Vector3 Lw, out float wNow);
+        if (DevTrace && (_phase == 2 || _phase == 3)) TraceTick(all, up, vUp);
         if (_aero != null && _phase == 3) { _aeroMax = MathF.Max(_aeroMax, _aero.LastAppliedForceW.Length()); _windMax = MathF.Max(_windMax, _aero.LastWindUndone.Length()); }
         switch (_phase)
         {
@@ -272,6 +285,24 @@ public static class WheelShockDev
         if (hasP) { _pPrev = P; _M = M; _hasPrev = true; _fAeroPrev = _aero != null ? _aero.LastAppliedForceW : Vector3.Zero; }
     }
 
+    static void TraceTick(List<AeroWheelShockComponent> all, Vector3 up, float vUp)
+    {
+        if (_phase == 2) { if (_trace.Count >= 8) _trace.RemoveAt(0); }
+        else if (_traceRec++ >= DevTraceTicks) return;
+        var sb = new System.Text.StringBuilder(260);
+        sb.Append(_phase == 2 ? "a " : "r ").Append(_phase == 3 ? _ticks - _touchTick : _ticks);
+        sb.Append(($" vu {vUp:F3} hull {Cid(_grid.Data, all, up):F0}"));
+        foreach (var s in all)
+        {
+            if (!ReferenceEquals(s.Grid, _grid) || !s.Rating.Valid) continue;
+            var we = s.Module?.WheelEntity;
+            float jc = we != null && GridPhysics.Alive(we.Data) ? Cid(we.Data, all, up) : 0f;
+            float w = s.Rating.RatedWeight;
+            sb.Append(($" | {s.X:F4} {s.V:F3} {s.F / w:F3} {s.FRaw / w:F3} {(s.Contact ? 1 : 0)} {s.Wv:F3} {s.Sv:F3} {jc:F0} {(s.ShockArmed ? 1 : 0)} {s.WrittenS:F2} {s.WrittenD:F2}"));
+        }
+        _trace.Add(sb.ToString());
+    }
+
     /// <summary>The ledger. THE IMPACT: from the touch to the first tick the rig's normal velocity is back to zero or up (the
     /// compression - all of the sink taken out): its length T, the peak normal contact force and how long it stays over half of it,
     /// dPn (the momentum's change along the normal: M (v_in + v_out) - the rig's own velocities), the gravity's impulse M g T, the
@@ -331,6 +362,7 @@ public static class WheelShockDev
         if (_grid == null) { DevResult = $"drop {_seen}: no grid '{want}' with shocked wheels"; DevPhase = "idle"; _phase = 0; return; }
         _wheels.Clear(); _ticks = 0; _touchTick = 0; _calm = 0; _off = 0; _bounces = 0; _hull = 0;
         _touchV = 0f; _rebound = 0f; _settle = float.NaN; _peakF = 0f; _maxSink = 0f;
+        _trace.Clear(); _traceRec = 0;
         _fn.Clear(); _ft.Clear(); _p.Clear(); _vUp.Clear(); _jcid.Clear(); _feet.Clear();
         _g = Vector3.Zero; _gN = 0; _hasPrev = false; _lastClear = float.NaN; _fAeroPrev = Vector3.Zero; _lMax = _wMax = _aeroMax = _windMax = 0f; DevImpact = "running";
         _aero = _grid.TryGet<AeroGridComponent>();
@@ -435,6 +467,12 @@ public static class WheelShockDev
         DevResult = sb.ToString();
         Log.Default?.Info("[AERO-SHOCK] " + DevResult);
         Log.Default?.Info("[AERO-SHOCK] " + DevImpact);
+        if (DevTrace)
+        {
+            float rw = 0f; foreach (var k in _wheels.Keys) { rw = k.Rating.RatedWeight; break; }
+            Log.Default?.Info($"[AERO-SHOCK-TRACE] d{_seen} mode {WheelShockSettings.Mode} sink {DevSink} M {_M:F0} kg rated {rw:F0} N S {DevConstraintS} D {DevConstraintD} min {DevMinLimit} | cols: x v F/W Fraw/W contact Wv Sv Jc armed S D");
+            foreach (var line in _trace) Log.Default?.Info($"[AERO-SHOCK-TRACE] d{_seen} {line}");
+        }
     }
 
     static (double integ, int blocks) Integrity(Entity grid)

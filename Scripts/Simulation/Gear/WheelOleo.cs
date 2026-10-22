@@ -163,7 +163,11 @@ public static class WheelOleo
     /// previous step (the rate cap; updated). Never NaN: a bad input gives 0.
     /// </summary>
     public static float Step(in WheelRating r, float x, float v, float vStar, float m, float dt, ref float last)
+        => Step(r, x, v, vStar, m, dt, ref last, out _);
+    /// <summary>The same; uncapped: the force before the rate cap (diagnostics).</summary>
+    public static float Step(in WheelRating r, float x, float v, float vStar, float m, float dt, ref float last, out float uncapped)
     {
+        uncapped = 0f;
         if (!r.Valid || !(dt > 0f) || !(m > 0f) || !float.IsFinite(x + v + vStar + m)) { last = 0f; return 0f; }
         if (x <= 0f && vStar <= 0f) { last = 0f; return 0f; }   // (on its limit, extending: the wheel hangs - nothing)
         float xs = Math.Max(0f, x);
@@ -173,6 +177,7 @@ public static class WheelOleo
         // (push only: the rebound damper eats the push down to nothing, never pulls - a strut in tension would yank the light wheel
         //  off the ground, and it chatters between the ground and its limit)
         if (!(f > 0f)) f = 0f;
+        uncapped = f;
         // the rate cap: a rise at most ForceRateCap rated weights a second; a fall at once
         float cap = WheelShockSettings.ForceRateCap;
         if (cap > 0f) f = Math.Min(f, Math.Max(last, 0f) + cap * r.RatedWeight * dt);

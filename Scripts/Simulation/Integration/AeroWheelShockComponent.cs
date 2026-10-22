@@ -83,6 +83,9 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
     // read by the apply job and the recorder
     internal Entity Grid; internal bool Contact, Grounded; internal int GridGrounded = 1;
     internal float X, V, F;
+    /// <summary>Dev trace (WheelShockDev.DevTrace): the wheel body's and the ship's (at the mount) velocities along the axis, read with
+    /// X and V (before this tick's impulse); the strut's force before its rate cap.</summary>
+    internal float Wv, Sv, FRaw;
     /// <summary>The factors last written (the readouts: the constraint itself is never read off the server's step).</summary>
     internal float WrittenS = float.NaN, WrittenD = float.NaN;
     internal WheelRating Rating => _rating;
@@ -127,7 +130,8 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
             //  the shocks on the same numbers. 2026-10-21: they kept the last value from when the shocks last ran - vanilla's
             //  compression read 0.00 / a constant, its contact stuck "on the ground" - and the off-vs-on comparison was not one)
             Contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
-            float xr = _cm.CalculateSuspensionDistance(wheel); X = float.IsFinite(xr) ? xr : 0f; V = 0f;
+            float xr = _cm.CalculateSuspensionDistance(wheel); X = float.IsFinite(xr) ? xr : 0f; V = 0f; FRaw = 0f;
+            if (WheelShockDev.DevTrace && WheelShockDev.Active) DevVelocities(grid, wheel);
             LetGo(); return;
         }
 
@@ -144,7 +148,7 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         Vector3 vShip = srb.GetLinearVelocityAtPoint(in smass, in gwt, in mount);
         float v = Vector3.Dot(wrb.LinearVelocity - vShip, axis);
         if (!float.IsFinite(x + v)) { LetGo(); return; }
-        X = x; V = v;
+        X = x; V = v; Wv = Vector3.Dot(wrb.LinearVelocity, axis); Sv = Vector3.Dot(vShip, axis);
         bool contact = Data.Has<WheelOnGroundCollectorComponent.ProxyWheelContactData>();
         Contact = contact;
         Vector3 g = GridPhysics.GetGravityDirection(gd);
@@ -169,7 +173,10 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         float wantS, wantD = armed ? WheelAirshock.ShockDamping : baseD;
         if (mode == WheelShockSettings.AirshockOnly) wantS = armed ? GearStiffness.MaxStrength : baseS;
         else wantS = GearStiffness.Cap(baseS * Math.Clamp(WheelShockSettings.ConstraintSpringShare, 0f, 1f));
+        if (float.IsFinite(WheelShockDev.DevConstraintS)) wantS = GearStiffness.Cap(WheelShockDev.DevConstraintS);   // (dev: the diagnosis)
+        if (float.IsFinite(WheelShockDev.DevConstraintD)) wantD = Math.Max(0f, WheelShockDev.DevConstraintD);
         Write(wantS, wantD);
+        if (_wc != null && _wc.MinSuspensionLimit != WheelShockDev.DevMinLimit) _wc.MinSuspensionLimit = WheelShockDev.DevMinLimit;   // (dev: 0 - the game's)
 
         // ── the oleo ──
         if (mode != WheelShockSettings.AirshockOleo) { _lastF = 0f; Grounded = false; return; }
@@ -178,13 +185,28 @@ public partial class AeroWheelShockComponent : Component, IInSceneListener
         Grounded = contact;
         float m = contact ? WheelOleo.GroundMass(mAt, smass.Mass, GridGrounded) : WheelOleo.AirMass(mAt, wmass.Mass);
         float vStar = contact ? v - dt * Vector3.Dot(g, axis) : v;
-        float f = WheelOleo.Step(_rating, x, v, vStar, m, dt, ref _lastF);
-        F = f;
+        float f = WheelOleo.Step(_rating, x, v, vStar, m, dt, ref _lastF, out float raw);
+        F = f; FRaw = raw;
         if (f > 0f)
         {
             PendJ = f * dt; PendAxis = axis; PendAt = mount; PendWheel = wheel; PendGrid = grid;
             Volatile.Write(ref Armed, 1);
         }
+    }
+
+    /// <summary>Dev trace, not taking part (Shocks Off): the wheel's and the ship's velocities along the suspension axis.</summary>
+    void DevVelocities(Entity grid, Entity wheel)
+    {
+        Wv = Sv = 0f;
+        if (grid == null || !_fieldsLooked || _suspensionField == null) return;
+        var gd = grid.Data; var wd = wheel.Data;
+        if (!gd.TryGet<RigidBodyData>(out var srb) || !gd.TryGet<RigidBodyMassProperties>(out var smass) || !wd.TryGet<RigidBodyData>(out var wrb)) return;
+        var susp = (WheelCornerModuleComponent.SuspensionInfo)_suspensionField.GetValue(_cm);
+        var idleW = susp.IdleTransform * Entity.Data.GetWorldTransform();
+        Vector3 axis = idleW.Orientation.GetUp();
+        Vector3D mount = idleW.Position + (Vector3D)(axis * X);
+        Wv = Vector3.Dot(wrb.LinearVelocity, axis);
+        Sv = Vector3.Dot(srb.GetLinearVelocityAtPoint(in smass, gd.GetWorldTransform(), in mount), axis);
     }
 
     /// <summary>The player's spring: the terminal's stiffness (a gear's x its StiffnessScale), capped.</summary>
