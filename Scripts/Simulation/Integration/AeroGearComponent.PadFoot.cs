@@ -44,6 +44,10 @@ public partial class AeroGearComponent
     public static int PadSliderKind = 0;
     /// <summary>Harness: false keeps the vanilla wheel constraint (the slider alone made - double-constrained: a comparison only).</summary>
     public static bool PadReleaseVanilla = true;
+    /// <summary>Server ticks a new foot (its wheel body) lives before its slider is made and its wheel constraint released (the
+    /// engine stages a new body's constraints; touching them in the tick they were made is avoided).</summary>
+    public static int PadSettleTicks = 30;
+    Entity _settleWheel; int _settleTicks;
     public static int PadSliders, PadSlidersLost, PadBoxes, PadReleased;
     public static string PadFault = "";
 
@@ -86,8 +90,11 @@ public partial class AeroGearComponent
             Log.Default?.Info($"[AERO-GEAR] {_key} pad foot: box collider {foot.BoxHalf.X * 2:F2} x {foot.BoxHalf.Y * 2:F2} x {foot.BoxHalf.Z * 2:F2} m, {mass:F0} kg{fr}");
         }
 
-        // the slider
+        // the slider (a new foot settles PadSettleTicks first)
+        if (!ReferenceEquals(_settleWheel, wheel)) { _settleWheel = wheel; _settleTicks = 0; }
+        if (alive && _settleTicks < PadSettleTicks) _settleTicks++;
         var did = _sliderLife.Step(alive ? wheel : null, _sliderDead != null && _sliderDead());
+        if (did == PadSliderDo.Create && _settleTicks < PadSettleTicks) did = PadSliderDo.Nothing;
         if (!_sliderLife.Has && _slider != null) { _slider = null; _slider6 = null; _sliderP = null; _sliderDead = null; _sliderGrid = null; PadSlidersLost++; }   // (gone with its body)
         if (did == PadSliderDo.Create) _sliderLife.Made(wheel, MakeSlider(physics, wheel, foot));
 

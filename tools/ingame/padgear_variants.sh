@@ -28,21 +28,21 @@ source "$MOD/tools/ingame/midair.sh"
 ask "encon off" >/dev/null
 midair_setup || exit 1
 games() { gear | tr '|' '\n' | grep "PAD " | sed -n 's/.* game \(-\?[0-9.]*\)).*/\1/p'; }
-# the variants: "kind excluded" (AeroGearComponent.PadSliderKind 0 prismatic / 1 6-DOF; PadSliderExcluded) - a fresh PADR100 each
-IFS=, read -ra VS <<< "${VARIANTS:-0 false,0 true,1 false,1 true}"
+# the variants: "kind excluded release" (AeroGearComponent.PadSliderKind 0 prismatic / 1 6-DOF; PadSliderExcluded) - a fresh PADR100 each
+IFS=, read -ra VS <<< "${VARIANTS:-0 false true,0 false true,0 false false,1 false true}"
 for vr in "${VS[@]}"; do
-    set -- $vr; k=$1; ex=$2
+    set -- $vr; k=$1; ex=$2; rel=${3:-true}
     budget 45 || { skip "variant $k/$ex" "deadline"; continue; }
-    set_ AeroGearComponent.PadSliderKind "$k"; set_ AeroGearComponent.PadSliderExcluded "$ex"
+    set_ AeroGearComponent.PadSliderKind "$k"; set_ AeroGearComponent.PadSliderExcluded "$ex"; set_ AeroGearComponent.PadReleaseVanilla "$rel"
     rig PADR100 PADR100.txt 8 14 -12 || continue
     hold 5; set_ AeroGearComponent.PadReset $RANDOM; hold 3
     a="rest: tilt $(recf tilt) spin $(recf spin) comps $(games | tr '\n' ' ')"
     dropm PADR100 2 0 1 3 || true
     F=$(awk -v RS='|' '/ foot / { for (i = 1; i <= NF; i++) { if ($i == "tilt") { t = $(i+1) + 0; if (t > mt) mt = t } if ($i == "rate") { for (j = 1; j <= 3; j++) { r = $(i+j) + 0; if (r > mr) mr = r } } } } END { printf "drop: feet tilt %.1f rate %.2f", mt, mr }' <<< "$R")
-    note "variant kind $k excluded $ex | $a | $F | $(echo "$R" | cut -c1-160)"
+    note "variant kind $k excluded $ex release $rel | $("$ORB" "findgrids PADR100" | grep -a "> findgrids" | tail -1 | cut -c40-120) | $a | $F | $(echo "$R" | cut -c1-160)"
     rig_del "$RIG"
 done
-set_ AeroGearComponent.PadSliderKind 0; set_ AeroGearComponent.PadSliderExcluded false
+set_ AeroGearComponent.PadSliderKind 0; set_ AeroGearComponent.PadSliderExcluded false; set_ AeroGearComponent.PadReleaseVanilla true
 if [ "${RIGTRACE:-1}" = 1 ]; then
     set_ AeroGearComponent.PadTraceTicks 20
     ask "gen spawn PADRIG.txt ahead=45 right=-10 up=12" >/dev/null; poll 20 spawned PADRIG; hold 4
