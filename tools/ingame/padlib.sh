@@ -31,11 +31,14 @@ count() { grep -o -- "$2" <<< "$1" | wc -l | tr -d ' '; }
 recf() { rec | tr '|' '\n' | sed -n "s/.* $1 \([-0-9.]*\).*/\1/p" | sort -g | tail -1; }
 recmin() { rec | tr '|' '\n' | sed -n "s/.* $1 \([-0-9.]*\).*/\1/p" | sort -g | head -1; }
 lt() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a != "" && a + 0 < b + 0)}'; }
+le() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a != "" && a + 0 <= b + 0)}'; }
 near() { awk -v a="$1" -v b="$2" -v t="$3" 'BEGIN{exit !(a != "" && (a - b < t) && (b - a < t))}'; }
-locked_n() { count "$(gear)" "PAD locked level"; }
+slid_n() { count "$(gear)" "PAD slider"; }
+alone_n() { count "$(gear)" "PAD slider alone"; }
 boxed_n() { count "$(gear)" " box tilt"; }
 # predicates for expect / poll (run in this shell: no bash -c)
-locked_ge() { [ "$(locked_n)" -ge "$1" ]; }
+slid_ge() { [ "$(slid_n)" -ge "$1" ]; }
+alone_ge() { [ "$(alone_n)" -ge "$1" ]; }
 spawned() { "$ORB" 'gen status' | grep -aq "spawned '$1'"; }
 whole() { "$ORB" 'gen whole' | grep -aq ' WHOLE'; }
 ge() { [ -n "$1" ] && [ "$1" -ge "$2" ] 2>/dev/null; }
@@ -48,11 +51,11 @@ release() {
     [ -n "$RELEASED" ] && return; RELEASED=1
     alive || { echo "== release: no game running"; return; }
     local r=("aeroset AeroGearComponent.PadRecord false" "aeroset AeroGearComponent.PadHop 0" "aeroset AeroGearComponent.PadPush 0"
-             "aeroset AeroGearComponent.DevCommand 1" "aeroset AeroGearComponent.DevCommand 0" "aeroset AeroGearComponent.PadLockAxis ${AXIS0:-3}"
+             "aeroset AeroGearComponent.DevCommand 1" "aeroset AeroGearComponent.DevCommand 0"
              "aeroset WheelShockDev.DevApproach false" "aeroset WheelShockDev.DevNoAero false" "aeroset WheelShockSettings.Mode 2"
              "aeroset WheelShockDev.DevForward 0" "aeroset WheelShockDev.DevSink 3" "aeroset WheelShockDev.DevRecordSeconds 4"
              ${MIDAIR_D0:+"aerosetting Structure.Damage $MIDAIR_D0"} ${GENCLEAR:+"gen clear"})
-    echo "== release: ${#r[@]} overrides (dev probes off, the lock axis back, the midair drop's values back, gears down${GENCLEAR:+, the test grids removed})"
+    echo "== release: ${#r[@]} overrides (dev probes off, the midair drop's values back, gears down${GENCLEAR:+, the test grids removed})"
     ask "${r[@]}" | paste -d'|' <(printf '%s\n' "${r[@]}") - | sed 's/^/   /; s/|/  =>  /' | cut -c1-140
 }
 summary_all() {

@@ -1,0 +1,29 @@
+# PADR100 - the pad-foot gears' rated rig (tools/ingame/build_padrigs.py; do not edit by hand)
+# 3 x 3 x 2 heavy cubes on four 100 pads: ~62.5 t, ~15.61 t a pad = 104 % of its rating (15.00 t)
+name PADR100
+ahead 40
+up 6
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 20 Forward Up   # heavy armour 2.5 m
+B 7046873e-c9fe-408c-96c8-53a7f0e62bcd 10 17 10 Forward Up charge=1   # Battery150 (the gears' power)
+B ae200001-ae00-9e22-0011-000000000001 0 -7 0 Forward Up   # pad 100 L front
+B ae200001-ae00-9e22-0011-000000000001 0 -7 20 Forward Up   # pad 100 L back
+B ae200001-ae00-9e22-0011-000000000001 20 -7 0 Forward Up   # pad 100 R front
+B ae200001-ae00-9e22-0011-000000000001 20 -7 20 Forward Up   # pad 100 R back

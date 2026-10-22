@@ -1,0 +1,51 @@
+# PADR150 - the pad-foot gears' rated rig (tools/ingame/build_padrigs.py; do not edit by hand)
+# 4 x 5 x 2 heavy cubes on four 150 pads: ~137.6 t, ~34.40 t a pad = 102 % of its rating (33.75 t)
+name PADR150
+ahead 40
+up 6
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 10 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 10 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 0 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 20 10 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 10 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 10 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 0 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 10 20 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 0 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 10 30 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 0 40 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 30 10 40 Forward Up   # heavy armour 2.5 m
+B 7046873e-c9fe-408c-96c8-53a7f0e62bcd 20 17 20 Forward Up charge=1   # Battery150 (the gears' power)
+B ae200001-ae00-9e23-0011-000000000001 0 -8 0 Forward Up   # pad 150 L front
+B ae200001-ae00-9e23-0011-000000000001 0 -8 40 Forward Up   # pad 150 L back
+B ae200001-ae00-9e23-0011-000000000001 30 -8 0 Forward Up   # pad 150 R front
+B ae200001-ae00-9e23-0011-000000000001 30 -8 40 Forward Up   # pad 150 R back

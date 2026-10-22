@@ -1,0 +1,15 @@
+# PADR050 - the pad-foot gears' rated rig (tools/ingame/build_padrigs.py; do not edit by hand)
+# 2 x 2 x 1 heavy cubes on four 050 pads: ~15.1 t, ~3.78 t a pad = 101 % of its rating (3.75 t)
+name PADR050
+ahead 40
+up 6
+static 0
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 0 0 10 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 0 Forward Up   # heavy armour 2.5 m
+B d4915136-8884-4cf8-9480-f5c98a76c8cf 10 0 10 Forward Up   # heavy armour 2.5 m
+B 7046873e-c9fe-408c-96c8-53a7f0e62bcd 10 7 10 Forward Up charge=1   # Battery150 (the gears' power)
+B ae200001-ae00-9e21-0011-000000000001 0 -6 0 Forward Up   # pad 050 L front
+B ae200001-ae00-9e21-0011-000000000001 0 -6 10 Forward Up   # pad 050 L back
+B ae200001-ae00-9e21-0011-000000000001 10 -6 0 Forward Up   # pad 050 R front
+B ae200001-ae00-9e21-0011-000000000001 10 -6 10 Forward Up   # pad 050 R back
