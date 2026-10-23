@@ -419,6 +419,12 @@ public static partial class AeroSettings
         B("Hud.Loac", "client", false, () => LoacWarning.Enabled, v => LoacWarning.Enabled = v,
             "The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the attitude you command needs nearly / more than the torque the gyros, thrusters and control surfaces have at this speed (slow, the surfaces lose to the air).")
             .Ui("Loss-of-control warning", GHud, Basic);
+        F("Hud.PitchLimitDeg", "client", 0, 45, false, () => LoacWarning.PitchLimitDeg, v => LoacWarning.PitchLimitDeg = (float)v,
+            "PITCH LIMIT when the largest pitch upset the ship can still turn back is under this (deg) - now, or a few seconds ahead at the Mach it is gaining. With the loss-of-control warning.")
+            .Ui("Pitch limit warning", GHud, Advanced, "deg", 0.5);
+        F("Hud.PitchLostDeg", "client", 0, 45, false, () => LoacWarning.PitchLostDeg, v => LoacWarning.PitchLostDeg = (float)v,
+            "PITCH LOST when the largest pitch upset the ship can still turn back is under this (deg) now: any nudge departs it.")
+            .Ui("Pitch lost warning", GHud, Advanced, "deg", 0.5);
         B("Hud.Mach", "client", false, () => MachHud.On, v => MachHud.On = v,
             "Mach in the game's speed readout (\"312 m/s · M 0.92\"), for what you are flying. Off by default: the flight boxes by ALT show it.")
             .Ui("Mach in speed readout", GHud, Basic);

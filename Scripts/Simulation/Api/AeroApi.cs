@@ -36,7 +36,7 @@ public static partial class AeroApi
     /// <summary>The API contract. 2: the first published API (entry sources were contract 2 before it). 3: the
     /// atmosphere, thrust profiles, change counters, aero blocks (read), the on/off switch and the settings - every
     /// version-2 member unchanged.</summary>
-    public const int Version = 14;   // (14: test spawns - RequestTestSpawn; text settings - TryGetSettingText, SetSettingText; 13: the combat slots and the formation - TryGetAutopilotSlot, behaviours 13..15 in TryGetAutopilotPilot; thrust vectoring - SetThrusterGimbal, TryGetThrustVectoring; 12: the flight pilot - SetAutopilotTarget, SetAutopilotTargetPoint, ClearAutopilotTarget, TryGetAutopilotAim, TryGetAutopilotPilot, TryGetAutopilotEnemy; 11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
+    public const int Version = 15;   // (15: the pitch upset margin - TryGetPitchMargin; 14: test spawns - RequestTestSpawn; text settings - TryGetSettingText, SetSettingText; 13: the combat slots and the formation - TryGetAutopilotSlot, behaviours 13..15 in TryGetAutopilotPilot; thrust vectoring - SetThrusterGimbal, TryGetThrustVectoring; 12: the flight pilot - SetAutopilotTarget, SetAutopilotTargetPoint, ClearAutopilotTarget, TryGetAutopilotAim, TryGetAutopilotPilot, TryGetAutopilotEnemy; 11: the autopilot and the flight performance - TryGetAutopilot, RequestAutopilot, TryGetFlightPerformance, AeroApi.Autopilot.cs; 10: the flight state's GyroSaturation, GyroTorqueShare - indices 75, 76; 9: RequestQuickLaunch - the seated player's creative quick launch asked, as its key; 8: the settings' UI metadata and authority - TryGetSettingUi, IsSettingForced, CanEditWorldSettings, ResetSettingsGroup, AreWorldSettingsUnsaved; 7: the per-tick flight state, control surfaces, thruster forces, the structure and hull heat block by block and face by face, failure events, another heat model's temperatures - AeroApi.Flight.cs, AeroApi.Structure.cs; 6: SetDrag, SetPlateDrag, ClearDrag, TryGetDrag - other mods' drag on a grid; 5: GetTopSpeedAt, GetMass, GetDesignPressures; 4: the design probe - TryDesign, GetTopSpeed, GetThrustAlong, TryGetCenterOfMass, GetWavePeak)
 
     // ── the air, per grid ──
 
@@ -275,6 +275,22 @@ public static partial class AeroApi
         var aero = AeroOf(grid);
         if (aero == null) return false;
         state = aero.LoacState; ratio = aero.LoacRatio;
+        return true;
+    }
+
+    /// <summary>(version 15) THE PITCH UPSET MARGIN of a player's grid, PREDICTED (Loac.cs EvaluatePitchMargin): the largest pitch upset
+    /// (about the cockpit's right) its gyros, thrusters and control surfaces can still turn back, in the air and at the angle of
+    /// attack now - and at the Mach it reaches in a few seconds at the rate it is gaining. state 0 none, 1 PITCH LIMIT ahead
+    /// only (at machAhead it falls under Hud.PitchLimitDeg, 6 deg; now it is over), 2 PITCH LIMIT now, 3 PITCH LOST (now under
+    /// Hud.PitchLostDeg, 2 deg) - held 0.25 s; marginDeg / aheadDeg (+inf: stable in pitch - the air
+    /// turns it back itself), machAhead, efoldS (the time an upset takes to grow e-fold; +inf: stable). False: not a player's
+    /// grid flown through air, or not evaluated yet.</summary>
+    public static bool TryGetPitchMargin(Keen.VRage.DCS.Components.Entity grid, out int state, out float marginDeg, out float aheadDeg, out float machAhead, out float efoldS)
+    {
+        state = 0; marginDeg = aheadDeg = efoldS = float.PositiveInfinity; machAhead = 0f;
+        var aero = AeroOf(grid);
+        if (aero == null || !aero.PitchValid) return false;
+        state = aero.PitchState; marginDeg = aero.PitchMarginDeg; aheadDeg = aero.PitchAheadDeg; machAhead = aero.PitchMachAhead; efoldS = aero.PitchDivergeS;
         return true;
     }
 

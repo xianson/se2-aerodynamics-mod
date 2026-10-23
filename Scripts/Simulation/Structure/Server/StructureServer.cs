@@ -29,6 +29,9 @@ public partial class AeroGridComponent
         public bool HasTarget; public Quaternion Target, Orient; public Vector3 Reach, SurfPush, SurfPull, SurfNeutral, Airframe;
         /// <summary>The autopilot's probe: the attitude its guidance wants, for the loss of control predicted there (EnvelopeGuard).</summary>
         public bool HasProbe; public Quaternion Probe;
+        /// <summary>The pitch upset margin's (Loac.cs EvaluatePitchMargin): the cockpit in the grid (its right: the pitch axis), the
+        /// inverse inertia (principal axes) and the rotation from them to the grid's.</summary>
+        public Quaternion Cockpit, InertiaRot; public Vector3 InvInertia;
         /// <summary>The ship's mass, the gravity it falls with, its thrusters' maxima per side - the flight performance's (FlightPerf).</summary>
         public float Mass; public Vector3 GravityTrue, ThrustPos, ThrustNeg;
         public float[] Integrity;
@@ -46,7 +49,7 @@ public partial class AeroGridComponent
         {
             L.Clear(); L.AeroCom = L.AirVel = Vector3.Zero; L.LiftScale = 1f; L.CellSize = 0.25f; L.CellOffset = 0f;
             Density = AirT = Dt = 0f; Piloted = false; SoS = Weight = 0f; Up = Vector3.Zero;
-            HasTarget = false; Target = Orient = default; Reach = SurfPush = SurfPull = SurfNeutral = Airframe = Vector3.Zero; HasProbe = false; Probe = default; Mass = 0f; GravityTrue = ThrustPos = ThrustNeg = Vector3.Zero;
+            HasTarget = false; Target = Orient = default; Reach = SurfPush = SurfPull = SurfNeutral = Airframe = Vector3.Zero; HasProbe = false; Probe = default; Cockpit = InertiaRot = Quaternion.Identity; InvInertia = Vector3.Zero; Mass = 0f; GravityTrue = ThrustPos = ThrustNeg = Vector3.Zero;
             Integrity = null; EntryDensity = EntryAirT = 0f; EntryAirLocal = Vector3.Zero; StructDamage = false;
         }
     }
@@ -192,6 +195,7 @@ public partial class AeroGridComponent
         snap.HasTarget = LoacHasTarget; snap.Target = LoacTarget; snap.Orient = Data.GetWorldTransform().Orientation;
         // (the autopilot's probe, or - stall protection in manual flight, Assists.cs - the pilot's own target)
         snap.HasProbe = ApFlying ? ApHasProbe : PilotProbeOn; snap.Probe = ApFlying ? ApProbe : PilotProbe;
+        snap.Cockpit = _cockpit; snap.InvInertia = LastInvInertia; snap.InertiaRot = LastInertiaMajorAxisRot;
         snap.Mass = LastMass; snap.GravityTrue = GridPhysics.GetGravityDirection(Data) * GridPhysics.GravityScale;
         if (Data.TryGet<Keen.Game2.Simulation.WorldObjects.Shared.Movement.MaxThrustData>(out var apMt)) { snap.ThrustPos = apMt.Regular.Positive; snap.ThrustNeg = apMt.Regular.Negative; }
         bool sFresh = SurfaceReachFresh;   // (a reach measured in faster air is not the surfaces' now: 2026-10-17)

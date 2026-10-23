@@ -589,6 +589,21 @@ taken, kept unattended) and its Enemy switch on (the whole construct becomes the
 does). A bogey with no speed set flies off at its cruise (its top speed at 3/4 throttle) once known. Removed after
 `Spawn.DespawnMinutes`, or by the despawn key (every grid with the tag, a reloaded world's too).
 
+## Version 15
+
+Every earlier member is unchanged. New (2026-10-23): **the pitch upset margin** - the forewarning of losing pitch control (an
+airframe unstable in pitch whose unstable slope outgrows its actuators with Mach: the F-6 can turn back ~43 deg at Mach 0.8, ~3
+at Mach 3).
+
+| Member | Since | What it does |
+|---|---|---|
+| `bool TryGetPitchMargin(Entity grid, out int state, out float marginDeg, out float aheadDeg, out float machAhead, out float efoldS)` | 15 | A player's grid flown through air: the largest pitch upset (about the cockpit's right) its gyros, thrusters and control surfaces can still turn back, in the air and at the angle of attack and sideslip now (`marginDeg`), and at the Mach it reaches 4 s ahead at the rate it is gaining (`aheadDeg`, at `machAhead`). `state` 0 none, 1 PITCH LIMIT ahead only (under `Hud.PitchLimitDeg` at `machAhead`, over it now), 2 PITCH LIMIT now, 3 PITCH LOST (now under `Hud.PitchLostDeg`), held 0.25 s. `efoldS`: the time an upset takes to grow e-fold. +inf (margin, e-fold): stable in pitch, the air turns it back itself. False: not evaluated (not a player's grid, slow, no air, `Hud.Loac` off, or the game's own attitude law flying it - the reach is only known under aero's). Server's evaluation, a few times a second. |
+
+How: the air's torque on the whole ship (the force table and the wings, `DesignProbe.ForcesAt`) with the ship turned +-2 deg
+about the pitch axis gives the slope; the reach either way (gyros and thrusters as the attitude law had them, the surfaces'
+travel as the allocator measured it) less the trim's use, over the slope, is the margin (`UpsetMath.Margin`). Ahead, the
+surfaces' reach and trim scale with the dynamic pressure there.
+
 ## Roadmap / gaps
 
 What the API does **not** expose yet, and why. Each would be a new member (never a change to an existing one).
@@ -718,6 +733,8 @@ A name the host file sets is **forced**: `SetSetting` refuses it ("forced by the
 | `Perf.QuietBeforeFullRebuild` | world | float | 5 | 0.5..120 | Quiet time before a full rebuild · Performance (host) · hidden | Seconds without block changes before a cleanup rebuild. |
 | `Hud.StallWarning` | client | bool | true |  | Stall warning · HUD · basic | The stall warning from the whole ship's air force: STALL when pulling further only loses lift, amber close to it. |
 | `Hud.Loac` | client | bool | true |  | Loss-of-control warning · HUD · basic | The loss-of-control warning, predicted: CONTROL LIMIT / LOSS OF CONTROL when holding the commanded attitude needs nearly / more than the torque available at this speed. |
+| `Hud.PitchLimitDeg` | client | float | 6 | 0..45 | Pitch limit warning · HUD · advanced | *(Unreleased)* PITCH LIMIT when the largest pitch upset the ship can still turn back is under this (deg): now, or a few seconds ahead at the Mach it is gaining. |
+| `Hud.PitchLostDeg` | client | float | 2 | 0..45 | Pitch lost warning · HUD · advanced | *(Unreleased)* PITCH LOST when that margin is under this (deg) now: any nudge departs the ship. |
 | `Hud.Mach` | client | bool | false |  | Mach in speed readout · HUD · basic | Mach in the game's speed readout ("312 m/s · M 0.92"), for what you are flying. Off by default: the flight boxes by ALT show it. |
 | `Hud.GameStallWarning` | client | bool | false |  | Game's own stall text · HUD · basic | The game's own stall warning (the big red text when the thrusters cannot hold the ship against gravity; it ignores the wings' lift). Off: removed. |
 | `Autopilot.Readout` | client | bool | true |  | Autopilot readout · HUD · basic | *(Unreleased)* The engaged autopilot mode and its protection in the speed readout ("12 m/s · AP HOVER POS AGL · FLOOR"). |

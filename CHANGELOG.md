@@ -3,6 +3,16 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - pitch upset margin
+
+- Seated in air, the stability box shows how far the ship can be knocked in pitch and still be turned back (`P 4°`).
+- **PITCH LIMIT** (amber) under 6°, now or a few seconds ahead at the Mach you're gaining (`PITCH LIMIT M2.6`). **PITCH LOST**
+  (red) under 2° now. Settings `Hud.PitchLimitDeg`, `Hud.PitchLostDeg`.
+- Uses the real air, angle of attack and sideslip, the gyros, thrusters and control surfaces.
+- API 15: `TryGetPitchMargin`.
+- Offline: `AeroBench pitchmargin` - the F-6 on 6975 kN m of gyros turns back 43° at Mach 0.8, 25° at 1.6, 2.3° at 3. Not
+  flown in game yet.
+
 ## Unreleased - pad-foot landing gear
 
 - **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. The suspension runs on the

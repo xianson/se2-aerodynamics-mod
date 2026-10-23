@@ -50,6 +50,8 @@ static partial class Program
             I += cellMass * (rp.LengthSquared() + cs * cs / 6.0);
         }
         Console.WriteLine($"   {nm}: mass {mass / 1000f:F1} t, pitch inertia {I:E3} kg m2, nose {nose}, up {up}, wings {ship.Model.Wings?.Count ?? 0}");
+        float cap = float.TryParse(Environment.GetEnvironmentVariable("DAMP_CAP"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var capv) ? capv : 6.975e6f;
+        DampMargins.Clear();
         float rhoThin = float.TryParse(Environment.GetEnvironmentVariable("DAMP_RHO"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rr) ? rr : 0.4f;
         foreach (float rho in new[] { 1.225f, rhoThin })
         {
@@ -66,7 +68,12 @@ static partial class Program
                 var qp = Exact(ship, nose, V, atmo, ship.Com, pitch * dq); var qm = Exact(ship, nose, V, atmo, ship.Com, -pitch * dq);
                 float Mq = (Vector3.Dot(qp.Torque, pitch) - Vector3.Dot(qm.Torque, pitch)) / (2f * dq);
                 string mode;
-                if (Ma >= 0f) mode = "   statically unstable (no oscillation: it diverges)";
+                // (unstable: the largest upset the gyros alone - DAMP_CAP N m, the F-7's 6975 kN m - turn back, UpsetMath as in
+                //  game, and the e-fold time sqrt(I / M_a))
+                float need0 = Vector3.Dot(Exact(ship, nose, V, atmo, ship.Com).Torque, pitch);
+                float marginDeg = UpsetMath.Margin(Ma, need0, cap, cap) * 180f / MathF.PI;
+                DampMargins.Add((rho, mach, marginDeg));
+                if (Ma >= 0f) mode = $"   statically unstable: diverges, e-fold {Math.Sqrt(I / Math.Max(1f, Ma)):F2} s; turns back {marginDeg:F1} deg on {cap / 1e6f:F2} MN m";
                 else
                 {
                     double wn = Math.Sqrt(-Ma / I);
@@ -78,5 +85,30 @@ static partial class Program
             }
         }
         return 0;
+    }
+
+    /// <summary>The last Damping run's upset margins: air density, Mach, the gyros' margin (deg; +inf stable).</summary>
+    static readonly List<(float rho, float mach, float deg)> DampMargins = new();
+
+    /// <summary>
+    /// PITCH MARGIN (2026-10-23, the user: "if I go high mach I lose pitch control and that is not predicted at all by the
+    /// numbers"): the F-6 "Diamondback" (bp/3737149863) at its blueprint's own centre of mass and nose (tools/gridgen/bpinfo.py:
+    /// 0.400,-0.032,9.620; -Z), on the F-7's 6975 kN m of gyros - the upset margin the game's PITCH LIMIT judges (UpsetMath),
+    /// sea level. Goals: subsonic it turns back a wide upset (over 20 deg at Mach 0.8: it flies); the margin shrinks with Mach
+    /// past Mach 1.6; at Mach 3 it is under the PITCH LIMIT's 6 deg (where AeroBench attitude departs it on a 5 deg command).
+    /// </summary>
+    static int PitchMargin(string dataDir, AtmosphereState atmo)
+    {
+        Environment.SetEnvironmentVariable("DAMP_COM", "0.400,-0.032,9.620");
+        Environment.SetEnvironmentVariable("DAMP_NOSE", "0,0,-1");
+        Damping(dataDir, atmo, "diamondback");
+        Environment.SetEnvironmentVariable("DAMP_COM", null); Environment.SetEnvironmentVariable("DAMP_NOSE", null);
+        float At(float m) => DampMargins.First(d => d.rho > 1f && MathF.Abs(d.mach - m) < 1e-3f).deg;
+        int fails = 0;
+        void Check(bool ok, string what) { Console.WriteLine($"   {(ok ? "ok  " : "FAIL")} {what}"); if (!ok) fails++; }
+        Check(At(0.8f) > 20f, $"Mach 0.8: turns back {At(0.8f):F1} deg (over 20)");
+        Check(At(2.0f) < At(1.6f) && At(2.5f) < At(2.0f) && At(3.0f) < At(2.5f), $"shrinks past Mach 1.6: {At(1.6f):F1} / {At(2.0f):F1} / {At(2.5f):F1} / {At(3.0f):F1} deg");
+        Check(At(3.0f) < 6f, $"Mach 3: {At(3.0f):F1} deg, under the PITCH LIMIT's 6");
+        return fails;
     }
 }

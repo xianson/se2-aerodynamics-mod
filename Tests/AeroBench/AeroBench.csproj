@@ -22,5 +22,7 @@
     <!-- the game's density -> the mod's air (machwall at altitude: the speed of sound of that density) -->
     <Compile Include="$(Sim)\Air\AtmosphereBridge.cs" />
     <Compile Include="$(Sim)\Structure\Model\*.cs" />
+    <!-- the upset margin's arithmetic (UpsetMath: damping's margin column, pitchmargin) -->
+    <Compile Include="$(Sim)\Hud\UpsetMath.cs" />
   </ItemGroup>
 </Project>

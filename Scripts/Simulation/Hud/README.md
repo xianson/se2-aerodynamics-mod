@@ -6,7 +6,8 @@ The stall and LOAC warnings are computed here and drawn by the Orbital mod's fli
 | File | What |
 |---|---|
 | `StallWarning.cs` | The stall warning: settings (`Hud.StallWarning`) and `AeroGridComponent.EvaluateStall` - the whole ship's best lift within reach (`Lift/LiftPeak`, `DesignProbe.ForcesAt`) |
-| `Loac.cs` | `LoacWarning` settings (`Hud.Loac`) and `AeroGridComponent.EvaluateLoac` - the predicted loss of attitude control on the way to the commanded attitude; `SurfaceTravel` (the surfaces' reach) |
+| `Loac.cs` | `LoacWarning` settings (`Hud.Loac`, `Hud.PitchLimitDeg`, `Hud.PitchLostDeg`) and `AeroGridComponent.EvaluateLoac` - the predicted loss of attitude control on the way to the commanded attitude; `EvaluatePitchMargin` - the largest pitch upset the actuators turn back, now and a few seconds ahead; `SurfaceTravel` (the surfaces' reach) |
+| `UpsetMath.cs` | The upset margin's engine-free arithmetic (also compiled into AeroBench: `damping`, `pitchmargin`) |
 | `AeroStallWarning.cs` | Server job, right after the game's thrust-stall report: the game's THRUST OVERLOAD ratio cleared while the wings carry the weight |
 | `GameStallWarning.cs` | Client: the game's own stall warning thresholds set out of reach (reflection; `Hud.GameStallWarning` puts them back). Applied from the settings poll |
 | `MachHud.cs` | `{Aero:Mach}` appended to the speedometer templates (`Hud.Mach`, off by default) |

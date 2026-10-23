@@ -109,6 +109,7 @@ public static class StallWarning
 public static class LoacWarning
 {
     public static bool Enabled = true;   // Hud/Loac.cs
+    public static float PitchLimitDeg = 6f, PitchLostDeg = 2f;
 }
 public static class MachHud
 {
