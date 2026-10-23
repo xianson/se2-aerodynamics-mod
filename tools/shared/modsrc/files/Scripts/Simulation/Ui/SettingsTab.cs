@@ -67,6 +67,7 @@ public static partial class SettingsTab
     internal static void Ticked(Session session)
     {
         if (session == null) return;
+        if (!ReferenceEquals(session, _session)) Log.Default?.Info($"{LogTag} settings tab health: ticking (session {session.GetHashCode():x})");
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (!ReferenceEquals(session, _session))
         {
@@ -77,12 +78,14 @@ public static partial class SettingsTab
         {
             if (now < _sharedRetry) return;
             _shared = AvaloniaReflect.SharedUi(session);
+            if (_shared != null) Log.Default?.Info($"{LogTag} settings tab health: SharedUIComponent found");
             // (every 5 s; the toast once it has been missing for 15 s - not while the session is still coming up)
             if (_shared == null) { _sharedRetry = now + 5 * System.Diagnostics.Stopwatch.Frequency; Fail("no SharedUIComponent (" + AvaloniaReflect.Why + ")", ++_sharedFails >= 3); return; }
         }
         var why = _toastWhy;
         if (why != null && !_toastShown) { _toastShown = true; _toastWhy = null; Toast(session, why); }
         if (!AvaloniaReflect.Post(_uiTick)) Fail("no UI dispatcher (" + AvaloniaReflect.Why + ")", true);
+        else if (!_uiReached && ++_postsUnanswered == 40) Fail("the UI thread never ran the check (40 posts, 10 s)", true);
     }
 
     static readonly HashSet<string> _warned = new HashSet<string>();
@@ -126,11 +129,23 @@ public static partial class SettingsTab
     }
     sealed class GroupUi { public string Name; public object Reason; }
 
+    static volatile bool _uiReached;
+    static int _postsUnanswered;
+    static string _screensLogged;
+
     static void UiTick()
     {
         try
         {
+            if (!_uiReached) { _uiReached = true; Log.Default?.Info($"{LogTag} settings tab health: UI thread reached"); }
             var screen = AvaloniaReflect.ActiveScreen(_shared, "OptionsScreen");
+            if (AvaloniaReflect.ScreensWhy != null) Fail(AvaloniaReflect.ScreensWhy, true);
+            else if (AvaloniaReflect.Screens != _screensLogged)
+            {
+                // (each change of the open screens, once: the Options screen's type is in it when it opens - or isn't)
+                _screensLogged = AvaloniaReflect.Screens;
+                Log.Default?.Info($"{LogTag} settings tab health: open screens [{_screensLogged.Trim()}]{(screen != null ? " - Options found" : "")}");
+            }
             if (screen == null)
             {
                 if (_section != null && _wasSelected) Pump(true);   // (the screen closed: an edit not yet applied still is)
@@ -178,7 +193,7 @@ public static partial class SettingsTab
         }
         if (ReferenceEquals(_failedScreen, _screen)) return false;
         string why = Attach(_screen);
-        if (why == null) { Status = "attached (" + _rowUi.Count + " rows)"; return true; }
+        if (why == null) { Status = "attached (" + _rowUi.Count + " rows)"; Log.Default?.Info($"{LogTag} settings tab health: {Status}"); return true; }
         _failedScreen = _screen;
         Drop(); _screen = _failedScreen;
         Fail(why, true);

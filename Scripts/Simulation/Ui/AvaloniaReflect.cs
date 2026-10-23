@@ -452,18 +452,30 @@ public static class AvaloniaReflect
     /// (private _activeScreenHandles: List&lt;ScreenHandle&gt;, each handle's ScreenView), or null. UI thread.</summary>
     public static object ActiveScreen(object shared, string typeName)
     {
-        if (!(Field(shared, "_activeScreenHandles") is IList handles)) return null;
+        // (HEALTH, 2026-10-23: a missing or retyped field read as "no screen open" and the tab vanished with no word - the
+        //  game 4.0.0.3159. Now: ScreensWhy names the field's problem, and Screens lists the open screens' types)
+        var f = Field(shared, "_activeScreenHandles");
+        if (!(f is IList handles)) { ScreensWhy = f == null ? "SharedUIComponent._activeScreenHandles not found" : "SharedUIComponent._activeScreenHandles is " + f.GetType().Name + ", not a list"; return null; }
+        ScreensWhy = null;
+        object found = null; _screenNames.Clear();
         try
         {
             for (int k = handles.Count - 1; k >= 0; k--)
             {
-                var v = Get(handles[k], "ScreenView");
-                if (v != null && v.GetType().Name == typeName) return v;
+                var h = handles[k];
+                var v = Get(h, "ScreenView");
+                _screenNames.Append(v != null ? v.GetType().Name : h == null ? "null" : h.GetType().Name + ".ScreenView=null").Append(' ');
+                if (found == null && v != null && v.GetType().Name == typeName) found = v;
             }
         }
         catch { }   // (the list changed under us: next read)
-        return null;
+        Screens = _screenNames.ToString();
+        return found;
     }
+    static readonly System.Text.StringBuilder _screenNames = new System.Text.StringBuilder();
+    /// <summary>HEALTH: the open screens' view types at the last ActiveScreen (newest first), and why none could be read
+    /// (null: the list was read).</summary>
+    public static string Screens = "", ScreensWhy;
 
     /// <summary>The first item of a list whose Tag is that string, or null.</summary>
     public static object Tagged(IList items, string tag)
