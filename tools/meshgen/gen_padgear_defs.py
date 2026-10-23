@@ -113,7 +113,11 @@ def layout(v):
     top = (mid[0] + t0[0], hi[1] - (span[1] / 8 if a else 0.0) + t0[1], (mid[2] if not a else (hi[2] - span[2] / 8 if a > 0 else lo[2] + span[2] / 8)) + t0[2])
     T = tuple(-s * c for c in top)
     w = tuple(s * span[i] for i in range(3)); H = s * (top[1] - (lo[1] + t0[1]))   # (H: the ankle down to the sole)
-    pad_dz = s * ((mid[2] + t0[2]) - top[2])                         # (the pad's centre from the ankle, along Z: the wheel stands under it)
+    # ONE orientation for every pad (2026-10-23, the user: "whatever the convention to make this the standard orientation" - the 1 m's):
+    # the ankle at the block's +Z, the pad reaching toward -Z (forward, away from the leg). Keen's meshes are mirrored front to back
+    # (LandingGear500's ankle is at -Z), so a -Z ankle is turned half a turn about Y - by the foot's dummy (the subpart's rest pose).
+    foot_q = (0.0, 1.0, 0.0, 0.0) if a < 0 else (0.0, 0.0, 0.0, 1.0)
+    pad_dz = s * ((mid[2] + t0[2]) - top[2]) * (-1 if a < 0 else 1)  # (the pad's centre from the ankle, block Z: the wheel stands under it)
     hd = housing(v["size"])
     rest_p0, rest_q, travel = hd["Wheel Rest Position"]
     hub = hd["GearRodHub"][0]; hinge = hd["GearLegHinge"][0]
@@ -124,7 +128,7 @@ def layout(v):
     centre = (sole[0], sole[1] + r, sole[2] + pad_dz)              # (the wheel's centre, idle: its bottom on the sole, under the pad's centre)
     up = qrot(rest_q, (0.0, 1.0, 0.0))
     rest_p = tuple(centre[i] + travel / 2 * up[i] for i in range(3))   # (the suspension's idle point is rest - travel/2 x up)
-    return dict(T=T, t0=t0, H=H, size=w, pad_dz=pad_dz, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
+    return dict(T=T, t0=t0, H=H, size=w, pad_dz=pad_dz, foot_q=foot_q, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
 
 
 def vanilla_model(v):
@@ -217,7 +221,7 @@ def block_model(v, L, d, foot_pref):
     hsid = ggd.SIZES[v["size"]]["sid"]; sid = v["sid"]; N = f"PadGear_{v['size']}"
     bmd, csp = G(sid, 0x33), G(sid, 0x34)
     hkeys = [G(hsid, 0x41 + i) for i in range(3)]
-    foot = ggd.dummy("GearFoot", [round(c, 5) for c in L["foot"]], DT_FOOT)
+    foot = ggd.dummy("GearFoot", [round(c, 5) for c in L["foot"]], DT_FOOT, L["foot_q"])
     ggd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), ggd.partial(G(hsid, 0x15), {"Guid": bmd,
         "Dummies": {"$DeltaEncoded": True, "Keys": hkeys + [G(sid, 0x35)], "Changed": [
             {"Kind": "Update", "Index": 0, "Value": {"Transform": {"Transform": {"Position": dict(zip("XYZ", (round(c, 5) for c in L["rest_p"])))}}}},

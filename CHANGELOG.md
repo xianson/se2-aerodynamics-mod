@@ -21,7 +21,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   with the leg. Placeholder meshes (vanilla, reused as is; the 1.5 m scaled). (Replaces the earlier wheel-as-foot with a box
   collider and an orientation lock, which tumbled under load.)
 - The hinge sits at the centre of the pad's ankle (the top-corner block) on the rod's end (was 0.08 m below the rod, at the pad's
-  top centre); the wheel stands under the pad's centre. The plates hinge at their top centre.
+  top centre); the wheel stands under the pad's centre. The plates hinge at their top centre. Both pads face the same way (the
+  1.5 m turned to match the 1 m: the vanilla meshes are mirrored).
 - The suspension's wheel is its own invisible model (no tyre in the build preview or projections; was the vanilla wheel hidden
   at run time).
 - Offline: `Tests/GearTests` (the ankle's IK, every variant's definitions and geometry, sag). Not flown in game yet.
