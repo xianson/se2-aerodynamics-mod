@@ -21,6 +21,12 @@ was flown in game for this release. The commit hashes are on the integration bra
 - **Counter-rotating** (rotor terminal): the rotor turns the other way with mirrored blades, and its torque flips, so an
   opposite pair (coaxial or tandem) needs no tail rotor. Not flown in game yet.
 
+## Unreleased - solid rocket panels
+
+- The nozzle and segment terminals lose their read-only fields (burning, power level, segments, propellant, burn time; in a
+  motor stack, propellant): they showed as switches and boxes. The nozzle keeps Ignite and Thrust Vectoring; Thrust Override
+  before ignition is still its power.
+
 ## Unreleased - pad-foot landing gear
 
 - **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. The suspension runs on the

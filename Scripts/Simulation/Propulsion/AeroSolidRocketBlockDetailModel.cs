@@ -9,8 +9,9 @@ namespace AeroMod;
 
 /// <summary>
 /// A solid rocket NOZZLE's terminal (2026-10-17): Ignite (a [Button]: also a toolbar action - as the gear's Toggle), greyed out
-/// while it cannot light (burning, spent, no motor); and its motor, read only - burning, power level (%), segments, propellant
-/// left (%), burn left (s). Host / single player, as every mod panel (DetailModelPairing). The game's own thruster panels stay:
+/// while it cannot light (burning, spent, no motor). (2026-10-23, the user: "remove all the shit stuff that is not actually a
+/// control": the read-only burning / power level / segments / propellant / burn-left fields are gone - they showed as switches and
+/// input boxes.) Host / single player, as every mod panel (DetailModelPairing). The game's own thruster panels stay:
 /// its on / off does nothing (put back); its thrust override, BEFORE ignition, sets the power level (50..100 %, unset 100 %) -
 /// once lit the mod owns it (no throttle, no shutdown; the attitude allocator's steer is written there). THRUST VECTORING (2026-10-20):
 /// its switch and its cone (0.5..15 deg, shown while on) - lit and on, the ship's attitude control swivels its thrust within the
@@ -25,8 +26,8 @@ namespace AeroMod;
 public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroSolidNozzleBlockDetailModel>(
-        "Solid rocket nozzle: set its power level (50-100 %) with the thrust override BEFORE ignition, then ignite it - it burns at that level until its stack of segments is empty (lit, the flight controller may vary it 50-100 % to turn the ship). Thrust Vectoring: lit, the flight controller swivels its thrust within the cone to turn the ship.",
-        nameof(CanIgnite), nameof(Burning), nameof(PowerLevel), nameof(Segments), nameof(Propellant), nameof(BurnTimeLeft), nameof(GimbalOn), nameof(GimbalDeg));
+        "Solid rocket nozzle: burns the segments stacked on its top face. Thrust Override before ignition sets its power (50-100 %). Once lit it burns until empty.",
+        nameof(CanIgnite), nameof(GimbalOn), nameof(GimbalDeg));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
     /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
     public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
@@ -42,22 +43,7 @@ public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
     [Label("Ignite")]
     [Button(null)]
     [WritableInInspectorWhen("CanIgnite", WritableWhen.True)]
-    public void Ignite() { _nozzle?.Ignite(); OnPropertyChanged(nameof(CanIgnite)); OnPropertyChanged(nameof(Burning)); }
-
-    [Label("Burning")]
-    public bool Burning => _nozzle != null && _nozzle.Burning;
-
-    [Label("Power level (%) - set with thrust override before ignition")]
-    public float PowerLevel => _nozzle != null ? 100f * _nozzle.PowerLevel : 100f;
-
-    [Label("Segments in its stack")]
-    public float Segments => _nozzle?.StackCount ?? 0;
-
-    [Label("Propellant (%)")]
-    public float Propellant => _nozzle != null && _nozzle.StackFull > 0f ? 100f * _nozzle.StackPropellant / _nozzle.StackFull : 0f;
-
-    [Label("Burn time left (s)")]
-    public float BurnTimeLeft => _nozzle?.BurnTimeLeft ?? 0f;
+    public void Ignite() { _nozzle?.Ignite(); OnPropertyChanged(nameof(CanIgnite)); }
 
     /// <summary>Thrust vectoring on (the gimbal; AeroSolidNozzleComponent.GimbalOn).</summary>
     [Label("Thrust Vectoring")]
@@ -78,9 +64,8 @@ public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 }
 
 /// <summary>
-/// A solid rocket SEGMENT's terminal (2026-10-17), read only: its propellant left (% - its tank's charge, the game's) and whether it is
-/// in a motor stack (a segment that is not - not on a nozzle's top face, or after a gap, a wrong-size, a turned or a broken segment -
-/// does nothing). The game's own tank panel shows too (its mode is held at Auto by the mod: AeroSolidSegmentComponent).
+/// A solid rocket SEGMENT's terminal (2026-10-17): its description only (2026-10-23: the read-only "in a motor stack" and propellant
+/// fields are gone - not controls). The game's own tank panel shows too (its mode is held at Auto by the mod: AeroSolidSegmentComponent).
 /// </summary>
 [BlockDetailProvider]
 [BlockDetailDisplayMode(DisplayMode.Controls)]
@@ -88,8 +73,7 @@ public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 public partial class AeroSolidSegmentBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroSolidSegmentBlockDetailModel>(
-        "Solid rocket segment: a tank of solid propellant for the nozzle it is stacked on (not in a motor stack: inert). It cannot be refilled, switched off or set to charge.",
-        nameof(InMotorStack), nameof(Propellant));
+        "Solid rocket segment: propellant for the nozzle it is stacked on. Cannot be refilled.");
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
     /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
     public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
@@ -98,10 +82,4 @@ public partial class AeroSolidSegmentBlockDetailModel : BlockDetailModel
     private AeroSolidSegmentComponent _segment;
 
     public AeroSolidSegmentBlockDetailModel() { DetailModelPairing.Pair(this, _segment); }
-
-    [Label("In a motor stack (else inert)")]
-    public bool InMotorStack => _segment != null && _segment.InStack;
-
-    [Label("Propellant (%)")]
-    public float Propellant => _segment != null ? 100f * _segment.Fraction : 0f;
 }
