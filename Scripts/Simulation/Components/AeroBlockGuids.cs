@@ -53,13 +53,28 @@ public static class AeroBlockGuids
     // ── Airbrakes ──
     public static readonly Guid Airbrake_1x1       = new("ae200001-ae00-ab01-0001-000000000001");
     /// <summary>The 3x3x3 clamshell airbrakes (2026-10-14; tools/meshgen/gen_airbrake_defs.py): their blocks, and their server
-    /// prefabs (AeroAirbrakeComponent) and client prefabs (AeroAirbrakeAnimComponent).</summary>
+    /// prefabs (AeroAirbrakeComponent) and client prefabs (AeroAirbrakeAnimComponent). 3 x 3 x 3 blocks of 2.5 m (large) and
+    /// 0.5 m (small), and since 2026-10-23 0.25 / 1 / 1.5 m - each the large model scaled whole.</summary>
     public static readonly Guid Airbrake_3x3x3_Large = new("ae200001-ae00-ab02-0001-000000000001");
     public static readonly Guid Airbrake_3x3x3_Small = new("ae200001-ae00-ab03-0001-000000000001");
+    public static readonly Guid Airbrake_3x3x3_025 = new("ae200001-ae00-ab04-0001-000000000001");
+    public static readonly Guid Airbrake_3x3x3_100 = new("ae200001-ae00-ab05-0001-000000000001");
+    public static readonly Guid Airbrake_3x3x3_150 = new("ae200001-ae00-ab06-0001-000000000001");
+    /// <summary>All the 3x3x3 airbrake blocks with their block size (m; gen_airbrake_defs.py SIZES).</summary>
+    public static readonly (Guid Guid, float Size)[] Airbrakes3x3x3 =
+    {
+        (Airbrake_3x3x3_Large, 2.5f), (Airbrake_3x3x3_Small, 0.5f), (Airbrake_3x3x3_025, 0.25f), (Airbrake_3x3x3_100, 1f), (Airbrake_3x3x3_150, 1.5f),
+    };
     public static readonly System.Collections.Generic.HashSet<Guid> AirbrakeServerPrefabs = new()
-        { new("ae200001-ae00-ab02-0011-000000000001"), new("ae200001-ae00-ab03-0011-000000000001") };
+    {
+        new("ae200001-ae00-ab02-0011-000000000001"), new("ae200001-ae00-ab03-0011-000000000001"),
+        new("ae200001-ae00-ab04-0011-000000000001"), new("ae200001-ae00-ab05-0011-000000000001"), new("ae200001-ae00-ab06-0011-000000000001"),
+    };
     public static readonly System.Collections.Generic.HashSet<Guid> AirbrakeClientPrefabs = new()
-        { new("ae200001-ae00-ab02-0012-000000000001"), new("ae200001-ae00-ab03-0012-000000000001") };
+    {
+        new("ae200001-ae00-ab02-0012-000000000001"), new("ae200001-ae00-ab03-0012-000000000001"),
+        new("ae200001-ae00-ab04-0012-000000000001"), new("ae200001-ae00-ab05-0012-000000000001"), new("ae200001-ae00-ab06-0012-000000000001"),
+    };
 
     // ── The Autopilot block (2026-10-19; tools/meshgen/gen_autopilot_defs.py): its server prefabs (AeroAutopilotComponent - the
     //    terminal's panel and the saved state). Large: on the vanilla Event Controller's model; Small: the vanilla Timer's. ──

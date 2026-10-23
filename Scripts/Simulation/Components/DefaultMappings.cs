@@ -57,11 +57,15 @@ public static class DefaultMappings
                 { Gear = info.Gear, WheelRadius = variant.WheelRadius, LegLength = variant.Layout?.LegLength ?? 3.4f * variant.WheelRadius });
         }
 
-        // the 3x3x3 clamshell airbrakes: two leaves (chord x span each - Airbrake_<Size>_spec.json), opened by
-        // AeroAirbrakeComponent; their drag: a flat plate of both leaves' area seen from ahead (x sin of the opening)
-        foreach (var (guid, chord, span) in new[] { (AeroBlockGuids.Airbrake_3x3x3_Large, 6.19f, 6.67f), (AeroBlockGuids.Airbrake_3x3x3_Small, 6.19f * 0.2f, 6.67f * 0.2f) })
+        // the 3x3x3 clamshell airbrakes: two leaves (chord x span each - Airbrake_<Size>_spec.json: 6.19 x 6.67 m on the
+        // 2.5 m one, x size / 2.5 on the others), opened by AeroAirbrakeComponent; their drag: a flat plate of both leaves'
+        // area seen from ahead (x sin of the opening)
+        foreach (var (guid, size) in AeroBlockGuids.Airbrakes3x3x3)
+        {
+            float k = size / 2.5f, chord = 6.19f * k, span = 6.67f * k;
             factory.RegisterByGuid(guid, info => new Airbrake(info.Position, info.BlockPosition, facingDirection: info.Forward, area: 2f * chord * span)
                 { State = info.Airbrake });
+        }
 
         factory.RegisterByGuid(AeroBlockGuids.Airbrake_1x1, info =>
             new Airbrake(

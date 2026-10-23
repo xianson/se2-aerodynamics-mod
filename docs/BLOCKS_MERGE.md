@@ -11,7 +11,7 @@ mod (`de164d94-7a67-4832-81e4-34c06c6a65f1`). Phase A (files and code, done whil
 
 | Where | What |
 |---|---|
-| `Assets/Aero/Airbrake`, `Airbrake3x3x3` | airbrakes 1x1 and 3x3x3 (large / small) |
+| `Assets/Aero/Airbrake`, `Airbrake3x3x3` | airbrakes 1x1 and 3x3x3 (0.25 / 0.5 / 1 / 1.5 / 2.5 m) |
 | `Assets/Aero/ControlSurface`, `ControlSurface3x3` | control surfaces 1x1 and 3x3x1 (large / small) |
 | `Assets/Aero/RetractableGear` | gear 0.5 / 1 / 1.5 / 2.5 m |
 | `Assets/Aero/Propulsors` | turboprops, ducted fans, helicopter and tail rotors, ramjets, solid segments and nozzles, their materials and exhaust effects (166 MB) |

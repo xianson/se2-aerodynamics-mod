@@ -5,10 +5,17 @@ model (the two leaves' dummies on the hinge), the breakable set (two pieces), th
 (ConditionalSubParts), the block kind and group. The mod injects AeroAirbrakeComponent / AeroAirbrakeAnimComponent by the
 prefab GUIDs (AeroBlockGuids.Airbrake*Prefabs). Helpers from gen_gear_defs.py.
 
+Sizes (2026-10-23): 3 x 3 x 3 blocks of 0.25 / 0.5 / 1 / 1.5 / 2.5 m. The 0.25 / 1 / 1.5 m ones are the large export scene
+scaled whole (make_small.py <Airbrake_Large_Export.blend> -> <Airbrake_<key>_Export.blend> <b / 2.5> <key> rename, then
+gear_export.py), their spec the large one's scaled (the leaves' dummies stay 5 mm off the hinge, as the small one's); the
+small one is its own airbrake_from_kitbash.py run. LOD0 and the dummies shifted 0.125 onto the cell grid, none for an odd
+cell count (the 0.25 m one: 3 x 3 x 3 cells). The game shows the block size (DisplaySizeOverride).
+
   python gen_airbrake_defs.py      then: python tools\\shared\\build_mod_content.py "<Aerodynamics Mod>"
 """
 import json, os, shutil, uuid
 import gen_gear_defs as gd
+gd.BLOCKS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # (this checkout of the mod)
 
 ROOT_REL = os.path.join("Aero", "Airbrake3x3x3")
 EXPORT = r"D:\Blender Brojects\SE2\Airbrake\Export"
@@ -24,7 +31,10 @@ K_CSP = G(SHARED, 0x40)
 # a symmetry of the shape. The airbrake is symmetric across (X: span) and up / down (Y: the two leaves), not
 # fore / aft (Z: the hinge at the front) - so mirrored across Z it turns 180 deg about Up (the hinge forward again).
 PLACEMENT, SYMMETRIES = G(SHARED, 0x50), G(SHARED, 0x51)
-SIZES = {"Large": dict(sid="ab02", kw=1.0, pcu=150), "Small": dict(sid="ab03", kw=0.2, pcu=60)}
+# b: the block size (m); kw 0.4 per m of block, pcu about 37.5 + 45 x b (the large and small ones' own)
+SIZES = {"Large": dict(sid="ab02", b=2.5, kw=1.0, pcu=150), "Small": dict(sid="ab03", b=0.5, kw=0.2, pcu=60),
+         "025": dict(sid="ab04", b=0.25, kw=0.1, pcu=50), "100": dict(sid="ab05", b=1.0, kw=0.4, pcu=80),
+         "150": dict(sid="ab06", b=1.5, kw=0.6, pcu=105)}
 RECIPE = "6f209028-b561-4d9e-a1c8-ab9994b0a7e4"   # (LightArmor250's, as the control surfaces)
 OFF = gd.OFF
 
@@ -37,12 +47,21 @@ def folder_meta(rel):
             "$Value": {"AssetID": str(uuid.uuid5(NS, "folder:" + rel.lower())), "InternalItems": []}}
 
 
-def V(b): return [round(b[0] + OFF, 5), round(b[2] + OFF, 5), round(-b[1] + OFF, 5)]   # Blender -> the model's space
+def V(b, o=OFF): return [round(b[0] + o, 5), round(b[2] + o, 5), round(-b[1] + o, 5)]   # Blender -> the model's space
+
+
+def load_spec(size, b):
+    """The size's own spec (airbrake_from_kitbash.py), else the large one's scaled by b / 2.5 (a make_small.py copy)."""
+    p = os.path.join(EXPORT, size, "airbrake_spec.json")
+    if os.path.exists(p): return json.load(open(p))
+    L = json.load(open(os.path.join(EXPORT, "Large", "airbrake_spec.json"))); k = b / 2.5; h = [x * k for x in L["hinge"]]
+    return dict(L, name=f"Airbrake_{size}", scale=k, box=L["box"] * k, hinge=h, leaf_up=[h[0], h[1], h[2] + 0.005],
+                leaf_down=[h[0], h[1], h[2] - 0.005], chord=L["chord"] * k, span=L["span"] * k)
 
 
 def gen_size(size, c):
     sid = c["sid"]; N = f"Airbrake_{size}"
-    spec = json.load(open(os.path.join(EXPORT, size, "airbrake_spec.json")))
+    spec = load_spec(size, c["b"])
     dest_rel = os.path.join(ROOT_REL, size); d = os.path.join(gd.BLOCKS, "Assets", dest_rel); src = os.path.join(EXPORT, size, "Models")
     ids = {}
     for rt, _, files in os.walk(src):
@@ -53,7 +72,9 @@ def gen_size(size, c):
             rel = os.path.join(dest_rel, "Models", rel_in); ids[rel_in.replace("\\", "/")] = file_id(rel)
             gd.write(out + ".meta", gd.file_meta(file_id(rel)))
     lod = lambda var, n, stem: ids[f"{var}/{stem}{'_LOD%d' % n if n else ''}.fbx"]
-    mats = spec["materials"]; md = os.path.join(d, "Models"); off = (OFF, OFF, OFF)
+    mats = spec["materials"]; md = os.path.join(d, "Models")
+    o = OFF if round(3 * c["b"] / 0.25) % 2 == 0 else 0.0   # (an even number of cells across: the centre on a cell corner)
+    off = (o, o, o)
     m_nf, m_fr, m_de, m_up, m_dn = (G(sid, 0x100 + i) for i in range(5))
     gd.model(os.path.join(md, "NonFractured", f"{N}.model"), m_nf, [lod("NonFractured", n, N) for n in range(4)], mats["Body"], ids[f"NonFractured/{N}_collision.gltf"], off)
     gd.model(os.path.join(md, "Fractured", f"{N}_Fractured.model"), m_fr, [lod("Fractured", n, N + "_Fractured") for n in range(4)], mats["Body"], ids[f"Fractured/{N}_Fractured_collision.gltf"], off)
@@ -68,7 +89,7 @@ def gen_size(size, c):
 
     fbd, bind, spref, cpref, scomp, ccomp = G(sid, 0x1), G(sid, 0x10), G(sid, 0x11), G(sid, 0x12), G(sid, 0x13), G(sid, 0x14)
     bmd, brk, csp = G(sid, 0x15), G(sid, 0x16), G(sid, 0x17)
-    dummies = [gd.dummy("AirbrakeLeafUp", V(spec["leaf_up"]), DT_UP), gd.dummy("AirbrakeLeafDown", V(spec["leaf_down"]), DT_DOWN)]
+    dummies = [gd.dummy("AirbrakeLeafUp", V(spec["leaf_up"], o), DT_UP), gd.dummy("AirbrakeLeafDown", V(spec["leaf_down"], o), DT_DOWN)]
     gd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), gd.partial(gd.BASE_BMD, {"Guid": bmd, "Model": "{G}" + m_nf,
         "Dummies": {"$DeltaEncoded": True, "Keys": [G(sid, 0x41 + i) for i in range(len(dummies))],
                     "Changed": [{"Kind": "Insert", "Index": i, "Value": v} for i, v in enumerate(dummies)], "Removed": []},
@@ -120,7 +141,7 @@ def gen_size(size, c):
             {"Kind": "Insert", "Index": 9, "Value": {"Definition": csp, "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsComponent"}}], "Removed": []}},
         "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), ccomp, True)
     gd.definition(os.path.join(d, f"{N}_PowerableBlockDefinition.partialdef"), gd.partial(B["fbd"], {"Guid": fbd,
-        "UIData": {"Name": "Airbrake", "Icon": "{G}" + file_id(icon_rel)}, "PlacerDefinition": PLACEMENT, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+        "UIData": {"Name": "Airbrake", "Icon": "{G}" + file_id(icon_rel)}, "PlacerDefinition": PLACEMENT, "DisplaySizeOverride": c["b"], "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
         "Recipe": RECIPE, "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4", "BlockKind": KIND, "PCU": c["pcu"],
         "ConsumedResource": {"Type": gd.ELECTRICITY, "Amount": c["kw"]}, "ConsumptionPriority": {"Priority": 6}},
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition"), fbd, True)

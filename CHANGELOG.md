@@ -3,6 +3,12 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - airbrake sizes
+
+- Airbrakes (3 x 3 x 3) now come in 0.25, 0.5, 1, 1.5 and 2.5 m blocks. The new sizes are the same airbrake, scaled.
+- The G menu names them by block size, as the control surfaces.
+- Not checked in game yet.
+
 ## Unreleased - control surface sizes
 
 - Control surfaces now come in 0.25, 0.5, 1, 1.5 and 2.5 m blocks (3 x 3 x 1 each). The new sizes are the same flap, scaled.

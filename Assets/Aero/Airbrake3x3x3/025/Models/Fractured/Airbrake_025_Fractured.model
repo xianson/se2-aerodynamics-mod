@@ -1,0 +1,157 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AtlasDecal_Parts01",
+        "MaterialReference": "0d1f9867-1aee-4388-b5bb-4a7ce0cdc5e2"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}b3db3ef5-6ac2-5ffe-a88c-c926a32181cb",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}0ebd8dd7-e8bd-5754-8f15-10b8689d2ae7",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}152d974d-1284-5270-9811-42f64b14a4b1",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}55b5b4c7-03cd-5ada-84ab-8cee5cb81925",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims03",
+          "PaintedMetalColorable",
+          "PaintedMetalDarker"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}05404652-ab31-5233-ab8d-1abc1da2cba7",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

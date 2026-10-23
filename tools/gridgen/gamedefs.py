@@ -175,11 +175,12 @@ def build_index(content=CONTENT):
 #   the 1x1 blocks (copies of the light armour cube); Airbrake 3x3x3 (gen_airbrake_defs.py).
 # A mod block on a vanilla model (the autopilot: the Event Controller's / Timer's) takes that model's real occupancy.
 # Box: local cells (x, y, z), centred on the block's position (an even count: the model's origin is a cell corner, the box
-# one cell longer on +; odd - the 0.25 m control surface: on the middle cell).
+# one cell longer on +; odd - the 0.25 m control surface and airbrake: on the middle cell).
 MOD_SIZES = {
     "ControlSurface_Small": (6, 2, 6), "ControlSurface_Large": (30, 10, 30), "ControlSurface_1x1": (2, 2, 2),
     "ControlSurface_025": (3, 1, 3), "ControlSurface_100": (12, 4, 12), "ControlSurface_150": (18, 6, 18),
     "Airbrake_1x1": (2, 2, 2), "Scoop_1x1": (2, 2, 2), "Airbrake_Small": (6, 6, 6), "Airbrake_Large": (30, 30, 30),
+    "Airbrake_025": (3, 3, 3), "Airbrake_100": (12, 12, 12), "Airbrake_150": (18, 18, 18),
     "RetractableGear_050": (2, 2, 6), "RetractableGear_100": (4, 4, 12), "RetractableGear_150": (6, 6, 18),
     "RetractableGear_250": (10, 10, 30),
 }
@@ -187,7 +188,7 @@ MOD_SIZES = {
 # models all its air: out of the voxel surface - BlockComponentFactory.IsSelfModelled)
 MOD_ROLES = {"ControlSurface_Small": "surface self", "ControlSurface_Large": "surface self", "ControlSurface_1x1": "surface",
              "ControlSurface_025": "surface self", "ControlSurface_100": "surface self", "ControlSurface_150": "surface self",
-             "Airbrake_Small": "self", "Airbrake_Large": "self"}
+             "Airbrake_Small": "self", "Airbrake_Large": "self", "Airbrake_025": "self", "Airbrake_100": "self", "Airbrake_150": "self"}
 MOD_ASSETS = os.path.normpath(os.path.join(HERE, "..", "..", "Assets"))
 
 

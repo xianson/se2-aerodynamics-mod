@@ -5,6 +5,9 @@ collider, which is a unit cube scaled to the envelope.
 Run: blender -b <ControlSurface_Large_3x3x1.blend> -P make_small.py -- <ControlSurface_Small_3x3x1.blend>
 The other sizes (2026-10-23) are the same copy at their own scale and name (gen_cs3_defs.py SIZES: b / 2.5 m):
      blender -b <ControlSurface_Large_3x3x1.blend> -P make_small.py -- <ControlSurface_100_3x3x1.blend> 0.4 100
+The airbrakes' sizes the same way from its export scene, "rename" also renaming "Large" in the objects', meshes' and
+ExportNames' names (gen_airbrake_defs.py SIZES):
+     blender -b <Airbrake_Large_Export.blend> -P make_small.py -- <Airbrake_100_Export.blend> 0.4 100 rename
 """
 import bpy, sys
 from mathutils import Matrix
@@ -13,6 +16,7 @@ ARGS = sys.argv[sys.argv.index("--") + 1:]
 OUT = ARGS[0]
 K = float(ARGS[1]) if len(ARGS) > 1 else 0.2
 NAME = ARGS[2] if len(ARGS) > 2 else "Small"
+RENAME = "rename" in ARGS[3:]
 
 done = set()
 for o in bpy.data.objects:
@@ -23,6 +27,10 @@ for o in bpy.data.objects:
     if o.type == "EMPTY": o.empty_display_size *= K
     for m in getattr(o, "modifiers", []):
         if m.type == "DISPLACE": m.strength *= K
+if RENAME:
+    for o in bpy.data.objects:
+        if "ExportName" in o: o["ExportName"] = o["ExportName"].replace("Large", NAME)
+    for ob in list(bpy.data.objects) + list(bpy.data.meshes): ob.name = ob.name.replace("Large", NAME)
 for t in bpy.data.textures:
     if t.type == "CLOUDS": t.noise_scale *= K
 v = getattr(bpy.context.scene, "vrt", None)

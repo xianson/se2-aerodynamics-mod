@@ -1,4 +1,7 @@
 {
+"Airbrake_025": {"composite":"ae200001-ae00-ab04-0013-000000000001","mod":true,"role":"self","model":"ae200001-ae00-ab04-0100-000000000001","curve":11.0,"cells":27,"bounds":[-1,-1,-1,1,1,1],"assumed":"box","mass":86.81},
+"Airbrake_100": {"composite":"ae200001-ae00-ab05-0013-000000000001","mod":true,"role":"self","model":"ae200001-ae00-ab05-0100-000000000001","curve":11.0,"cells":1728,"bounds":[-5,-5,-5,6,6,6],"assumed":"box","mass":1485.4},
+"Airbrake_150": {"composite":"ae200001-ae00-ab06-0013-000000000001","mod":true,"role":"self","model":"ae200001-ae00-ab06-0100-000000000001","curve":11.0,"cells":5832,"bounds":[-8,-8,-8,9,9,9],"assumed":"box","mass":3168.45},
 "Airbrake_1x1": {"composite":"ae200001-ae00-ab01-0013-000000000001","mod":true,"curve":11.0,"cells":8,"bounds":[0,0,0,1,1,1],"assumed":"box","mass":33.1},
 "Airbrake_Large": {"composite":"ae200001-ae00-ab02-0013-000000000001","mod":true,"role":"self","model":"ae200001-ae00-ab02-0100-000000000001","curve":11.0,"cells":27000,"bounds":[-14,-14,-14,15,15,15],"assumed":"box","mass":8014.62},
 "Airbrake_Small": {"composite":"ae200001-ae00-ab03-0013-000000000001","mod":true,"role":"self","model":"ae200001-ae00-ab03-0100-000000000001","curve":11.0,"cells":216,"bounds":[-2,-2,-2,3,3,3],"assumed":"box","mass":382.4},
