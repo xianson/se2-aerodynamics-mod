@@ -100,8 +100,8 @@ def housing(size):
 FOOT_DROP = {"050": -0.1, "100": -0.2, "150": -0.3, "250": -0.5}   # (GearLayout.FootDrop: the ankle this far DOWN the leg from the
                    #  rod's hub - negative: up it, on the pad fork's bearings (padgear_rod.py moves them up the fork's axis by as much,
                    #  2026-10-23: the fork shortened to fit the ankle; 7f840d4 had raised the ankle off the bearings - wrong)
-FORK_IN = (0.306, 0.276)   # (the housing rod's bearings' inner faces, -x / +x, m per size unit: the pad fork's hinge groups move in
-                           #  to 1 cm per unit from the pad - 2026-10-23, the user: "there's still that gap horizontally")
+FORK_IN = (0.306, 0.276)   # (the housing rod's bearings' inner faces, -x / +x, m per size unit: the pad fork is scaled across about
+                           #  their middle to 1 cm per unit from the pad - 2026-10-23, the user: "can you just horizontally scale it")
 FORK_CUT = 0.26    # (padgear_rod.py: the cut across the fork's axis, m per size unit (the 1 m gear 1, the 0.5 m 0.5, ...): in its empty
                    #  band, 0.250..0.472 x the unit at every size and LOD)
 SIZE_UNIT = {"050": 0.5, "100": 1.0, "150": 1.5, "250": 2.5}
@@ -228,7 +228,7 @@ def rod_model(v, L, d, rel):
     job = os.path.join(os.environ.get("TEMP", HERE), f"padgear_rod_job_{size}.json")
     u = SIZE_UNIT[size]; half = v["scale"] * (v["hi"][0] - v["lo"][0]) / 2 + 0.01 * u   # (the pad's half width, and 1 cm a unit)
     json.dump({"axis": [-c for c in L["legdir"]], "cut": FORK_CUT * u, "shift": -FOOT_DROP[size],
-               "inward": [FORK_IN[0] * u - half, FORK_IN[1] * u - half],
+               "xcentre": (FORK_IN[1] - FORK_IN[0]) / 2 * u, "xscale": half / ((FORK_IN[0] + FORK_IN[1]) / 2 * u),
                "lods": [[os.path.join(hd_, f"RetractableGear_{size}_S2_Rod{x}.fbx"), os.path.join(md, st + ".fbx")]
                         for x, st in zip(("", "_LOD1", "_LOD2"), stems)]}, open(job, "w"))
     r = subprocess.run([BLENDER, "-b", "--python", os.path.join(HERE, "padgear_rod.py"), "--", job], capture_output=True, text=True, timeout=600)

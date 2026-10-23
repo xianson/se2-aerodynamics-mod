@@ -78,7 +78,7 @@ was flown in game for this release. The commit hashes are on the integration bra
 - The suspension's wheel is its own invisible model (no tyre in the build preview or projections; was the vanilla wheel hidden
   at run time).
 - The pads have their own fork, shortened and narrowed to fit: its hinge end (bearings, arm ends) moved up the fork's axis 0.1 /
-  0.2 / 0.3 / 0.5 m and in to 1 cm from the pad, as rigid pieces; the arms' plain plates take up the change. The ankle stays on the
+  0.2 / 0.3 / 0.5 m as a rigid piece (the arms' plain plates take up the change), and the fork scaled across to 1 cm from the pad. The ankle stays on the
   bearings, now centred on the pad's whole top block. The gear stands that much shorter.
 - The invisible wheel's placeholder triangle is 0.01 mm (was 1 mm, and visible).
 - New icons: each pad gear as built (housing, leg, its fork and pad, textured); they showed the wheeled gear's icon.
