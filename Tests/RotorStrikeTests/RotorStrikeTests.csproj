@@ -9,5 +9,7 @@
     <Compile Include="$(Sim)\Propulsion\ThrustProfile.cs" />
     <Compile Include="$(Sim)\Propulsion\ThrustProfiles.cs" />
     <Compile Include="$(Sim)\Blocks\PropulsorBlocks.g.cs" />
+    <Compile Include="$(Sim)\Blocks\BladeBreakBlocks.cs" />
+    <Compile Include="$(Sim)\Blocks\BladeBreakBlocks.g.cs" />
   </ItemGroup>
 </Project>

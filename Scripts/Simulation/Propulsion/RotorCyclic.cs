@@ -193,7 +193,7 @@ public static class RotorCyclic
         for (int k = 0; k < m; k++)
         {
             var p = comps[k];
-            R[k] = p.RotorRadius * TipOverTable; rpm[k] = p.Rpm; rated[k] = p.Rated * p.Efficiency;   // (the actual thrust's rating)
+            R[k] = p.RotorRadius * TipOverTable; rpm[k] = p.Rpm; rated[k] = p.Rated * p.Efficiency * p.BladeShare;   // (the actual thrust's rating; broken blades: the share left)
             if (k < aero._limCounter.Length) aero._limCounter[k] = p.CounterRotating;
         }
         RotorLimiter.Targets(m, idx, R, rpm, rated, aero._limCounter, arms, dirs, caps, rev, n, gyro, sPush, sPull, rho, aero._limAuth, aero._limBudget, aero._limTarget);

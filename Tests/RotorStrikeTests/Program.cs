@@ -24,6 +24,7 @@ static class Program
         Repair();
         HillSkim();
         StructureHook();
+        PerBladeBreaks();
         Console.WriteLine($"RotorStrikeTests: {_checks - _fails}/{_checks} passed");
         return _fails == 0 ? 0 : 1;
     }
@@ -322,5 +323,74 @@ static class Program
         float v5 = S.SpeedAt(1f, 5f, R);
         Check(S.CharacterDamage(v5, 100f) >= 100f, $"a character at 5 m in a turning 1.5 m rotor: {v5:F0} m/s - lethal");
         Check(S.CharacterDamage(S.SpeedAt(0.05f, 5f, R), 100f) < 10f, $"at 5 % rpm: {S.CharacterDamage(S.SpeedAt(0.05f, 5f, R), 100f):F1} - a bruise");
+    }
+
+    // ═══ PER-BLADE BREAKS (2026-10-23): one blade at a time - snap where struck, reach, lift, imbalance, the table ═══
+    static void PerBladeBreaks()
+    {
+        // the table: every helicopter rotor and the Reversible Rotor has a row, its radii in order hinge < stub < split < tip
+        foreach (var r in PropulsorBlocks.Rows.Where(r => S.PerBlade(r.Kind)))
+        {
+            var b = BladeBreakBlocks.Of(r.Name);
+            Check(b != null, $"{r.Name}: a blade-break row");
+            if (b == null) continue;
+            Check(b.Hinge > 0f && b.Hinge < b.StubR && b.StubR < b.SplitR && b.SplitR < r.Radius, $"{r.Name}: hinge {b.Hinge} < stub {b.StubR} < split {b.SplitR} < tip {r.Radius} m");
+            Check(b.A.Mass > 0f && b.B.Mass > 0f && b.A.Mass + b.B.Mass < S.BladeMass(r.Radius), $"{r.Name}: chunks {b.A.Mass:F1} + {b.B.Mass:F1} kg, less than the blade's {S.BladeMass(r.Radius):F1}");
+            Check(b.A.ComRadius(b.Hinge) > b.StubR && b.A.ComRadius(b.Hinge) < b.SplitR && b.B.ComRadius(b.Hinge) > b.SplitR && b.B.ComRadius(b.Hinge) < r.Radius,
+                $"{r.Name}: chunk A's centre between stub and split ({b.A.ComRadius(b.Hinge):F2} m), B's beyond the split ({b.B.ComRadius(b.Hinge):F2} m)");
+        }
+        Check(!S.PerBlade(AeroPropulsorComponent.Kinds.Turboprop), "turboprops keep the one health (all at once)");
+
+        const float R = 10.5f, split = 6.8f, stub = 3.2f, hinge = 0.75f;
+        // snapping: full-speed rock snaps the struck blade; outboard of the split it loses its tip, inboard it breaks to the stub
+        float w = 0f;
+        var c = S.AfterStrike(S.Cut.Whole, ref w, 9f, S.BladeWearOne(S.Material.Rock, Full), split);
+        Check(c == S.Cut.TipLost && w == 0f, $"full-speed rock at 9 m (beyond the split): tip lost ({c}), wear restarts");
+        w = 0f; c = S.AfterStrike(S.Cut.Whole, ref w, 5f, S.BladeWearOne(S.Material.Rock, Full), split);
+        Check(c == S.Cut.Stub, $"full-speed rock at 5 m (inboard of the split): broken to the stub ({c})");
+        w = 0f; c = S.AfterStrike(S.Cut.TipLost, ref w, 6f, S.BladeWearOne(S.Material.Rock, Full), split);
+        Check(c == S.Cut.Stub, $"a blade without its tip struck hard: stub ({c})");
+        // chips: a character never snaps a blade; slow rock chips; enough chips snap it
+        w = 0f; c = S.AfterStrike(S.Cut.Whole, ref w, 9f, S.BladeWearOne(S.Material.Character, Full), split);
+        Check(c == S.Cut.Whole && w > 0f && w < S.SnapWear, $"a character at full speed: a chip ({w:F2}), the blade whole");
+        float chip = S.BladeWearOne(S.Material.Rock, 0.5f * Full);
+        Check(chip < S.SnapWear, $"rock at half tip speed: {chip:F2} a strike - a chip");
+        w = 0f; c = S.Cut.Whole; int n = 0;
+        while (c == S.Cut.Whole && n < 50) { c = S.AfterStrike(c, ref w, 9f, chip, split); n++; }
+        Check(c == S.Cut.TipLost && n == (int)MathF.Ceiling(1f / chip), $"repeated half-speed rock strikes at 9 m: tip lost after {n} ({c})");
+        float mw = S.BladeWearOne(S.Material.Metal, Full), mw9 = S.BladeWearOne(S.Material.Metal, 0.92f * Full), mw8 = S.BladeWearOne(S.Material.Metal, 0.8f * Full);
+        Check(mw >= S.SnapWear && mw9 >= S.SnapWear && mw8 < S.SnapWear, $"metal snaps from ~0.91 of tip speed ({mw:F2} / {mw9:F2} / {mw8:F2})");
+        w = 0.3f; c = S.AfterStrike(S.Cut.Stub, ref w, 2f, 5f, split);
+        Check(c == S.Cut.Stub, "a stub stays a stub");
+
+        // reach: the probes' and the strikes' radius per blade
+        Check(S.Reach(S.Cut.Whole, R, split, stub) == R && S.Reach(S.Cut.TipLost, R, split, stub) == split && S.Reach(S.Cut.Stub, R, split, stub) == stub, "reach: tip / split / stub");
+
+        // lift: r^2 per element - whole 1, a stub 0, a lost tip loses most of a blade's lift (the outer blade does the work)
+        float tl = S.LiftShare(S.Cut.TipLost, R, split, stub, hinge);
+        Check(S.LiftShare(S.Cut.Whole, R, split, stub, hinge) == 1f && S.LiftShare(S.Cut.Stub, R, split, stub, hinge) == 0f, "lift share: whole 1, stub 0");
+        Check(tl > 0.2f && tl < 0.35f, $"lift share of a blade without its tip: {tl:F3} ((6.8^3 - h^3) / (10.5^3 - h^3))");
+        Check(MathF.Abs(S.RotorLiftShare(new byte[] { 1, 0, 0 }, R, split, stub, hinge) - (2f + tl) / 3f) < 1e-5f, "the rotor's share: the blades' mean");
+        Check(S.RotorLiftShare(new byte[] { 2, 2, 2 }, R, split, stub, hinge) == 0f, "every blade at its stub: no lift");
+
+        // imbalance: none when the blades are alike; one lost tip: m r omega^2, turning with psi; capped at a share of the rating
+        var row = BladeBreakBlocks.Of("HelicopterRotor_150");
+        float om = S.Omega(1f, R);
+        S.Lost(S.Cut.TipLost, row.A.Mass, row.A.ComRadius(row.Hinge), row.B.Mass, row.B.ComRadius(row.Hinge), out float lm, out float lmom);
+        Check(lm == row.B.Mass && MathF.Abs(lmom - row.B.Mass * row.B.ComRadius(row.Hinge)) < 1e-3f, "a lost tip: chunk B's mass and moment");
+        var none = S.Imbalance(new float[] { lmom, lmom, lmom }, 0.7f, om, 9e5f);
+        Check(none.Length() < 1e-2f * lmom * om * om, $"three alike: no imbalance ({none.Length():F1} N)");
+        var one = S.Imbalance(new float[] { lmom, 0f, 0f }, 0f, om, 1e9f);
+        Check(MathF.Abs(one.Length() - lmom * om * om) < 1e-3f * lmom * om * om && one.X < 0f, $"one tip lost: {one.Length():F0} N, away from the missing piece");
+        var turned = S.Imbalance(new float[] { lmom, 0f, 0f }, MathF.PI / 2f, om, 1e9f);
+        Check(MathF.Abs(turned.Y + one.Length()) < 1e-2f * one.Length(), "the imbalance turns with the blades");
+        var capped = S.Imbalance(new float[] { lmom, 0f, 0f }, 0f, om, 1000f);
+        Check(MathF.Abs(capped.Length() - S.ImbalanceMaxShare * 1000f) < 1e-2f, $"capped at {S.ImbalanceMaxShare} of the rating ({capped.Length():F0} N)");
+        Console.WriteLine($"  per-blade: 1.5 m rotor at 100 %, one tip lost - imbalance {one.Length() / 1e3f:F1} kN ({one.Length() / 9e5f * 100f:F0} % of its rating), lift {(2f + tl) / 3f * 100f:F0} %");
+
+        // packing for the client's record
+        byte[] cuts = { 2, 0, 1 };
+        int p = S.Pack(cuts);
+        Check(S.Unpack(p, 0) == S.Cut.Stub && S.Unpack(p, 1) == S.Cut.Whole && S.Unpack(p, 2) == S.Cut.TipLost && S.Pack(new byte[] { 0, 0, 0 }) == 0, $"pack / unpack ({p})");
     }
 }

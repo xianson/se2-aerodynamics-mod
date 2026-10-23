@@ -214,6 +214,86 @@ public static class RotorStrike
     /// <summary>Welded back up: worn blades on a block at full integrity are whole again. The new health.</summary>
     public static float Repaired(float health, float integrity) => health < 1f && integrity >= RepairIntegrity ? 1f : health;
 
+    // ═══ PER-BLADE BREAKS (2026-10-23, the user: "break the blade tips / scatter them, keep a broken hub turning"; "it should
+    //     update collision and flight characteristics") - helicopter main rotors and the Reversible Rotor (PerBlade); the
+    //     turboprops keep the one health above (their blades are one mesh) ═══
+
+    /// <summary>A blade's state: whole, its tip gone (chunk B flew off), or broken to the stub (chunk A and B gone).</summary>
+    public enum Cut : byte { Whole = 0, TipLost = 1, Stub = 2 }
+    /// <summary>The kinds whose blades break one by one (the blade-break content: a TipLost and a Stub model per blade).</summary>
+    public static bool PerBlade(AeroPropulsorComponent.Kinds k) => k == AeroPropulsorComponent.Kinds.Rotor || k == AeroPropulsorComponent.Kinds.TailRotor;
+    /// <summary>One strike's wear on the ONE blade that took it (the rotor's BladeWear x Blades: the old law spread a strike over
+    /// all three) at or above which that blade snaps at once (full-speed rock 1.02: snaps; metal snaps from ~0.9 of tip speed;
+    /// a character, 0.45 at most, never does); smaller strikes chip it, and a blade worn to 1 snaps on the strike that does it.</summary>
+    public static float SnapWear = 0.5f;
+    /// <summary>The one blade's wear from a strike (share of its life).</summary>
+    public static float BladeWearOne(Material m, float v) => BladeWear(m, v) * Blades;
+
+    /// <summary>A blade's reach (m from the axis): its tip, the split radius once the tip is gone, the stub's end once broken.</summary>
+    public static float Reach(Cut c, float R, float splitR, float stubR) => c == Cut.Whole ? R : c == Cut.TipLost ? MathF.Min(splitR, R) : MathF.Min(stubR, R);
+
+    /// <summary>A strike of wear w at radius r on a blade: chips it, or snaps it there - outboard of the split radius a whole blade
+    /// loses its tip, anywhere else (or a blade already without its tip) it breaks to the stub. The wear restarts on the piece left.
+    /// Returns the blade's new state.</summary>
+    public static Cut AfterStrike(Cut c, ref float wear, float r, float w, float splitR)
+    {
+        if (c == Cut.Stub || !(w > 0f)) return c;
+        wear = MathF.Min(wear + w, 1f);
+        if (w < SnapWear && wear < 1f) return c;
+        wear = 0f;
+        return c == Cut.Whole && r >= splitR ? Cut.TipLost : Cut.Stub;
+    }
+
+    /// <summary>A blade's share of a whole blade's lift: the lift of a blade element grows as r^2 (its speed squared), so a blade
+    /// from the hinge h out to its reach e lifts (e^3 - h^3) / (R^3 - h^3) of a whole one. A stub lifts nothing.</summary>
+    public static float LiftShare(Cut c, float R, float splitR, float stubR, float hinge)
+    {
+        if (c == Cut.Stub || !(R > hinge)) return c == Cut.Whole ? 1f : 0f;
+        float e = Reach(c, R, splitR, stubR), h3 = hinge * hinge * hinge, full = R * R * R - h3;
+        return Math.Clamp((e * e * e - h3) / full, 0f, 1f);
+    }
+
+    /// <summary>The rotor's lift share: the mean of its blades' (its thrust, reaction torque and rating scale with it).</summary>
+    public static float RotorLiftShare(ReadOnlySpan<byte> cuts, float R, float splitR, float stubR, float hinge)
+    {
+        if (cuts.Length == 0) return 1f;
+        float s = 0f;
+        for (int i = 0; i < cuts.Length; i++) s += LiftShare((Cut)cuts[i], R, splitR, stubR, hinge);
+        return s / cuts.Length;
+    }
+
+    /// <summary>The mass a blade has lost (kg) and its first moment about the axis (kg m: mass x the lost pieces' centre radius).</summary>
+    public static void Lost(Cut c, float massA, float comA, float massB, float comB, out float mass, out float moment)
+    {
+        mass = moment = 0f;
+        if (c == Cut.Whole) return;
+        mass += massB; moment += massB * comB;
+        if (c == Cut.Stub) { mass += massA; moment += massA * comA; }
+    }
+
+    /// <summary>The rotor's IMBALANCE (N, in the disc's (u, w) plane): what the lost pieces no longer pull - the opposite of their
+    /// centripetal pull - omega^2 x the sum of each blade's lost first moment along its direction (blade k at psi + 2 pi k / 3),
+    /// at most ImbalanceMaxShare of the rotor's rating. Zero when every blade is alike (whole, or all three broken the same way).</summary>
+    public static Vector2 Imbalance(ReadOnlySpan<float> lostMoment, float psi, float omega, float rated)
+    {
+        float x = 0f, y = 0f;
+        for (int k = 0; k < lostMoment.Length; k++)
+        {
+            float a = psi + 2f * MathF.PI * k / lostMoment.Length;
+            x += lostMoment[k] * MathF.Cos(a); y += lostMoment[k] * MathF.Sin(a);
+        }
+        // (the whole rotor pulled the hub nowhere; without those pieces the rest pulls it toward the side opposite them)
+        var f = new Vector2(-x, -y) * (omega * omega);
+        float cap = ImbalanceMaxShare * MathF.Max(rated, 0f), l = f.Length();
+        return l > cap && l > 0f ? f * (cap / l) : f;
+    }
+    /// <summary>The most the imbalance shakes the ship, as a share of the rotor's rated thrust.</summary>
+    public static float ImbalanceMaxShare = 0.5f;
+
+    /// <summary>The three blades' states packed in one int (c0 + 3 c1 + 9 c2: 0..26) for the client copy's record.</summary>
+    public static int Pack(ReadOnlySpan<byte> cuts) { int v = 0, m = 1; for (int i = 0; i < cuts.Length && i < Blades; i++) { v += Math.Min((int)cuts[i], 2) * m; m *= 3; } return v; }
+    public static Cut Unpack(int packed, int blade) { for (int i = 0; i < blade; i++) packed /= 3; return (Cut)Math.Clamp(packed % 3, 0, 2); }
+
     /// <summary>The blade's direction of motion at a point d from the hub (in the disc's plane), for spin axis s (unit): s x d, unit.</summary>
     public static Vector3 BladeMotion(Vector3 spinAxis, Vector3 fromHub)
     {

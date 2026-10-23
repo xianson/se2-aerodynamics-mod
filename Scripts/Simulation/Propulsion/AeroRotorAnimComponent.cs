@@ -34,6 +34,12 @@ namespace AeroMod;
 /// mirrored back) with the MIRRORED blade set - three more blade subparts at the same dummies whose entity is named
 /// CcwBladeName (gen_propulsor_defs.py, mirrored in the blade's chord), shown instead of the clockwise three (the hidden set at
 /// opacity 0, as the fade). Old content without that set: the clockwise blades are turned the other way (trailing edge first).
+/// PER-BLADE BREAKS (2026-10-23; a helicopter rotor with the blade-break content): every blade has two more models at its dummy -
+/// its TIP LOST and its STUB ("..._BladeTipLost_..." / "..._BladeStub_...", and "BladeCCWTipLost" / "BladeCCWStub" for the mirrored
+/// set), paired to their blade by place; each blade shows the one model its published state asks (ThrustTorque.BladeState's cuts),
+/// the others at opacity 0. Stubs stay drawn at any rpm (a broken hub turning), the blur disc fades with the blades left. When a
+/// blade's state steps down the piece it lost is thrown as client debris (BladeDebris: chunk B for a lost tip, A for a stub).
+/// Content without those models: a blade that is not whole is hidden.
 /// BROKEN BLADES (rotor strikes, 2026-10-17: the server publishes them - ThrustTorque.BladeState): the rotor or prop stands still, its
 /// blades and blur disc hidden, the hub / spinner left as the stub; welded back up, they return.
 /// </summary>
@@ -55,6 +61,23 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     /// ("HelicopterRotor_150_BladeCCW_Client_Composite" - 2026-10-23, the first flight: matching CcwBladeName found none, so
     /// no rotor animated: blades still, the blur disc on).</summary>
     public const string CcwBladeName = "RotorBladeCCW", CcwBladeMatch = "BladeCCW";
+    /// <summary>The blade-break models' names (the composition names contain them; the most specific is matched first - "BladeCCWTipLost"
+    /// contains "BladeCCW").</summary>
+    public const string TipLostMatch = "BladeTipLost", StubMatch = "BladeStub", CcwTipLostMatch = "BladeCCWTipLost", CcwStubMatch = "BladeCCWStub";
+
+    /// <summary>A child's blade role by its name: ccw (the mirrored set) and variant (0 the whole blade, 1 tip lost, 2 stub);
+    /// false: no blade mark in its name (a whole clockwise blade, the hub or the blur disc - told apart by place).</summary>
+    public static bool BladeMark(string name, out bool ccw, out int variant)
+    {
+        ccw = false; variant = 0;
+        if (name == null) return false;
+        if (name.IndexOf(CcwTipLostMatch, StringComparison.Ordinal) >= 0) { ccw = true; variant = 1; return true; }
+        if (name.IndexOf(CcwStubMatch, StringComparison.Ordinal) >= 0) { ccw = true; variant = 2; return true; }
+        if (name.IndexOf(TipLostMatch, StringComparison.Ordinal) >= 0) { variant = 1; return true; }
+        if (name.IndexOf(StubMatch, StringComparison.Ordinal) >= 0) { variant = 2; return true; }
+        if (name.IndexOf(CcwBladeMatch, StringComparison.Ordinal) >= 0) { ccw = true; return true; }
+        return false;
+    }
 
     enum Role { Hub, Blade, Blur }
     /// <summary>The turboprop's parts by their subpart prefab's entity name (gen_propulsor_defs.py writes them).</summary>
@@ -71,6 +94,8 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         public Vector3 LastPos; public Quaternion LastRot; public bool HasLast;
         /// <summary>A blade of the counter-rotating (mirrored) set.</summary>
         public bool Ccw;
+        /// <summary>Per-blade breaks: the model (0 whole, 1 tip lost, 2 stub) and the blade it belongs to (0..2; -1 not a blade).</summary>
+        public int Variant, Index = -1;
     }
     readonly List<Part> _parts = new();
     Part _hub, _blur;
@@ -84,6 +109,10 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     float _rpm = -1f, _psi, _coll, _cone, _hinge, _span, _tip; Vector3 _tilt; long _last; bool _matched;
     /// <summary>Drawn counter-rotating (the record's switch; kept while no record); the mirrored blade set was found.</summary>
     bool _ccw, _hasCcwSet; AeroPropulsorComponent _propc;
+    /// <summary>Per-blade breaks: the TipLost / Stub models were found for the clockwise and the mirrored set; the blades' published
+    /// states (RotorStrike.Pack) now and as last seen (-1: not seen yet - no debris for a state found on loading).</summary>
+    bool _hasVariants, _hasCcwVariants; int _cuts, _seenCuts = -1;
+    readonly Vector3[] _bladePos = new Vector3[RotorStrike.Blades]; readonly Quaternion[] _bladeRot = new Quaternion[RotorStrike.Blades];
     long _logAt;
 
     // ── in-game checks (harness: aeroget AeroRotorAnimComponent.Summary) ──
@@ -147,8 +176,11 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         }
         // BROKEN BLADES (rotor strikes: the server's AeroRotorStrikeComponent publishes blades that are not whole): stopped, the
         // blades and the blur disc hidden - the hub / spinner left as the stub
-        _broken = ThrustTorque.BladeState(grid, _key, ref _bladeMatch, ref _bladeRecheck, now, out float bladeHealth) && RotorStrike.IsBroken(bladeHealth);
-        if (_broken) rpm = 0f;
+        bool bladeRec = ThrustTorque.BladeState(grid, _key, ref _bladeMatch, ref _bladeRecheck, now, out float bladeHealth, out int cuts);
+        _cuts = bladeRec ? cuts : 0;
+        _broken = bladeRec && RotorStrike.IsBroken(bladeHealth);
+        // (per-blade breaks: a rotor at its stubs coasts down on the server - its rpm as published, the stubs turning)
+        if (_broken && !(_hasVariants && !_prop)) rpm = 0f;
         _rpm = rpm;
         if (_prop) { StepProp(rpm, dt); return; }
         bool tail = _kind == AeroPropulsorComponent.Kinds.TailRotor;
@@ -173,7 +205,13 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         var tiltL = mir ? RotorKinematics.MirrorX(_tilt) : _tilt;
         var discL = mir ? RotorKinematics.Tilt(tiltL) : disc;
         var hubL = mir ? RotorKinematics.MirrorX(hubPos) : hubPos;
-        float bladeA = _broken ? 0f : RotorKinematics.BladeOpacity(rpm), blurA = _broken ? 0f : RotorKinematics.BlurOpacity(rpm);
+        bool perBlade = _hasVariants;
+        float bladeA = _broken && !perBlade ? 0f : RotorKinematics.BladeOpacity(rpm), blurA = _broken ? 0f : RotorKinematics.BlurOpacity(rpm);
+        // (the blur disc fades with the blades left: a stub blurs nothing)
+        int notStub = 0; for (int i = 0; i < RotorStrike.Blades; i++) if (RotorStrike.Unpack(_cuts, i) != RotorStrike.Cut.Stub) notStub++;
+        blurA *= notStub / (float)RotorStrike.Blades;
+        bool useCcw = mir && _hasCcwSet;
+        bool setVariants = useCcw ? _hasCcwVariants : _hasVariants;
         bool log = Log && now - _logAt > System.Diagnostics.Stopwatch.Frequency / 5;
         if (log) _logAt = now;
         System.Text.StringBuilder sb = log ? new System.Text.StringBuilder() : null;
@@ -193,11 +231,14 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
                     float pitch = RotorKinematics.BladePitch(_coll, tiltL, span) - baked;
                     RotorKinematics.BladePose(hubL, discL, _psi, Mir(mir, p.Rest.Position), restRot, _cone, pitch, out pos, out rot);
                     pos = Mir(mir, pos);
-                    // (the set this turn shows: the mirrored set when counter-rotating and it is there; the other one hidden)
-                    bool shown = p.Ccw == (mir && _hasCcwSet);
-                    alpha = shown ? bladeA : 0f;
+                    // (the set this turn shows: the mirrored set when counter-rotating and it is there; the other one hidden; in it, per
+                    //  blade, the model its state asks - without the break models, a blade not whole is hidden)
+                    var cut = p.Index >= 0 ? RotorStrike.Unpack(_cuts, p.Index) : RotorStrike.Cut.Whole;
+                    bool shown = p.Ccw == useCcw && (setVariants ? p.Variant == (int)cut : p.Variant == 0 && cut == RotorStrike.Cut.Whole);
+                    alpha = !shown ? 0f : p.Variant == 2 ? 1f : bladeA;   // (a stub drawn at any rpm)
+                    if (p.Index >= 0 && p.Variant == 0 && p.Ccw == useCcw) { _bladePos[p.Index] = pos; _bladeRot[p.Index] = Mir(mir, rot); }
                     var tip = pos + Vector3.Transform(Vector3.UnitZ * (_span > 0f ? _span : 1f), Mir(mir, rot));
-                    if (shown) { if (nt == 0) t0 = tip; else if (nt == 1) t1 = tip; else t2 = tip; nt++; }
+                    if (shown && p.Variant == 0) { if (nt == 0) t0 = tip; else if (nt == 1) t1 = tip; else t2 = tip; nt++; }
                     if (log && shown) sb.Append($" b{nt} pitch {(pitch + baked) * 57.2958f:F2}");
                     break;
                 }
@@ -217,6 +258,8 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
                 if (RotorRenderBridge.Set(p.Render, alpha, p.A1, p.A2)) p.Shown = alpha;
             }
         }
+        if (_seenCuts >= 0 && _cuts != _seenCuts) ThrowPieces(grid, rpm, mir);
+        _seenCuts = _cuts;
         if (Log)
         {
             _frames++; if (_matched) _matchedFrames++;
@@ -338,6 +381,48 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
 
     bool _propNoFade;
 
+    /// <summary>A blade's state stepped down since last seen: the piece(s) it lost thrown as debris (BladeDebris) from where the
+    /// blade is now - chunk B for a lost tip, chunk A (and B if it was still on) for a stub.</summary>
+    void ThrowPieces(Entity grid, float rpm, bool mir)
+    {
+        var row = BladeBreakBlocks.Of(PropulsorBlocks.RowOf(Entity)?.Name);
+        if (row == null) return;
+        var session = Entity.GetSession();
+        var bw = Data.GetWorldTransform();
+        GridPhysics.TryGetVelocity(grid.Data, out var gridLin, out var gridAng);
+        var gw = grid.Data.GetWorldTransform();
+        // (the spin: about the block's -Y clockwise, +Y counter-rotating - the mirror)
+        float omega = RotorKinematics.TipSpeed / MathF.Max(_tip, 0.5f) * Math.Clamp(rpm, 0f, 1f);
+        var spinW = Vector3.Transform(mir ? Vector3.UnitY : -Vector3.UnitY, bw.Orientation) * omega;
+        var hubW = bw.Position + (Vector3D)Vector3.Transform(_hub.Rest.Position, bw.Orientation);
+        for (int k = 0; k < RotorStrike.Blades; k++)
+        {
+            var was = _seenCuts < 0 ? RotorStrike.Cut.Whole : RotorStrike.Unpack(_seenCuts, k);
+            var now = RotorStrike.Unpack(_cuts, k);
+            if (now <= was) continue;
+            if (was == RotorStrike.Cut.Whole) Throw(session, row.B, k, bw, gw, gridLin, gridAng, spinW, hubW, "chunk B");
+            if (now == RotorStrike.Cut.Stub) Throw(session, row.A, k, bw, gw, gridLin, gridAng, spinW, hubW, "chunk A");
+        }
+    }
+
+    void Throw(Session session, BladeBreakBlocks.Chunk ch, int k, in WorldTransform bw, in WorldTransform gw, Vector3 gridLin, Vector3 gridAng, Vector3 spinW, Vector3D hubW, string what)
+    {
+        // (the blade's pose this frame, block-relative, then world; the chunk's centre of mass along it)
+        var rot = Quaternion.Normalize(bw.Orientation * _bladeRot[k]);
+        var at = bw.Position + (Vector3D)Vector3.Transform(_bladePos[k], bw.Orientation) + (Vector3D)Vector3.Transform(ch.Com, rot);
+        var r = (Vector3)(at - hubW);
+        var lin = gridLin + Vector3.Cross(gridAng, (Vector3)(at - gw.Position)) + Vector3.Cross(spinW, r);
+        BladeDebris.Queue(session, ch.Model, new WorldTransform(at, rot), lin, spinW + gridAng, ch.Mass, what);
+    }
+
+    // the pieces are spawned before the physics step (the game's own debris spawner's place), not in the render-time animation job
+    [Before(typeof(Keen.Game2.Simulation.Physics))]
+    private class OnBladeDebris : JobGroup;
+
+    [OnBladeDebris]
+    [MustHave(typeof(AeroRotorAnimComponent))]
+    private static void BladeDebrisJob(AeroRotorAnimComponent c) => BladeDebris.Step();
+
     static bool NameIs(string name, string a, string b) =>
         name != null && (name.IndexOf(a, StringComparison.Ordinal) >= 0 || name.IndexOf(b, StringComparison.Ordinal) >= 0);
 
@@ -375,37 +460,51 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         var row = PropulsorBlocks.RowOf(Entity);
         if (row != null) _kind = row.Kind;
         if (_kind == AeroPropulsorComponent.Kinds.Turboprop) { FindPropParts(kids, row); return; }
-        Vector3 c = Vector3.Zero;
+        Vector3 c = Vector3.Zero; int marked = 0;
+        int[] groups = new int[6];   // (cw whole marked, cw tip lost, cw stub, ccw whole, ccw tip lost, ccw stub)
         foreach (var k in kids)
             if (k != null && k.Data.TryGet<RelativeTransform>(out var rt))
             {
-                // (the counter-rotating blade set by its entity name - at the same dummies as the clockwise blades)
-                bool ccw = k.DebugName != null && k.DebugName.IndexOf(CcwBladeMatch, StringComparison.Ordinal) >= 0;
-                _parts.Add(new Part { Entity = k, Rest = rt, Ccw = ccw }); if (!ccw) c += rt.Position;
+                // (the counter-rotating set and the blade-break models by their names - at the same dummies as the clockwise blades)
+                bool mark = BladeMark(k.DebugName, out bool ccw, out int variant);
+                _parts.Add(new Part { Entity = k, Rest = rt, Ccw = ccw, Variant = variant });
+                if (mark) { marked++; groups[(ccw ? 3 : 0) + variant]++; } else c += rt.Position;
             }
-        int ccwN = 0; foreach (var p in _parts) if (p.Ccw) ccwN++;
+        int ccwN = groups[3];
         // (8 children and none named as the mirrored set: the names did not come through - animate all six blades as one set
         //  (both drawn, clockwise) rather than leave the rotor still with its blur disc on; said once in the log)
-        bool unnamed = ccwN == 0 && _parts.Count == 8;
+        bool unnamed = marked == 0 && _parts.Count == 8;
         if (unnamed) Keen.VRage.Library.Diagnostics.Log.Default?.Warning($"[AERO-ROTORANIM] {_key}: 8 children but none named *{CcwBladeMatch}* - both blade sets drawn as one (counter-rotating blades not told apart)");
-        if ((_parts.Count - ccwN != 5 && !unnamed) || (ccwN != 0 && ccwN != 3)) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children ({ccwN} counter-rotating blades), not a split rotor (5, or 8 with the mirrored blades) - not animated"); _parts.Clear(); return; }
+        bool groupsOk = true; for (int g = 1; g < 6; g++) groupsOk &= groups[g] == 0 || groups[g] == 3;
+        if ((_parts.Count - marked != 5 && !unnamed) || !groupsOk) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children ({ccwN} counter-rotating blades, break models {groups[1]}/{groups[2]}/{groups[4]}/{groups[5]}), not a split rotor (5, + 3 per extra blade set) - not animated"); _parts.Clear(); return; }
         c /= unnamed ? 8f : 5f;
         Part a = null, b = null; int blades = 0; float hinge = 0f;
         foreach (var p in _parts)
         {
-            if (p.Ccw) { p.Role = Role.Blade; continue; }
+            if (p.Ccw || p.Variant != 0) { p.Role = Role.Blade; continue; }
             var d = p.Rest.Position - c; d.Y = 0f;
             if (d.Length() > 0.1f) { p.Role = Role.Blade; blades++; hinge += d.Length(); }
             else if (a == null) a = p; else b = p;
         }
         if (blades != (unnamed ? 6 : 3) || a == null || b == null) { _parts.Clear(); return; }
         _hasCcwSet = ccwN == 3;
+        _hasVariants = groups[1] == 3 && groups[2] == 3; _hasCcwVariants = groups[4] == 3 && groups[5] == 3;
+        // (each blade's index: the whole clockwise blades in order; every other blade model to the nearest of them - its hinge)
+        var whole = new List<Part>();
+        foreach (var p in _parts) if (p.Role == Role.Blade && !p.Ccw && p.Variant == 0) { p.Index = whole.Count % RotorStrike.Blades; whole.Add(p); }
+        foreach (var p in _parts)
+        {
+            if (p.Role != Role.Blade || (!p.Ccw && p.Variant == 0)) continue;
+            float best = float.MaxValue;
+            foreach (var w in whole) { float d = (w.Rest.Position - p.Rest.Position).LengthSquared(); if (d < best) { best = d; p.Index = w.Index; } }
+        }
+        _seenCuts = -1;
         if (a.Rest.Position.Y >= b.Rest.Position.Y) { a.Role = Role.Hub; b.Role = Role.Blur; _hub = a; _blur = b; }
         else { b.Role = Role.Hub; a.Role = Role.Blur; _hub = b; _blur = a; }
         _hinge = hinge / blades;
         // (the tip: the block's table radius - PropulsorBlocks, the rig's tip radius; else the main rotors' ratio)
         _tip = row != null && row.Radius > _hinge ? row.Radius : _hinge * TipOverHinge;
         _span = _tip - _hinge;
-        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades{(_hasCcwSet ? " + 3 mirrored" : "")}, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
+        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades{(_hasCcwSet ? " + 3 mirrored" : "")}{(_hasVariants ? " + break models" : "")}{(_hasCcwVariants ? " (mirrored too)" : "")}, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
     }
 }

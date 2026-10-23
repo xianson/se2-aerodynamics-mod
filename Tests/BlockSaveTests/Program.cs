@@ -105,6 +105,20 @@ static class Program
         Check(AeroBlockSaveForm.TryReadBlades("aero-blades:1 -3", out float hn) && hn == 0f && AeroBlockSaveForm.TryReadBlades("aero-blades:1 7", out float hx) && hx == 1f, "blades clamped 0..1");
         Check(!AeroBlockSaveForm.TryReadBlades(null, out float hz) && hz == 1f && !AeroBlockSaveForm.TryReadBlades("aero-blades:1 NaN", out hz) && !AeroBlockSaveForm.TryReadBlades(AeroBlockSaveForm.Thrust(0.25f), out hz), "blades: none / NaN / another tag refused (whole)");
         Check(AeroBlockSaveForm.Find(new Dictionary<string, object> { [AeroBlockSaveForm.Blades(0.5f)] = null }, AeroBlockSaveForm.BladesKey) == "aero-blades:1 0.5", "Find the blades key");
+        // per-blade breaks (2026-10-23): each blade's state and wear after the health; an older reader still reads the health
+        {
+            byte[] cuts = { 1, 0, 2 }; float[] wear = { 0f, 0.25f, 0f };
+            string k = AeroBlockSaveForm.Blades(0.42f, cuts, wear);
+            Check(k == "aero-blades:1 0.42 1 0 2 0 0.25 0", $"per-blade key: {k}");
+            byte[] c2 = new byte[3]; float[] w2 = new float[3];
+            Check(AeroBlockSaveForm.TryReadBladeCuts(k, c2, w2) && c2[0] == 1 && c2[1] == 0 && c2[2] == 2 && Same(w2[1], 0.25f), "per-blade round trip");
+            Check(AeroBlockSaveForm.TryReadBlades(k, out float hk) && Same(hk, 0.42f), "per-blade key: the health still read alone (an older reader)");
+            Check(AeroBlockSaveForm.Blades(1f, new byte[3], new float[3]) == null, "per-blade: whole and unworn - no key");
+            Check(AeroBlockSaveForm.Blades(1f, new byte[3], new float[] { 0f, 0.1f, 0f }) != null, "per-blade: worn blades saved though the lift is whole");
+            byte[] c3 = { 9, 9, 9 };
+            Check(!AeroBlockSaveForm.TryReadBladeCuts("aero-blades:1 0.5", c3, new float[3]) && c3[0] == 9, "an older single-health key: no blade states (mapped by the rotor), the array untouched");
+            Check(AeroBlockSaveForm.TryReadBladeCuts("aero-blades:1 0 7 -1 2 2 0.5 0", c3, new float[3]) && c3[0] == 2 && c3[1] == 0, "blade states clamped 0..2");
+        }
         // a main rotor's turn (2026-10-23): clockwise (the default) writes no key; counter-rotating round trips
         Check(AeroBlockSaveForm.RotorSpin(false) == null && AeroBlockSaveForm.RotorSpin(true) == "aero-rotorspin:1 1", "rotor spin: clockwise no key, counter-rotating 'aero-rotorspin:1 1'");
         Check(AeroBlockSaveForm.TryReadRotorSpin(AeroBlockSaveForm.RotorSpin(true), out bool ccw) && ccw && AeroBlockSaveForm.TryReadRotorSpin("aero-rotorspin:1 0", out bool cw) && !cw, "rotor spin round trip");

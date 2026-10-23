@@ -147,6 +147,37 @@ public static class AeroBlockSaveForm
     /// <summary>A rotor's or prop's blades' health after strikes (0..1, 0 broken; RotorStrike). Null when whole (the default).</summary>
     public static string Blades(float health) => float.IsFinite(health) && health < 1f ? BladesKey + Format + " " + F(Math.Clamp(health, 0f, 1f)) : null;
 
+    /// <summary>A per-blade rotor's blades (2026-10-23): the health (its lift share left), then each blade's state (RotorStrike.Cut:
+    /// 0 whole, 1 tip lost, 2 stub) and wear - "aero-blades:1 health c0 c1 c2 w0 w1 w2" (an older reader takes the health alone).
+    /// Null when every blade is whole and unworn.</summary>
+    public static string Blades(float health, ReadOnlySpan<byte> cuts, ReadOnlySpan<float> wear)
+    {
+        bool any = float.IsFinite(health) && health < 1f;
+        for (int i = 0; i < cuts.Length; i++) any |= cuts[i] != 0;
+        for (int i = 0; i < wear.Length; i++) any |= float.IsFinite(wear[i]) && wear[i] > 0f;
+        if (!any) return null;
+        var sb = new System.Text.StringBuilder(BladesKey).Append(Format).Append(' ').Append(F(float.IsFinite(health) ? Math.Clamp(health, 0f, 1f) : 1f));
+        for (int i = 0; i < cuts.Length; i++) sb.Append(' ').Append(Math.Min((int)cuts[i], 2).ToString(C));
+        for (int i = 0; i < wear.Length; i++) sb.Append(' ').Append(F(float.IsFinite(wear[i]) ? Math.Clamp(wear[i], 0f, 1f) : 0f));
+        return sb.ToString();
+    }
+
+    /// <summary>A per-blade key's blades into cuts / wear (false: none, or an older single-health key - cuts and wear left as given).</summary>
+    public static bool TryReadBladeCuts(string key, Span<byte> cuts, Span<float> wear)
+    {
+        int n = cuts.Length;
+        string[] w = Values(key, BladesKey, 1 + 2 * n);
+        if (w == null) return false;
+        Span<byte> c = stackalloc byte[n]; Span<float> wr = stackalloc float[n];
+        for (int i = 0; i < n; i++)
+        {
+            if (!int.TryParse(w[2 + i], NumberStyles.Integer, C, out int ci) || !Float(w[2 + n + i], out float wi)) return false;
+            c[i] = (byte)Math.Clamp(ci, 0, 2); wr[i] = Math.Clamp(wi, 0f, 1f);
+        }
+        c.CopyTo(cuts); if (wear.Length >= n) wr.CopyTo(wear);
+        return true;
+    }
+
     public static bool TryReadBlades(string key, out float health)
     {
         health = 1f;

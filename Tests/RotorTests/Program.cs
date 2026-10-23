@@ -144,6 +144,16 @@ static class Program
                     Check($"HelicopterRotor_{size}_BladeCCW_Client_Composite".Contains(match) && "RotorBladeCCW".Contains(match),
                         $"counter-rotating blades: '{match}' is in the {size} rotor's mirrored blade composite name and the prefab's entity name");
                 Check(src.Contains("IndexOf(CcwBladeMatch"), "counter-rotating blades: the children are matched by CcwBladeMatch");
+                // (per-blade breaks, 2026-10-23: the break models' names - the most specific first, "BladeCCWTipLost" contains "BladeCCW")
+                int iCcwTip = src.IndexOf("IndexOf(CcwTipLostMatch"), iCcwStub = src.IndexOf("IndexOf(CcwStubMatch"), iTip = src.IndexOf("IndexOf(TipLostMatch"), iStub = src.IndexOf("IndexOf(StubMatch"), iCcw = src.IndexOf("IndexOf(CcwBladeMatch");
+                Check(iCcwTip > 0 && iCcwTip < iCcwStub && iCcwStub < iTip && iTip < iStub && iStub < iCcw, "blade-break models: matched most specific first (CCW tip lost, CCW stub, tip lost, stub, then CCW)");
+                foreach (var nm in new[] { "BladeTipLost\"", "BladeStub\"", "BladeCCWTipLost\"", "BladeCCWStub\"" })
+                    Check(src.Contains(nm), $"blade-break model name {nm.TrimEnd('"')} in AeroRotorAnimComponent");
+                string cyc = File.ReadAllText(Path.Combine(SimDir(), "Propulsion", "RotorCyclic.cs"));
+                string pc = File.ReadAllText(Path.Combine(SimDir(), "Propulsion", "AeroPropulsorComponent.cs"));
+                Check(cyc.Contains("rated[k] = p.Rated * p.Efficiency * p.BladeShare;"), "per-blade breaks: the limiter and the cyclic see the rating times the lift share left");
+                Check(pc.Contains("want *= share;") && pc.Contains("BladeShare = share;"), "per-blade breaks: the thrust written times the lift share left");
+                Check(pc.Contains("Rpm = RotorKinematics.StepRpm(Rpm, false, AeroPhysics.Dt, 0f);"), "per-blade breaks: every blade at its stub - the rotor coasts down (not stopped dead)");
             }
             // COUNTER-ROTATING (2026-10-23): no turns given and every one clockwise are the same; two alike, one counter-rotating
             // (coaxial: one axis, no tail, no gyros) - their reactions cancel and neither is capped; the counter-rotating one
