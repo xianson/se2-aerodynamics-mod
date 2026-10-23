@@ -9,6 +9,7 @@
     "PartialDefinitionKind": "Copy",
     "Manipulator": {
       "Guid": "ae200001-ae00-9e31-0061-000000000001",
+      "Model": "{G}ae200001-ae00-9e31-0106-000000000001",
       "Dummies": {
         "$DeltaEncoded": true,
         "Keys": [

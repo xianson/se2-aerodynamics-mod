@@ -229,11 +229,6 @@ public class InjectAeroComponents : Injections
             Add(entity, typeof(AeroGearAnimComponent));
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroGearAnimComponent into gear client prefab '{entity.DebugName}'");
         }
-        if (AeroBlockGuids.HiddenWheelClientPrefabs.Contains(entity.Guid))
-        {
-            Add(entity, typeof(AeroHiddenWheelComponent));   // (the pad-foot gears' wheels: never drawn)
-            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroHiddenWheelComponent into hidden wheel client prefab '{entity.DebugName}'");
-        }
 
         // (a solid rocket segment's tank - Solid Propellant, the conveyor version 2026-10-17 - weighs through AeroSolidSegmentComponent:
         //  one mass provider per block)

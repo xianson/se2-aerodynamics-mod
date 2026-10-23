@@ -38,12 +38,6 @@ public static class AeroBlockGuids
         new("ae200001-ae00-9e01-0012-000000000001"), new("ae200001-ae00-9e02-0012-000000000001"), new("ae200001-ae00-9e03-0012-000000000001"), new("ae200001-ae00-9e04-0012-000000000001"),
         new("ae200001-ae00-9e21-0012-000000000001"), new("ae200001-ae00-9e22-0012-000000000001"), new("ae200001-ae00-9e23-0012-000000000001"), new("ae200001-ae00-9e24-0012-000000000001"),
     };
-    /// <summary>The pad-foot gears' hidden wheels' client prefabs (2026-10-21, gen_padgear_defs.py: the suspension's wheel, never drawn -
-    /// the foot is a subpart turned to its ground: AeroGearAnimComponent / FootIk).</summary>
-    public static readonly System.Collections.Generic.HashSet<Guid> HiddenWheelClientPrefabs = new()
-    {
-        new("ae200001-ae00-9e31-0066-000000000001"), new("ae200001-ae00-9e32-0066-000000000001"), new("ae200001-ae00-9e33-0066-000000000001"), new("ae200001-ae00-9e34-0066-000000000001"),
-    };
 
     // ── Airbrakes ──
     public static readonly Guid Airbrake_1x1       = new("ae200001-ae00-ab01-0001-000000000001");

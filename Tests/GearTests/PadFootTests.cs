@@ -101,7 +101,7 @@ static class PadFootTests
             Check(Near(Num("WheelRadius"), r), $"{size}: WheelRadius {Num("WheelRadius")} is not the hidden wheel's {r}");
             Check(Near(Num("WheelMass"), F(L.GetProperty("mass"))) && Near(Num("Stroke"), F(L.GetProperty("travel"))), $"{size}: mass / stroke differ");
 
-            // the geometry: the foot at the ankle pin (FootDrop below the rod's hub along the leg), the wheel's bottom on its sole
+            // the geometry: the foot's ankle on the rod's hub (GearLayout.FootPoint), the wheel's bottom on its sole under the pad's centre
             string d = Path.Combine(root, "Assets", "Aero", "PadGear", size);
             var hous = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Assets", "Aero", "RetractableGear", size, $"RetractableGear_{size}_BlockModelDefinition.partialdef"))).RootElement
                 .GetProperty("$Value").GetProperty("Manipulator").GetProperty("Dummies").GetProperty("Changed").EnumerateArray().Select(c => c.GetProperty("Value")).ToArray();
@@ -110,8 +110,9 @@ static class PadFootTests
             var lay = new GearLayout { HingePoint = hinge, DeployedHub = hub, HingeAxis = Vector3.UnitX };
             var foot = V(L.GetProperty("foot")); var sole = V(L.GetProperty("sole")); var centre = V(L.GetProperty("wheel_centre"));
             Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), lay.FootPoint) < 1e-3f, $"{size}: the foot's dummy is not GearLayout.FootPoint (the ankle pin)");
-            Check(Near(sole[1], foot[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], foot[0]) && Near(centre[2], foot[2]),
-                  $"{size}: the hidden wheel's bottom is not the foot's sole (under it)");
+            Check(Near(sole[1], foot[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], foot[0]) && Near(centre[2], foot[2] + F(L.GetProperty("pad_dz"))),
+                  $"{size}: the hidden wheel's bottom is not the foot's sole (under the pad's centre)");
+            Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), hub) < 1e-3f, $"{size}: the ankle is not on the rod's hub");
 
             // the pad block's own model: the wheel rest moved, the foot's dummy at the ankle pin; its subparts: leg, rod, foot
             JsonElement Man(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(d, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");
@@ -129,19 +130,24 @@ static class PadFootTests
             string scomp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ServerComposition.partialdef"));
             Check(scomp.Contains(L.GetProperty("module").GetString()) && scomp.Contains(L.GetProperty("block_model").GetString()), $"{size}: the block is not on its own model and the hidden wheel's corner module");
 
-            // the hidden wheel: the vanilla model kept, its pivot at its centre, its mass, no drive / steering, its client prefab hidden
+            // the hidden wheel: its own invisible model (a 1 mm triangle, a collision puck of its radius), its pivot at its centre, its mass,
+            // no drive / steering
             string wd = Path.Combine(d, "Foot");
             JsonElement WMan(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");
             string W = $"PadGear_{size}_HiddenWheel";
             var mcd = WMan(W + "_ModelComponentDefinition.partialdef");
-            Check(!mcd.TryGetProperty("Model", out _), $"{size}: the hidden wheel's model is not the vanilla wheel's");
+            Check(mcd.TryGetProperty("Model", out var wm) && wm.GetString() == "{G}" + JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, "Models", W + ".model.meta"))).RootElement.GetProperty("$Value").GetProperty("AssetID").GetString(), $"{size}: the hidden wheel is not on its own invisible model");
+            var wmodel = JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, "Models", W + ".model"))).RootElement.GetProperty("$Value");
+            Check(wmodel.GetProperty("GeometryAssets").GetArrayLength() == 1 && wmodel.GetProperty("CollisionShapesAsset").GetProperty("AssetReference").ValueKind == JsonValueKind.String,
+                  $"{size}: the hidden wheel's model is not one tiny mesh and a collider");
+            var puck = JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, "Models", W + "_collision.gltf"))).RootElement.GetProperty("accessors")[0];
+            Check(Near(F(puck.GetProperty("max")[0]), r, 0.01f) && Near(F(puck.GetProperty("max")[1]), 0.05f * r, 0.01f), $"{size}: the hidden wheel's collision puck is not its radius");
             var piv = mcd.GetProperty("Dummies").GetProperty("Changed")[0].GetProperty("Value").GetProperty("Transform").GetProperty("Transform").GetProperty("Position");
             Check(F(piv.GetProperty("X")) == 0f && F(piv.GetProperty("Y")) == 0f && F(piv.GetProperty("Z")) == 0f, $"{size}: the hidden wheel's pivot is not its centre");
             Check(F(WMan(W + "_ColliderDefinition.partialdef").GetProperty("WheelMass")) == F(L.GetProperty("mass")), $"{size}: the hidden wheel's mass is not the spec's");
             var mod = WMan($"PadGear_{size}_WheelCornerModuleDefinition.partialdef");
             Check(mod.GetProperty("WheelPrefab").GetString() == L.GetProperty("wheel_server").GetString() && F(mod.GetProperty("MaxTorque")) == 0f && F(mod.GetProperty("MaxSteeringAngle")) == 0f,
                   $"{size}: the corner module is not the hidden wheel's, or drives / steers");
-            Check(guids.Contains(L.GetProperty("wheel_client").GetString()), $"{size}: its hidden wheel's client prefab is not in AeroBlockGuids.HiddenWheelClientPrefabs (it would be drawn)");
             var fm = JsonDocument.Parse(File.ReadAllText(Path.Combine(wd, "Models", $"PadGear_{size}_Foot.model"))).RootElement.GetProperty("$Value").GetProperty("CollisionShapesAsset");
             Check(fm.GetProperty("AssetReference").ValueKind == JsonValueKind.Null, $"{size}: the foot has a collider (it is visual only)");
             string pdef = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_PowerableBlockDefinition.partialdef"));

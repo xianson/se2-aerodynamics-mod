@@ -81,8 +81,8 @@
         "Transformations": {
           "Translation": {
             "X": 0.0,
-            "Y": -0.7512,
-            "Z": 0.0006
+            "Y": -0.56355,
+            "Z": 0.56377
           },
           "Rotation": {
             "X": 0,
@@ -112,8 +112,8 @@
         "Transformations": {
           "Translation": {
             "X": -0.0375,
-            "Y": -0.7887,
-            "Z": -0.0369
+            "Y": -0.60105,
+            "Z": 0.52627
           },
           "Rotation": {
             "X": 0,
@@ -142,8 +142,8 @@
         "Transformations": {
           "Translation": {
             "X": -0.0375,
-            "Y": -0.7887,
-            "Z": -0.0369
+            "Y": -0.60105,
+            "Z": 0.52627
           },
           "Rotation": {
             "X": 0,

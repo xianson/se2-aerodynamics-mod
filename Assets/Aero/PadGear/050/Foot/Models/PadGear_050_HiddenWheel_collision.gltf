@@ -1,0 +1,120 @@
+{
+  "asset": {
+    "generator": "gen_padgear_defs.py",
+    "version": "2.0"
+  },
+  "extensionsUsed": [
+    "MSFT_collision_primitives",
+    "MSFT_rigid_bodies"
+  ],
+  "extensions": {
+    "MSFT_collision_primitives": {
+      "colliders": [
+        {
+          "collisionSystems": [
+            "System_0"
+          ],
+          "collideWithSystems": [
+            "System_0"
+          ],
+          "convex": {
+            "mesh": 0
+          }
+        }
+      ]
+    },
+    "MSFT_rigid_bodies": {
+      "physicsMaterials": [
+        {
+          "staticFriction": 0.5,
+          "dynamicFriction": 0.5,
+          "restitution": 0
+        }
+      ]
+    }
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "extensions": {
+        "MSFT_rigid_bodies": {
+          "rigidBody": {
+            "inverseMass": 1
+          },
+          "collider": 0,
+          "physicsMaterial": 0
+        }
+      },
+      "extras": {
+        "ExportName": "PadGear_050_HiddenWheel_Collision"
+      },
+      "mesh": 0,
+      "name": "PadGear_050_HiddenWheel_Collision"
+    }
+  ],
+  "meshes": [
+    {
+      "name": "PadGear_050_HiddenWheel_Collision",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 1
+        }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 48,
+      "max": [
+        0.5,
+        0.025,
+        0.5
+      ],
+      "min": [
+        -0.5,
+        -0.025,
+        -0.5
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 276,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 576,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 552,
+      "byteOffset": 576,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 1128,
+      "uri": "PadGear_050_HiddenWheel_collision.bin"
+    }
+  ]
+}
