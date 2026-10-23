@@ -47,9 +47,9 @@ public static class AeroGearVariants
                 RetractTravel = 5.3707f, RetractSpeed = 3f, CollisionOffAt = OffAt, Layout = Gear(1f) },
         // (2026-10-20: the PAD-FOOT gears - the same housings, a vanilla landing-gear model as the foot: one per model, on the housing it
         //  fits; tools/meshgen/gen_padgear_defs.py, its padgear_spec.json - GearTests checks these against it)
-        new() { Name = "Retractable Gear (Plate) 0.5 m", Block = new("ae200001-ae00-9e21-0001-000000000001"), CornerModule = new("ae200001-ae00-9e31-0068-000000000001"), WheelRadius = 0.50000f, Duration = 2.5f,
+        new() { Name = "Retractable Gear (Pad) 0.5 m", Block = new("ae200001-ae00-9e21-0001-000000000001"), CornerModule = new("ae200001-ae00-9e31-0068-000000000001"), WheelRadius = 0.50000f, Duration = 2.5f,
                 RetractTravel = 5.3707f * 0.2f, RetractSpeed = 3f * 0.2f, CollisionOffAt = OffAt * 0.2f, Layout = Pad(Gear(0.2f)),
-                Foot = new PadFootSpec { Model = "Magneticplate50", Scale = 1.00000f, Height = 0.25200f,
+                Foot = new PadFootSpec { Model = "LandingGear100", Scale = 0.50000f, Height = 0.43838f,
                                          WheelMass = 150f, RatedLoad = 1500f, Stroke = 0.12500f } },
         new() { Name = "Retractable Gear (Pad) 1 m", Block = new("ae200001-ae00-9e22-0001-000000000001"), CornerModule = new("ae200001-ae00-9e32-0068-000000000001"), WheelRadius = 0.50000f, Duration = 3f,
                 RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Pad(Gear(0.4f)),

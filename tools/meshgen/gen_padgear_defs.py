@@ -1,8 +1,8 @@
 """The PAD-FOOT retractable gears (2026-10-20, the user: "No lock, custom wheel model that is the landing gear, and constrained";
 then "landing gear models available"): Assets/Aero/PadGear/<size>/.
 
-One gear per vanilla landing-gear model in SE2 4.0 (GameData/Vanilla: the magnetic landing gears LandingGear100 / LandingGear500 and
-the magnetic plates Magneticplate50 / MagneticPlate250), each on the Wheeled Landing Gear housing it fits (gen_gear_defs.py's
+A vanilla landing-gear model (SE2 4.0, GameData/Vanilla: LandingGear100 / LandingGear500; 2026-10-23: no magnetic plates - the user:
+"only landing gears") on each Wheeled Landing Gear housing, scaled to it (gen_gear_defs.py's
 housings, leg and slide - their model, breakable and subpart definitions referenced by GUID, nothing copied). The gear.s
 FOOT is a visual subpart of the block (the landing-gear mesh - the SDK's FBX, copied in - a straight reuse of a vanilla mesh as a
 PLACEHOLDER: no kitbash, nothing reshaped; scaled whole where the housing needs it), hinged at the ankle pin and turned by the client
@@ -59,9 +59,11 @@ WHEELS = {
 # wheels: 1 m 200, 1.5 m 300, 2.5 m 500); rated: the weight one gear is sized for (kg) - its sag at the default stiffness within
 # half its stroke (GearTests). name: the block (the game appends the size).
 VARIANTS = [
-    dict(size="050", sid="9e21", wid="9e31", wheel="100", name="Retractable Gear (Plate)", model="Magneticplate50",
-         dir=r"MagneticPlates\50\Models\NonFractured", lods=["Magneticplate50", "Magneticplate50_LOD1", "Magneticplate50_LOD2"],
-         lo=(-0.251, -0.126, -0.251), hi=(0.251, 0.126, 0.251), scale=1.0, mass=150, rated=1500, ankle=0),
+    # (2026-10-23, the user: "get rid of the mag plate vers, only landing gears": the 0.5 m is the 1 m pad at half size - was
+    #  Magneticplate50; same block, so ships carrying it keep it)
+    dict(size="050", sid="9e21", wid="9e31", wheel="100", name="Retractable Gear (Pad)", model="LandingGear100",
+         dir=r"LandingGear\LandingGear\100\Models\NonFractured", lods=["LandingGear100", "LandingGear100_LOD1", "LandingGear100_LOD2"],
+         lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=0.5, mass=150, rated=1500, ankle=1),
     dict(size="100", sid="9e22", wid="9e32", wheel="100", name="Retractable Gear (Pad)", model="LandingGear100",
          dir=r"LandingGear\LandingGear\100\Models\NonFractured", lods=["LandingGear100", "LandingGear100_LOD1", "LandingGear100_LOD2"],
          lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=1.0, mass=250, rated=5000, ankle=1),
@@ -190,10 +192,13 @@ def foot_model(v, L, d, rel):
     s = v["scale"]; T = L["T"]; t0 = L["t0"]
     geo = []
     for i, fid in enumerate(ids):
-        tr = tuple(T[k] + (s * t0[k] if i == 0 else 0.0) for k in range(3))   # (LOD0 carries the vanilla offset; LOD1+ have it in their mesh)
+        # (2026-10-23, the user: zoomed out the foot "is not proper, zoomed in it fades to proper location": the LODs. The content
+        #  builder places EVERY LOD by LOD0's transform - the vanilla models and all of ours give LOD1+ a zero translation and scale
+        #  1; a LOD1+ given the whole placement again was moved twice. The LOD meshes share LOD0's raw frame (their bounds match).)
+        tr = tuple(T[k] + s * t0[k] for k in range(3)) if i == 0 else (0.0, 0.0, 0.0)
         used = [u for u in vm["GeometryAssets"][i]["UsedMaterials"] if u not in last]
         geo.append({"AssetReference": "{G}" + fid, "UsedMaterials": used,
-                    "Transformations": {"Translation": {"X": round(tr[0], 5), "Y": round(tr[1], 5), "Z": round(tr[2], 5)}, "Rotation": {"X": 0, "Y": 0, "Z": 0}, "Scale": s}})
+                    "Transformations": {"Translation": {"X": round(tr[0], 5), "Y": round(tr[1], 5), "Z": round(tr[2], 5)}, "Rotation": {"X": 0, "Y": 0, "Z": 0}, "Scale": s if i == 0 else 1}})
     m = G(v["wid"], 0x105)
     path = os.path.join(md, N + ".model")
     ggd.write(path, {"$Bundles": {"System.Runtime": "1.0.0.0", "VRage": "2.0.1.118"}, "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",

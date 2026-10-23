@@ -39,7 +39,7 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
 
   | Block | Housing | Foot (vanilla model) | Foot size (m) | Wheel body | Sized for |
   |---|---|---|---|---|---|
-  | Retractable Gear (Plate) 0.5 m | 0.5 m | Magnetic plate 0.5 m | 0.50 x 0.25 x 0.50 | 150 kg | 1.5 t a gear |
+  | Retractable Gear (Pad) 0.5 m | 0.5 m | Landing gear (1 m), x0.5 | 0.25 x 0.50 x 0.50 | 150 kg | 1.5 t a gear |
   | Retractable Gear (Pad) 1 m | 1 m | Landing gear (1 m) | 0.50 x 1.00 x 1.00 | 250 kg | 5 t |
   | Retractable Gear (Pad) 1.5 m | 1.5 m | Landing gear (1 m), x1.5 | 0.75 x 1.50 x 1.50 | 600 kg | 20 t |
   | Retractable Gear (Pad) 2.5 m | 2.5 m | Landing gear (5 m), x0.5 | 1.26 x 2.50 x 2.50 | 1200 kg | 60 t |

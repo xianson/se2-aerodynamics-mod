@@ -41,6 +41,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   anchor now sits 0.1 m along the hinge line.
 - The 2.5 m is a pad: the vanilla 5 m landing gear at half size (was the 2.5 m magnetic plate); the 1.5 m is the 1 m pad at 1.5x.
 - A pad's wheel never rolls (its axle friction held).
+- Fixed: zoomed out, the feet were drawn in the wrong place (their far LODs were placed twice).
+- No magnetic plates: the 0.5 m is the 1 m pad at half size, so every size is a landing-gear pad.
 - The suspension's wheel is its own invisible model (no tyre in the build preview or projections; was the vanilla wheel hidden
   at run time).
 - Offline: `Tests/GearTests` (the ankle's IK, every variant's definitions and geometry, sag). Not flown in game yet.

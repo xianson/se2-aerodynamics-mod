@@ -11,7 +11,7 @@
     "Manipulator": {
       "Guid": "ae200001-ae00-9e21-0001-000000000001",
       "UIData": {
-        "Name": "Retractable Gear (Plate)",
+        "Name": "Retractable Gear (Pad)",
         "Icon": "{G}45500040-7761-599b-9213-4f25527b221d"
       },
       "PlacerDefinition": "ae200001-ae00-9e00-0050-000000000001",
