@@ -13,6 +13,11 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Offline: `AeroBench pitchmargin` - the F-6 on 6975 kN m of gyros turns back 43° at Mach 0.8, 25° at 1.6, 2.3° at 3. Not
   flown in game yet.
 
+## Unreleased - world gravity 1x
+
+- The mod sets the world's gravity multiplier to **1** (the game's default is 2): ships weigh what the planet's gravity says.
+  Honest Dampeners then has nothing to correct.
+
 ## Unreleased - rotor changes
 
 - **Reversible Rotor** has its own G-menu group, "Reversible Rotors" (it was hidden behind the Helicopter Rotors tile).

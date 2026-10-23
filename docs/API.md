@@ -295,7 +295,7 @@ Frames: *local* = the grid's frame; the travel is the direction the grid moves *
 | 16-18 | `CenterOfMassX/Y/Z` | m, local | |
 | 19 | `GroundHeight` | m | As `TryGetGroundHeight`; -1 none. |
 | 20-22 | `UpX/Y/Z` | unit, local | Against gravity; zero out of gravity. |
-| 23 | `Gravity` | m/s² | The planet's (`GravityEffectData.GravitySum`). The engine applies it x the world's `GravityMultiplier` (vanilla 2) less the dampeners' gravity hold: a ship nothing holds weighs `Mass` x this x the multiplier. |
+| 23 | `Gravity` | m/s² | The planet's (`GravityEffectData.GravitySum`). The engine applies it x the world's `GravityMultiplier` (vanilla 2; this mod sets 1) less the dampeners' gravity hold: a ship nothing holds weighs `Mass` x this x the multiplier. |
 | 24-26 | `ForceX/Y/Z` | N, local | The air's force **applied** this tick (the world's drag / lift multipliers in; other mods' drag in; zero when not applied). |
 | 27-29 | `TorqueX/Y/Z` | N·m, local | Its torque about the centre of mass. |
 | 30-32 | `AirframeTorqueX/Y/Z` | N·m, local | Of that, the airframe's own (hull, wings) - what the attitude control feeds forward. |

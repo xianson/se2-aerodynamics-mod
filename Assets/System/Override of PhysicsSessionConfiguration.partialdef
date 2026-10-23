@@ -12,7 +12,7 @@
       "MaximumSpeedLinear": 1000,
       "MaximumCharacterSpeedLinear": 1000,
       "LinearDamping": 0,
-      "GravityMultiplier": 2
+      "GravityMultiplier": 1
     },
     "DefinitionType": "Game2:Keen.Game2.Simulation.GameSystems.Physicss.PhysicsSessionConfiguration",
     "PriorityOverride": false
