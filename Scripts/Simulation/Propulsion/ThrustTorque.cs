@@ -701,7 +701,8 @@ public static class ThrustTorque
 
     /// <summary>The grid's struck rotors' and props' blade health (0..1, 0 broken; RotorStrike): the index replaced when one is new to
     /// it, the values written in place (as the gears). Only a rotor whose blades are not whole (or were repaired a moment ago) is in it.</summary>
-    internal sealed class BladeTable { public float[] Health; public readonly Dictionary<Vector3I, int> Index = new(); }
+    /// (Cuts, 2026-10-23: a per-blade rotor's three blades' states, RotorStrike.Pack - 0 for a turboprop or whole blades.)
+    internal sealed class BladeTable { public float[] Health; public int[] Cuts; public readonly Dictionary<Vector3I, int> Index = new(); }
     /// <summary>The grid's reversible thrusters (ReversibleThrustComponent): game side and push side (+1 / -1) by block AABB
     /// Min + Max - the index replaced when one is new to it, the values written in place (as the gears).</summary>
     internal sealed class RevTable { public int[] Game, Push; public readonly Dictionary<Vector3I, int> Index = new(); }
@@ -876,7 +877,7 @@ public static class ThrustTorque
 
     /// <summary>Server: one rotor's blade health (AeroRotorStrikeComponent, its propulsor's job - rotors of a grid run in parallel: the
     /// table grown under the record's lock, as the gears). Keeps the record fresh while the grid is parked.</summary>
-    internal static void PublishBlades(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float health)
+    internal static void PublishBlades(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float health, int cuts = 0)
     {
         if (!aero.IsServerScene) return;
         var p = Record(aero, wt);
@@ -889,20 +890,24 @@ public static class ThrustTorque
                 if (t == null || !t.Index.TryGetValue(key, out i))
                 {
                     int n = t?.Health.Length ?? 0;
-                    var nt = new BladeTable { Health = new float[n + 1] };
-                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Health, nt.Health, n); }
+                    var nt = new BladeTable { Health = new float[n + 1], Cuts = new int[n + 1] };
+                    if (t != null) { foreach (var kv in t.Index) nt.Index[kv.Key] = kv.Value; Array.Copy(t.Health, nt.Health, n); Array.Copy(t.Cuts, nt.Cuts, n); }
                     nt.Index[key] = i = n;
                     p.Blades = t = nt;
                 }
             }
         }
-        t.Health[i] = health;
+        t.Cuts[i] = cuts; t.Health[i] = health;
     }
 
     /// <summary>A client rotor's blade health from its grid's server record (false: none matched - whole blades are not published).</summary>
     internal static bool BladeState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float health)
+        => BladeState(grid, key, ref kept, ref recheckAt, now, out health, out _);
+
+    /// <summary>As above, with a per-blade rotor's blades' states (RotorStrike.Pack; 0: all whole).</summary>
+    internal static bool BladeState(Entity grid, Vector3I key, ref Published kept, ref long recheckAt, long now, out float health, out int cuts)
     {
-        health = 1f;
+        health = 1f; cuts = 0;
         if (kept == null || kept.Gone || now >= recheckAt)
         {
             recheckAt = now + System.Diagnostics.Stopwatch.Frequency / 4;
@@ -912,6 +917,7 @@ public static class ThrustTorque
         var t = kept.Blades;
         if (t == null || !t.Index.TryGetValue(key, out int i) || i >= t.Health.Length) return false;
         health = t.Health[i];
+        if (t.Cuts != null && i < t.Cuts.Length) cuts = t.Cuts[i];
         return true;
     }
 

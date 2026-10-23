@@ -61,7 +61,7 @@ public static partial class PropulsorBlocks
         var cb = p.Entity?.TryGet<CubeBlockComponent>();
         var g = cb != null ? BlockComponentFactory.GetDefinitionGuid(cb) : null;
         if (!g.HasValue || !_byBlock.TryGetValue(g.Value, out var r)) return false;
-        p.Kind = r.Kind; p.Size = r.Size; p.RotorRadius = r.Radius; p.HubOffset = r.Hub;
+        p.Kind = r.Kind; p.Size = r.Size; p.RotorRadius = r.Radius; p.HubOffset = r.Hub; p.BlockName = r.Name;
         return true;
     }
 }

@@ -45,6 +45,11 @@ namespace AeroMod;
 ///     would carry it a second time).
 ///  5. EFFECTS for the client: sparks and a crunch at the strike point (TearSmoke.PublishStrike), at most one each FxGapSeconds per
 ///     rotor (and always on a break).
+/// PER-BLADE BREAKS (2026-10-23; AeroRotorStrikeComponent.PerBladeOn): the strike's blade (Strike.Blade) is chipped or snapped
+/// (RotorStrike.AfterStrike - its tip lost, or broken to its stub); the rotor's lift share is recomputed and it keeps turning on what
+/// is left (no stop, no angular momentum dumped - the pieces fly off with theirs: the client's debris, BladeDebris). Every tick a
+/// rotor that has lost pieces queues its IMBALANCE (an impulse at its hub, RotorStrike.Imbalance), applied here too, to the body and
+/// to the structure at the rotor block.
 /// No allocation unless a strike happens; a strike's fault is caught (rare work, never a hot path) and counted.
 /// </summary>
 public static class RotorStrikeServer
@@ -54,7 +59,14 @@ public static class RotorStrikeServer
         public AeroRotorStrikeComponent Rotor; public AeroPropulsorComponent Prop; public Entity Grid;
         public DEntity Body; public Vector3D Pos; public Vector3 Normal, Motion, Spin;
         public float Radius, TipRadius, Rpm, Speed;
+        /// <summary>Per-blade breaks: the blade struck (0..2; -1: the rotor's one health - a turboprop).</summary>
+        public int Blade;
     }
+    /// <summary>A rotor's imbalance this tick: an impulse (world N s) at its hub (world), on its grid.</summary>
+    struct Imbalance { public AeroRotorStrikeComponent Rotor; public Entity Grid; public Vector3 J; public Vector3D At; }
+    static readonly List<Imbalance> _imb = new(), _imbWork = new();
+    /// <summary>Imbalance impulses applied (diagnostics) and snaps (a blade's tip lost or broken to the stub).</summary>
+    public static long ImbalanceApplied; public static int Snaps;
 
     static readonly object _lock = new();
     static readonly List<Strike> _queue = new(), _work = new();
@@ -70,7 +82,7 @@ public static class RotorStrikeServer
     // diagnostics (harness aeroget RotorStrikeServer.X)
     public static int Queued, Handled, Dropped, Breaks, OnRock, OnMetal, OnCharacters, Kills, Faults, Refused;
     public static string LastFault = "-";
-    public static string Status => $"queued {Queued} handled {Handled} dropped {Dropped} rock {OnRock} metal {OnMetal} characters {OnCharacters} (killed {Kills}) breaks {Breaks} refused (rules) {Refused} faults {Faults} {LastFault}";
+    public static string Status => $"queued {Queued} handled {Handled} dropped {Dropped} rock {OnRock} metal {OnMetal} characters {OnCharacters} (killed {Kills}) breaks {Breaks} snaps {Snaps} imbalance ticks {ImbalanceApplied} refused (rules) {Refused} faults {Faults} {LastFault}";
 
     /// <summary>(a rotor's job) a strike to handle this tick; false: the queue is full (dropped).</summary>
     internal static bool Queue(in Strike s)
@@ -84,10 +96,25 @@ public static class RotorStrikeServer
         return true;
     }
 
-    /// <summary>(the one job a tick) every strike queued.</summary>
+    /// <summary>(a rotor's job, every tick while it has lost pieces) its imbalance impulse for this tick's job.</summary>
+    internal static void QueueImbalance(AeroRotorStrikeComponent rotor, Entity grid, Vector3 j, Vector3D at)
+    {
+        if (!GridPhysics.IsFinite(j)) return;
+        lock (_lock) { if (_imb.Count < MaxQueued) _imb.Add(new Imbalance { Rotor = rotor, Grid = grid, J = j, At = at }); }
+        Volatile.Write(ref Armed, 1);
+    }
+
+    /// <summary>(the one job a tick) every strike queued, then every imbalance.</summary>
     internal static void Step()
     {
-        lock (_lock) { _work.AddRange(_queue); _queue.Clear(); }
+        lock (_lock) { _work.AddRange(_queue); _queue.Clear(); _imbWork.AddRange(_imb); _imb.Clear(); }
+        for (int i = 0; i < _imbWork.Count; i++)
+        {
+            var m = _imbWork[i];
+            try { AeroGridComponent.ApplyRotorImbalance(m.Rotor?.Entity, m.Grid, m.J, m.At); ImbalanceApplied++; }
+            catch (Exception e) { Faults++; LastFault = "imbalance: " + e.GetType().Name + ": " + e.Message; }
+        }
+        _imbWork.Clear();
         for (int i = 0; i < _work.Count; i++)
         {
             var s = _work[i];
@@ -168,13 +195,26 @@ public partial class AeroGridComponent
         bool wearOk = own != null && Allowed(rules, rot.Entity);
         if (!wearOk) RotorStrikeServer.Refused++;
         float before = rot.Health;
+        // (per-blade breaks: the struck blade alone takes the strike - chipped, or snapped where it was hit)
+        bool perBlade = rot.PerBladeOn && rot.BreakRow != null && s.Blade >= 0 && s.Blade < rot.Cuts.Length;
+        var cutBefore = perBlade ? (RotorStrike.Cut)rot.Cuts[s.Blade] : RotorStrike.Cut.Whole;
+        var cutAfter = cutBefore;
         if (wearOk && wear > 0f)
         {
             DamageRotorBlock(own, ship, RotorStrike.RotorBlockWear(wear));
-            rot.Health = RotorStrike.AfterWear(rot.Health, wear);
+            if (perBlade)
+            {
+                cutAfter = RotorStrike.AfterStrike(cutBefore, ref rot.Wear[s.Blade], s.Radius, RotorStrike.BladeWearOne(mat, v), rot.BreakRow.SplitR);
+                rot.Cuts[s.Blade] = (byte)cutAfter;
+                rot.Recompute(prop);
+            }
+            else rot.Health = RotorStrike.AfterWear(rot.Health, wear);
             rot.Changed();
         }
-        bool broke = !RotorStrike.IsBroken(before) && rot.Broken;
+        bool snapped = cutAfter != cutBefore;
+        if (snapped) RotorStrikeServer.Snaps++;
+        // (the old all-at-once break: a turboprop's - a per-blade rotor keeps turning on what is left, see the summary)
+        bool broke = !perBlade && !RotorStrike.IsBroken(before) && rot.Broken;
 
         // 3. the struck, and the impulse the ship takes (world, at the strike point)
         Vector3 onShip = Vector3.Zero;
@@ -248,16 +288,18 @@ public partial class AeroGridComponent
         // 4b. the ship's structure: the reaction and the break's angular momentum at the rotor block (PublishBlockImpulse)
         StructureImpulse(ship, rot.Entity, s.Pos, onShip, broke ? s.Spin * L : Vector3.Zero);
         rot.Strikes++;
-        rot.Last = $"{what} at r {s.Radius:F2} m, {v:F0} m/s: blades {before:F2} -> {rot.Health:F2}{(broke ? " BROKEN" : "")}";
-        RotorStrikeServer.Note($"{prop.Kind} {prop.Size}: {rot.Last}, ship impulse {onShip.Length():F0} N s{(broke ? $", rotor stopped: {L:F0} N m s into the ship" : "")}", broke);
+        rot.Last = perBlade
+            ? $"{what} at r {s.Radius:F2} m, {v:F0} m/s: blade {s.Blade + 1} {cutBefore} -> {cutAfter} (wear {rot.Wear[s.Blade]:F2}), lift {rot.LiftShare:F2}{(rot.Broken ? " ALL STUBS" : "")}"
+            : $"{what} at r {s.Radius:F2} m, {v:F0} m/s: blades {before:F2} -> {rot.Health:F2}{(broke ? " BROKEN" : "")}";
+        RotorStrikeServer.Note($"{prop.Kind} {prop.Size}: {rot.Last}, ship impulse {onShip.Length():F0} N s{(broke ? $", rotor stopped: {L:F0} N m s into the ship" : "")}", broke || snapped);
 
         // 5. the effects (client): sparks and a crunch at the strike point, in the ship's frame
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (broke || now - rot.FxAt > (long)(RotorStrikeServer.FxGapSeconds * System.Diagnostics.Stopwatch.Frequency))
+        if (broke || snapped || now - rot.FxAt > (long)(RotorStrikeServer.FxGapSeconds * System.Diagnostics.Stopwatch.Frequency))
         {
             rot.FxAt = now;
             var swt = ship.Data.GetWorldTransform();
-            TearSmoke.PublishStrike(ship, (Vector3)WorldTransform.TransformInv(s.Pos, swt), WorldTransform.TransformDirectionInv(s.Normal, swt), (int)mat, RotorStrike.Severity(v), broke);
+            TearSmoke.PublishStrike(ship, (Vector3)WorldTransform.TransformInv(s.Pos, swt), WorldTransform.TransformDirectionInv(s.Normal, swt), (int)mat, RotorStrike.Severity(v), broke || snapped);
         }
     }
 
@@ -272,6 +314,15 @@ public partial class AeroGridComponent
         var swt = ship.Data.GetWorldTransform();
         aero.PublishBlockImpulse(rotor, WorldTransform.TransformDirectionInv(j, swt), (Vector3)WorldTransform.TransformInv(pos, swt), WorldTransform.TransformDirectionInv(l, swt));
         if (AeroPhysics.IsDynamic(ship)) aero.NoteKnownImpulse(j);
+    }
+
+    /// <summary>A rotor's imbalance this tick (RotorStrikeServer.Step): the impulse on its grid's body at the hub, and into its structure
+    /// at the rotor block (the mount carries it).</summary>
+    internal static void ApplyRotorImbalance(Entity rotor, Entity grid, Vector3 j, Vector3D at)
+    {
+        if (rotor == null || grid == null || !GridPhysics.Alive(grid.Data) || !GridPhysics.Alive(rotor.Data)) return;
+        RigidBodyDataFunctions.TryApplyImpulse(j, at, grid);
+        StructureImpulse(grid, rotor, at, j, Vector3.Zero);
     }
 
     static bool Allowed(IGameplayRules rules, Entity e) => rules == null || rules.CanDamage(new IGameplayRules.DamageContext(e)).Allowed;

@@ -232,13 +232,16 @@ public partial class AeroRotorStrikeComponent
         string key = AeroBlockSaveForm.Find(ob?.NamedEntities, AeroBlockSaveForm.BladesKey);
         if (!AeroBlockSaveForm.TryReadBlades(key, out float h)) return;
         Health = h;
+        // (per-blade breaks, 2026-10-23: each blade's state and wear when saved so; an older key's one health is mapped onto the
+        //  blades once the rotor's row is known - AeroRotorStrikeComponent.InitBlades)
+        CutsLoaded = AeroBlockSaveForm.TryReadBladeCuts(key, Cuts, Wear);
         AeroBlockSave.CountRestored(AeroBlockSave.KBlades, key);
     }
 
     [Keen.VRage.DCS.Annotations.Serializer]
     private void SaveBlock(EntityNameSessionComponentObjectBuilder ob)
     {
-        string key = AeroBlockSaveForm.Blades(Health);
+        string key = PerBladeOn ? AeroBlockSaveForm.Blades(Health, Cuts, Wear) : AeroBlockSaveForm.Blades(Health);
         ob.NamedEntities = AeroBlockSave.One(key, Entity); AeroBlockSave.CountWritten(AeroBlockSave.KBlades, key);
     }
 }

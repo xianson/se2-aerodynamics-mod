@@ -177,6 +177,8 @@ The in-game settings menu (pause menu -> Settings -> **Mods**): this mod's expan
 
 ---
 
+- **2026-10-23 per-blade rotor breaks (`Propulsion/BladeDebris.cs`, `AeroRotorStrikeComponent.cs`, `RotorStrikeServer.cs`, `AeroRotorAnimComponent.cs`)**: no reflection. Public, whitelisted API only: the flying blade pieces are spawned on the client like the game's own debris (`DebrisSpawnerSessionComponent`) - `DefinitionManager.GetConfiguration<FractureDebrisPrefabsConfiguration>().DamagedBlockDebrisPrefab.Get()`, its builders found by type (`EntityObjectBuilder.OBsOfType<BlockPreviewObjectBuilder / SimpleRigidBodyComponentObjectBuilder / WorldTransformComponentObjectBuilder / TimeoutComponentObjectBuilder>` - `BlockPreviewComponent` itself can't be named: its base is in VRage.Game.Client, not a mod reference), the collider from the `IColliderProvider` service, `IEntitySpawner.SpawnEntity` / `DeleteEntity`, the mass scaled through `RigidBodyMassProperties`. Health: one line a session (`[AERO-DEBRIS] blade debris health: spawner / collider provider / debris configuration found or MISSING`) and a warning once per problem (no chunk model, no collider, a builder missing). Breaks if: the debris prefab loses one of those builders (warning, no debris; the breaks themselves unaffected).
+
 ## 5. Whitelist demands (for Keen)
 
 The combined assembly ask (VRage.Render first, then VRage.Game.Client, VRage.Game, ...) is in Orbital's §5.0. Aero's part of it is **VRage.Game.Client**, **VRage.Render** and **VRage.Game**.

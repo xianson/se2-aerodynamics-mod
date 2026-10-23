@@ -57,6 +57,11 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
     public Kinds Kind;
     /// <summary>The block's size label (050 / 150 / 250 / 750) and the rotor's radius (m), from its block GUID.</summary>
     public string Size = "";
+    /// <summary>Its block's name in PropulsorBlocks ("HelicopterRotor_150"): the blade-break table's key (BladeBreakBlocks).</summary>
+    public string BlockName = "";
+    /// <summary>PER-BLADE BREAKS (server, 2026-10-23): the blades' lift share left (RotorStrike.RotorLiftShare - 1 whole, 0 every
+    /// blade at its stub); its thrust, the reaction torque with it, and the rating the limiter and the cyclic see scale by it.</summary>
+    public float BladeShare = 1f;
     public float RotorRadius;
     /// <summary>The spinning disc's centre above the block's centre along the thrust (m): the rotor hub (RotorCyclic).</summary>
     public float HubOffset;
@@ -181,8 +186,11 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
         if (_spinSwitch != null) CounterRotating = _spinSwitch.CounterRotating;
         if (Governed(Kind) && _server) StepRotor();
         // ROTOR STRIKES (server: AeroRotorStrikeComponent - its own job probes, repairs and publishes; RotorStrike.cs): broken blades
-        bool broken = _strike != null && _strike.Broken, brokeNow = broken != _wasBroken;
-        _wasBroken = broken;
+        bool broken = _strike != null && _strike.Broken;
+        // (per-blade breaks: the share left - a change of it written at once, as a break)
+        float share = _strike != null && _strike.PerBladeOn ? _strike.LiftShare : 1f;
+        bool brokeNow = broken != _wasBroken || share != BladeShare;
+        _wasBroken = broken; BladeShare = share;
         if (CapAge < int.MaxValue) CapAge++;
         if (!Data.TryGet<ThrustData>(out var td)) return;
         float cur = td.MaxThrustPower;
@@ -247,6 +255,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
             //  nothing whatever we write, and a big number written there would stand until the next write once air returns)
             want = MathF.Min(Rated * Factor / MathF.Max(Efficiency, 0.05f), Rated * RhoMax);
             if (LiftNeedsRpm(Kind)) want *= RotorKinematics.ThrustFactor(Rpm);   // (the governed rpm: no lift until spun up)
+            want *= share;   // (per-blade breaks: the blades' lift share left)
             if (!float.IsFinite(want)) want = 0f;
             // a main rotor: no more than the ship can hold against its torque (the cap is actual thrust: the game multiplies
             // what is written by its class efficiency)
@@ -271,8 +280,16 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
             var pb = Entity.TryGet<PowerableBlockComponent>();
             if (pb != null && pb.Enabled != (DevPower == 1)) pb.Enabled = DevPower == 1;
         }
-        // (broken blades - rotor strikes: stopped dead, never driven until repaired)
-        if (_strike != null && _strike.Broken) { Rpm = 0f; SpinOn = false; _rpmInit = true; return; }
+        // (broken blades - rotor strikes: a turboprop stopped dead, never driven until repaired; a rotor whose blades broke one by one
+        //  and are all at their stubs (2026-10-23) is not driven either - the governor has nothing to hold - and COASTS DOWN on its
+        //  drag, its hub and stubs turning on slowly)
+        if (_strike != null && _strike.Broken)
+        {
+            if (!_strike.PerBladeOn) { Rpm = 0f; SpinOn = false; _rpmInit = true; return; }
+            SpinOn = false; _rpmInit = true;
+            Rpm = RotorKinematics.StepRpm(Rpm, false, AeroPhysics.Dt, 0f);
+            return;
+        }
         bool on = Rated > 0f && !_gameZero && !Data.Has<DisabledTag>();
         if (!_rpmInit)
         {
