@@ -13,7 +13,7 @@ is the foot's sole; heavier (WheelMass), its corner module with no drive and no 
 The numbers the scripts use are written to padgear_spec.json beside this file (AeroGearVariants must match: Tests/GearTests).
 
   python tools/meshgen/gen_padgear_defs.py [MOD_ROOT]        (default: this checkout)
-  python tools/meshgen/gen_padgear_defs.py [MOD_ROOT] --icons   (also the icons: Blender, background, Cycles)
+  python tools/meshgen/gen_padgear_defs.py [MOD_ROOT] --icons   (also the icons: Blender, background, Cycles; the pad forks always: padgear_rod.py)
   then: python tools/shared/build_mod_content.py <MOD_ROOT>
 
 Reads the SDK (the FBX and the vanilla .model files) and the housings' definitions; writes only its own folder (re-runnable, fixed
@@ -97,10 +97,14 @@ def housing(size):
     return out
 
 
-FOOT_RAISE = {"050": 0.2, "100": 0.4, "150": 0.63, "250": 1.0}   # (GearLayout.FootRaise: the ankle this far above the rod's hub, block +Y -
-                   #  2026-10-23, the user: "how come this still isn't tight?" - on the hub the pad hung low in the fork with a tall gap
-                   #  under its crossbar; raised, the ankle's top is ~0.4 x its half height under the crossbar (room to tilt 45 deg).
-                   #  The rods' lowest point over the ankle, measured: 0.29 / 0.58 / 0.90 / 1.45 m above the hub)
+FOOT_DROP = {"050": -0.1, "100": -0.2, "150": -0.3, "250": -0.5}   # (GearLayout.FootDrop: the ankle this far DOWN the leg from the
+                   #  rod's hub - negative: up it, on the pad fork's bearings (padgear_rod.py moves them up the fork's axis by as much,
+                   #  2026-10-23: the fork shortened to fit the ankle; 7f840d4 had raised the ankle off the bearings - wrong)
+FORK_IN = (0.306, 0.276)   # (the housing rod's bearings' inner faces, -x / +x, m per size unit: the pad fork's hinge groups move in
+                           #  to 1 cm per unit from the pad - 2026-10-23, the user: "there's still that gap horizontally")
+FORK_CUT = 0.26    # (padgear_rod.py: the cut across the fork's axis, m per size unit (the 1 m gear 1, the 0.5 m 0.5, ...): in its empty
+                   #  band, 0.250..0.472 x the unit at every size and LOD)
+SIZE_UNIT = {"050": 0.5, "100": 1.0, "150": 1.5, "250": 2.5}
 FOOT_SIDE = 0.1    # (GearLayout.FootSide: the foot's dummy this far along the hinge axis (+X) from the ankle, its mesh shifted back by
                    #  as much - the same hinge line, but the client tells the foot from the rod (both would spawn at the hub) by where
                    #  each spawned: AeroGearAnimComponent.FindParts, 5 cm)
@@ -111,17 +115,19 @@ DT_FOOT = G("9e20", 0x30)                            # (the foot subpart's dummy
 def layout(v):
     """2026-10-21 (the user: "go back to wheel suspension ... a separate, physics-off landing gear entity where the invisible wheel is.
     the landing gear and hinge IK to the wheel contact surface normal"): the FOOT is a visual subpart of the block (no collider) hinged
-    at its ANKLE - up the fork above the rod's hub, FOOT_RAISE (block model space, as the dummies) - its mesh's ankle centre there (the pads: the top-corner
+    at its ANKLE - on the pad fork's bearings, FOOT_DROP up the leg from the rod's hub (block model space, as the dummies) - its mesh's ankle centre there (the pads: the top-corner
     cube; the plates: the top centre), hanging along the block's -Y; the suspension's WHEEL is the vanilla wheel of that size, never drawn (AeroHiddenWheelComponent),
     its pivot moved to its centre and its rest moved so its bottom is the foot's sole (gear down, unloaded): the foot stands where
     the wheel touches. The client turns the foot about the ankle to the wheel's ground normal (FootIk)."""
     s = v["scale"]; lo, hi = v["lo"], v["hi"]; t0 = v["t0"]
+    # (2026-10-23 later, the user: "the hinge isn't centered in the ankle section": the ankle section is the pad's whole top block - a
+    #  quarter of the height, HALF the length (the box above was its back half): its centre, a quarter of the length in)
     # the hinge (2026-10-23, the user: "if the landing gear is 1x1x0.5, the ankle is like 0.25x0.25x0.25 in the top corner ... i want
     # the hinge centered on that ankle part"): the pads' ankle is the cube of a quarter of the mesh's height and length in its top
     # corner - the end the mesh's upper part stands on (v["ankle"]: +1 / -1 = +Z / -Z, model space; LandingGear100 +Z, LandingGear500
     # -Z, from their vertices); the plates (no ankle, 0) hinge at their top centre. Model space: LOD0 raw + its translation.
     a = v["ankle"]; mid = tuple((lo[i] + hi[i]) / 2 for i in range(3)); span = tuple(hi[i] - lo[i] for i in range(3))
-    top = (mid[0] + t0[0], hi[1] - (span[1] / 8 if a else 0.0) + t0[1], (mid[2] if not a else (hi[2] - span[2] / 8 if a > 0 else lo[2] + span[2] / 8)) + t0[2])
+    top = (mid[0] + t0[0], hi[1] - (span[1] / 8 if a else 0.0) + t0[1], (mid[2] if not a else (hi[2] - span[2] / 4 if a > 0 else lo[2] + span[2] / 4)) + t0[2])
     w = tuple(s * span[i] for i in range(3)); H = s * (top[1] - (lo[1] + t0[1]))   # (H: the ankle down to the sole)
     # ONE orientation for every pad (2026-10-23, the user: "whatever the convention to make this the standard orientation" - the 1 m's):
     # the ankle at the block's +Z, the pad reaching toward -Z (forward, away from the leg). Keen's meshes are mirrored front to back
@@ -133,14 +139,16 @@ def layout(v):
     hd = housing(v["size"])
     rest_p0, rest_q, travel = hd["Wheel Rest Position"]
     hub = hd["GearRodHub"][0]
-    ankle = (hub[0], hub[1] + FOOT_RAISE[v["size"]], hub[2])           # (up the fork, the rod's +Y: block +Y, gear down)
+    hinge = hd["GearLegHinge"][0]
+    d = tuple(hub[i] - hinge[i] for i in range(3)); dl = math.sqrt(sum(c * c for c in d)); legdir = tuple(c / dl for c in d)
+    ankle = tuple(hub[i] + legdir[i] * FOOT_DROP[v["size"]] for i in range(3))   # (on the pad fork's bearings, up the leg)
     foot = (ankle[0] + FOOT_SIDE, ankle[1], ankle[2])                 # (the foot's dummy: on the hinge line, FOOT_SIDE along it)
     sole = (ankle[0], ankle[1] - H, ankle[2])
     r = WHEEL_R[v["wheel"]]
     centre = (sole[0], sole[1] + r, sole[2] + pad_dz)              # (the wheel's centre, idle: its bottom on the sole, under the pad's centre)
     up = qrot(rest_q, (0.0, 1.0, 0.0))
     rest_p = tuple(centre[i] + travel / 2 * up[i] for i in range(3))   # (the suspension's idle point is rest - travel/2 x up)
-    return dict(T=T, t0=t0, H=H, raise_=FOOT_RAISE[v["size"]], size=w, pad_dz=pad_dz, foot_q=foot_q, ankle=ankle, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
+    return dict(T=T, t0=t0, H=H, drop=FOOT_DROP[v["size"]], legdir=legdir, size=w, pad_dz=pad_dz, foot_q=foot_q, ankle=ankle, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
 
 
 def vanilla_model(v):
@@ -211,10 +219,36 @@ def foot_model(v, L, d, rel):
     return m
 
 
-def foot_subpart(v, d, m):
-    """The foot as a client subpart (as the leg and the rod: gen_gear_defs.own_model): prefab, composite, model component."""
-    N = f"PadGear_{v['size']}_Foot"; sid = v["sid"]
-    pref, comp, mcd = G(sid, 0x30), G(sid, 0x31), G(sid, 0x32)
+def rod_model(v, L, d, rel):
+    """The pad fork (padgear_rod.py, Blender): the housing's rod LOD0..2 with the hinge end moved up the fork's axis by -FOOT_DROP,
+    and its .model (the housing rod's, these FBX)."""
+    size = v["size"]; hd_ = os.path.join(ROOT, "Assets", "Aero", "RetractableGear", size, "Models", "NonFractured", "Subpart02")
+    md = os.path.join(d, "Models"); os.makedirs(md, exist_ok=True)
+    N = f"PadGear_{size}_Rod"; stems = [N, N + "_LOD1", N + "_LOD2"]
+    job = os.path.join(os.environ.get("TEMP", HERE), f"padgear_rod_job_{size}.json")
+    u = SIZE_UNIT[size]; half = v["scale"] * (v["hi"][0] - v["lo"][0]) / 2 + 0.01 * u   # (the pad's half width, and 1 cm a unit)
+    json.dump({"axis": [-c for c in L["legdir"]], "cut": FORK_CUT * u, "shift": -FOOT_DROP[size],
+               "inward": [FORK_IN[0] * u - half, FORK_IN[1] * u - half],
+               "lods": [[os.path.join(hd_, f"RetractableGear_{size}_S2_Rod{x}.fbx"), os.path.join(md, st + ".fbx")]
+                        for x, st in zip(("", "_LOD1", "_LOD2"), stems)]}, open(job, "w"))
+    r = subprocess.run([BLENDER, "-b", "--python", os.path.join(HERE, "padgear_rod.py"), "--", job], capture_output=True, text=True, timeout=600)
+    os.remove(job)
+    if r.stdout.count("padgear_rod:") != 3: raise SystemExit(f"padgear_rod.py failed for {size}: {r.stdout[-600:]} {r.stderr[-600:]}")
+    ids = []
+    for st in stems:
+        fid = ggd.file_id(os.path.join(rel, "Models", st + ".fbx")); ids.append(fid); ggd.write(os.path.join(md, st + ".fbx.meta"), ggd.file_meta(fid))
+    hm = json.load(open(os.path.join(hd_, f"RetractableGear_{size}_S2_Rod.model"), encoding="utf-8-sig"))
+    for g, fid in zip(hm["$Value"]["GeometryAssets"], ids): g["AssetReference"] = "{G}" + fid
+    m = G(v["wid"], 0x107); path = os.path.join(md, N + ".model")
+    ggd.write(path, hm); ggd.write(path + ".meta", ggd.asset_meta(m, ("P_MODEL", 40), N + ".vrm"))
+    return m
+
+
+def own_subpart(v, d, m, part, slot):
+    """A client subpart of the pad gear (as the leg and the rod: gen_gear_defs.own_model): prefab, composite, model component -
+    the foot (slot 0x30) and the pad fork (0x36)."""
+    N = f"PadGear_{v['size']}_{part}"; sid = v["sid"]
+    pref, comp, mcd = G(sid, slot), G(sid, slot + 1), G(sid, slot + 2)
     sp = os.path.join(d, "Subparts")
     ggd.definition(os.path.join(sp, f"{N}_Client.def"), {"$Bundles": ggd.B_VRAGE,
         "$Type": "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinitionObjectBuilder",
@@ -230,9 +264,9 @@ def foot_subpart(v, d, m):
     return pref
 
 
-def block_model(v, L, d, foot_pref):
+def block_model(v, L, d, foot_pref, rod_pref):
     """The pad gear's own block model and subparts: the housing's (gen_gear_defs.own_model) with its wheel rest moved under the
-    foot's sole (the hidden wheel) and a Foot dummy at the ankle pin; the subparts: the housing's leg and rod, and the foot."""
+    foot's sole (the hidden wheel) and a Foot dummy at the ankle pin; the subparts: the housing's leg, the pad fork and the foot."""
     hsid = ggd.SIZES[v["size"]]["sid"]; sid = v["sid"]; N = f"PadGear_{v['size']}"
     bmd, csp = G(sid, 0x33), G(sid, 0x34)
     hkeys = [G(hsid, 0x41 + i) for i in range(3)]
@@ -244,7 +278,7 @@ def block_model(v, L, d, foot_pref):
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition"), bmd, True)
     ggd.definition(os.path.join(d, f"{N}_ConditionalSubPartsDefinition.def"), {"$Bundles": ggd.B_GAME,
         "$Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsDefinitionObjectBuilder",
-        "$Value": {"Guid": csp, "SubParts": {ggd.DT_LEG: G(hsid, 0x18), ggd.DT_ROD: G(hsid, 0x1b), DT_FOOT: foot_pref}, "MeshPartsToHideWhenActive": []}}, csp, False)
+        "$Value": {"Guid": csp, "SubParts": {ggd.DT_LEG: G(hsid, 0x18), ggd.DT_ROD: rod_pref, DT_FOOT: foot_pref}, "MeshPartsToHideWhenActive": []}}, csp, False)
     return bmd, csp
 
 
@@ -367,7 +401,7 @@ def render_icons(spec):
         json.dump({"out": icon_path(v),
                    "housing": os.path.join(hdir, f"RetractableGear_{v['size']}.fbx"),
                    "leg": [os.path.join(hdir, "Subpart01", f"RetractableGear_{v['size']}_S1_Leg.fbx"), hd["GearLegHinge"][0]],
-                   "rod": [os.path.join(hdir, "Subpart02", f"RetractableGear_{v['size']}_S2_Rod.fbx"), hd["GearRodHub"][0]],
+                   "rod": [os.path.join(ROOT, "Assets", ROOT_REL, v["size"], "Rod", "Models", f"PadGear_{v['size']}_Rod.fbx"), hd["GearRodHub"][0]],
                    # (the foot as in game: its LOD0 placement (scale, then T + s t0) in the subpart's frame, the subpart at the foot's
                    #  dummy turned by foot_q)
                    "foot": [os.path.join(SDK, v["dir"], v["lods"][0] + ".fbx"), v["scale"],
@@ -385,13 +419,14 @@ def main():
     for v in VARIANTS:
         v["t0"] = tuple(vanilla_model(v)["GeometryAssets"][0]["Transformations"]["Translation"][k] for k in "XYZ")
         spec[v["size"]] = L = layout(v)
-    if "--icons" in sys.argv: render_icons(spec)
     for v in VARIANTS:
         L = spec[v["size"]]; d = os.path.join(root, v["size"]); rel = os.path.join(ROOT_REL, v["size"], "Foot")
         m = foot_model(v, L, os.path.join(d, "Foot"), rel)
-        fpref = foot_subpart(v, os.path.join(d, "Foot"), m)
+        fpref = own_subpart(v, os.path.join(d, "Foot"), m, "Foot", 0x30)
+        rrel = os.path.join(ROOT_REL, v["size"], "Rod")
+        rpref = own_subpart(v, os.path.join(d, "Rod"), rod_model(v, L, os.path.join(d, "Rod"), rrel), "Rod", 0x36)
         module, wsp, wcp = foot_wheel(v, L, os.path.join(d, "Foot"), wheel_model(v, L, os.path.join(d, "Foot"), rel))
-        bmd, csp = block_model(v, L, d, fpref)
+        bmd, csp = block_model(v, L, d, fpref, rpref)
         icon = None
         if os.path.exists(icon_path(v)):
             irel = os.path.join(ROOT_REL, v["size"], "Icon", f"PadGear_{v['size']}_Icon.png")
@@ -402,7 +437,8 @@ def main():
         bsp, bcp = block(v, d, module, icon, bmd, csp)
         spec[v["size"]].update(name=v["name"], model=v["model"], scale=v["scale"], mass=v["mass"], rated=v["rated"],
                                block_server=bsp, block_client=bcp, block=G(v["sid"], 0x1), module=module, wheel_server=wsp, wheel_client=wcp,
-                               default_stiffness=DEFAULT_STIFFNESS, foot_subpart=fpref, block_model=bmd, subparts=csp)
+                               default_stiffness=DEFAULT_STIFFNESS, foot_subpart=fpref, rod_subpart=rpref, block_model=bmd, subparts=csp)
+    if "--icons" in sys.argv: render_icons(spec)   # (after the pad forks are made: the icons draw them)
     ggd.definition(os.path.join(root, "PadGear_BlockKind.def"), {"$Bundles": ggd.B_GAME,
         "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
         "$Value": {"Guid": KIND, "Name": "Retractable Gear - Pad Foot",

@@ -101,23 +101,23 @@ static class PadFootTests
             Check(Near(Num("WheelRadius"), r), $"{size}: WheelRadius {Num("WheelRadius")} is not the hidden wheel's {r}");
             Check(Near(Num("WheelMass"), F(L.GetProperty("mass"))) && Near(Num("Stroke"), F(L.GetProperty("travel"))), $"{size}: mass / stroke differ");
 
-            // the geometry: the foot's ankle up the fork above the rod's hub (GearLayout.FootRaise, FootPoint), the wheel's bottom on its sole under the pad's centre
+            // the geometry: the foot's ankle on the pad fork's bearings, FootDrop up the leg from the rod's hub (GearLayout.FootPoint), the wheel's bottom on its sole under the pad's centre
             string d = Path.Combine(root, "Assets", "Aero", "PadGear", size);
             var hous = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "Assets", "Aero", "RetractableGear", size, $"RetractableGear_{size}_BlockModelDefinition.partialdef"))).RootElement
                 .GetProperty("$Value").GetProperty("Manipulator").GetProperty("Dummies").GetProperty("Changed").EnumerateArray().Select(c => c.GetProperty("Value")).ToArray();
             Vector3 Dum(string nm) { var t = hous.First(v => v.GetProperty("Name").GetString() == nm).GetProperty("Transform").GetProperty("Transform").GetProperty("Position"); return new Vector3(F(t.GetProperty("X")), F(t.GetProperty("Y")), F(t.GetProperty("Z"))); }
             Vector3 hub = Dum("GearRodHub"), hinge = Dum("GearLegHinge");
-            float raise = F(L.GetProperty("raise_"));
-            var rm = Regex.Match(cs.Groups[4].Value, @"Layout = Pad\(Gear\([0-9.]+f\), ([0-9.]+)f\)");
-            Check(rm.Success && Near(float.Parse(rm.Groups[1].Value, C), raise), $"{size}: the variant's foot raise (Pad(Gear(..), raise)) is not the spec's {raise}");
-            var lay = new GearLayout { HingePoint = hinge, DeployedHub = hub, HingeAxis = Vector3.UnitX, FootRaise = raise };
+            float drop = F(L.GetProperty("drop"));
+            var dm = Regex.Match(cs.Groups[4].Value, @"Layout = Pad\(Gear\([0-9.]+f\), (-?[0-9.]+)f\)");
+            Check(dm.Success && Near(float.Parse(dm.Groups[1].Value, C), drop), $"{size}: the variant's foot drop (Pad(Gear(..), drop)) is not the spec's {drop}");
+            var lay = new GearLayout { HingePoint = hinge, DeployedHub = hub, HingeAxis = Vector3.UnitX, FootDrop = drop };
             var foot = V(L.GetProperty("foot")); var sole = V(L.GetProperty("sole")); var centre = V(L.GetProperty("wheel_centre"));
             Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), lay.FootPoint) < 1e-3f, $"{size}: the foot's dummy is not GearLayout.FootPoint (the ankle pin)");
             var ankle = V(L.GetProperty("ankle"));
             Check(Near(sole[1], ankle[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], ankle[0]) && Near(centre[2], ankle[2] + F(L.GetProperty("pad_dz"))),
                   $"{size}: the hidden wheel's bottom is not the foot's sole (under the pad's centre)");
-            Vector3 up = hub + Vector3.UnitY * raise;
-            Check(raise > 0f && Vector3.Distance(new Vector3(ankle[0], ankle[1], ankle[2]), up) < 1e-3f && Vector3.Distance(lay.AnklePoint, up) < 1e-3f, $"{size}: the ankle is not FootRaise above the rod's hub");
+            Vector3 onFork = hub + lay.LegDirection * drop;
+            Check(drop < 0f && Vector3.Distance(new Vector3(ankle[0], ankle[1], ankle[2]), onFork) < 1e-3f && Vector3.Distance(lay.AnklePoint, onFork) < 1e-3f, $"{size}: the ankle is not FootDrop up the leg from the rod's hub (on the pad fork's bearings)");
             Check(Vector3.Distance(lay.FootPoint, lay.DeployedHub) > 0.05f && MathF.Abs(Vector3.Dot(lay.FootPoint - lay.AnklePoint, Vector3.Normalize(lay.HingeAxis))) > 0.05f
                   && Vector3.Cross(lay.FootPoint - lay.AnklePoint, lay.HingeAxis).Length() < 1e-4f,
                   $"{size}: the foot's dummy is not on the hinge line, or the client would take it for the rod (FindParts: 5 cm)");
@@ -135,6 +135,9 @@ static class PadFootTests
             Check(fd.GetProperty("Name").GetString() == "GearFoot" && Near(F(fdp.GetProperty("Y")), foot[1]), $"{size}: no GearFoot dummy at the ankle pin");
             string csp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ConditionalSubPartsDefinition.def"));
             Check(csp.Contains(L.GetProperty("foot_subpart").GetString()), $"{size}: the foot is not one of the block's subparts");
+            string rod = L.GetProperty("rod_subpart").GetString();
+            Check(csp.Contains(rod) && File.Exists(Path.Combine(d, "Rod", "Models", $"PadGear_{size}_Rod.model")),
+                  $"{size}: the pad fork (its own rod: padgear_rod.py) is not the block's rod subpart");
             string scomp = File.ReadAllText(Path.Combine(d, $"PadGear_{size}_ServerComposition.partialdef"));
             Check(scomp.Contains(L.GetProperty("module").GetString()) && scomp.Contains(L.GetProperty("block_model").GetString()), $"{size}: the block is not on its own model and the hidden wheel's corner module");
 
