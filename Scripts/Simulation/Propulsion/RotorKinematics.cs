@@ -109,17 +109,23 @@ public static class RotorKinematics
         return float.IsFinite(t) ? t : float.PositiveInfinity;
     }
 
-    /// <summary>A turboprop's governed rpm while on and asked for nothing (2026-10-17, the user: "the same 0.75 blade speed /
-    /// blur treatment" - the vanilla prop's 75 % on): it rises to 100 % with the thrust asked (PropulsorKinds.TargetRpm).</summary>
-    public static float TurbopropIdleRpm = 0.75f;
+    /// <summary>A turboprop's governed rpm while on and asked for nothing: it rises to 100 % with the thrust asked
+    /// (PropulsorKinds.TargetRpm). 35 % since 2026-10-23 (the user: "turboprop idle is weird, it's like almost full spin" - at
+    /// the 75 % of 2026-10-17 the blades had already faded into the blur disc): the blades now turn visibly at idle and blur in
+    /// with the load. Visual only - a turboprop's thrust does not wait for its rpm (PropulsorKinds.LiftNeedsRpm).</summary>
+    public static float TurbopropIdleRpm = 0.35f;
+    /// <summary>A turboprop's spin-up (s, 95 % of the way): quicker than the rotors' - its rpm is the prop's look, its thrust does
+    /// not wait for it (2026-10-23, with the 35 % idle).</summary>
+    public static float TurbopropSpinUpSeconds = 3f;
 
     /// <summary>One step of the governed rpm (0..1 of the governed rpm) toward target while on (1: a rotor's 100 %; a
     /// turboprop's idle .. 100 % by its load - PropulsorKinds.TargetRpm), coasting down while off.</summary>
-    public static float StepRpm(float rpm, bool on, float dt, float target = 1f)
+    public static float StepRpm(float rpm, bool on, float dt, float target = 1f, float spinUp = 0f)
     {
         if (dt <= 0f) return rpm;
         if (on)
         {
+            float SpinUpSeconds = spinUp > 0f ? spinUp : RotorKinematics.SpinUpSeconds;   // (a turboprop's own: TurbopropSpinUpSeconds)
             // the engine's torque, the governor taking it near the target: the gap halves every SpinUpSeconds / 4.3 (95 % of
             // the way at SpinUpSeconds), plus a little so it arrives; above it (a turboprop's load dropped) back down alike
             target = Math.Clamp(target, 0f, 1f);

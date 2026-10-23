@@ -298,7 +298,7 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
             Rpm = on ? IdleRpm(Kind) : 0f; _rpmInit = true;
         }
         SpinOn = on;
-        Rpm = RotorKinematics.StepRpm(Rpm, on, AeroPhysics.Dt, TargetRpm(Kind, Load));
+        Rpm = RotorKinematics.StepRpm(Rpm, on, AeroPhysics.Dt, TargetRpm(Kind, Load), Kind == Kinds.Turboprop ? RotorKinematics.TurbopropSpinUpSeconds : 0f);
     }
 
 

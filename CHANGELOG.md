@@ -3,6 +3,11 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - turboprop idle
+
+- Turboprops idle at 35 % rpm (was 75 %): the blades turn visibly at idle and blur in as you throttle up (about 3 s). Thrust
+  response is unchanged.
+
 ## Unreleased - rotor damage you can feel
 
 - A struck rotor keeps its head: the hub stays with its broken blades (it vanished whole before).

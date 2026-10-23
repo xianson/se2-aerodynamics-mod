@@ -382,8 +382,8 @@ static class Program
             for (int i = 0; i < 60 * 20; i++) { w = K.StepRpm(w, true, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 0f)); if (w > K.TurbopropIdleRpm + 1e-6f) ok = false; }
             Check(ok && MathF.Abs(w - K.TurbopropIdleRpm) < 1e-6f, $"turboprop: on, no load - idles at {w * 100f:F1} %");
             float t95 = -1f;
-            for (int i = 0; i < 60 * 20; i++) { w = K.StepRpm(w, true, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 1f)); if (t95 < 0f && w >= 0.99f) t95 = i / 60f; }
-            Check(w == 1f && t95 > 0f && t95 < K.SpinUpSeconds, $"turboprop: full load - 100 % ({t95:F1} s from idle)");
+            for (int i = 0; i < 60 * 20; i++) { w = K.StepRpm(w, true, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 1f), K.TurbopropSpinUpSeconds); if (t95 < 0f && w >= 0.99f) t95 = i / 60f; }
+            Check(w == 1f && t95 > 0f && t95 < 1.2f * K.TurbopropSpinUpSeconds, $"turboprop: full load - 100 % ({t95:F1} s from idle, its spin-up {K.TurbopropSpinUpSeconds} s)");
             for (int i = 0; i < 60 * 20; i++) w = K.StepRpm(w, true, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 0.5f));
             Check(MathF.Abs(w - (K.TurbopropIdleRpm + 0.5f * (1f - K.TurbopropIdleRpm))) < 1e-5f, $"turboprop: half load - {w * 100f:F1} %");
             for (int i = 0; i < 60 * 20; i++) w = K.StepRpm(w, true, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 0f));
@@ -391,7 +391,9 @@ static class Program
             for (int i = 0; i < 60 * 120; i++) w = K.StepRpm(w, false, 1f / 60f, AeroPropulsorComponent.TargetRpm(P, 1f));
             Check(w == 0f, "turboprop: off - coasts to a stop");
             // the blur treatment at idle: the blades mostly gone, the disc mostly in
-            Check(K.BladeOpacity(K.TurbopropIdleRpm) < 0.2f && K.BlurOpacity(K.TurbopropIdleRpm) > 0.6f, $"turboprop at idle: blades {K.BladeOpacity(K.TurbopropIdleRpm):F2}, blur {K.BlurOpacity(K.TurbopropIdleRpm):F2}");
+            // (2026-10-23: idle 35 % - the blades visible at idle, not yet blurred; they blur in with the load)
+            Check(K.BladeOpacity(K.TurbopropIdleRpm) > 0.9f && K.BlurOpacity(K.TurbopropIdleRpm) < 0.1f, $"turboprop at idle: blades {K.BladeOpacity(K.TurbopropIdleRpm):F2}, blur {K.BlurOpacity(K.TurbopropIdleRpm):F2}");
+            Check(K.BladeOpacity(1f) < 0.2f && K.BlurOpacity(1f) > 0.6f, "turboprop at full load: blurred");
             // the rotors' spin-up law unchanged by the target (default 1)
             float a = 0.3f, b = 0.3f; for (int i = 0; i < 100; i++) { a = K.StepRpm(a, true, 1f / 60f); b = K.StepRpm(b, true, 1f / 60f, 1f); }
             Check(a == b, "rotor: the governor's default target is 100 %");
