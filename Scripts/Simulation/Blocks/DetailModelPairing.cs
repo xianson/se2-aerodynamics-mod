@@ -1,5 +1,6 @@
 #pragma warning disable CS0649, CS8632, CS1591, CS1573, CS1570, CS1574, CS0419, CS1734
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 
 namespace AeroMod;
@@ -26,12 +27,17 @@ namespace AeroMod;
 /// host; a remote client gets nothing (as with every mod setting).
 ///
 /// The game never unpairs it (its handle is Disposable.Empty), so the model a block had before is unpaired when that block
-/// opens a new one: at most one stale pairing per block.
+/// opens a new one OF THE SAME TYPE: at most one stale pairing per block and model type. (2026-10-23: keyed by the block alone,
+/// a block with two of our models - the solid nozzle, which carries its own grain since 3fcf26d, builds the nozzle's and the
+/// segment's - had the first one unpaired by the second: the story failed "completion failed patching" and the whole panel was
+/// lost.) HEALTH: every outcome, and every reason none was paired, is logged once per model type and reason.
 /// </summary>
 public static class DetailModelPairing
 {
     static readonly object _lock = new();
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Entity, object> _lastByBlock = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Entity, Dictionary<Type, object>> _lastByBlock = new();
+    static readonly HashSet<string> _said = new();
+    static void Say(string what) { lock (_said) if (!_said.Add(what)) return; Log.Default?.Info($"[AERO] DetailModelPairing: {what}"); }
     static PropertyInfo _replayContextProp, _trackerProp;
     static MethodInfo _add, _remove, _hasLocal, _tAdd, _tRemove, _tHas;
     static bool _resolved, _failed, _tResolved, _tFailed;
@@ -44,30 +50,34 @@ public static class DetailModelPairing
     {
         try
         {
+            string name = model?.GetType().Name ?? "null";
             var block = anchor?.Entity;
-            var holder = block?.GetSession()?.SessionComponents;
-            if (holder == null) return;
+            if (block == null) { Status = $"{name}: not paired - its [Component] anchor is not on the block (the panel will fail)"; Say(Status); return; }
+            var holder = block.GetSession()?.SessionComponents;
+            if (holder == null) { Status = $"{name}: not paired - no session components"; Say(Status); return; }
             var replay = ReplayContextOf(holder);
             var trackers = TrackersOf(holder);
-            if (replay == null && trackers.Count == 0) return;
+            if (replay == null && trackers.Count == 0) { Status = $"{name}: not paired - no replay context and no replication tracker"; Say(Status); return; }
             lock (_lock)
             {
-                if (_lastByBlock.TryGetValue(block, out var old))
+                if (!_lastByBlock.TryGetValue(block, out var byType)) { byType = new Dictionary<Type, object>(); _lastByBlock.Add(block, byType); }
+                var type = model.GetType();
+                if (byType.TryGetValue(type, out var old) && !ReferenceEquals(old, model))
                 {
-                    _lastByBlock.Remove(block);
                     if (replay != null && (bool)_hasLocal.Invoke(replay, new[] { old })) _remove.Invoke(replay, new[] { old });
                     foreach (var t in trackers) if (Has(t, old)) _tRemove.Invoke(t, new[] { old });
                 }
                 if (replay != null && !(bool)_hasLocal.Invoke(replay, new[] { model })) _add.Invoke(replay, new[] { model, model });
                 foreach (var t in trackers) if (!Has(t, model)) _tAdd.Invoke(t, new[] { model, model });
-                _lastByBlock.Add(block, model);
+                byType[type] = model;
             }
-            Status = $"paired {model.GetType().Name} ({trackers.Count} tracker(s){(replay != null ? ", replay context" : "")})";
+            Status = $"paired {name} ({trackers.Count} tracker(s){(replay != null ? ", replay context" : "")})";
+            Say($"{name} paired ({trackers.Count} tracker(s){(replay != null ? ", replay context" : "")})");
         }
         catch (Exception e)
         {
-            Status = $"pairing failed: {e.GetBaseException().Message}";
-            Log.Default?.Info($"[AERO] DetailModelPairing: {Status}");
+            Status = $"{model?.GetType().Name}: pairing failed: {e.GetBaseException().Message}";
+            Say(Status);
         }
     }
 
