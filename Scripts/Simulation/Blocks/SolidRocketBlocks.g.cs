@@ -11,7 +11,7 @@ namespace AeroMod;
 /// and its conveyor ports' scale (m, X = Y: one per size, no vanilla port's - the game links only equal scales).</summary>
 public static partial class SolidRocketBlocks
 {
-    public const float VacuumBoost = 0.1f, BurnPerSegment = 8.0f, Isp = 250.0f, G0 = 9.80665f;
+    public const float VacuumBoost = 0.1f, BurnPerSegment = 8.0f, Isp = 250.0f, G0 = 9.80665f, NozzleGrain = 0.8f;
     /// <summary>The resource (ResourceTypeDefinition GUID, its Name) and every vanilla conveyor port scale (none is a solid one's).</summary>
     public static readonly Guid Resource = new("ae200001-ae00-7f00-0054-000000000001"); public const string ResourceName = "Solid Propellant";
     public static readonly List<float> VanillaPortScales = new() { 0.35f, 0.5f, 1.025f, 1.5f };

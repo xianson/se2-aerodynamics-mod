@@ -739,12 +739,18 @@ static class Program
         string seg = File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroSolidSegmentComponent.cs"));
         Check(seg.Contains("_charge = MathF.Max(0f, (float)(double)_rc.CurrentChargeValue);") && seg.Contains("public float DynamicMass => Propellant;") && seg.Contains("massComputer.OnBlockMassChanged(_cb)"),
               "the segment's mass: the tank's charge (1 L = 1 kg) as its dynamic mass, the grid told when it moves");
-        Check(seg.Contains("if (_rc.Mode != ContainerMode.Auto) { _rc.Mode = ContainerMode.Auto;") && seg.Contains("if (_pb != null && !_pb.Enabled) { _pb.Enabled = true;"),
-              "no backdoor shutdown: a tank set to Charge goes back to Auto, a segment switched off back on");
+        Check(seg.Contains("if (_rc.Mode != ContainerMode.Auto) { _rc.Mode = ContainerMode.Auto;") && seg.Contains("if (_pb != null && !_pb.Enabled && !OnNozzle) { _pb.Enabled = true;"),
+              "no backdoor shutdown: a tank set to Charge goes back to Auto, a segment switched off back on (not a nozzle: its switch is its ignition)");
         bool writes = Directory.GetFiles(sim, "*.cs", SearchOption.AllDirectories).Any(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"CurrentChargeValue\s*[+\-]?=[^=]"));
         Check(!writes, "no refill path: no mod code writes a tank's charge");
         string inj = File.ReadAllText(Path.Combine(sim, "Injection", "EntityInjector.cs"));
-        Check(inj.Contains("if (hasTank && !SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid))"), "the segments' tanks are left out of AeroFuelMassComponent (one mass provider)");
+        Check(inj.Contains("if (hasTank && !SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid) && !SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid))"),
+              "the segments' and nozzles' tanks are left out of AeroFuelMassComponent (one mass provider)");
+        Check(inj.Contains("if (SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid))"),
+              "a nozzle's own grain is read and weighed as a segment's (AeroSolidSegmentComponent on its server copy)");
+        string noz = File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroSolidNozzleComponent.cs"));
+        Check(noz.Contains("if (own != null) _stack.Insert(0, own);") && noz.Contains("&& !s.OnNozzle) _cands.Add(s);"),
+              "a nozzle's own grain is the first piece of its stack, never a segment of another's");
     }
 
     static string SimDir()

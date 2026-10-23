@@ -10,6 +10,16 @@
     "PartialDefinitionKind": "Copy",
     "Manipulator": {
       "Guid": "ae200001-ae00-5f05-0013-000000000001",
+      "TagSlots": {
+        "$DeltaEncoded": true,
+        "RemovedKeys": [],
+        "ModifiedKeys": [
+          {
+            "$Key": "ResourceContainerComponent",
+            "$Value": "556698b8-b950-4e94-ab64-937642f573e1"
+          }
+        ]
+      },
       "Components": {
         "$DeltaEncoded": true,
         "Keys": [
@@ -19,7 +29,8 @@
           "bc5652a0-1296-4040-adc3-a2b9c35d5afc",
           "4f2bc5f9-6a6d-4347-a1eb-5937cbce6727",
           "17c62317-3feb-4f2f-87ec-708dd4a0671d",
-          "4e49ffa8-efc3-4043-9adc-04f5f1408d61"
+          "4e49ffa8-efc3-4043-9adc-04f5f1408d61",
+          "556698b8-b950-4e94-ab64-937642f573e1"
         ],
         "Changed": [
           {
@@ -55,6 +66,14 @@
             "Index": 6,
             "Value": {
               "Definition": "ae200001-ae00-5f05-001c-000000000001"
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 7,
+            "Value": {
+              "Definition": "ae200001-ae00-5f05-001e-000000000001",
+              "Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources.ResourceContainerComponent"
             }
           }
         ],

@@ -213,7 +213,8 @@ public class InjectAeroComponents : Injections
         }
         // the solid rocket motors (2026-10-17): a segment's tank read, weighed and kept on Auto on its server copy; the nozzle in both
         // scenes (the server ignites and burns it; both report its thrust to ThrustTorque) - the same saving id and builder in both
-        if (SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid))
+        // (2026-10-23: a nozzle's server copy too - its own grain's tank)
+        if (SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, AeroBlockSave.Info(typeof(AeroSolidSegmentComponent), AeroBlockSave.SolidSegmentId));
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroSolidSegmentComponent into solid rocket segment prefab '{entity.DebugName}'");
@@ -238,7 +239,7 @@ public class InjectAeroComponents : Injections
 
         // (a solid rocket segment's tank - Solid Propellant, the conveyor version 2026-10-17 - weighs through AeroSolidSegmentComponent:
         //  one mass provider per block)
-        if (hasTank && !SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid))
+        if (hasTank && !SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid) && !SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid))
         {
             Add(entity, typeof(AeroFuelMassComponent));
 

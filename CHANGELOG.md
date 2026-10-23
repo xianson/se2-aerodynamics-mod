@@ -33,6 +33,8 @@ was flown in game for this release. The commit hashes are on the integration bra
   before ignition is still its power.
 - The nozzle's own On switch ignites it (the Ignite button is gone); Thrust Override starts at 100 %. Its exhaust is drawn 2x
   bigger.
+- The nozzle carries its own propellant: 80 % of a segment of its size. A lone nozzle is a small motor; stacked, its grain burns
+  with the segments (one more grain).
 
 ## Unreleased - pad-foot landing gear
 

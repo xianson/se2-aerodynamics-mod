@@ -42,6 +42,9 @@ public partial class AeroSolidSegmentComponent : Component, IInSceneListener, ID
     public SolidRocketBlocks.Row Row;
     /// <summary>A full segment's propellant (kg; the table's - the tank's MaxCapacity in litres).</summary>
     public float Full { get; private set; }
+    /// <summary>On a NOZZLE (2026-10-23): its own grain - its tank of SolidRocketBlocks.NozzleGrain of a segment; the nozzle puts it
+    /// first in its stack (AeroSolidNozzleComponent.Rebuild) and FindStack never takes it as a segment.</summary>
+    public bool OnNozzle { get; private set; }
     /// <summary>The tank's charge (kg = L) as its own step last read it; -1 until then.</summary>
     float _charge = -1f;
     bool _known, _feeds; LookRetry _look;
@@ -77,9 +80,9 @@ public partial class AeroSolidSegmentComponent : Component, IInSceneListener, ID
         if (e == null || !_look.Due()) return;
         _cb = e.TryGet<CubeBlockComponent>(); _pb = e.TryGet<PowerableBlockComponent>(); _rc = e.TryGet<ResourceContainerComponent>();
         Row = SolidRocketBlocks.RowOf(_cb);
-        _known = Row != null && !Row.Nozzle;
+        _known = Row != null;
         _look.Done = _known && _cb != null;
-        if (_known) Full = SolidRocket.FullSegment(Row.Thrust);
+        if (_known) { OnNozzle = Row.Nozzle; Full = SolidRocket.FullSegment(Row.Thrust) * (Row.Nozzle ? SolidRocketBlocks.NozzleGrain : 1f); }
     }
 
     void IInSceneListener.OnAddedToScene()
@@ -124,7 +127,7 @@ public partial class AeroSolidSegmentComponent : Component, IInSceneListener, ID
             _charge = MathF.Max(0f, (float)(double)_rc.CurrentChargeValue);
             if (_rc.Mode != ContainerMode.Auto) { _rc.Mode = ContainerMode.Auto; ModeRestores++; }
         }
-        if (_pb != null && !_pb.Enabled) { _pb.Enabled = true; SwitchRestores++; }
+        if (_pb != null && !_pb.Enabled && !OnNozzle) { _pb.Enabled = true; SwitchRestores++; }   // (a nozzle's switch is its ignition: the nozzle's)
         // the mass: told to the grid's mass computer when it moved by MassStep of a full segment (and when it reaches 0)
         float p = Propellant;
         if (_massReported < 0f || MathF.Abs(p - _massReported) >= MassStep * Full || (p == 0f && _massReported > 0f))
