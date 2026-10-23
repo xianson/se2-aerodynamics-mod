@@ -23,7 +23,19 @@
           "ae200001-ae00-4e15-0076-000000000001",
           "ae200001-ae00-4e15-0077-000000000001",
           "ae200001-ae00-4e15-0078-000000000001",
-          "ae200001-ae00-4e15-0079-000000000001"
+          "ae200001-ae00-4e15-0079-000000000001",
+          "ae200001-ae00-4e15-007a-000000000001",
+          "ae200001-ae00-4e15-007b-000000000001",
+          "ae200001-ae00-4e15-007c-000000000001",
+          "ae200001-ae00-4e15-007d-000000000001",
+          "ae200001-ae00-4e15-007e-000000000001",
+          "ae200001-ae00-4e15-007f-000000000001",
+          "ae200001-ae00-4e15-0080-000000000001",
+          "ae200001-ae00-4e15-0081-000000000001",
+          "ae200001-ae00-4e15-0082-000000000001",
+          "ae200001-ae00-4e15-0083-000000000001",
+          "ae200001-ae00-4e15-0084-000000000001",
+          "ae200001-ae00-4e15-0085-000000000001"
         ],
         "Changed": [
           {
@@ -372,6 +384,426 @@
                 "Z": 1
               },
               "Type": "ae200001-ae00-7f00-0035-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 10,
+            "Value": {
+              "Name": "RotorBladeStub1",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.875,
+                    "Y": 0.865,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": 0.707107,
+                    "Z": -0.0,
+                    "W": 0.707107
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0036-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 11,
+            "Value": {
+              "Name": "RotorBladeStub2",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": -0.52452
+                  },
+                  "Orientation": {
+                    "X": -0.0,
+                    "Y": -0.965926,
+                    "Z": 0.0,
+                    "W": 0.258819
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0036-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 12,
+            "Value": {
+              "Name": "RotorBladeStub3",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": 0.77452
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": -0.258819,
+                    "Z": -0.0,
+                    "W": 0.965926
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0036-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 13,
+            "Value": {
+              "Name": "RotorBladeTipLost1",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.875,
+                    "Y": 0.865,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": 0.707107,
+                    "Z": -0.0,
+                    "W": 0.707107
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0037-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 14,
+            "Value": {
+              "Name": "RotorBladeTipLost2",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": -0.52452
+                  },
+                  "Orientation": {
+                    "X": -0.0,
+                    "Y": -0.965926,
+                    "Z": 0.0,
+                    "W": 0.258819
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0037-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 15,
+            "Value": {
+              "Name": "RotorBladeTipLost3",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": 0.77452
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": -0.258819,
+                    "Z": -0.0,
+                    "W": 0.965926
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0037-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 16,
+            "Value": {
+              "Name": "RotorBladeCCWStub1",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.875,
+                    "Y": 0.865,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": 0.707107,
+                    "Z": -0.0,
+                    "W": 0.707107
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0038-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 17,
+            "Value": {
+              "Name": "RotorBladeCCWStub2",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": -0.52452
+                  },
+                  "Orientation": {
+                    "X": -0.0,
+                    "Y": -0.965926,
+                    "Z": 0.0,
+                    "W": 0.258819
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0038-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 18,
+            "Value": {
+              "Name": "RotorBladeCCWStub3",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": 0.77452
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": -0.258819,
+                    "Z": -0.0,
+                    "W": 0.965926
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0038-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 19,
+            "Value": {
+              "Name": "RotorBladeCCWTipLost1",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": 0.875,
+                    "Y": 0.865,
+                    "Z": 0.125
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": 0.707107,
+                    "Z": -0.0,
+                    "W": 0.707107
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0039-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 20,
+            "Value": {
+              "Name": "RotorBladeCCWTipLost2",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": -0.52452
+                  },
+                  "Orientation": {
+                    "X": -0.0,
+                    "Y": -0.965926,
+                    "Z": 0.0,
+                    "W": 0.258819
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0039-000000000001",
+              "SupportingFracture": null,
+              "HighlightSection": null
+            }
+          },
+          {
+            "Kind": "Insert",
+            "Index": 21,
+            "Value": {
+              "Name": "RotorBladeCCWTipLost3",
+              "Transform": {
+                "Transform": {
+                  "Position": {
+                    "X": -0.25,
+                    "Y": 0.865,
+                    "Z": 0.77452
+                  },
+                  "Orientation": {
+                    "X": 0.0,
+                    "Y": -0.258819,
+                    "Z": -0.0,
+                    "W": 0.965926
+                  }
+                },
+                "EulerHint": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "Scale": {
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              },
+              "Type": "ae200001-ae00-7f00-0039-000000000001",
               "SupportingFracture": null,
               "HighlightSection": null
             }

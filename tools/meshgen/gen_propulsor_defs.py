@@ -87,6 +87,16 @@ DT_FAN = G(SHARED, 0x33)
 # sets on the same hinges - RotorBlade1..3 and RotorBladeCCW1..3 - and AeroRotorAnimComponent shows the one its Counter-rotating
 # setting asks for (the CCW subpart's entity is named BLADE_CCW_NAME)
 DT_BLADE_CCW, BLADE_CCW_NAME = G(SHARED, 0x35), "RotorBladeCCW"
+# PER-BLADE BREAKS (2026-10-23, the user: strikes break blade tips and scatter them; whole / tip lost / stub): the broken
+# blades' models (blade_break_rotors.py -> blade_break_rotors_export.py) spawned at the blade hinges like the blades - one dummy
+# type per model (the subpart's composition name tells AeroRotorAnimComponent which: "BladeStub", "BladeTipLost",
+# "BladeCCWStub", "BladeCCWTipLost"); the flying chunks are models only (BladeDebris spawns them as client debris) and their
+# numbers go to BladeBreakBlocks.g.cs. (Subpart folder, role, dummy type, the CCW set?)
+BREAK_PARTS = [(5, "BladeStub", G(SHARED, 0x36), False), (7, "BladeTipLost", G(SHARED, 0x37), False),
+               (8, "BladeCCWStub", G(SHARED, 0x38), True), (9, "BladeCCWTipLost", G(SHARED, 0x39), True)]
+BB_SPEC = r"D:\Blender Brojects\SE2\BladeBreak\blade_break_spec.json"
+BB = json.load(open(BB_SPEC)) if os.path.exists(BB_SPEC) else {}
+BB_ROWS = []   # (name, hinge, stub r, split r, (chunk A, chunk B): (model guid, mass, com, half extents)) - BladeBreakBlocks.g.cs
 # the blur disc's own TRANSLUCENT material (2026-10-16, the user: "the blurred blades dont look great" - the disc was the
 # blades' opaque paint faded by the engine's dithered entity opacity, a screen-door stipple): a PBRTransparent material whose
 # alpha is a texture (blur_material(): radial - denser at the root, where the blades sweep most of the circle - a faint
@@ -261,12 +271,30 @@ def gen_block(N, s, rows):
     m_hub, m_blade, m_blur = (G(sid, 0x104 + i) for i in range(3))
     m_bladeccw = G(sid, 0x108)
     ccw = anim and f"NonFractured/Subpart06/{N}_S6_BladeCCW.fbx" in ids
+    # (the broken blades: a set only when complete - its stub and tip-lost models, and the CCW pair only with the CCW blades)
+    broken = [(k, role, dt, j) for j, (k, role, dt, isccw) in enumerate(BREAK_PARTS) if anim and (ccw or not isccw)
+           and f"NonFractured/Subpart0{k}/{N}_S{k}_{role}.fbx" in ids]
+    if len([b for b in broken if not BREAK_PARTS[b[3]][3]]) < 2: broken = []
+    if ccw and len(broken) not in (2, 4): broken = []
+    chunks = broken and N in BB and all(f"Chunks/{N}_Blade{c}.fbx" in ids for c in ("ChunkA", "ChunkB"))
     if anim:
         # (the materials: the spec's Hub / Blade lists when the rig wrote them - rotor_rig.py, the approved kitbash model, 2026-10-16 -
         #  else rotor_split.py's blockout parts)
         gd.model(os.path.join(md, "NonFractured", "Subpart01", f"{N}_S1_Hub.model"), m_hub, [lod("NonFractured/Subpart01", n, N + "_S1_Hub") for n in range(3)], mats.get("Hub", ["BrushedMetal"]), None, (0.0, 0.0, 0.0))
         gd.model(os.path.join(md, "NonFractured", "Subpart02", f"{N}_S2_Blade.model"), m_blade, [lod("NonFractured/Subpart02", n, N + "_S2_Blade") for n in range(3)], mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]), None, (0.0, 0.0, 0.0))
         gd.model(os.path.join(md, "NonFractured", "Subpart03", f"{N}_S3_Blur.model"), m_blur, [lod("NonFractured/Subpart03", n, N + "_S3_Blur") for n in range(3)], [BLUR_MAT], None, (0.0, 0.0, 0.0))
+        for k, role, dt, j in broken:
+            gd.model(os.path.join(md, "NonFractured", f"Subpart0{k}", f"{N}_S{k}_{role}.model"), G(sid, 0x109 + j), [lod(f"NonFractured/Subpart0{k}", n, f"{N}_S{k}_{role}") for n in range(3)],
+                     mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]) + ["FracturedMaterial01"], None, (0.0, 0.0, 0.0))
+        if chunks:
+            ch, hinge = BB[N], anim["hinge_radius"]
+            tip = ROTOR_TIP.get(N, anim["tip_radius"]); blade_kg = 1.75 * tip * tip   # (RotorStrike.BladeMass: BladeMassPerR2 x R^2)
+            made = []
+            for c, mg in (("ChunkA", G(sid, 0x10d)), ("ChunkB", G(sid, 0x10e))):
+                gd.model(os.path.join(md, "Chunks", f"{N}_Blade{c}.model"), mg, [lod("Chunks", n, f"{N}_Blade{c}") for n in range(3)],
+                         mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]) + ["FracturedMaterial01"], ids[f"Chunks/{N}_Blade{c}_collision.gltf"], (0.0, 0.0, 0.0))
+                made.append((mg, round(blade_kg * ch[c]["volume"] / ch["blade_volume"], 3), [round(x, 4) for x in ch[c]["offset_vrage"]], ch[c]["half_extents_vrage"]))
+            BB_ROWS.append((N, hinge, round(hinge + ch["stub_r"], 4), round(hinge + ch["split_r"], 4), made))
         if ccw:
             gd.model(os.path.join(md, "NonFractured", "Subpart06", f"{N}_S6_BladeCCW.model"), m_bladeccw, [lod("NonFractured/Subpart06", n, N + "_S6_BladeCCW") for n in range(3)], mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]), None, (0.0, 0.0, 0.0))
     else:
@@ -306,6 +334,8 @@ def gen_block(N, s, rows):
         dummies += [gd.dummy("PropBlade", P(s["blade"]), DT_BLADE), gd.dummy("PropBlur", P(s["blur"]), DT_BLUR)]
     if ccw:   # (last: the existing dummies keep their keys; the same hinges as RotorBlade1..3)
         dummies += [gd.dummy(f"RotorBladeCCW{k + 1}", P(b["pos"]), DT_BLADE_CCW, tuple(b["quat"])) for k, b in enumerate(anim["blades"])]
+    for _, role, dt, _ in broken:   # (after those: the broken blades at the same hinges)
+        dummies += [gd.dummy(f"Rotor{role}{k + 1}", P(b["pos"]), dt, tuple(b["quat"])) for k, b in enumerate(anim["blades"])]
     gd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), gd.partial(gd.BASE_BMD, {"Guid": bmd, "Model": "{G}" + m_nf,
         "Dummies": {"$DeltaEncoded": True, "Keys": [G(sid, 0x41 + i) if i < 3 else G(sid, 0x70 + i) for i in range(len(dummies))],
                     "Changed": [{"Kind": "Insert", "Index": i, "Value": v} for i, v in enumerate(dummies)], "Removed": []},
@@ -343,6 +373,10 @@ def gen_block(N, s, rows):
         plain_subpart("Blade", bpref, bcomp, bmcd, m_blade)
         plain_subpart("Blur", upref, ucomp, umcd, m_blur)
         subs = {DT_ROTOR: spref_s, DT_BLADE: bpref, DT_BLUR: upref}
+        for _, role, dt, j in broken:
+            bp_ = [G(sid, 0x90 + 3 * j + i) for i in range(3)]
+            plain_subpart(role, bp_[0], bp_[1], bp_[2], G(sid, 0x109 + j), name="Rotor" + role)
+            subs[dt] = bp_[0]
         if ccw:
             cpref_, ccomp_, cmcd_ = (G(sid, 0x66 + i) for i in range(3))
             plain_subpart("BladeCCW", cpref_, ccomp_, cmcd_, m_bladeccw, name=BLADE_CCW_NAME)
@@ -594,6 +628,24 @@ def kinds():
         gd.definition(os.path.join(root, f"{nm}_BlockSymmetriesDefinition.def"), {"$Bundles": gd.B_GAME,
             "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinition+BlockSymmetriesDefinitionObjectBuilder",
             "$Value": {"Guid": symd, **{ax: dict(zip("XYZ", v)) for ax, v in zip(("XAxis", "YAxis", "ZAxis"), sym)}}}, symd, False)
+
+
+def write_break_cs():
+    """BladeBreakBlocks.g.cs: per rotor with its broken blades and chunks (BB_ROWS) - the per-blade breaks' numbers."""
+    out = os.path.join(os.path.dirname(CS_OUT), "BladeBreakBlocks.g.cs")
+    f = lambda v: f"{v}f"
+    v3 = lambda v: f"new Vector3({f(v[0])}, {f(v[1])}, {f(v[2])})"
+    ch = lambda c: f'new(new("{c[0]}"), {f(c[1])}, {v3(c[2])}, {v3(c[3])})'
+    lines = ["// GENERATED by tools/meshgen/gen_propulsor_defs.py (write_break_cs, from BladeBreak/blade_break_spec.json) - do not edit.",
+             "// Per rotor: hinge, stub end, chunk split (m from the spin axis); chunks A (mid) and B (tip): model, mass (kg - the blade's",
+             "// RotorStrike.BladeMass by volume share), centre of mass (blade frame, VRage, from the hinge), half extents.",
+             "#pragma warning disable", "using System;", "using System.Collections.Generic;", "", "namespace AeroMod;", "",
+             "public static partial class BladeBreakBlocks", "{", "    public static readonly List<Row> Rows = new()", "    {"]
+    for N, hinge, stub, split, (a, b) in sorted(BB_ROWS):
+        lines.append(f'        new("{N}", {f(hinge)}, {f(stub)}, {f(split)}, {ch(a)}, {ch(b)}),')
+    lines += ["    };", "}", ""]
+    open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
+    print(f"blade breaks: {len(BB_ROWS)} rotors -> {out}")
 
 
 def write_cs(rows):
@@ -1252,7 +1304,7 @@ def main():
     blur_material(os.path.join(gd.BLOCKS, "Assets", ROOT_REL))
     coupling_material(os.path.join(gd.BLOCKS, "Assets", ROOT_REL))
     root = os.path.join(gd.BLOCKS, "Assets", ROOT_REL)
-    for nm, dt in (("Rotor", DT_ROTOR), ("RotorBlade", DT_BLADE), ("RotorBlur", DT_BLUR), ("Fan", DT_FAN), ("RamjetSpike", DT_SPIKE), ("RotorBladeCCW", DT_BLADE_CCW)):
+    for nm, dt in (("Rotor", DT_ROTOR), ("RotorBlade", DT_BLADE), ("RotorBlur", DT_BLUR), ("Fan", DT_FAN), ("RamjetSpike", DT_SPIKE), ("RotorBladeCCW", DT_BLADE_CCW)) + tuple(("Rotor" + r, dt) for _, r, dt, _ in BREAK_PARTS):
         gd.definition(os.path.join(root, f"Propulsor_{nm}DummyTypeDefinition.def"), {"$Bundles": gd.B_VRAGE,
             "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder", "$Value": {"Guid": dt}}, dt, False)
     for tag, gname, _, guid, skey, order in FAMILIES:
@@ -1266,6 +1318,7 @@ def main():
             gd.write(os.path.join(rt, dn.lower() + ".meta"), folder_meta(rel))
     gd.write(os.path.join(os.path.dirname(root), "propulsors.meta"), folder_meta(ROOT_REL))
     write_cs(rows)
+    write_break_cs()
     print(f"generated {sum(len(f) for _, _, f in os.walk(root))} files under {root}; {CS_OUT}")
 
 

@@ -1,0 +1,61 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-4e10-0093-000000000001",
+    "_entity": {
+      "Definition": "ae200001-ae00-4e10-0094-000000000001",
+      "ObjectBuilders": [
+        {
+          "Key": "38b268a8-6f59-49d1-9bf2-6f73d5ad8a75",
+          "Value": {
+            "$Type": "VRage:Keen.VRage.Core.Game.Components.HierarchyComponentObjectBuilder",
+            "Children": []
+          }
+        },
+        {
+          "Key": "6668ab9d-dd60-462f-b6e8-7dfe1730f9c0",
+          "Value": {
+            "$Type": "VRage:Keen.VRage.Core.Game.Components.ChildTransformComponentObjectBuilder",
+            "TransformWithEulerHint": {
+              "Transform": {
+                "Position": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "Orientation": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0,
+                  "W": 1
+                }
+              },
+              "EulerHint": {
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            }
+          }
+        },
+        {
+          "Key": "33905a1a-c47d-4ca5-a87c-b9c993baf1e5",
+          "Value": null
+        },
+        {
+          "Key": "17fac7aa-348d-4ae4-b687-531ad1601bd4",
+          "Value": null
+        },
+        {
+          "Key": "a72db338-5407-4268-87f1-2faeb2cac274",
+          "Value": null
+        }
+      ],
+      "DebugName": "RotorBladeTipLost"
+    }
+  }
+}
