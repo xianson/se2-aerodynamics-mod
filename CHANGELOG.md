@@ -3,6 +3,11 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - gravity multiplier setting
+
+- **Gravity multiplier** (Settings > Mods > Flight model, host): how strongly gravity pulls ships, default 1 (the game's is 2),
+  0..5. Applies at once, no restart. Not flown in game yet.
+
 ## Unreleased - pitch upset margin
 
 - Seated in air, the stability box shows how far the ship can be knocked in pitch and still be turned back (`P 4°`).

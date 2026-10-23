@@ -138,6 +138,9 @@ public static partial class AeroSettings
         F("Control.ThrustTurnRate", "world", 0.1, 3, false, () => ThrustTorque.MaxRate, v => ThrustTorque.MaxRate = (float)v,
             "The fastest turn (rad/s) thruster steering asks for when turning the ship to the pilot's target.")
             .Ui("Thruster steering max turn rate", GFlight, Advanced, "rad/s", 0.05);
+        F("World.GravityMultiplier", "world", WorldGravity.Min, WorldGravity.Max, false, () => WorldGravity.Multiplier, v => WorldGravity.Multiplier = (float)v,
+            "How strongly gravity pulls ships and loose objects (not characters): 1 is the planet's real gravity. The game's own default is 2.")
+            .Ui("Gravity multiplier", GFlight, Basic, "x", 0.1);
         B("Physics.HonestDampeners", "world", false, () => HonestHold.Enabled, v => HonestHold.Enabled = v,
             "Dampeners hold a ship up with real thrust against the gravity it really feels (the world's gravity multiplier included), and super dampeners brake with the thrusters' real thrust. A ship then needs thrust for its full weight to hover, and what holds it up is not there to climb with. Off: the game's own dampeners (they cancel twice the gravity with one weight of thrust).")
             .Ui("Honest dampeners", GFlight, Advanced);

@@ -148,11 +148,7 @@ public static class GridPhysics
 
     /// <summary>The world's PhysicsSessionConfiguration.GravityMultiplier (1 when unreadable): the engine scales the
     /// gravity it applies by it, on top of GravityEffectData.GravitySum.</summary>
-    public static float GravityMultiplier()
-    {
-        try { return DefinitionManager.Instance?.GetConfiguration<PhysicsSessionConfiguration>()?.GravityMultiplier ?? 1f; }
-        catch { return 1f; }
-    }
+    public static float GravityMultiplier() => GravityScale;
 
     /// <summary>GravityMultiplier, read once the configuration is there (then cached: the per-tick weights read it - no lookup
     /// and no try per call). The REAL weight of a grid nothing holds is m x GravitySum x this: the engine scales the gravity
@@ -164,6 +160,10 @@ public static class GridPhysics
     {
         get
         {
+            // (2026-10-23: the world setting World.GravityMultiplier, once WorldGravity applied it to the server scene - the
+            //  engine's value from then on; before that, the definition's)
+            float a = WorldGravity.AppliedServer;
+            if (float.IsFinite(a)) return a;
             float g = _gravityScale;
             if (g > 0f) return g;
             if (++_gravityScaleTries > 600) return 1f;   // (never readable: 1, as before - and no lookup per call for good)
@@ -378,7 +378,9 @@ public static class GridPhysics
     public static void InitGroundSystem(Entity entity)
     {
         var session = entity?.GetSession();
-        if (session == null || (_groundSystemInitialized && ReferenceEquals(session, _physicsSession))) return;
+        if (session == null) return;
+        WorldGravity.Tick(session, false);   // (the world's gravity multiplier on the server scene: two compares when unchanged)
+        if (_groundSystemInitialized && ReferenceEquals(session, _physicsSession)) return;
         // (the physics published before the session and the flag, under a lock - 2026-10-15: the flag and session went first,
         //  so a parallel grid's job returned above and cast its ray on the old session's physics, or on none)
         lock (_groundLock)

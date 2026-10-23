@@ -22,6 +22,7 @@ public partial class AeroWorldSettingsComponent
     private static void QuickLaunchJob(AeroWorldSettingsComponent c)
     {
         if (c.Data.Scene?.DebugName == "Client") return;   // (the carrier is the server planets'; never answer from a client copy)
+        WorldGravity.Tick(c.Entity.GetSession(), false);   // (the world's gravity multiplier: a planetless world's grids do it too)
         AtmosphereProbe.Tick(c.Entity);   // (the API's point query with no grid in the world: a timestamp compare; ~10 s its list)
         EnemySpawn.ServerTick(c);   // (test spawns - Launch/EnemySpawn.Server.cs: three reads while there is nothing to do)
         if (!QuickLaunch.Asked) return;

@@ -25,9 +25,9 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   lopsided thrust, the air and your control surfaces matter; they still trim and steady the ship and lead at low speed.
   Held hard in one direction they saturate and fade, and recover when eased off (`Gyros.Saturation`).
 - **Honest dampeners:** the game's dampeners delete gravity for free (a ship that falls with them off floats and
-  climbs with them on). Here they hold the ship up with real thrust against the gravity it really feels (2x the planet's
-  pull in vanilla), so **a ship needs thrust for twice its planet weight to hover**, and super dampeners brake with real
-  thrust. Turn `Physics.HonestDampeners` off (Settings > Mods > Flight model > Advanced) for the game's own dampeners.
+  climbs with them on). Here they hold the ship up with real thrust against the gravity it really feels (the planet's pull
+  x the world's `World.GravityMultiplier`: 1 with this mod, 2 in vanilla), so **a ship needs thrust for its real weight to
+  hover**, and super dampeners brake with real thrust. Turn `Physics.HonestDampeners` off (Settings > Mods > Flight model > Advanced) for the game's own dampeners.
 - **Engines by speed:** turboprops rule subsonic flight, vanilla atmospheric thrusters (jets) push through Mach 1 (108 %)
   and gain from ram air to about 2x at Mach 1.6, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell

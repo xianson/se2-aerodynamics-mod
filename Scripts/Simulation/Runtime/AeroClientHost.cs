@@ -62,6 +62,7 @@ public static class AeroClientHost
             if (fromHost) HostFrames++; else FallbackFrames++;
             if (!AeroSettings.SawClient) AeroSettings.SawClient = true;
             AeroSettings.Poll();   // (the settings files, every ~2 s)
+            WorldGravity.Tick(session, true);   // (the world's gravity multiplier on the client scene: two compares when unchanged)
             if (SettingsTab.Claim()) SettingsTab.Ticked(session);   // (the Options screen's Mods tab, Ui/SettingsTab.cs: one per 250 ms)
             ModTexts.Tick(session, ModTextsProbe);   // (the mod's en-US texts into the game's table, once a session - Ui/ModTexts.cs)
             MachHud.Tick(any);   // (the speed readout's Mach: not an effect - runs with the effects off too)

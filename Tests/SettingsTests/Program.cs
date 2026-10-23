@@ -207,6 +207,19 @@ static class Program
         AeroSettings.TryGet("Aero.DragMultiplier", out double after);
         Check(before == after, $"text: a float comes back exactly ({before:R} / {after:R})");
         ResetAll();
+        // the world's gravity multiplier (2026-10-23): a world setting, default 1 (vanilla 2), 0..5, onto WorldGravity
+        {
+            Check(AeroSettings.TryGet("World.GravityMultiplier", out double g0) && g0 == 1.0 && WorldGravity.Multiplier == 1f, $"gravity multiplier: default 1 ({g0})");
+            Check(AeroSettings.Text("world", all: true).Contains("World.GravityMultiplier") && !AeroSettings.Text("client", all: true).Contains("World.GravityMultiplier"), "gravity multiplier: a world (host) setting");
+            Check(AeroSettings.Set("World.GravityMultiplier", 2.5, out _) && WorldGravity.Multiplier == 2.5f, $"gravity multiplier: set 2.5 reaches WorldGravity ({WorldGravity.Multiplier})");
+            Check(!AeroSettings.Set("World.GravityMultiplier", 7, out _) && !AeroSettings.Set("World.GravityMultiplier", -1, out _) && WorldGravity.Multiplier == 2.5f, "gravity multiplier: outside 0..5 refused");
+            Check(AeroSettings.Set("World.GravityMultiplier", 0, out _) && WorldGravity.Multiplier == 0f, "gravity multiplier: 0 allowed (no gravity)");
+            object s1 = new object(), s2 = new object();
+            Check(WorldGravity.Due(null, int.MinValue, s1, 0) && !WorldGravity.Due(s1, 3, s1, 3) && WorldGravity.Due(s1, 3, s1, 4) && WorldGravity.Due(s1, 3, s2, 3),
+                "gravity multiplier: applied again on a new session or a changed value, not otherwise");
+            Check(WorldGravity.Clamp(float.NaN) == 1f && WorldGravity.Clamp(9f) == 5f, "gravity multiplier: a bad value clamps (NaN -> 1)");
+        }
+        ResetAll();
         // a text setting (the test spawn's blueprint names): set, saved as its text, its rule, one line, reset
         string tv = null;
         Check(AeroSettings.SetText("Spawn.MissileBlueprint", "  My Missile 2 ", out string twhy) && AeroSettings.TryGetText("Spawn.MissileBlueprint", out tv) && tv == "My Missile 2", $"text setting: set, trimmed ('{tv}', {twhy})");
