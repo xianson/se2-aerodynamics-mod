@@ -119,5 +119,17 @@ for N in ALL:
     print(f"BREAK {N}: tip {r['tip_r']:.3f} stub {r['stub_r']:.3f} split {r['split_r']:.3f} m from the hinge; "
           f"chunk A {r['ChunkA']['volume'] / r['blade_volume'] * 100:.0f} %, B {r['ChunkB']['volume'] / r['blade_volume'] * 100:.0f} % of the blade")
 
+# (2026-10-23, in game: the broken blades were MAGENTA - the export names a mesh part after its material, and the blades
+#  appended from the export scenes brought their materials in as "PaintedMetalDarker.009" etc. beside the file's own; the
+#  content builder matches exact names ("Material not assigned"). Every suffixed copy folds into its base material.)
+import re
+for m in list(bpy.data.materials):
+    base = re.sub(r"\.\d{3}$", "", m.name)
+    if base == m.name: continue
+    keep = bpy.data.materials.get(base)
+    if keep is None: m.name = base
+    else: m.user_remap(keep); bpy.data.materials.remove(m)
+print("MATERIALS", sorted(m.name for m in bpy.data.materials if m.users))
+
 json.dump(spec, open(SPEC, "w"), indent=1)
 bpy.ops.wm.save_mainfile()

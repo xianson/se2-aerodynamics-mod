@@ -7,6 +7,8 @@ was flown in game for this release. The commit hashes are on the integration bra
 
 - A struck rotor keeps its head: the hub stays with its broken blades (it vanished whole before).
 - Worn blades lift less; blades that lift unevenly rock the ship once a turn; an unbalanced rotor visibly wobbles.
+- Strikes push the ship off what the blades hit, harder the deeper they dig in; a blade buried deep wears up to 4x faster.
+- The broken blades had no textures (magenta): fixed.
 
 ## Unreleased - gravity multiplier setting
 

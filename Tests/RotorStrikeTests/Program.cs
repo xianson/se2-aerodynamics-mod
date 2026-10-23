@@ -413,6 +413,16 @@ static class Program
         Check(MathF.Sqrt(mx * mx + my * my) <= S.LiftImbalanceMaxShare * 9e5f * R * 1.0001f, "a stub beside two whole blades: capped");
         Console.WriteLine($"  uneven lift: 1.5 m rotor at 900 kN, one tip lost - moment {mom / 1e3f:F0} kN m once a turn");
 
+        // (2026-10-23) depth: a graze at the blade's end wears as before, a blade buried to its hinge 1 + gain times; the repulsion
+        // grows the same way off the struck surface
+        Check(S.Depth(R, R, h) == 0f && S.Depth(h, R, h) == 1f && MathF.Abs(S.Depth((R + h) / 2f, R, h) - 0.5f) < 1e-5f, "depth: 0 at the blade's end, 1 at its hinge");
+        Check(S.Depth(sR, sR, h) == 0f, "depth: a tip-lost blade struck at its broken end - a graze");
+        Check(S.DepthWear(0.1f, 0f) == 0.1f && MathF.Abs(S.DepthWear(0.1f, 1f) - 0.1f * (1f + S.DepthWearGain)) < 1e-6f, $"wear: x1 grazing, x{1f + S.DepthWearGain} buried");
+        float jr = S.StrikeImpulse(S.Material.Rock, 0.9f * R, R, 190f);
+        Check(MathF.Abs(S.Repel(jr, 0f) - S.RepelShare * jr) < 1e-3f && S.Repel(jr, 1f) > S.Repel(jr, 0.5f), $"repulsion: {S.Repel(jr, 0f) / 1e3f:F1} kN s grazing rock, {S.Repel(jr, 1f) / 1e3f:F1} kN s buried (strike {jr / 1e3f:F1} kN s)");
+        Check(S.Repel(-5f, 1f) == 0f, "repulsion: never from a negative impulse");
+        Console.WriteLine($"  depth: 1.5 m rotor at 190 m/s on rock - repulsion {S.Repel(jr, 0f) / 1e3f:F1} kN s grazing, {S.Repel(jr, 1f) / 1e3f:F1} kN s buried; wear x{1f + S.DepthWearGain} buried");
+
         // the visible wobble: none when nothing is lost or the rotor stands; capped; turning with the blades
         float bm = S.BladeMass(R) * 0.5f * (h + R);
         Check(S.Wobble(new float[] { 0f, 0f, 0f }, bm, 0f, 1f).Length() == 0f, "no pieces lost: no wobble");

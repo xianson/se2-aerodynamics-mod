@@ -59,6 +59,8 @@ public static class RotorStrikeServer
         public AeroRotorStrikeComponent Rotor; public AeroPropulsorComponent Prop; public Entity Grid;
         public DEntity Body; public Vector3D Pos; public Vector3 Normal, Motion, Spin;
         public float Radius, TipRadius, Rpm, Speed;
+        /// <summary>The struck blade's share beyond the hit (0 a graze at its end .. 1 buried to the hinge; AeroRotorStrikeComponent.Probe).</summary>
+        public float Depth;
         /// <summary>Per-blade breaks: the blade struck (0..2; -1: the rotor's one health - a turboprop).</summary>
         public int Blade;
     }
@@ -201,7 +203,7 @@ public partial class AeroGridComponent
         float v = s.Speed;
 
         // 2. the blades, and their share of the rotor block
-        float wear = RotorStrike.BladeWear(mat, v);
+        float wear = RotorStrike.DepthWear(RotorStrike.BladeWear(mat, v), s.Depth);   // (deeper in: more of the blade grinding)
         var own = rot.Entity.TryGet<CubeBlockComponent>();
         bool wearOk = own != null && Allowed(rules, rot.Entity);
         if (!wearOk) RotorStrikeServer.Refused++;
@@ -215,7 +217,7 @@ public partial class AeroGridComponent
             DamageRotorBlock(own, ship, RotorStrike.RotorBlockWear(wear));
             if (perBlade)
             {
-                cutAfter = RotorStrike.AfterStrike(cutBefore, ref rot.Wear[s.Blade], s.Radius, RotorStrike.BladeWearOne(mat, v), rot.BreakRow.SplitR);
+                cutAfter = RotorStrike.AfterStrike(cutBefore, ref rot.Wear[s.Blade], s.Radius, RotorStrike.DepthWear(RotorStrike.BladeWearOne(mat, v), s.Depth), rot.BreakRow.SplitR);
                 rot.Cuts[s.Blade] = (byte)cutAfter;
                 rot.Recompute(prop);
             }
@@ -256,7 +258,13 @@ public partial class AeroGridComponent
                     hit.TryGet<GridDamageReceiverComponent>()?.DealDamage(block, share * FullHealth(block));
                 float jm = RotorStrike.StrikeImpulse(mat, s.Radius, s.TipRadius, v);
                 // (its own grid: an internal force - no impulse; another grid takes the blade's push, the ship the reaction)
-                if (!ReferenceEquals(hit, ship)) { onShip = -s.Motion * jm; RigidBodyDataFunctions.TryApplyImpulse(s.Motion * jm, s.Pos, hit); }
+                if (!ReferenceEquals(hit, ship))
+                {
+                    // (+ the REPULSION: the blades dig in and throw the ship off what they hit, along its surface; the other grid back)
+                    var rep = s.Normal * RotorStrike.Repel(jm, s.Depth);
+                    onShip = -s.Motion * jm + rep;
+                    RigidBodyDataFunctions.TryApplyImpulse(s.Motion * jm - rep, s.Pos, hit);
+                }
                 // (the structures: the struck block takes the blade's push - another grid's, or the ship's own with its reaction at
                 //  the rotor, an internal pair; the ship's reaction on another grid is onShip, below)
                 if (block?.Entity != null && jm > 0f)
@@ -279,7 +287,7 @@ public partial class AeroGridComponent
             {
                 RotorStrikeServer.OnRock++;
                 float jr = RotorStrike.StrikeImpulse(mat, s.Radius, s.TipRadius, v);
-                onShip = -s.Motion * jr;
+                onShip = -s.Motion * jr + s.Normal * RotorStrike.Repel(jr, s.Depth);   // (the drag, and the repulsion off the surface)
                 RigidBodyDataFunctions.TryApplyImpulse(s.Motion * jr, s.Pos, hit);   // (a static body - terrain - takes nothing: the game's check)
                 what = "rock";
                 break;
@@ -300,7 +308,7 @@ public partial class AeroGridComponent
         StructureImpulse(ship, rot.Entity, s.Pos, onShip, broke ? s.Spin * L : Vector3.Zero);
         rot.Strikes++;
         rot.Last = perBlade
-            ? $"{what} at r {s.Radius:F2} m, {v:F0} m/s: blade {s.Blade + 1} {cutBefore} -> {cutAfter} (wear {rot.Wear[s.Blade]:F2}), lift {rot.LiftShare:F2}{(rot.Broken ? " ALL STUBS" : "")}"
+            ? $"{what} at r {s.Radius:F2} m ({s.Depth * 100f:F0} % in), {v:F0} m/s: blade {s.Blade + 1} {cutBefore} -> {cutAfter} (wear {rot.Wear[s.Blade]:F2}), lift {rot.LiftShare:F2}{(rot.Broken ? " ALL STUBS" : "")}"
             : $"{what} at r {s.Radius:F2} m, {v:F0} m/s: blades {before:F2} -> {rot.Health:F2}{(broke ? " BROKEN" : "")}";
         RotorStrikeServer.Note($"{prop.Kind} {prop.Size}: {rot.Last}, ship impulse {onShip.Length():F0} N s{(broke ? $", rotor stopped: {L:F0} N m s into the ship" : "")}", broke || snapped);
 

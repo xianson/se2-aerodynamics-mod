@@ -177,17 +177,20 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
             if (!RotorStrike.IsStrike(v)) continue;
             var inPlane = d - spin * Vector3.Dot(d, spin);
             int blade = -1;
+            float reach = R, hingeR = 0.07f * R;   // (no break table: the main rotors' hinge share)
             if (PerBladeOn)
             {
                 // (the blade passing there: nearest the hit's azimuth among those that still reach r - none: the gap, no strike)
                 blade = BladeAt(MathF.Atan2(Vector3.Dot(inPlane, w), Vector3.Dot(inPlane, u)), r, R);
                 if (blade < 0) continue;
+                reach = RotorStrike.Reach((RotorStrike.Cut)Cuts[blade], R, BreakRow.SplitR, BreakRow.StubR); hingeR = BreakRow.Hinge;
             }
             // (queued: the probes rest until the strike job has handled it - RotorStrikeServer.Step clears Pending, sets Gap)
             if (RotorStrikeServer.Queue(new RotorStrikeServer.Strike
             {
                 Rotor = this, Prop = p, Grid = grid, Body = hit.Body, Pos = hit.Position, Normal = hit.Normal,
                 Motion = RotorStrike.BladeMotion(spin, inPlane), Spin = spin, Radius = r, TipRadius = R, Rpm = p.Rpm, Speed = v, Blade = blade,
+                Depth = RotorStrike.Depth(r, reach, hingeR),   // (the blade beyond the hit is in what it hit: how deep it grinds)
             })) Pending = true;
             break;
         }

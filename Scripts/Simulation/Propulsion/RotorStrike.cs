@@ -262,6 +262,21 @@ public static class RotorStrike
         return s / cuts.Length;
     }
 
+    /// <summary>DEPTH (2026-10-23, the user: "a healthy blade can be fully phased into the terrain and not taking much damage, maybe
+    /// damage scales with how deep into the blades it is"): a strike's wear x (1 + DepthWearGain x depth), depth the struck blade's
+    /// share beyond the hit (0 a graze at its end, 1 buried to the hinge) - the length of blade grinding through.</summary>
+    public static float DepthWearGain = 3f;
+    public static float DepthWear(float wear, float depth) => wear * (1f + DepthWearGain * Math.Clamp(depth, 0f, 1f));
+
+    /// <summary>The REPULSION (2026-10-23, the user: "there needs to be a repulsive force"): besides the drag along the blade's
+    /// motion, the blades dig in and throw the ship off what they hit - RepelShare of the strike's impulse along the struck
+    /// surface's normal, x (1 + RepelDepthGain x depth) (N s).</summary>
+    public static float RepelShare = 0.5f, RepelDepthGain = 2f;
+    public static float Repel(float strikeImpulse, float depth) => MathF.Max(strikeImpulse, 0f) * RepelShare * (1f + RepelDepthGain * Math.Clamp(depth, 0f, 1f));
+
+    /// <summary>The struck blade's buried share: (its reach - the hit's radius) / (its reach - its hinge), 0..1.</summary>
+    public static float Depth(float r, float reach, float hinge) => reach > hinge ? Math.Clamp((reach - r) / (reach - hinge), 0f, 1f) : 0f;
+
     /// <summary>A worn blade lifts less (2026-10-23, the user: "track blade health separately and scale the force output by it"):
     /// at wear w (0 new .. 1 about to snap) it keeps 1 - WearLiftLoss x w of its length's lift - a chipped, bent blade.</summary>
     public static float WearLiftLoss = 0.35f;
