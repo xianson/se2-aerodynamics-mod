@@ -110,9 +110,13 @@ static class PadFootTests
             var lay = new GearLayout { HingePoint = hinge, DeployedHub = hub, HingeAxis = Vector3.UnitX };
             var foot = V(L.GetProperty("foot")); var sole = V(L.GetProperty("sole")); var centre = V(L.GetProperty("wheel_centre"));
             Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), lay.FootPoint) < 1e-3f, $"{size}: the foot's dummy is not GearLayout.FootPoint (the ankle pin)");
-            Check(Near(sole[1], foot[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], foot[0]) && Near(centre[2], foot[2] + F(L.GetProperty("pad_dz"))),
+            var ankle = V(L.GetProperty("ankle"));
+            Check(Near(sole[1], ankle[1] - H) && Near(centre[1] - r, sole[1]) && Near(centre[0], ankle[0]) && Near(centre[2], ankle[2] + F(L.GetProperty("pad_dz"))),
                   $"{size}: the hidden wheel's bottom is not the foot's sole (under the pad's centre)");
-            Check(Vector3.Distance(new Vector3(foot[0], foot[1], foot[2]), hub) < 1e-3f, $"{size}: the ankle is not on the rod's hub");
+            Check(Vector3.Distance(new Vector3(ankle[0], ankle[1], ankle[2]), hub) < 1e-3f && Vector3.Distance(lay.AnklePoint, hub) < 1e-3f, $"{size}: the ankle is not on the rod's hub");
+            Check(Vector3.Distance(lay.FootPoint, lay.DeployedHub) > 0.05f && MathF.Abs(Vector3.Dot(lay.FootPoint - lay.AnklePoint, Vector3.Normalize(lay.HingeAxis))) > 0.05f
+                  && Vector3.Cross(lay.FootPoint - lay.AnklePoint, lay.HingeAxis).Length() < 1e-4f,
+                  $"{size}: the foot's dummy is not on the hinge line, or the client would take it for the rod (FindParts: 5 cm)");
 
             // the pad block's own model: the wheel rest moved, the foot's dummy at the ankle pin; its subparts: leg, rod, foot
             JsonElement Man(string f) => JsonDocument.Parse(File.ReadAllText(Path.Combine(d, f))).RootElement.GetProperty("$Value").GetProperty("Manipulator");

@@ -57,11 +57,11 @@ public static class AeroGearVariants
                                          WheelMass = 250f, RatedLoad = 5000f, Stroke = 0.25000f } },
         new() { Name = "Retractable Gear (Pad) 1.5 m", Block = new("ae200001-ae00-9e23-0001-000000000001"), CornerModule = new("ae200001-ae00-9e33-0068-000000000001"), WheelRadius = 0.75000f, Duration = 3.5f,
                 RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Pad(Gear(0.6f)),
-                Foot = new PadFootSpec { Model = "LandingGear500", Scale = 0.30000f, Height = 1.31355f,
+                Foot = new PadFootSpec { Model = "LandingGear100", Scale = 1.50000f, Height = 1.31513f,
                                          WheelMass = 600f, RatedLoad = 20000f, Stroke = 0.40000f } },
-        new() { Name = "Retractable Gear (Plate) 2.5 m", Block = new("ae200001-ae00-9e24-0001-000000000001"), CornerModule = new("ae200001-ae00-9e34-0068-000000000001"), WheelRadius = 1.25000f, Duration = 4f,
+        new() { Name = "Retractable Gear (Pad) 2.5 m", Block = new("ae200001-ae00-9e24-0001-000000000001"), CornerModule = new("ae200001-ae00-9e34-0068-000000000001"), WheelRadius = 1.25000f, Duration = 4f,
                 RetractTravel = 5.3707f * 1.0f, RetractSpeed = 3f * 1.0f, CollisionOffAt = OffAt * 1.0f, Layout = Pad(Gear(1.0f)),
-                Foot = new PadFootSpec { Model = "MagneticPlate250", Scale = 1.00000f, Height = 0.50600f,
+                Foot = new PadFootSpec { Model = "LandingGear500", Scale = 0.50000f, Height = 2.18925f,
                                          WheelMass = 1200f, RatedLoad = 60000f, Stroke = 0.60000f } },
     };
 

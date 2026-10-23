@@ -150,6 +150,14 @@ public partial class AeroGearComponent : Component, IInSceneListener, IGearState
         // a pad foot: nothing on the server - its wheel is the suspension's (hidden on the clients), the foot a client subpart turned to
         // the ground normal this gear publishes (AeroGearAnimComponent / FootIk)
         _step = "padfoot";
+        // its wheel never turns (2026-10-23, the user: "the wheel needs crazy high friction"): a pad does not roll. The axle's friction
+        // held on every step - the vanilla brakes write it only when they change (WheelCornerModuleComponent.ApplyEngageBrakeToPhysics
+        // turns it off whenever the brake lets go)
+        if (Variant?.Foot != null && _wc != null)
+        {
+            if (!_wc.FrictionEnabled) _wc.FrictionEnabled = true;
+            if (_wc.MaxFrictionTorque != PadFootSpec.AxleHoldTorque) _wc.MaxFrictionTorque = PadFootSpec.AxleHoldTorque;
+        }
         PadDevStep(wheel);   // (the harness's recorder and pushes: Dev/AeroGearPadDev.cs - two reads while off)
 
         // collision: off deep in the well, back before the wheel leaves it
