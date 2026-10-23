@@ -749,6 +749,8 @@ static class Program
         Check(inj.Contains("if (SolidRocketBlocks.SegmentServerPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleServerPrefabs.Contains(entity.Guid))"),
               "a nozzle's own grain is read and weighed as a segment's (AeroSolidSegmentComponent on its server copy)");
         string noz = File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroSolidNozzleComponent.cs"));
+        Check(noz.Contains("&& _pb.Enabled && _wasOff) Motor.Request = true;") && noz.Contains("_wasOff = _pb != null && !_pb.Enabled;"),
+              "the switch lights it only on an off -> on flip (a block placed, pasted or loaded switched on never lights itself)");
         Check(noz.Contains("if (own != null) _stack.Insert(0, own);") && noz.Contains("&& !s.OnNozzle) _cands.Add(s);"),
               "a nozzle's own grain is the first piece of its stack, never a segment of another's");
     }

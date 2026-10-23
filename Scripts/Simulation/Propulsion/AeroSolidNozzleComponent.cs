@@ -89,6 +89,9 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
     public float ThrustFraction = 1f;
     /// <summary>The attitude allocator's share of full for this nozzle (ThrustTorque, Steer) and the ticks it stays good for.</summary>
     float _steerFrac = 1f; int _steerFresh;
+    /// <summary>The switch was OFF at the end of the last step (false until the first: a block spawns, is pasted or loads switched
+    /// on - that is not the player turning it on, so only an off -> on flip lights it).</summary>
+    bool _wasOff;
     /// <summary>A steer older than this (ticks) is dropped: the motor goes back to its base (aero off, a far grid stepped slowly).</summary>
     public const int SteerTicks = 3;
     /// <summary>THRUST VECTORING (2026-10-20; ThrustVectorGame, ThrustVector): its panel's "Thrust Vectoring" switch and "Gimbal Cone
@@ -226,12 +229,15 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         // switched off (the game's movement and dampeners never fire it), so a switch found ON while idle is the player turning it on -
         // it asks to light (SolidRocket.Step: no propellant or broken - it is put back off; else the player's override off and the
         // switch off in one tick, then on, then the motor's own override - the same writes as an Ignite)
-        if (Motor.Phase == SolidRocket.Phase.Idle && _pb != null && _pb.Enabled) Motor.Request = true;
+        // (2026-10-23, the user: "if you place a solid it just starts on" - a new block comes switched on: only an off -> on flip, seen
+        //  after a step that left it off, is the player's)
+        if (Motor.Phase == SolidRocket.Phase.Idle && _pb != null && _pb.Enabled && _wasOff) Motor.Request = true;
         var want = SolidRocket.Step(ref Motor, usable, _pb == null || _pb.Functional, TargetOverride, _tc?.ThrustOverride ?? 0f);
         // the burn follows the thrust (the same impulse at any level): the share of the game's burn ticks FuelTick lets through
         FuelDutyNow = SolidRocket.Burning(Motor.Phase) ? SolidRocket.BurnDuty(StackFactor, frac) : 0f;
         StackPropellant = usable;
         Apply(want);
+        _wasOff = _pb != null && !_pb.Enabled;
     }
 
     /// <summary>The block's switch and override as SolidRocket.Step wants them (written only when they differ: each write is a
