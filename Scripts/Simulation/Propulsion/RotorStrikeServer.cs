@@ -119,11 +119,22 @@ public static class RotorStrikeServer
         {
             var s = _work[i];
             try { AeroGridComponent.HandleRotorStrike(in s); Handled++; }
-            catch (Exception e) { Faults++; LastFault = e.GetType().Name + ": " + e.Message; Log.Default?.Info($"[AERO-STRIKE] strike failed: {LastFault}"); }
+            catch (Exception e)
+            {
+                Faults++; LastFault = e.GetType().Name + ": " + e.Message;
+                // (HEALTH, 2026-10-23: "Data not found" with no place named - where it threw, once per distinct fault)
+                string at = e.StackTrace ?? ""; int cut = 0;
+                for (int n = 0; n < 4 && cut >= 0; n++) cut = at.IndexOf('\n', cut + 1);
+                if (cut > 0) at = at.Substring(0, cut);
+                bool first; lock (_faultsSaid) first = _faultsSaid.Add(LastFault);
+                Log.Default?.Info(first ? $"[AERO-STRIKE] strike failed: {LastFault} at {at.Replace("\r", "").Replace("\n", " | ")}" : $"[AERO-STRIKE] strike failed: {LastFault}");
+            }
             finally { if (s.Rotor != null) s.Rotor.Pending = false; }
         }
         _work.Clear();
     }
+
+    static readonly HashSet<string> _faultsSaid = new();
 
     /// <summary>The character damage's source, looked up on each character strike (rare; never a static kept across world loads).</summary>
     internal static DamageSourceDefinition Source()
@@ -327,12 +338,23 @@ public partial class AeroGridComponent
 
     static bool Allowed(IGameplayRules rules, Entity e) => rules == null || rules.CanDamage(new IGameplayRules.DamageContext(e)).Allowed;
 
-    /// <summary>The blades' wear on their block: share of its full health through the game's damage, never down to its destruction.</summary>
+    /// <summary>The rotor block keeps at least this share of its health against its blades' wear.</summary>
+    public const float OwnBlockFloor = 0.75f;
+
+    /// <summary>The blades' wear on their block: share of its full health through the game's damage - and NEVER BREAKING IT
+    /// (2026-10-23, the user: "the strike shouldn't end with no rotor head at all"): a block whose critical fracture dies is no
+    /// longer functional, and the game then despawns every conditional subpart - hub, stubs and all (ConditionalSubPartsComponent
+    /// spawns them only while the block is functional). The game deals damage to one fracture at a time until it dies
+    /// (BreakableComponent.DistributeDamageToFractures), and our rotor blocks have two critical fractures, the body's halves, so
+    /// their first dies only past about half the block's health: the blades' wear stops at OwnBlockFloor of it. (The fractures
+    /// themselves can't be read from a mod: BreakableBlockComponent's base is in VRage.Game, not a mod reference.) The head stays,
+    /// with its broken blades; the block still shows the damage, and welding it back repairs the blades.</summary>
     static void DamageRotorBlock(CubeBlockComponent b, Entity grid, float share)
     {
         if (b?.Entity == null || !(share > 0f)) return;
         float full = FullHealth(b);
-        float hp = MathF.Min(share * full, MathF.Max(b.AbsoluteHealth - (DestructionThreshold(b) + 0.05f) * full, 0f));
+        float floor = MathF.Max(DestructionThreshold(b) + 0.05f, OwnBlockFloor);
+        float hp = MathF.Min(share * full, MathF.Max(b.AbsoluteHealth - floor * full, 0f));
         if (!(hp > 0f)) return;
         grid.TryGet<GridDamageReceiverComponent>()?.DealDamage(b, hp);
     }
