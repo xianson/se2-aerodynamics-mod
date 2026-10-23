@@ -388,6 +388,40 @@ static class Program
         Check(MathF.Abs(capped.Length() - S.ImbalanceMaxShare * 1000f) < 1e-2f, $"capped at {S.ImbalanceMaxShare} of the rating ({capped.Length():F0} N)");
         Console.WriteLine($"  per-blade: 1.5 m rotor at 100 %, one tip lost - imbalance {one.Length() / 1e3f:F1} kN ({one.Length() / 9e5f * 100f:F0} % of its rating), lift {(2f + tl) / 3f * 100f:F0} %");
 
+        // (2026-10-23) wear costs lift: a new blade lifts all of its length's share, a worn one less, a stub nothing
+        float h = row.Hinge, sR = row.SplitR, stR = row.StubR;
+        Check(S.BladeLift(S.Cut.Whole, 0f, R, sR, stR, h) == 1f, "a new whole blade: full lift");
+        Check(MathF.Abs(S.BladeLift(S.Cut.Whole, 1f, R, sR, stR, h) - (1f - S.WearLiftLoss)) < 1e-5f, $"a whole blade worn to 1: {1f - S.WearLiftLoss:F2} of its lift");
+        Check(S.BladeLift(S.Cut.Stub, 0.5f, R, sR, stR, h) == 0f, "a worn stub: nothing");
+        Check(MathF.Abs(S.RotorLiftShare(new byte[] { 0, 0, 0 }, new float[] { 0.5f, 0f, 0f }, R, sR, stR, h) - (1f - S.WearLiftLoss * 0.5f / 3f)) < 1e-5f, "the rotor's share: the mean of its blades' worn lifts");
+        float cw = S.LiftCentroid(S.Cut.Whole, R, sR, stR, h), ct = S.LiftCentroid(S.Cut.TipLost, R, sR, stR, h);
+        Check(cw > ct && ct > h && cw < R, $"lift centroids: whole {cw:F2} m > tip lost {ct:F2} m > hinge {h:F2} m");
+
+        // the uneven lift: none when alike; otherwise forces summing to zero (a pure moment), capped at a share of thrust x radius
+        var ex = new float[3];
+        S.LiftImbalance(new float[] { 1f, 1f, 1f }, new float[] { cw, cw, cw }, 9e5f, R, ex);
+        Check(ex[0] == 0f && ex[1] == 0f && ex[2] == 0f, "three alike: no uneven lift");
+        S.LiftImbalance(new float[] { 0.6f, 1f, 1f }, new float[] { ct, cw, cw }, 9e5f, R, ex);
+        Check(MathF.Abs(ex[0] + ex[1] + ex[2]) < 1e-2f && ex[0] < 0f && ex[1] > 0f, $"one weak blade: {ex[0] / 1e3f:F0} / {ex[1] / 1e3f:F0} / {ex[2] / 1e3f:F0} kN - summing to zero");
+        float mx = 0f, my = 0f;
+        for (int k = 0; k < 3; k++) { float a = 2f * MathF.PI * k / 3f; float cc = k == 0 ? ct : cw; mx += ex[k] * cc * MathF.Cos(a); my += ex[k] * cc * MathF.Sin(a); }
+        float mom = MathF.Sqrt(mx * mx + my * my);
+        Check(mom > 0f && mom <= S.LiftImbalanceMaxShare * 9e5f * R * 1.0001f, $"its moment {mom / 1e3f:F0} kN m, within {S.LiftImbalanceMaxShare} of thrust x radius");
+        S.LiftImbalance(new float[] { 0f, 1f, 1f }, new float[] { h, cw, cw }, 9e5f, R, ex);
+        mx = my = 0f;
+        for (int k = 0; k < 3; k++) { float a = 2f * MathF.PI * k / 3f; float cc = k == 0 ? h : cw; mx += ex[k] * cc * MathF.Cos(a); my += ex[k] * cc * MathF.Sin(a); }
+        Check(MathF.Sqrt(mx * mx + my * my) <= S.LiftImbalanceMaxShare * 9e5f * R * 1.0001f, "a stub beside two whole blades: capped");
+        Console.WriteLine($"  uneven lift: 1.5 m rotor at 900 kN, one tip lost - moment {mom / 1e3f:F0} kN m once a turn");
+
+        // the visible wobble: none when nothing is lost or the rotor stands; capped; turning with the blades
+        float bm = S.BladeMass(R) * 0.5f * (h + R);
+        Check(S.Wobble(new float[] { 0f, 0f, 0f }, bm, 0f, 1f).Length() == 0f, "no pieces lost: no wobble");
+        Check(S.Wobble(new float[] { lmom, 0f, 0f }, bm, 0f, 0f).Length() == 0f, "a standing rotor: no wobble");
+        var wob = S.Wobble(new float[] { lmom, 0f, 0f }, bm, 0f, 1f);
+        Check(wob.Length() > 0f && wob.Length() <= S.WobbleMaxDeg * MathF.PI / 180f + 1e-6f, $"one tip lost at full rpm: {wob.Length() * 57.2958f:F2} deg of wobble (at most {S.WobbleMaxDeg})");
+        var wob2 = S.Wobble(new float[] { lmom, 0f, 0f }, bm, MathF.PI / 2f, 1f);
+        Check(MathF.Abs(wob2.Y + wob.Length()) < 1e-4f, "the wobble turns with the blades");
+
         // packing for the client's record
         byte[] cuts = { 2, 0, 1 };
         int p = S.Pack(cuts);

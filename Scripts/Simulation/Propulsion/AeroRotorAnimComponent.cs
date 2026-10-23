@@ -197,12 +197,14 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         float baked = tail ? TailRotor.BakedPitch75Deg * MathF.PI / 180f : BakedPitch75;
         var tiltBlock = Vector3.Transform(tiltGrid, Quaternion.Inverse(_blockInGrid));
         _tilt += (tiltBlock - _tilt) * k;
+        // (the WOBBLE of an unbalanced rotor - 2026-10-23, the user: pieces lost tip the disc once a turn, with the rpm^2)
+        var tiltNow = _tilt + Wobble(rpm);
 
-        var disc = RotorKinematics.Tilt(_tilt);
+        var disc = RotorKinematics.Tilt(tiltNow);
         var hubPos = _hub.Rest.Position;
         // COUNTER-ROTATING: every pose is the clockwise law's in the mirror (x -> -x), mirrored back - the inputs here
         bool mir = _ccw && !tail;
-        var tiltL = mir ? RotorKinematics.MirrorX(_tilt) : _tilt;
+        var tiltL = mir ? RotorKinematics.MirrorX(tiltNow) : tiltNow;
         var discL = mir ? RotorKinematics.Tilt(tiltL) : disc;
         var hubL = mir ? RotorKinematics.MirrorX(hubPos) : hubPos;
         bool perBlade = _hasVariants;
@@ -274,6 +276,27 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         }
         if (log)
             Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} {(_matched ? "rec" : "local")} rpm {rpm * 100f:F1}% psi {_psi * 57.2958f:F0} T {thrust:F0}/{maxNow:F0} N (rated {rated:F0}) coll {_coll * 57.2958f:F2} cone {_cone * 57.2958f:F2} tilt ({_tilt.X * 57.2958f:F2}, {_tilt.Z * 57.2958f:F2}) deg (grid {tiltGrid.X * 57.2958f:F2}, {tiltGrid.Y * 57.2958f:F2}, {tiltGrid.Z * 57.2958f:F2}) blades {bladeA:F2} blur {blurA:F2}{sb}");
+    }
+
+    BladeBreakBlocks.Row _bbRow; bool _bbLooked;
+    readonly float[] _wobLost = new float[RotorStrike.Blades];
+
+    /// <summary>The disc's tilt (block frame, as _tilt) an unbalanced rotor adds now: RotorStrike.Wobble of the published blades'
+    /// lost pieces, turning with the blades. Zero with no break table, no pieces lost or every blade alike.</summary>
+    Vector3 Wobble(float rpm)
+    {
+        if (_cuts == 0 || !(rpm > 0f)) return Vector3.Zero;
+        if (!_bbLooked) { _bbLooked = true; _bbRow = BladeBreakBlocks.Of(PropulsorBlocks.RowOf(Entity)?.Name); }
+        var row = _bbRow;
+        if (row == null) return Vector3.Zero;
+        for (int i = 0; i < RotorStrike.Blades; i++)
+        {
+            RotorStrike.Lost(RotorStrike.Unpack(_cuts, i), row.A.Mass, row.A.ComRadius(row.Hinge), row.B.Mass, row.B.ComRadius(row.Hinge), out _, out float m);
+            _wobLost[i] = m;
+        }
+        float bladeMoment = RotorStrike.BladeMass(_tip) * 0.5f * (row.Hinge + _tip);   // (a whole blade's first moment about the axis)
+        var w = RotorStrike.Wobble(_wobLost, bladeMoment, _psi, rpm);
+        return new Vector3(w.X, 0f, w.Y);
     }
 
     static Vector3 Mir(bool m, Vector3 v) => m ? RotorKinematics.MirrorX(v) : v;

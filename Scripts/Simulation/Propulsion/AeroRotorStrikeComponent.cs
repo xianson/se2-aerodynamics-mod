@@ -245,7 +245,7 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
     {
         if (!PerBladeOn) return;
         var row = BreakRow;
-        LiftShare = RotorStrike.RotorLiftShare(Cuts, p.RotorRadius, row.SplitR, row.StubR, row.Hinge);
+        LiftShare = RotorStrike.RotorLiftShare(Cuts, Wear, p.RotorRadius, row.SplitR, row.StubR, row.Hinge);   // (each blade's wear too)
         bool any = false; for (int k = 0; k < Cuts.Length; k++) any |= Cuts[k] != 0;
         Health = !any ? 1f : LiftShare <= 0f ? 0f : Math.Clamp(LiftShare, 0f, 0.999f);
     }
@@ -284,27 +284,52 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
         float R = p.RotorRadius, omega = RotorStrike.Omega(p.Rpm, R);
         Psi += omega * AeroPhysics.Dt;
         if (Psi > 2f * MathF.PI) Psi -= 2f * MathF.PI * MathF.Floor(Psi / (2f * MathF.PI));
-        ImbalanceN = 0f;
+        ImbalanceN = LiftImbalanceNm = 0f;
         if (!(omega > 0.05f)) return;
-        var row = BreakRow; bool any = false;
+        var row = BreakRow; bool any = false, uneven = false;
         for (int k = 0; k < Cuts.Length; k++)
         {
-            RotorStrike.Lost((RotorStrike.Cut)Cuts[k], row.A.Mass, row.A.ComRadius(row.Hinge), row.B.Mass, row.B.ComRadius(row.Hinge), out _, out float m);
+            var c = (RotorStrike.Cut)Cuts[k];
+            RotorStrike.Lost(c, row.A.Mass, row.A.ComRadius(row.Hinge), row.B.Mass, row.B.ComRadius(row.Hinge), out _, out float m);
             _lostMoment[k] = m; any |= m > 0f;
+            _lift[k] = RotorStrike.BladeLift(c, Wear[k], R, row.SplitR, row.StubR, row.Hinge);
+            _centroid[k] = RotorStrike.LiftCentroid(c, R, row.SplitR, row.StubR, row.Hinge);
+            uneven |= k > 0 && MathF.Abs(_lift[k] - _lift[0]) > 1e-4f;
         }
-        if (!any) return;
-        var f = RotorStrike.Imbalance(_lostMoment, Psi, omega, p.Rated);
-        if (f.LengthSquared() <= 0f) return;
+        if (!any && !uneven) return;
         var grid = _block.Grid?.Entity;
         if (grid == null || !GridPhysics.Alive(grid.Data)) return;
         var gwt = grid.Data.GetWorldTransform();
         var q = Data.GetWorldTransform().Orientation;
         RotorStrike.DiscBasis(p.Kind, out var u0, out var w0);
-        Vector3 u = Vector3.Transform(u0, q), w = Vector3.Transform(w0, q);
-        Vector3D hub = WorldTransform.Transform((Vector3D)_centre, in gwt) + (Vector3D)(Vector3.Transform(RotorStrike.HubAxis(p.Kind), q) * p.HubOffset);
-        RotorStrikeServer.QueueImbalance(this, grid, (u * f.X + w * f.Y) * AeroPhysics.Dt, hub);
-        ImbalanceN = f.Length();
+        Vector3 u = Vector3.Transform(u0, q), w = Vector3.Transform(w0, q), axis = Vector3.Transform(RotorStrike.HubAxis(p.Kind), q);
+        Vector3D hub = WorldTransform.Transform((Vector3D)_centre, in gwt) + (Vector3D)(axis * p.HubOffset);
+        if (any)
+        {
+            var f = RotorStrike.Imbalance(_lostMoment, Psi, omega, p.Rated);
+            if (f.LengthSquared() > 0f) { RotorStrikeServer.QueueImbalance(this, grid, (u * f.X + w * f.Y) * AeroPhysics.Dt, hub); ImbalanceN = f.Length(); }
+        }
+        if (uneven)
+        {
+            // (the uneven lift: each blade's thrust less the mean, along the axis at its lift centroid - forces summing to zero,
+            //  a moment turning with the blades; the thrust now from the propulsor's load of its rating)
+            float thrust = MathF.Max(p.Load, 0f) * MathF.Max(p.Rated, 0f) * p.Factor;
+            RotorStrike.LiftImbalance(_lift, _centroid, thrust, R, _excess);
+            float mx = 0f, my = 0f;
+            for (int k = 0; k < Cuts.Length; k++)
+            {
+                if (_excess[k] == 0f) continue;
+                float a = Psi + 2f * MathF.PI * k / Cuts.Length, ca = MathF.Cos(a), sa = MathF.Sin(a);
+                var at = hub + (Vector3D)((u * ca + w * sa) * _centroid[k]);
+                RotorStrikeServer.QueueImbalance(this, grid, axis * (_excess[k] * AeroPhysics.Dt), at);
+                mx += _excess[k] * _centroid[k] * ca; my += _excess[k] * _centroid[k] * sa;
+            }
+            LiftImbalanceNm = MathF.Sqrt(mx * mx + my * my);
+        }
     }
+    readonly float[] _lift = new float[RotorStrike.Blades], _centroid = new float[RotorStrike.Blades], _excess = new float[RotorStrike.Blades];
+    /// <summary>The last uneven-lift moment (N m; the readout).</summary>
+    public float LiftImbalanceNm;
 
     /// <summary>Harness (aeroget AeroRotorStrikeComponent.Summary): every striking rotor - its blades, strikes, repairs, rays and the
     /// probe's cost (mean us per probing tick); then the queue's totals (RotorStrikeServer.Status).</summary>
@@ -319,7 +344,7 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
                 foreach (var c in All)
                 {
                     double us = c.ProbeTicks > 0 ? c.ProbeTime * 1e6 / System.Diagnostics.Stopwatch.Frequency / c.ProbeTicks : 0.0;
-                    sb.Append($" | blades {c.Health:F2}{(c.Broken ? " BROKEN" : "")}{(c.PerBladeOn ? $" cuts {c.Cuts[0]}{c.Cuts[1]}{c.Cuts[2]} wear {c.Wear[0]:F2}/{c.Wear[1]:F2}/{c.Wear[2]:F2} lift {c.LiftShare:F2} imbalance {c.ImbalanceN:F0} N" : "")} strikes {c.Strikes} repairs {c.Repairs} rays {c.Rays} probe {us:F1} us/tick last {c.Last}");
+                    sb.Append($" | blades {c.Health:F2}{(c.Broken ? " BROKEN" : "")}{(c.PerBladeOn ? $" cuts {c.Cuts[0]}{c.Cuts[1]}{c.Cuts[2]} wear {c.Wear[0]:F2}/{c.Wear[1]:F2}/{c.Wear[2]:F2} lift {c.LiftShare:F2} imbalance {c.ImbalanceN:F0} N, uneven lift {c.LiftImbalanceNm:F0} N m" : "")} strikes {c.Strikes} repairs {c.Repairs} rays {c.Rays} probe {us:F1} us/tick last {c.Last}");
                 }
             }
             sb.Append(" || ").Append(RotorStrikeServer.Status);

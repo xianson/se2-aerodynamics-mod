@@ -262,6 +262,75 @@ public static class RotorStrike
         return s / cuts.Length;
     }
 
+    /// <summary>A worn blade lifts less (2026-10-23, the user: "track blade health separately and scale the force output by it"):
+    /// at wear w (0 new .. 1 about to snap) it keeps 1 - WearLiftLoss x w of its length's lift - a chipped, bent blade.</summary>
+    public static float WearLiftLoss = 0.35f;
+
+    /// <summary>A blade's lift share with its wear: LiftShare x (1 - WearLiftLoss x wear).</summary>
+    public static float BladeLift(Cut c, float wear, float R, float splitR, float stubR, float hinge)
+        => LiftShare(c, R, splitR, stubR, hinge) * (1f - WearLiftLoss * Math.Clamp(wear, 0f, 1f));
+
+    /// <summary>The rotor's lift share with every blade's wear: the mean of BladeLift.</summary>
+    public static float RotorLiftShare(ReadOnlySpan<byte> cuts, ReadOnlySpan<float> wear, float R, float splitR, float stubR, float hinge)
+    {
+        if (cuts.Length == 0) return 1f;
+        float s = 0f;
+        for (int i = 0; i < cuts.Length; i++) s += BladeLift((Cut)cuts[i], i < wear.Length ? wear[i] : 0f, R, splitR, stubR, hinge);
+        return s / cuts.Length;
+    }
+
+    /// <summary>Where a blade's lift acts (m from the axis): the centroid of an r^2 load from the hinge h to its reach e,
+    /// 3/4 (e^4 - h^4) / (e^3 - h^3). A stub: its hinge (no lift to place).</summary>
+    public static float LiftCentroid(Cut c, float R, float splitR, float stubR, float hinge)
+    {
+        float e = Reach(c, R, splitR, stubR);
+        if (c == Cut.Stub || !(e > hinge)) return hinge;
+        float e3 = e * e * e, h3 = hinge * hinge * hinge;
+        return 0.75f * (e3 * e - h3 * hinge) / (e3 - h3);
+    }
+
+    /// <summary>The UNEVEN LIFT (2026-10-23, the user: "add wobble if blades are unbalanced"): each blade's thrust less the mean,
+    /// T x (lift_k / sum - 1 / n), along the thrust axis at its lift centroid. Those forces sum to zero - a pure moment that turns
+    /// once a revolution with the blades. Into excess[k] (N, + along the thrust); their moment's size is capped at
+    /// LiftImbalanceMaxShare of thrust x radius. All zero when every blade lifts alike.</summary>
+    public static void LiftImbalance(ReadOnlySpan<float> lift, ReadOnlySpan<float> centroid, float thrust, float R, Span<float> excess)
+    {
+        int n = lift.Length; float sum = 0f;
+        for (int k = 0; k < n; k++) sum += MathF.Max(lift[k], 0f);
+        if (!(sum > 0f) || !(thrust > 0f)) { for (int k = 0; k < n; k++) excess[k] = 0f; return; }
+        float mx = 0f, my = 0f;
+        for (int k = 0; k < n; k++)
+        {
+            excess[k] = thrust * (MathF.Max(lift[k], 0f) / sum - 1f / n);
+            float a = 2f * MathF.PI * k / n;
+            mx += excess[k] * centroid[k] * MathF.Cos(a); my += excess[k] * centroid[k] * MathF.Sin(a);
+        }
+        float m = MathF.Sqrt(mx * mx + my * my), cap = LiftImbalanceMaxShare * thrust * MathF.Max(R, 0f);
+        if (m > cap && m > 0f) for (int k = 0; k < n; k++) excess[k] *= cap / m;
+    }
+    /// <summary>The most the uneven lift tilts the ship, as a share of thrust x rotor radius.</summary>
+    public static float LiftImbalanceMaxShare = 0.25f;
+
+    /// <summary>The visible WOBBLE of an unbalanced rotor (rad of disc tilt): the lost pieces' first moment, as a share of a whole
+    /// blade set's (n x the whole blade's), x the rpm^2 (the centrifugal pull), at most WobbleMaxDeg. Into (x, y) in the disc's
+    /// plane, turning with psi (blade k at psi + 2 pi k / n).</summary>
+    public static Vector2 Wobble(ReadOnlySpan<float> lostMoment, float bladeMoment, float psi, float rpm)
+    {
+        if (!(bladeMoment > 0f)) return Vector2.Zero;
+        float x = 0f, y = 0f;
+        for (int k = 0; k < lostMoment.Length; k++)
+        {
+            float a = psi + 2f * MathF.PI * k / lostMoment.Length;
+            x += lostMoment[k] * MathF.Cos(a); y += lostMoment[k] * MathF.Sin(a);
+        }
+        float r = Math.Clamp(rpm, 0f, 1f), s = WobbleMaxDeg * MathF.PI / 180f * r * r / bladeMoment;
+        var v = new Vector2(-x, -y) * s;
+        float l = v.Length(), cap = WobbleMaxDeg * MathF.PI / 180f;
+        return l > cap && l > 0f ? v * (cap / l) : v;
+    }
+    /// <summary>The visible wobble's most (deg).</summary>
+    public static float WobbleMaxDeg = 3f;
+
     /// <summary>The mass a blade has lost (kg) and its first moment about the axis (kg m: mass x the lost pieces' centre radius).</summary>
     public static void Lost(Cut c, float massA, float comA, float massB, float comB, out float mass, out float moment)
     {
