@@ -31,6 +31,8 @@ was flown in game for this release. The commit hashes are on the integration bra
 - The nozzle and segment terminals lose their read-only fields (burning, power level, segments, propellant, burn time; in a
   motor stack, propellant): they showed as switches and boxes. The nozzle keeps Ignite and Thrust Vectoring; Thrust Override
   before ignition is still its power.
+- The nozzle's own On switch ignites it (the Ignite button is gone); Thrust Override starts at 100 %. Its exhaust is drawn 2x
+  bigger.
 
 ## Unreleased - pad-foot landing gear
 

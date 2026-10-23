@@ -8,8 +8,8 @@ using Keen.VRage.Library.Serialization.Validation;
 namespace AeroMod;
 
 /// <summary>
-/// A solid rocket NOZZLE's terminal (2026-10-17): Ignite (a [Button]: also a toolbar action - as the gear's Toggle), greyed out
-/// while it cannot light (burning, spent, no motor). (2026-10-23, the user: "remove all the shit stuff that is not actually a
+/// A solid rocket NOZZLE's terminal (2026-10-17): Thrust Vectoring and its cone. (2026-10-23, the user: "get rid of ignite, just
+/// have on/off" - the block's own switch ignites it: AeroSolidNozzleComponent; the Ignite button is gone.) (2026-10-23, the user: "remove all the shit stuff that is not actually a
 /// control": the read-only burning / power level / segments / propellant / burn-left fields are gone - they showed as switches and
 /// input boxes.) Host / single player, as every mod panel (DetailModelPairing). The game's own thruster panels stay:
 /// its on / off does nothing (put back); its thrust override, BEFORE ignition, sets the power level (50..100 %, unset 100 %) -
@@ -26,8 +26,8 @@ namespace AeroMod;
 public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
 {
     static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo _typeInfo = ModDetailTypeInfo.Build<AeroSolidNozzleBlockDetailModel>(
-        "Solid rocket nozzle: burns the segments stacked on its top face. Thrust Override before ignition sets its power (50-100 %). Once lit it burns until empty.",
-        nameof(CanIgnite), nameof(GimbalOn), nameof(GimbalDeg));
+        "Solid rocket nozzle: turn it on to ignite - it burns the segments stacked on its top face until they are empty. Thrust Override before ignition sets its power (50-100 %).",
+        nameof(GimbalOn), nameof(GimbalDeg));
     public override Keen.VRage.Library.Serialization.AccessibleTypeInfo GetTypeInfo() => _typeInfo;
     /// <summary>The panel's order as listed (the game finds a type's member order here - ModDetailTypeInfo).</summary>
     public static class TypeInfoHolder { public static readonly Keen.VRage.Library.Serialization.AccessibleTypeInfo Value = _typeInfo; }
@@ -36,14 +36,6 @@ public partial class AeroSolidNozzleBlockDetailModel : BlockDetailModel
     private AeroSolidNozzleComponent _nozzle;
 
     public AeroSolidNozzleBlockDetailModel() { DetailModelPairing.Pair(this, _nozzle); }
-
-    [HideInInspector]
-    public bool CanIgnite => _nozzle != null && _nozzle.CanIgnite;
-
-    [Label("Ignite")]
-    [Button(null)]
-    [WritableInInspectorWhen("CanIgnite", WritableWhen.True)]
-    public void Ignite() { _nozzle?.Ignite(); OnPropertyChanged(nameof(CanIgnite)); }
 
     /// <summary>Thrust vectoring on (the gimbal; AeroSolidNozzleComponent.GimbalOn).</summary>
     [Label("Thrust Vectoring")]

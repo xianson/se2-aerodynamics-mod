@@ -175,7 +175,7 @@ KINDS = {
     "SolidSegment_": ("5e00", "Solid Rocket Segment", "SolidSegment", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
                       "Solid propellant for a solid rocket motor. Stack segments of the same size straight on top of a solid rocket nozzle; a segment that is not in such a stack does nothing. Each one adds about 8 s of burn and gets lighter as it burns. It cannot be refilled."),
     "SolidNozzle_": ("5f00", "Solid Rocket Nozzle", "SolidNozzle", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
-                     "The nozzle of a solid rocket motor: the segments of its size stacked on its top face are its propellant. Ignite it from its terminal or a toolbar: it burns at full thrust until the stack is empty and cannot be throttled or shut down. Your thrusters, dampeners and flight controller never use it. Works in air and in space (about 10 % stronger in vacuum)."),
+                     "The nozzle of a solid rocket motor: the segments of its size stacked on its top face are its propellant. Turn it on to ignite: it burns until the stack is empty and cannot be shut down. Thrust Override (before ignition) sets its power, 50-100 %. Works in air and in space."),
 }
 # per block: static thrust (N) and PCU - the tuning table
 # the helicopter rotors (2026-10-17, the user: "rotor thrust proportional to disc area"): one disc loading for every size,

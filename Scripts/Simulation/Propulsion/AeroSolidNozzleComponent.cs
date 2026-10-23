@@ -17,8 +17,8 @@ namespace AeroMod;
 ///   server  its MOTOR: the segments of its size stacked straight on its top face (SolidRocket.FindStack - the chain its conveyor port
 ///           links, searched again when a solid block comes, goes, moves, turns, breaks or is repaired - AeroSolidSegmentComponent.
 ///           Version - or every RecheckTicks), and a nozzle at the stack's far end (SolidRocket.OtherEnd: one grain, the two lit
-///           nozzles share its factor); IGNITION (Ignite: the terminal / toolbar button, AeroSolidNozzleBlockDetailModel; DevIgnite
-///           from the harness): SolidRocket.Step writes the block's switch (PowerableBlockComponent.Enabled - off until lit: the game's
+///           nozzles share its factor); IGNITION (the block's own switch turned on while idle - 2026-10-23; DevIgnite from the
+///           harness): SolidRocket.Step writes the block's switch (PowerableBlockComponent.Enabled - off until lit: the game's
 ///           movement, dampeners and hover never fire a switched-off thruster) and its thrust override (ThrusterComponent.
 ///           ThrustOverride, the game's synced property: the GAME's thrust, applied as any overridden thruster's - no force of ours), to
 ///           the share of its ThrustPower that gives SolidRocket.ThrustAt(the air: AeroGridComponent.LastDensity, the game's air
@@ -222,6 +222,11 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         TargetOverride = SolidRocket.OverrideFor(CommandThrust, ThrustPower, Efficiency);
         // the propellant is the game's: what it can still burn (less than one tick of its rate: spent - the game cut the thrust there)
         float usable = SolidRocket.Usable(total, Row.Thrust, AeroPhysics.Dt);
+        // THE SWITCH IS THE IGNITION (2026-10-23, the user: "get rid of ignite, just have on/off"): idle, the mod holds the block
+        // switched off (the game's movement and dampeners never fire it), so a switch found ON while idle is the player turning it on -
+        // it asks to light (SolidRocket.Step: no propellant or broken - it is put back off; else the player's override off and the
+        // switch off in one tick, then on, then the motor's own override - the same writes as an Ignite)
+        if (Motor.Phase == SolidRocket.Phase.Idle && _pb != null && _pb.Enabled) Motor.Request = true;
         var want = SolidRocket.Step(ref Motor, usable, _pb == null || _pb.Functional, TargetOverride, _tc?.ThrustOverride ?? 0f);
         // the burn follows the thrust (the same impulse at any level): the share of the game's burn ticks FuelTick lets through
         FuelDutyNow = SolidRocket.Burning(Motor.Phase) ? SolidRocket.BurnDuty(StackFactor, frac) : 0f;
@@ -235,7 +240,14 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
     void Apply(SolidRocket.Want w)
     {
         if (_pb != null && _pb.Enabled != w.Enabled) _pb.Enabled = w.Enabled;
-        if (_tc == null || w.Keep) return;
+        if (_tc == null) return;
+        if (w.Keep)
+        {
+            // idle: the override is the player's power level - unset (0) shown as its meaning, 100 % (the user, 2026-10-23: "default
+            // thrust override 100"); written only while switched off (Keep is idle: off), which books nothing
+            if (!(_tc.ThrustOverride > 0f) && (_pb == null || !_pb.Enabled)) _tc.ThrustOverride = 1f;
+            return;
+        }
         bool has = Data.Has<ThrusterOverrideData>();
         float cur = _tc.ThrustOverride;
         if (!(w.Override > 0f)) { if (has || cur > 0f) _tc.ThrustOverride = 0f; return; }

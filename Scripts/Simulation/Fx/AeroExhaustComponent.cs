@@ -50,6 +50,9 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
     /// is made when read - nothing per frame).</summary>
     static ExhaustLaw.RamjetIn _lri; static ExhaustLaw.RamjetOut _lro; static ExhaustLaw.SolidIn _lsi; static ExhaustLaw.SolidOut _lso;
     static string _lrn = "-", _lsn = "-"; static bool _lrs;
+    /// <summary>The solid nozzles' exhaust drawn this much bigger than their exit radius gives (2026-10-23, the user: "size up the
+    /// particle 2x").</summary>
+    public const float SolidSize = 2f;
     public static string LastRamjet => $"{_lrn}: M {_lri.Mach:F2} share {_lri.Share:F2} factor {_lri.Factor:F2}{(_lri.Unstarted ? " UNSTARTED" : "")} -> flame {_lro.Flame:F3} len {_lro.FlameLength:F1} r glow {_lro.Glow:F1} diamonds {_lro.Diamonds} every {_lro.DiamondSpacing:F2} r strength {_lro.DiamondStrength:F2} size x{_lro.DiamondScale:F2}";
     public static string LastSolid => $"{_lsn}: ratio {_lsi.Ratio:F2} p {_lsi.Pressure:F2} v {_lsi.Speed:F0} -> plume {_lso.Plume:F3} len {_lso.PlumeLength:F1} r alpha {_lso.CoreAlpha:F2} balloon {_lso.Balloon:F2} x{_lso.BalloonScale:F2} smoke {_lso.Smoke:F2} alpha {_lso.SmokeAlpha:F2} stretch {_lso.SmokeStretch:F1}{(_lrs ? " SPUTTER" : "")}";
 
@@ -169,7 +172,7 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
         ExhaustLaw.SolidIn i = default;
         i.Ratio = DevThrust >= 0f ? DevThrust : (full > 0f ? n.ThrustNow / full : 0f);
         i.Pressure = DevPressure >= 0f ? DevPressure : (n != null ? n.PressureRatio : 1f);
-        i.Scale = _row.ExitRadius / ExhaustBlocks.RefRadius;
+        i.Scale = _row.ExitRadius / ExhaustBlocks.RefRadius * SolidSize;
         i.Speed = Speed(now, freq);
         ExhaustLaw.Solid(ref _ss, in i, dt, ref _so);
         bool lit = _so.Plume > 0.002f || _so.Smoke > 0.002f || _so.Balloon > 0.002f;
@@ -271,7 +274,7 @@ public partial class AeroExhaustComponent : Component, IInSceneListener
         if (System.Threading.Volatile.Read(ref Active) >= MaxEngines) { Refused++; Status = $"{MaxEngines} engines already have exhaust"; return false; }
         if (!Pose()) { Status = "no render parent for " + _row.Name; return false; }
         _placeAt = now + (long)(freq * PlaceEvery);
-        float sc = _row.ExitRadius / ExhaustBlocks.RefRadius;
+        float sc = _row.ExitRadius / ExhaustBlocks.RefRadius * (_row.Kind == ExhaustBlocks.Kinds.Ramjet ? 1f : SolidSize);
         var rot = _bq * _row.Turn;
         var at = new RelativeTransform(Place(_row.Exhaust), rot);
         string why;
