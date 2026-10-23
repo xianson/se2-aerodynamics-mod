@@ -67,7 +67,7 @@ public static partial class SettingsTab
     internal static void Ticked(Session session)
     {
         if (session == null) return;
-        if (!ReferenceEquals(session, _session)) Log.Default?.Info($"{LogTag} settings tab health: ticking (session {session.GetHashCode():x})");
+        if (!ReferenceEquals(session, _session)) { StopTimer(); Log.Default?.Info($"{LogTag} settings tab health: ticking (session {session.GetHashCode():x})"); }
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (!ReferenceEquals(session, _session))
         {
@@ -84,6 +84,10 @@ public static partial class SettingsTab
         }
         var why = _toastWhy;
         if (why != null && !_toastShown) { _toastShown = true; _toastWhy = null; Toast(session, why); }
+        // (the UI thread's own timer, once per session: it keeps checking while the game is paused - the pause menu pauses the
+        //  session on 4.0.0.3159 and this tick stops with it, so Options never saw our tab. Without the timer: posted from here)
+        if (_timer == null && !_timerTried) StartTimer();
+        if (_timer != null) return;
         if (!AvaloniaReflect.Post(_uiTick)) Fail("no UI dispatcher (" + AvaloniaReflect.Why + ")", true);
         else if (!_uiReached && ++_postsUnanswered == 40) Fail("the UI thread never ran the check (40 posts, 10 s)", true);
     }
@@ -128,6 +132,31 @@ public static partial class SettingsTab
         public string LockShown = "?";
     }
     sealed class GroupUi { public string Name; public object Reason; }
+
+    static volatile IDisposable _timer; static bool _timerTried, _unloadHooked;
+    static readonly Func<bool> _timerTick = TimerTick;
+
+    static void StartTimer()
+    {
+        _timerTried = true;
+        if (!_unloadHooked) { _unloadHooked = true; ScriptResultsCleanup.OwnProjectUnloading += StopTimer; }   // (never left running into an unloaded mod)
+        _timer = AvaloniaReflect.UiTimer(_timerTick, TimeSpan.FromMilliseconds(250));
+        if (_timer != null) Log.Default?.Info($"{LogTag} settings tab health: UI timer running (checks while the game is paused)");
+        else Fail("no UI timer (" + AvaloniaReflect.Why + ") - the tab only shows while the game runs", false);
+    }
+
+    static void StopTimer()
+    {
+        var t = _timer; _timer = null; _timerTried = false;
+        try { t?.Dispose(); } catch { }
+    }
+
+    static bool TimerTick()
+    {
+        if (_timer == null) return false;
+        UiTick();
+        return true;
+    }
 
     static volatile bool _uiReached;
     static int _postsUnanswered;

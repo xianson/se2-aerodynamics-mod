@@ -59,6 +59,28 @@ public static class AvaloniaReflect
     }
 
     /// <summary>Run on Avalonia's UI thread (false: no dispatcher).</summary>
+    /// <summary>Avalonia's DispatcherTimer.Run(Func&lt;bool&gt;, TimeSpan, priority = default): f on the UI thread every
+    /// interval while it returns true, the returned IDisposable stops it. It runs while the GAME IS PAUSED (2026-10-23, game
+    /// 4.0.0.3159: the pause menu pauses the session, so nothing a session update posts runs while Options is open). Null
+    /// (and Why) when not found or it threw.</summary>
+    public static IDisposable UiTimer(Func<bool> f, TimeSpan every)
+    {
+        Look();
+        var t = _base?.GetType("Avalonia.Threading.DispatcherTimer");
+        MethodInfo run = null;
+        foreach (var m in t?.GetMethods(BindingFlags.Public | BindingFlags.Static) ?? Array.Empty<MethodInfo>())
+        {
+            var ps = m.GetParameters();
+            if (m.Name == "Run" && ps.Length >= 2 && ps[0].ParameterType == typeof(Func<bool>) && ps[1].ParameterType == typeof(TimeSpan)) { run = m; break; }
+        }
+        if (run == null) { Miss(t == null ? "no Avalonia.Threading.DispatcherTimer" : "no DispatcherTimer.Run(Func<bool>, TimeSpan)"); return null; }
+        var pi = run.GetParameters(); var args = new object[pi.Length]; args[0] = f; args[1] = every;
+        for (int k = 2; k < pi.Length; k++)
+            args[k] = pi[k].HasDefaultValue && pi[k].DefaultValue != null ? pi[k].DefaultValue : pi[k].ParameterType.IsValueType ? Activator.CreateInstance(pi[k].ParameterType) : null;
+        try { return run.Invoke(null, args) as IDisposable; }
+        catch (Exception e) { Miss("DispatcherTimer.Run threw " + (e.InnerException ?? e).GetType().Name); return null; }
+    }
+
     public static bool Post(Action a)
     {
         Look();
