@@ -41,8 +41,8 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   |---|---|---|---|---|---|
   | Retractable Gear (Plate) 0.5 m | 0.5 m | Magnetic plate 0.5 m | 0.50 x 0.25 x 0.50 | 150 kg | 1.5 t a gear |
   | Retractable Gear (Pad) 1 m | 1 m | Landing gear (1 m) | 0.50 x 1.00 x 1.00 | 250 kg | 5 t |
-  | Retractable Gear (Pad) 1.5 m | 1.5 m | Landing gear (5 m), x0.3 | 0.76 x 1.50 x 1.50 | 600 kg | 20 t |
-  | Retractable Gear (Plate) 2.5 m | 2.5 m | Magnetic plate 2.5 m | 2.50 x 0.51 x 2.50 | 1200 kg | 60 t |
+  | Retractable Gear (Pad) 1.5 m | 1.5 m | Landing gear (1 m), x1.5 | 0.75 x 1.50 x 1.50 | 600 kg | 20 t |
+  | Retractable Gear (Pad) 2.5 m | 2.5 m | Landing gear (5 m), x0.5 | 1.26 x 2.50 x 2.50 | 1200 kg | 60 t |
 
   Stroke 0.125 / 0.25 / 0.4 / 0.6 m. "Sized for": the sag at the default stiffness stays within half the stroke.
 - **Wheel shocks (a stopgap until the game's wheels take impacts better):** every wheel and gear gets an airshock (firm

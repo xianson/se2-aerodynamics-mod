@@ -23,6 +23,10 @@ was flown in game for this release. The commit hashes are on the integration bra
 - The hinge sits at the centre of the pad's ankle (the top-corner block) on the rod's end (was 0.08 m below the rod, at the pad's
   top centre); the wheel stands under the pad's centre. The plates hinge at their top centre. Both pads face the same way (the
   1.5 m turned to match the 1 m: the vanilla meshes are mirrored).
+- Fixed: the rod split from the leg and tilted (the client took the rod for the foot: both spawned at the hub). The foot's
+  anchor now sits 0.1 m along the hinge line.
+- The 2.5 m is a pad: the vanilla 5 m landing gear at half size (was the 2.5 m magnetic plate); the 1.5 m is the 1 m pad at 1.5x.
+- A pad's wheel never rolls (its axle friction held).
 - The suspension's wheel is its own invisible model (no tyre in the build preview or projections; was the vanilla wheel hidden
   at run time).
 - Offline: `Tests/GearTests` (the ankle's IK, every variant's definitions and geometry, sag). Not flown in game yet.

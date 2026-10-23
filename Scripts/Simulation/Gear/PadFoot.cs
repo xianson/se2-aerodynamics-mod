@@ -21,4 +21,6 @@ public sealed class PadFootSpec
     /// <summary>The hidden wheel's mass (kg; its WheelColliderDefinition's), the weight one gear is sized for (kg) and the suspension's
     /// stroke (m, the housing's line of travel).</summary>
     public float WheelMass, RatedLoad, Stroke;
+    /// <summary>The axle friction (N m) held on a pad's wheel: it never rolls.</summary>
+    public const float AxleHoldTorque = 1e9f;
 }

@@ -65,12 +65,14 @@ VARIANTS = [
     dict(size="100", sid="9e22", wid="9e32", wheel="100", name="Retractable Gear (Pad)", model="LandingGear100",
          dir=r"LandingGear\LandingGear\100\Models\NonFractured", lods=["LandingGear100", "LandingGear100_LOD1", "LandingGear100_LOD2"],
          lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=1.0, mass=250, rated=5000, ankle=1),
-    dict(size="150", sid="9e23", wid="9e33", wheel="150", name="Retractable Gear (Pad)", model="LandingGear500",
+    # (2026-10-23, the user: "500 is more like a 2.5 one ... move the 500 to the 2.5 m": the 2.5 m is LandingGear500 at half size, a
+    #  2.5 m pad; the 1.5 m takes the 1 m pad at 1.5x - MagneticPlate250 is no longer used)
+    dict(size="150", sid="9e23", wid="9e33", wheel="150", name="Retractable Gear (Pad)", model="LandingGear100",
+         dir=r"LandingGear\LandingGear\100\Models\NonFractured", lods=["LandingGear100", "LandingGear100_LOD1", "LandingGear100_LOD2"],
+         lo=(-0.251, -0.501, -0.500), hi=(0.251, 0.501, 0.502), scale=1.5, mass=600, rated=20000, ankle=1),
+    dict(size="250", sid="9e24", wid="9e34", wheel="250", name="Retractable Gear (Pad)", model="LandingGear500",
          dir=r"LandingGear\LandingGear\500\Models\NonFractured", lods=["LandingGear500", "LandingGear500_LOD1", "LandingGear500_LOD2"],
-         lo=(-1.263, -2.500, -2.505), hi=(1.263, 2.504, 2.501), scale=0.3, mass=600, rated=20000, ankle=-1),
-    dict(size="250", sid="9e24", wid="9e34", wheel="250", name="Retractable Gear (Plate)", model="MagneticPlate250",
-         dir=r"MagneticPlates\250\Models\NonFractured", lods=["MagneticPlate250", "MagneticPlate250_LOD1", "MagneticPlate250_LOD2"],
-         lo=(-1.251, -0.255, -1.251), hi=(1.251, 0.251, 1.251), scale=1.0, mass=1200, rated=60000, ankle=0),
+         lo=(-1.263, -2.500, -2.505), hi=(1.263, 2.504, 2.501), scale=0.5, mass=1200, rated=60000, ankle=-1),
 ]
 KIND, GROUP = G("9e20", 0x20), G("9e20", 0x21)
 SUBCATEGORY = "ae200001-ae00-0000-0002-000000000001"   # (the Wheeled Landing Gear's)
@@ -93,6 +95,9 @@ def housing(size):
 
 
 FOOT_DROP = 0.0    # (GearLayout.FootDrop: the ankle on the rod's hub - 2026-10-23, was 0.08 below it)
+FOOT_SIDE = 0.1    # (GearLayout.FootSide: the foot's dummy this far along the hinge axis (+X) from the ankle, its mesh shifted back by
+                   #  as much - the same hinge line, but the client tells the foot from the rod (both would spawn at the hub) by where
+                   #  each spawned: AeroGearAnimComponent.FindParts, 5 cm)
 WHEEL_R = {"100": 0.5, "150": 0.75, "250": 1.25}   # (the vanilla wheels' radii: the hidden wheel's)
 DT_FOOT = G("9e20", 0x30)                            # (the foot subpart's dummy type)
 
@@ -111,24 +116,26 @@ def layout(v):
     # -Z, from their vertices); the plates (no ankle, 0) hinge at their top centre. Model space: LOD0 raw + its translation.
     a = v["ankle"]; mid = tuple((lo[i] + hi[i]) / 2 for i in range(3)); span = tuple(hi[i] - lo[i] for i in range(3))
     top = (mid[0] + t0[0], hi[1] - (span[1] / 8 if a else 0.0) + t0[1], (mid[2] if not a else (hi[2] - span[2] / 8 if a > 0 else lo[2] + span[2] / 8)) + t0[2])
-    T = tuple(-s * c for c in top)
     w = tuple(s * span[i] for i in range(3)); H = s * (top[1] - (lo[1] + t0[1]))   # (H: the ankle down to the sole)
     # ONE orientation for every pad (2026-10-23, the user: "whatever the convention to make this the standard orientation" - the 1 m's):
     # the ankle at the block's +Z, the pad reaching toward -Z (forward, away from the leg). Keen's meshes are mirrored front to back
     # (LandingGear500's ankle is at -Z), so a -Z ankle is turned half a turn about Y - by the foot's dummy (the subpart's rest pose).
     foot_q = (0.0, 1.0, 0.0, 0.0) if a < 0 else (0.0, 0.0, 0.0, 1.0)
     pad_dz = s * ((mid[2] + t0[2]) - top[2]) * (-1 if a < 0 else 1)  # (the pad's centre from the ankle, block Z: the wheel stands under it)
+    side = -FOOT_SIDE if a >= 0 else FOOT_SIDE                       # (the mesh's shift back to the ankle, in its own X: turned, X flips)
+    T = (-s * top[0] + side, -s * top[1], -s * top[2])
     hd = housing(v["size"])
     rest_p0, rest_q, travel = hd["Wheel Rest Position"]
     hub = hd["GearRodHub"][0]; hinge = hd["GearLegHinge"][0]
     d = tuple(hub[i] - hinge[i] for i in range(3)); dl = math.sqrt(sum(c * c for c in d)); legdir = tuple(c / dl for c in d)
-    foot = tuple(hub[i] + legdir[i] * FOOT_DROP for i in range(3))
-    sole = (foot[0], foot[1] - H, foot[2])
+    ankle = tuple(hub[i] + legdir[i] * FOOT_DROP for i in range(3))
+    foot = (ankle[0] + FOOT_SIDE, ankle[1], ankle[2])                 # (the foot's dummy: on the hinge line, FOOT_SIDE along it)
+    sole = (ankle[0], ankle[1] - H, ankle[2])
     r = WHEEL_R[v["wheel"]]
     centre = (sole[0], sole[1] + r, sole[2] + pad_dz)              # (the wheel's centre, idle: its bottom on the sole, under the pad's centre)
     up = qrot(rest_q, (0.0, 1.0, 0.0))
     rest_p = tuple(centre[i] + travel / 2 * up[i] for i in range(3))   # (the suspension's idle point is rest - travel/2 x up)
-    return dict(T=T, t0=t0, H=H, size=w, pad_dz=pad_dz, foot_q=foot_q, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
+    return dict(T=T, t0=t0, H=H, size=w, pad_dz=pad_dz, foot_q=foot_q, ankle=ankle, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
 
 
 def vanilla_model(v):

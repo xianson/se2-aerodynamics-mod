@@ -31,7 +31,12 @@ public sealed class GearLayout
     /// where the foot subpart's dummy sits (and so how it is told from the rod) and about which it turns (FootIk).</summary>
     public bool HasFoot;
     public const float FootDrop = 0f;
-    public Vector3 FootPoint => DeployedHub + LegDirection * FootDrop;
+    /// <summary>The foot's dummy (where its subpart spawns, its origin) is FootSide along the hinge axis from the ankle - on the same
+    /// hinge line (its mesh shifted back by as much, gen_padgear_defs.py), so it is not taken for the rod, which spawns at the hub
+    /// (FindParts tells them apart by where they spawned).</summary>
+    public const float FootSide = 0.1f;
+    public Vector3 AnklePoint => DeployedHub + LegDirection * FootDrop;
+    public Vector3 FootPoint => AnklePoint + Vector3.Normalize(HingeAxis) * FootSide;
     /// <summary>The actuator's anchors (with the gear down): on the block, and on the leg.</summary>
     public Vector3 ActuatorBase, ActuatorLegEnd;
     public DoorLayout[] Doors = Array.Empty<DoorLayout>();
