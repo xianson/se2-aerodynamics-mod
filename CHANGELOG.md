@@ -3,6 +3,12 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - control surface sizes
+
+- Control surfaces now come in 0.25, 0.5, 1, 1.5 and 2.5 m blocks (3 x 3 x 1 each). The new sizes are the same flap, scaled.
+- The G menu shows the 2.5 and 0.5 m ones by block size (they were listed as 7.5 and 1.5 m).
+- Not checked in game yet.
+
 ## Unreleased - turboprop idle
 
 - Turboprops idle at 35 % rpm (was 75 %): the blades turn visibly at idle and blur in as you throttle up (about 3 s). Thrust

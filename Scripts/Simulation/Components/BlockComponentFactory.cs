@@ -132,7 +132,7 @@ public class BlockComponentFactory
     /// </summary>
     /// <summary>Blocks whose component models ALL their air (lift, drag): their cells stay out of the voxel surface -
     /// else the 3x3x1 control surface, a flat plate, was also a wing (lift twice) and a bluff body.</summary>
-    static readonly HashSet<Guid> _selfModelled = new() { AeroBlockGuids.ControlSurface_3x3x1_Large, AeroBlockGuids.ControlSurface_3x3x1_Small,
+    static readonly HashSet<Guid> _selfModelled = new(AeroBlockGuids.ControlSurfaces3x3x1) {
         AeroBlockGuids.Airbrake_3x3x3_Large, AeroBlockGuids.Airbrake_3x3x3_Small };   // (the airbrake: its box is reserved room, not a body)
 
     /// <summary>True for a block the surface must leave out (its component models it whole).</summary>

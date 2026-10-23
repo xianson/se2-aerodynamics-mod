@@ -15,6 +15,7 @@
         "Icon": "{G}5e8eb819-6527-57a9-959c-f38315769e45"
       },
       "PlacerDefinition": "ae200001-ae00-c500-0050-000000000001",
+      "DisplaySizeOverride": 2.5,
       "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
       "Recipe": "6f209028-b561-4d9e-a1c8-ab9994b0a7e4",
       "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4",

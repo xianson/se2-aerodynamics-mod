@@ -1,0 +1,237 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.118"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Models.ModelAssetData",
+  "$Value": {
+    "MaterialAssignments": [
+      {
+        "MaterialName": "AtlasDecal_Parts01",
+        "MaterialReference": "0d1f9867-1aee-4388-b5bb-4a7ce0cdc5e2"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Parts02_Subpart",
+        "MaterialReference": "8affab53-a343-4c9d-b513-2f82180c0326"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers01_Subpart",
+        "MaterialReference": "2a953884-e538-4bec-a334-1fef9d3712ce"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Stickers02_Subpart",
+        "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims01_Subpart",
+        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "AtlasDecal_Trims03_Subpart",
+        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
+      },
+      {
+        "MaterialName": "BrushedMetal_Subpart",
+        "MaterialReference": "0c3be477-8bff-4e2c-8a0e-d7d842905ae9"
+      },
+      {
+        "MaterialName": "ConveyorsAtlas",
+        "MaterialReference": "3020a2ff-e3b5-4990-8f96-6da1338c3de2"
+      },
+      {
+        "MaterialName": "FracturedMaterial01",
+        "MaterialReference": "0f2772fd-72d6-4ee9-9211-38d1781ba8b9"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalColorable_Subpart",
+        "MaterialReference": "be89c5c3-25ce-42e9-93f9-72ba32c3d8a7"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      },
+      {
+        "MaterialName": "PaintedMetalDarker_Subpart",
+        "MaterialReference": "cb933a73-bce4-4224-a7d8-c5083935dac8"
+      }
+    ],
+    "MaterialStateOverrides": [],
+    "GeometryAssets": [
+      {
+        "AssetReference": "{G}8be4d77d-4704-54cc-8f50-b63d5aaf3dff",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts02_Subpart",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers01_Subpart",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Stickers02_Subpart",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims01_Subpart",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Trims03_Subpart",
+          "BrushedMetal_Subpart",
+          "ConveyorsAtlas",
+          "FracturedMaterial01",
+          "PaintedMetalColorable",
+          "PaintedMetalColorable_Subpart",
+          "PaintedMetalDarker",
+          "PaintedMetalDarker_Subpart"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}bdfef88f-58c0-518f-b68d-2cb6d72ceda6",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts02_Subpart",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers01_Subpart",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Stickers02_Subpart",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims01_Subpart",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Trims03_Subpart",
+          "BrushedMetal_Subpart",
+          "ConveyorsAtlas",
+          "FracturedMaterial01",
+          "PaintedMetalColorable",
+          "PaintedMetalColorable_Subpart",
+          "PaintedMetalDarker",
+          "PaintedMetalDarker_Subpart"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}33fad28c-aabc-5a0a-a56a-2b8d76d73fef",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts02_Subpart",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers01_Subpart",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Stickers02_Subpart",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims01_Subpart",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Trims03_Subpart",
+          "BrushedMetal_Subpart",
+          "ConveyorsAtlas",
+          "FracturedMaterial01",
+          "PaintedMetalColorable",
+          "PaintedMetalColorable_Subpart",
+          "PaintedMetalDarker",
+          "PaintedMetalDarker_Subpart"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      },
+      {
+        "AssetReference": "{G}1c2fb855-78f7-58ec-b2d2-e47481e25525",
+        "UsedMaterials": [
+          "AtlasDecal_Parts01",
+          "AtlasDecal_Parts02",
+          "AtlasDecal_Parts02_Subpart",
+          "AtlasDecal_Stickers01",
+          "AtlasDecal_Stickers01_Subpart",
+          "AtlasDecal_Stickers02",
+          "AtlasDecal_Stickers02_Subpart",
+          "AtlasDecal_Trims01",
+          "AtlasDecal_Trims01_Subpart",
+          "AtlasDecal_Trims03",
+          "AtlasDecal_Trims03_Subpart",
+          "BrushedMetal_Subpart",
+          "ConveyorsAtlas",
+          "FracturedMaterial01",
+          "PaintedMetalColorable",
+          "PaintedMetalColorable_Subpart",
+          "PaintedMetalDarker",
+          "PaintedMetalDarker_Subpart"
+        ],
+        "Transformations": {
+          "Translation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Scale": 1
+        }
+      }
+    ],
+    "SnapToGrid": false,
+    "SuggestedModelSize": null,
+    "CollisionShapesAsset": {
+      "AssetReference": "{G}20c4494a-d821-589b-93b5-dd9b792c4135",
+      "GroupsByFracture": [],
+      "GeneratePreciseCollider": true
+    }
+  }
+}

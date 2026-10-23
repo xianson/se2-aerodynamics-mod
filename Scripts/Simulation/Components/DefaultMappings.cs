@@ -40,7 +40,7 @@ public static class DefaultMappings
         // The 3x3x1 control surfaces: their models put the span (the hinge) along the block's Forward, the chord aft
         // along its Right (Cross(Forward, Up)), the thickness along Up. No canonicalization: the mixer and the surface
         // take their signs from the geometry and the airflow, so the block works however it is placed.
-        foreach (var guid in new[] { AeroBlockGuids.ControlSurface_3x3x1_Large, AeroBlockGuids.ControlSurface_3x3x1_Small })
+        foreach (var guid in AeroBlockGuids.ControlSurfaces3x3x1)
             factory.RegisterByGuid(guid, info => new ControlSurface(
                 info.Position,
                 info.BlockPosition,

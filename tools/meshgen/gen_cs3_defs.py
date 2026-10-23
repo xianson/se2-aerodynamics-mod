@@ -11,19 +11,26 @@ the flap subpart only spawns on a functional block; the powerable one adds the g
 gyroscope: PowerableBlockDefinition.ConsumedResource, kW), its BlockModelDefinition pointing at our NonFractured / Fractured / Deformed models and
 carrying the hinge dummy; the client composition adds ConditionalSubPartsComponent, which spawns the flap prefab at the
 dummy (the mod's AeroFlapComponent turns it). Coordinates: VRage = Blender (x, z, -y); body LOD0 shifted (0.125, 0.125,
-0.125) onto the 0.25 m cell grid; the hinge dummy at Blender (-2.5, 0, 0) x size + that shift.
+0.125) onto the 0.25 m cell grid (no shift for an odd number of cells: the 0.25 m one, 3 x 1 x 3); the hinge dummy at
+Blender (-2.5, 0, 0) x size + that shift.
+
+Sizes (2026-10-23): 3 x 3 x 1 blocks of 0.25 / 0.5 / 1 / 1.5 / 2.5 m, each the large model scaled whole (make_small.py
+<out.blend> <scale> <name> on the large .blend, then export_models.py and render_icon.py on that copy); the game shows the
+block size (DisplaySizeOverride).
 """
 import json, os, shutil, uuid
 
 EXPORT = r"D:\Blender Brojects\SE2\ControlSurface\Export"
-BLOCKS = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod"   # (the block content lives in this mod since 2026-10-17: the "Aerodynamics Mod Blocks" companion was folded in)
+BLOCKS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # (this checkout of the mod: the block content lives in it since 2026-10-17)
 ROOT_REL = os.path.join("Aero", "ControlSurface3x3")
 NS = uuid.UUID("ae200001-ae00-c500-0000-00000000c533")
 VER_META = "2.4.0.16"
 B_GAME = {"Game2": "2.0.1.1811", "System.Runtime": "1.0.0.0", "VRage": "2.0.1.1811"}
 B_VRAGE = {"System.Runtime": "1.0.0.0", "VRage": "2.0.1.1811"}
 
-SIZES = {"Large": {"sid": "c502", "b": 2.5}, "Small": {"sid": "c503", "b": 0.5}}
+# b: the block size (m), the model the large one x b / 2.5; the key names the folder and files
+SIZES = {"Large": {"sid": "c502", "b": 2.5}, "Small": {"sid": "c503", "b": 0.5},
+         "025": {"sid": "c504", "b": 0.25}, "100": {"sid": "c505", "b": 1.0}, "150": {"sid": "c506", "b": 1.5}}
 G = lambda sid, n: f"ae200001-ae00-{sid}-{n:04x}-000000000001"
 SHARED = "c500"
 DT_HINGE = G(SHARED, 0x30)
@@ -66,7 +73,7 @@ CKEYS = CKEYS[:5] + [K_POWERABLE, "72e2ef60-d699-48a2-9959-4e246eecdacc", "24f8d
                      "30a7eb7b-1873-479a-b7d8-fe5db6a0567e"]
 SKEYS = SKEYS[:4] + [K_POWERABLE]
 ELECTRICITY = "bcded093-f5c0-4997-af3a-a6fbd853ad66"   # (Content\System\ResourceTypes\Electricity.def: kW)
-POWER_KW = {"Large": 5, "Small": 1}                      # (its actuators' idle draw: a large one as a gyroscope)
+POWER_KW = {"Large": 5, "Small": 1, "025": 0.5, "100": 2, "150": 3}   # (its actuators' idle draw: a large one as a gyroscope; 2 kW per m, as the gears)
 DEFS_ONLY = "--defs" in __import__("sys").argv
 # the icon: render_icon.py's 200 x 200 PNG of the block (Export/<Size>/Icon), a P_PNG asset as the game's own icons
 RECIPE = "6f209028-b561-4d9e-a1c8-ab9994b0a7e4"        # (LightArmor250's, as the 1x1)
@@ -161,7 +168,8 @@ def gen_size(size, cfg, manifest):
             write(out + ".meta", asset_meta(file_id(rel)))
     lod = lambda var, n, stem: ids[f"{var}/{stem}{'_LOD%d' % n if n else ''}.fbx"]
     mats = lambda key: {m for k, v in manifest.items() if k.startswith(f"{size}\\Models\\{key}") for m in v["materials"]}
-    off = (0.125, 0.125, 0.125)
+    o = 0.125 if round(B / 0.25) % 2 == 0 else 0.0   # (an even number of cells across: the centre on a cell corner)
+    off = (o, o, o)
     m_nf, m_fr, m_de, m_flap = G(sid, 0x100), G(sid, 0x101), G(sid, 0x102), G(sid, 0x103)
     md = os.path.join(dest, "Models")
     if not DEFS_ONLY:
@@ -208,14 +216,14 @@ def gen_size(size, cfg, manifest):
             {"Kind": "Insert", "Index": 9, "Value": {"Definition": csp, "Type": "Game2:Keen.Game2.Client.WorldObjects.CubeBlocks.Effects.ConditionalSubPartsComponent"}}], "Removed": []}},
         "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), ccomp, True)
     definition(os.path.join(d, f"{N}_FunctionalBlockDefinition.partialdef"), partial(BASE["fbd"], {"Guid": fbd,
-        "UIData": {"Name": "Control Surface", "Icon": ICON}, "PlacerDefinition": PLACEMENT, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+        "UIData": {"Name": "Control Surface", "Icon": ICON}, "PlacerDefinition": PLACEMENT, "DisplaySizeOverride": B, "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
         "Recipe": RECIPE, "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4", "BlockKind": KIND, "PCU": 50,
         "ConsumedResource": {"Type": ELECTRICITY, "Amount": POWER_KW[size]}, "ConsumptionPriority": {"Priority": 6}},
         "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition"), fbd, True)
     hx = -2.5 * B / 2.5   # (Blender hinge x: -2.5 m on the large block)
     definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), partial(BASE["bmd"], {"Guid": bmd, "Model": "{G}" + m_nf,
         "Dummies": {"$DeltaEncoded": True, "Keys": [G(sid, 0x41)], "Changed": [{"Kind": "Insert", "Index": 0, "Value": {
-            "Name": "FlapHinge", "Transform": {"Transform": {"Position": {"X": hx + 0.125, "Y": 0.125, "Z": 0.125},
+            "Name": "FlapHinge", "Transform": {"Transform": {"Position": {"X": hx + off[0], "Y": off[1], "Z": off[2]},
                                                              "Orientation": {"X": 0, "Y": 0, "Z": 0, "W": 1}}, "EulerHint": {"X": 0, "Y": 0, "Z": 0}},
             "Scale": {"X": 1, "Y": 1, "Z": 1}, "Type": DT_HINGE, "SupportingFracture": None}}], "Removed": []},
         "FractureModel": "{G}" + m_fr, "DamagedModel": "{G}" + m_de,
@@ -277,6 +285,9 @@ def placement():
 
 def main():
     manifest = json.load(open(r"C:\Users\slob\AppData\Local\Temp\claude\D--aero\825c4945-9ced-4158-adbf-cbb8be91082b\scratchpad\fbx_manifest.json"))
+    for size in SIZES:   # (a scaled copy holds the large one's objects and materials: its entries under its own names)
+        if not any(k.startswith(size + "\\") for k in manifest):
+            manifest.update({k.replace("Large", size): v for k, v in list(manifest.items()) if k.startswith("Large\\")})
     root = os.path.join(BLOCKS, "Assets", ROOT_REL)
     if os.path.isdir(root) and not DEFS_ONLY: shutil.rmtree(root)   # (ours alone: regenerated whole)
     for size, cfg in SIZES.items(): gen_size(size, cfg, manifest)

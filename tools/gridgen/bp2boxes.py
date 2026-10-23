@@ -11,7 +11,7 @@ and orientation (quaternion x y z w -> the forward / up the catalogue takes); it
     formula, data/gameblocks.json): the game's occupied cell groups, the game's mass;
   * the mod's own blocks (gamedefs.py MOD_SIZES: the generators' block boxes, mass by the game's formula on the box).
     Control surfaces are tagged:  # surf <kind> lox loy loz hix hiy hiz Fx Fy Fz Ux Uy Uz   (a comment line: every reader
-    that does not know it skips it; kind cs3s / cs3l / cs1, the box inclusive cells, F / U the block's forward / up in
+    that does not know it skips it; kind cs3s / cs3l / cs3_025 / cs3_100 / cs3_150 / cs1, the box inclusive cells, F / U the block's forward / up in
     grid axes). The 3x3x1 surfaces model all their own air (BlockComponentFactory.IsSelfModelled): their cells are NOT
     hull lines, as in game; the 1x1 surface's cube is (a hull line too).
 Air-breathing engines carry 'thr ax ay az' (the bench makes their faces flow-through). The header: the blocks' mass.
@@ -30,7 +30,8 @@ import se2blocks as sb
 import gridgen
 import gamedefs
 
-SURF_KIND = {"ControlSurface_Small": "cs3s", "ControlSurface_Large": "cs3l", "ControlSurface_1x1": "cs1"}
+SURF_KIND = {"ControlSurface_Small": "cs3s", "ControlSurface_Large": "cs3l", "ControlSurface_1x1": "cs1",
+             "ControlSurface_025": "cs3_025", "ControlSurface_100": "cs3_100", "ControlSurface_150": "cs3_150"}
 
 
 def quat_matrix(x, y, z, w):

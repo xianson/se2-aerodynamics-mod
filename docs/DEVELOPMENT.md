@@ -36,7 +36,7 @@ The developer notes that used to sit in the README. Players: see the [wiki](http
   nose and CoM; `bpthrust.py`: thrust line). Every block resolves: the measured catalogue (`tools/gridgen/data/catalog.txt`),
   else the game's own occupied cells and mass (`tools/gridgen/gamedefs.py`, cached in `data/gameblocks.json`: heavy
   armour, conveyors, tanks...), else the mod's blocks (their generators' boxes). Control surfaces are tagged
-  `# surf <cs3s|cs3l|cs1> <cell box> <forward> <up>`; the 3x3x1 ones stay out of the hull, as in game. After a game
+  `# surf <cs3s|cs3l|cs3_025|cs3_100|cs3_150|cs1> <cell box> <forward> <up>`; the 3x3x1 ones stay out of the hull, as in game. After a game
   update: rebuild VrbReader if it fails (`tools/shared/VrbReader/README.md`), then `python tools/gridgen/gamedefs.py --rebuild`.
 - **In game:** the Orbital Mod's harness (`Orbital Mod/tools/harness`) drives the game. `aeroget` / `aeroset
   Type.Member [value]` read and set any public static here by name (so public statics are never renamed);

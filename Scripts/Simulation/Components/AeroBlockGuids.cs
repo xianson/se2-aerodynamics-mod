@@ -10,19 +10,30 @@ public static class AeroBlockGuids
 {
     // ── Control Surfaces ──
     public static readonly Guid ControlSurface_1x1 = new("ae200001-ae00-c501-0001-000000000001");
-    /// <summary>The 3x3x1 control surfaces (own models: a flap subpart on a stretched hinge), large 7.5 m / small 1.5 m.</summary>
+    /// <summary>The 3x3x1 control surfaces (own models: a flap subpart on a stretched hinge), 3 x 3 x 1 blocks of 2.5 m (large,
+    /// 7.5 m across), 0.5 m (small, 1.5 m), and since 2026-10-23 0.25 / 1 / 1.5 m - each the large model scaled whole.</summary>
     public static readonly Guid ControlSurface_3x3x1_Large = new("ae200001-ae00-c502-0001-000000000001");
     public static readonly Guid ControlSurface_3x3x1_Small = new("ae200001-ae00-c503-0001-000000000001");
+    public static readonly Guid ControlSurface_3x3x1_025 = new("ae200001-ae00-c504-0001-000000000001");
+    public static readonly Guid ControlSurface_3x3x1_100 = new("ae200001-ae00-c505-0001-000000000001");
+    public static readonly Guid ControlSurface_3x3x1_150 = new("ae200001-ae00-c506-0001-000000000001");
+    /// <summary>All the 3x3x1 control surface blocks (gen_cs3_defs.py SIZES).</summary>
+    public static readonly System.Collections.Generic.HashSet<Guid> ControlSurfaces3x3x1 = new()
+    {
+        ControlSurface_3x3x1_Large, ControlSurface_3x3x1_Small, ControlSurface_3x3x1_025, ControlSurface_3x3x1_100, ControlSurface_3x3x1_150,
+    };
     /// <summary>Their client prefabs (Manipulator.Guid of the _Client.partialdef): AeroFlapComponent goes in there.</summary>
     public static readonly System.Collections.Generic.HashSet<Guid> FlapClientPrefabs = new()
     {
         new("ae200001-ae00-c502-0012-000000000001"), new("ae200001-ae00-c503-0012-000000000001"),
+        new("ae200001-ae00-c504-0012-000000000001"), new("ae200001-ae00-c505-0012-000000000001"), new("ae200001-ae00-c506-0012-000000000001"),
     };
 
     /// <summary>Their server prefabs (Manipulator.Guid of the _Server.partialdef): AeroSurfaceSettingsComponent goes in there.</summary>
     public static readonly System.Collections.Generic.HashSet<Guid> SurfaceServerPrefabs = new()
     {
         new("ae200001-ae00-c502-0011-000000000001"), new("ae200001-ae00-c503-0011-000000000001"),
+        new("ae200001-ae00-c504-0011-000000000001"), new("ae200001-ae00-c505-0011-000000000001"), new("ae200001-ae00-c506-0011-000000000001"),
     };
 
     /// <summary>The retractable gears (0.5 / 1 / 1.5 / 2.5 m wheels, and the pad-foot ones; AeroGearVariants): their server prefabs (AeroGearComponent)

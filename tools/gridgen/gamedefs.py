@@ -174,9 +174,11 @@ def build_index(content=CONTENT):
 #   RetractableGear (gear_export_prep.py: W x H x L = 2.5 s x 2.5 s x 7.5 s, s = size / 2.5 m, VRage X Y Z);
 #   the 1x1 blocks (copies of the light armour cube); Airbrake 3x3x3 (gen_airbrake_defs.py).
 # A mod block on a vanilla model (the autopilot: the Event Controller's / Timer's) takes that model's real occupancy.
-# Box: local cells (x, y, z), centred on the block's position (all even: the model's origin is the block's centre).
+# Box: local cells (x, y, z), centred on the block's position (an even count: the model's origin is a cell corner, the box
+# one cell longer on +; odd - the 0.25 m control surface: on the middle cell).
 MOD_SIZES = {
     "ControlSurface_Small": (6, 2, 6), "ControlSurface_Large": (30, 10, 30), "ControlSurface_1x1": (2, 2, 2),
+    "ControlSurface_025": (3, 1, 3), "ControlSurface_100": (12, 4, 12), "ControlSurface_150": (18, 6, 18),
     "Airbrake_1x1": (2, 2, 2), "Scoop_1x1": (2, 2, 2), "Airbrake_Small": (6, 6, 6), "Airbrake_Large": (30, 30, 30),
     "RetractableGear_050": (2, 2, 6), "RetractableGear_100": (4, 4, 12), "RetractableGear_150": (6, 6, 18),
     "RetractableGear_250": (10, 10, 30),
@@ -184,6 +186,7 @@ MOD_SIZES = {
 # the role a tool gives them: 'surface' (a control surface: AeroBench / the surface harness model it), 'self' (its component
 # models all its air: out of the voxel surface - BlockComponentFactory.IsSelfModelled)
 MOD_ROLES = {"ControlSurface_Small": "surface self", "ControlSurface_Large": "surface self", "ControlSurface_1x1": "surface",
+             "ControlSurface_025": "surface self", "ControlSurface_100": "surface self", "ControlSurface_150": "surface self",
              "Airbrake_Small": "self", "Airbrake_Large": "self"}
 MOD_ASSETS = os.path.normpath(os.path.join(HERE, "..", "..", "Assets"))
 
@@ -219,7 +222,7 @@ def _mod_index(assets, occ, curves, cubedefs, min_mass):
             elif name in MOD_SIZES:
                 sz = MOD_SIZES[name]
                 e["cells"] = sz[0] * sz[1] * sz[2]
-                e["bounds"] = [-(c // 2) + 1 for c in sz] + [c // 2 for c in sz]
+                e["bounds"] = [-((c - 1) // 2) for c in sz] + [c // 2 for c in sz]
                 e["assumed"] = "box"
             if "cells" in e and "curve" in e:
                 e["mass"] = round(block_mass(e["cells"], e["curve"], min_mass), 2)
