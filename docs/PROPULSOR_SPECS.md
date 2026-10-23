@@ -45,10 +45,11 @@ The prop tips reach 1.2 cells from the axis, inside the disc's ±1.5 cells. This
 | Block | Cell | Mast (1 × 1 × 1 cell) | Rotor disc (15 × 15 × 1 cells, on top) | Blade tip radius | Hinge radius |
 |---|---|---|---|---|---|
 | HelicopterRotor_050 | 0.5 m | 0.5 × 0.5 × 0.5 m | 7.5 m across, 0.5 m deep | 3.5 m (7 cells) | 0.25 m |
+| HelicopterRotor_100 | 1 m | 1 × 1 × 1 m | 15 m across, 1 m deep | 7 m (7 cells) | 0.5 m |
 | HelicopterRotor_150 | 1.5 m | 1.5 × 1.5 × 1.5 m | 22.5 m across, 1.5 m deep | 10.5 m (7 cells) | 0.75 m |
 | HelicopterRotor_250 | 2.5 m | 2.5 × 2.5 × 2.5 m | 37.5 m across, 2.5 m deep | 17.5 m (7 cells) | 1.25 m |
 
-Longer blades (2026-10-23, the user): the tip went from 5 to 7 cells, thrust kept. Only the blade's constant-chord middle was stretched; the root grip and the striped tip are unchanged (`tools/meshgen/rotor_lengthen.py` on the export scenes).
+The 1 m rotor (2026-10-23, the user) is the 0.5 m rotor scaled 2x whole (`tools/meshgen/rotor_scale_size.py`): 400 kN by disc area, 316 kW. Longer blades (2026-10-23, the user): the tip went from 5 to 7 cells, thrust kept. Only the blade's constant-chord middle was stretched; the root grip and the striped tip are unchanged (`tools/meshgen/rotor_lengthen.py` on the export scenes).
 | HelicopterTailRotor_050 | 0.5 m | 0.5 × 0.5 × 0.5 m | 2.5 m across (5 × 5 × 1 cells), 0.5 m deep | 1.25 m (2.5 cells) | 0.25 m |
 
 - **Sizes:** the 1.5 m rotor is designed first. The 2.5 m one is an exact × 5/3 copy, and the 0.5 m one an exact × 1/3 copy.

@@ -190,7 +190,7 @@ KINDS = {
 # (before: 100 kN / 0.9 MN / 2.5 MN - the yaw spin: RotorKinematics.ReactionScale, RotorLimiter)
 # (2026-10-23, the user: longer blades - the tip at 7 cells, from 5 (rotor_lengthen.py) - "keep thrust the same": the same
 #  ratios, so the same 100 kN / 900 kN / 2.5 MN; the disc loading falls to 0.51x)
-ROTOR_TIP = {"HelicopterRotor_050": 3.5, "HelicopterRotor_150": 10.5, "HelicopterRotor_250": 17.5}
+ROTOR_TIP = {"HelicopterRotor_050": 3.5, "HelicopterRotor_100": 7.0, "HelicopterRotor_150": 10.5, "HelicopterRotor_250": 17.5}   # (100: the 1 m rotor, 2026-10-23 - the 0.5 m x 2, rotor_scale_size.py)
 ROTOR_ANCHOR = ("HelicopterRotor_150", 900e3)   # (2026-10-18, the user: 1.5x for honest dampeners - a hover now costs 2x the planet weight in real thrust; was 600 kN)
 rotor_thrust = lambda N: round(ROTOR_ANCHOR[1] * (ROTOR_TIP[N] / ROTOR_TIP[ROTOR_ANCHOR[0]]) ** 2, -3)
 THRUST = {"Turboprop_050": 76e3, "Turboprop_150": 684e3, "Turboprop_250": 1.9e6,
@@ -221,8 +221,8 @@ power_kw = lambda N: round(THRUST[N] * KW_PER_N * next((v for k, v in POWER_SHAR
 # the blocks that thrust either way (the mod injects ReversibleThrustComponent by their prefab GUIDs: the table's Reversible -
 # the game's movement turns them round, the attitude law steers with them both ways)
 REVERSIBLE = {"HelicopterTailRotor_050"}
-PCU = {"050": 100, "150": 200, "250": 400, "750": 800}
-SIZE_SID = {"050": "05", "150": "15", "250": "25", "750": "75"}
+PCU = {"050": 100, "100": 150, "150": 200, "250": 400, "750": 800}
+SIZE_SID = {"050": "05", "100": "10", "150": "15", "250": "25", "750": "75"}
 
 
 def file_id(rel): return str(uuid.uuid5(NS, "file:" + rel.replace("\\", "/").lower()))

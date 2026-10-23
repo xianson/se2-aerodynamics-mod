@@ -58,7 +58,7 @@ static class Program
         Check(S.RaysPerTick == 4, $"probe budget {S.RaysPerTick} rays per rotor per tick");
         int ticks = S.RingChords / S.ChordsPerTick;
         Check(ticks == 4, $"tip circle covered every {ticks} ticks");
-        Check(Striking().Count() == 7 && Striking().All(r => r.Kind != K.Fan && r.Kind != K.Ramjet), "strikers: 3 rotors, the Reversible Rotor, 3 turboprops (no fans, no ramjets)");
+        Check(Striking().Count() == 8 && Striking().All(r => r.Kind != K.Fan && r.Kind != K.Ramjet), "strikers: 4 rotors (0.5, 1, 1.5, 2.5 m), the Reversible Rotor, 3 turboprops (no fans, no ramjets)");
         foreach (var row in Striking())
         {
             float R = row.Radius;
