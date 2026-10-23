@@ -1,0 +1,21 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources.ResourceContainerDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-5f25-001e-000000000001",
+    "ResourceType": "ae200001-ae00-7f00-0054-000000000001",
+    "ProductionPriority": {
+      "Priority": 0
+    },
+    "MaxCapacity": 9893.68,
+    "MaxChargingRate": 0,
+    "MaxDischargeRate": 9275.3386,
+    "InfiniteSourceInCreative": false,
+    "ChargeLevelInCreative": null,
+    "DisplaySemantics": "FillDrain"
+  }
+}

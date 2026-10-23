@@ -1,7 +1,8 @@
 {
   "$Bundles": {
+    "Game2": "2.3.0.1410",
     "System.Runtime": "1.0.0.0",
-    "VRage": "2.0.1.1811"
+    "VRage": "2.3.0.1410"
   },
   "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
   "$Value": {
@@ -10,7 +11,32 @@
     "Manipulator": {
       "Guid": "ae200001-ae00-5f05-0011-000000000001",
       "_entity": {
-        "Definition": "ae200001-ae00-5f05-0013-000000000001"
+        "Definition": "ae200001-ae00-5f05-0013-000000000001",
+        "ObjectBuilders": {
+          "$DeltaEncoded": true,
+          "Keys": [
+            "b7bf405c-71aa-46a1-a5ec-4c690f2ab7e3",
+            "e58b8f69-45da-40d4-82b0-f1a82564a53a",
+            "d358358e-30b3-484a-b8b8-2e5568c7298b",
+            "bc5652a0-1296-4040-adc3-a2b9c35d5afc",
+            "4f2bc5f9-6a6d-4347-a1eb-5937cbce6727",
+            "17c62317-3feb-4f2f-87ec-708dd4a0671d",
+            "4e49ffa8-efc3-4043-9adc-04f5f1408d61",
+            "556698b8-b950-4e94-ab64-937642f573e1"
+          ],
+          "Changed": [
+            {
+              "Kind": "Insert",
+              "Index": 7,
+              "Value": {
+                "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.ResourceDistribution.Resources.ResourceContainerObjectBuilder",
+                "CurrentChargeLevel": 1,
+                "Mode": "Auto"
+              }
+            }
+          ],
+          "Removed": []
+        }
       }
     },
     "DefinitionType": "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinition",

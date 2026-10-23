@@ -278,10 +278,14 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         if (grid != null)
             lock (AeroSolidSegmentComponent.All)
                 foreach (var s in AeroSolidSegmentComponent.All)
-                    if (ReferenceEquals(s.GridEntity, grid)) _cands.Add(s);
+                    if (ReferenceEquals(s.GridEntity, grid) && !s.OnNozzle) _cands.Add(s);
+        var own = Entity?.TryGet<AeroSolidSegmentComponent>();   // (its own grain, 2026-10-23: first in its stack - a lone nozzle is a motor)
+        int segments;
         lock (StackLock)
         {
             SolidRocket.FindStack(in _geo, _cands, _stack);
+            segments = _stack.Count;
+            if (own != null) _stack.Insert(0, own);
             StackCount = _stack.Count;
             float full = 0f;
             for (int i = 0; i < _stack.Count; i++) full += _stack[i].Full;
@@ -289,7 +293,7 @@ public partial class AeroSolidNozzleComponent : Component, IInSceneListener
         }
         _cands.Clear();
         AeroSolidNozzleComponent partner = null;
-        if (grid != null && _stack.Count > 0)
+        if (grid != null && segments > 0)   // (a nozzle at the far end of its SEGMENTS: its own grain is not on the chain)
         {
             var last = _stack[_stack.Count - 1].Geo;
             lock (All)
