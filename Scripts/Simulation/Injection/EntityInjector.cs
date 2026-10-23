@@ -188,6 +188,12 @@ public class InjectAeroComponents : Injections
             Add(entity, AeroBlockSave.Info(typeof(AeroRotorStrikeComponent), AeroBlockSave.BladesId));   // (saved with the block)
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroRotorStrikeComponent into propulsor server prefab '{entity.DebugName}'");
         }
+        // a main helicopter rotor's turn (2026-10-23): the Counter-rotating switch on its terminal, saved with the block
+        if (PropulsorBlocks.MainRotorServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, AeroBlockSave.Info(typeof(AeroRotorSpinComponent), AeroBlockSave.RotorSpinId));   // (saved with the block)
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroRotorSpinComponent into main rotor server prefab '{entity.DebugName}'");
+        }
         // a reversible thruster (thrust either way, in the game's movement and the attitude law): any thruster block whose
         // prefab is listed (ReversibleThrustComponent.Prefabs - the propulsor table's reversible rows and Extra)
         if (ReversibleThrustComponent.Prefabs.Contains(entity.Guid))

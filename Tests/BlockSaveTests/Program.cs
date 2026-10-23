@@ -105,6 +105,10 @@ static class Program
         Check(AeroBlockSaveForm.TryReadBlades("aero-blades:1 -3", out float hn) && hn == 0f && AeroBlockSaveForm.TryReadBlades("aero-blades:1 7", out float hx) && hx == 1f, "blades clamped 0..1");
         Check(!AeroBlockSaveForm.TryReadBlades(null, out float hz) && hz == 1f && !AeroBlockSaveForm.TryReadBlades("aero-blades:1 NaN", out hz) && !AeroBlockSaveForm.TryReadBlades(AeroBlockSaveForm.Thrust(0.25f), out hz), "blades: none / NaN / another tag refused (whole)");
         Check(AeroBlockSaveForm.Find(new Dictionary<string, object> { [AeroBlockSaveForm.Blades(0.5f)] = null }, AeroBlockSaveForm.BladesKey) == "aero-blades:1 0.5", "Find the blades key");
+        // a main rotor's turn (2026-10-23): clockwise (the default) writes no key; counter-rotating round trips
+        Check(AeroBlockSaveForm.RotorSpin(false) == null && AeroBlockSaveForm.RotorSpin(true) == "aero-rotorspin:1 1", "rotor spin: clockwise no key, counter-rotating 'aero-rotorspin:1 1'");
+        Check(AeroBlockSaveForm.TryReadRotorSpin(AeroBlockSaveForm.RotorSpin(true), out bool ccw) && ccw && AeroBlockSaveForm.TryReadRotorSpin("aero-rotorspin:1 0", out bool cw) && !cw, "rotor spin round trip");
+        Check(!AeroBlockSaveForm.TryReadRotorSpin(null, out bool cz) && !cz && !AeroBlockSaveForm.TryReadRotorSpin(AeroBlockSaveForm.Blades(0.5f), out cz) && !cz, "rotor spin: none / another tag refused (clockwise)");
         // THE AUTOPILOT BLOCK (2026-10-19): its whole panel round-trips bit-exact; every mode and reference; an older / shorter key keeps
         // the defaults for what it lacks; out-of-range, NaN and unknown values are clamped or read as off
         var ap = ApPanel.Defaults; ap.Mode = ApMode.HoverHold; ap.HeightM = 123.456f; ap.HeightRef = ApHeightRef.Inertial; ap.HoverSpeed = 7.25f; ap.Protection = false;

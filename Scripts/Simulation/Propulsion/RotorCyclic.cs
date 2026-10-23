@@ -18,7 +18,8 @@ namespace AeroMod;
 ///                other way about the rotor axis by Q = P / omega - the power to hold the thrust (ideal induced power
 ///                x InducedFactor + the blades' profile power) over the governed rpm (ReactionTorque; ThrustTorque adds it to
 ///                the thrusters' offset torque and the attitude law asks the actuators to answer it). It must be countered:
-///                a tail rotor (any thruster pushing sideways at an arm), gyros, control surfaces, or a second rotor - there
+///                a tail rotor (any thruster pushing sideways at an arm), gyros, control surfaces, or a second rotor (a
+///                COUNTER-ROTATING one - its terminal switch, AeroRotorSpinComponent - reacts the other way: a pair cancels) - there
 ///                is no built-in anti-torque (the old YawArm / Reaction-off fallback was removed 2026-10-17).
 ///                Its size is calibrated to a real helicopter's (RotorKinematics.ReactionScale), and the CONTROLLABILITY LIMITER
 ///                (Limit, RotorLimiter) caps each rotor's thrust so its reaction stays within what the grid can hold.
@@ -71,6 +72,7 @@ public static class RotorCyclic
         aero._rotorLoadF = new Vector3[l.Count]; aero._rotorLoadT = new Vector3[l.Count]; aero._rotorLoadQ = new Vector3[l.Count];
         aero._limR = new float[l.Count]; aero._limRpm = new float[l.Count]; aero._limRated = new float[l.Count];
         aero._limAuth = new float[l.Count]; aero._limBudget = new float[l.Count]; aero._limTarget = new float[l.Count];
+        aero._limCounter = new bool[l.Count];
         return aero._rotorIdx;
     }
 
@@ -192,8 +194,9 @@ public static class RotorCyclic
         {
             var p = comps[k];
             R[k] = p.RotorRadius * TipOverTable; rpm[k] = p.Rpm; rated[k] = p.Rated * p.Efficiency;   // (the actual thrust's rating)
+            if (k < aero._limCounter.Length) aero._limCounter[k] = p.CounterRotating;
         }
-        RotorLimiter.Targets(m, idx, R, rpm, rated, arms, dirs, caps, rev, n, gyro, sPush, sPull, rho, aero._limAuth, aero._limBudget, aero._limTarget);
+        RotorLimiter.Targets(m, idx, R, rpm, rated, aero._limCounter, arms, dirs, caps, rev, n, gyro, sPush, sPull, rho, aero._limAuth, aero._limBudget, aero._limTarget);
         for (int k = 0; k < m; k++)
         {
             var p = comps[k];
@@ -203,7 +206,7 @@ public static class RotorCyclic
         {
             int i0 = idx[0];
             RotorLimiter.LastCap = comps[0].TorqueCap; RotorLimiter.LastUncapped = comps[0].Uncapped;
-            RotorLimiter.LastAuthority = i0 < n ? RotorLimiter.Authority(dirs[i0], arms, caps, rev, n, gyro, sPush, sPull, out RotorLimiter.LastThrusters, out RotorLimiter.LastGyros, out RotorLimiter.LastSurfaces) : 0f;
+            RotorLimiter.LastAuthority = i0 < n ? RotorLimiter.Authority(RotorKinematics.ReactionAxis(dirs[i0], comps[0].CounterRotating), arms, caps, rev, n, gyro, sPush, sPull, out RotorLimiter.LastThrusters, out RotorLimiter.LastGyros, out RotorLimiter.LastSurfaces) : 0f;
             RotorLimiter.LastBudget = aero._limBudget[0]; RotorLimiter.LastTorque = aero._rotorReaction; RotorLimiter.LastRotors = m;
         }
     }
@@ -218,7 +221,8 @@ public static class RotorCyclic
     }
 
     /// <summary>The rotors' reaction torque on the ship (grid-local N m) at these thrusts (N, each thruster's): each rotor's
-    /// Q = P / omega about its axis, the way opposite to its (clockwise from above) turn - +axis.</summary>
+    /// Q = P / omega about its axis, the way opposite to its (clockwise from above) turn - +axis; a counter-rotating one's -axis
+    /// (RotorKinematics.ReactionAxis: an opposite pair cancels).</summary>
     internal static Vector3 ReactionTorque(AeroGridComponent aero, Vector3[] dirs, float[] thrust, int n)
     {
         if (!Enabled) { aero._rotorReaction = 0f; return Vector3.Zero; }
@@ -233,8 +237,9 @@ public static class RotorCyclic
             var p = comps[k];
             float Q = RotorKinematics.ReactionTorque(thrust[i], p.RotorRadius * TipOverTable, p.Rpm, rho);
             if (Q <= 0f) continue;
-            q += dirs[i] * Q; qs += Q;
-            if (k < each.Length && float.IsFinite(Q)) each[k] = dirs[i] * Q;   // (this rotor's, for the structure at its block: PublishLoads)
+            var ax = RotorKinematics.ReactionAxis(dirs[i], p.CounterRotating);
+            q += ax * Q; qs += Q;
+            if (k < each.Length && float.IsFinite(Q)) each[k] = ax * Q;   // (this rotor's, for the structure at its block: PublishLoads)
         }
         aero._rotorReaction = qs;
         return float.IsFinite(q.X + q.Y + q.Z) ? q : Vector3.Zero;
@@ -288,7 +293,7 @@ public static class RotorCyclic
             p.Load = max > 1f ? Math.Clamp(t / max, 0f, 1f) : 0f;
             int c = cycOf[k];
             Vector3 tk = c >= 0 && c < tilt.Length ? tilt[c] : Vector3.Zero;
-            ThrustTorque.PublishRotor(aero, wt, thrusters[i].Cell, p.Rpm, t, max, p.Rated, tk, p.SpinOn);
+            ThrustTorque.PublishRotor(aero, wt, thrusters[i].Cell, p.Rpm, t, max, p.Rated, tk, p.SpinOn, c >= 0 && p.CounterRotating);
             if (c >= 0 && c < tilt.Length) tilt[c] = Vector3.Zero;
         }
     }
@@ -321,4 +326,6 @@ public partial class AeroGridComponent
     /// the reaction allowed (N m) and the cap's target (N) (out); sized with the rotor list.</summary>
     internal float[] _limR = System.Array.Empty<float>(), _limRpm = System.Array.Empty<float>(), _limRated = System.Array.Empty<float>(),
         _limAuth = System.Array.Empty<float>(), _limBudget = System.Array.Empty<float>(), _limTarget = System.Array.Empty<float>();
+    /// <summary>RotorCyclic.Limit: each main rotor's turn (counter-rotating) for RotorLimiter.Targets; sized with the rotor list.</summary>
+    internal bool[] _limCounter = System.Array.Empty<bool>();
 }

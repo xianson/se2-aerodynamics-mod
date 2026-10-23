@@ -13,6 +13,14 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Offline: `AeroBench pitchmargin` - the F-6 on 6975 kN m of gyros turns back 43° at Mach 0.8, 25° at 1.6, 2.3° at 3. Not
   flown in game yet.
 
+## Unreleased - rotor changes
+
+- **Reversible Rotor** has its own G-menu group, "Reversible Rotors" (it was hidden behind the Helicopter Rotors tile).
+- **Helicopter Rotor blades 1.4x longer:** tip at 7 cells (3.5 / 10.5 / 17.5 m), the disc 15 x 15 cells. Same thrust, so half the
+  disc loading; the reaction torque is unchanged.
+- **Counter-rotating** (rotor terminal): the rotor turns the other way with mirrored blades, and its torque flips, so an
+  opposite pair (coaxial or tandem) needs no tail rotor. Not flown in game yet.
+
 ## Unreleased - pad-foot landing gear
 
 - **Retractable Gear - Pad Foot**, four blocks: (Plate) 0.5 m, (Pad) 1 m, (Pad) 1.5 m, (Plate) 2.5 m. The suspension runs on the

@@ -26,7 +26,9 @@ namespace AeroMod;
 ///              caps and arms, the gyros by their budget, the surfaces by their deflection (the airframe's own torque - a fin's
 ///              weathervaning, wings - is not an actuator and is not counted).
 ///   elsewhere  the other main rotors whose axes share the direction: the authority is split between them by their reaction
-///              at their rating (two alike: half each).
+///              at their rating (two alike: half each). A main rotor turning the OTHER way (counter-rotating: its reaction
+///              along -a) answers it instead: its reaction at its rating joins the budget (2026-10-23) - a coaxial or tandem
+///              pair of opposite rotors holds itself, uncapped with no tail.
 ///   cap        RotorKinematics.ThrustForTorque(Margin x authority x share) - the closed-form inverse of the reaction torque.
 /// The cap is smoothed (FallSeconds when it drops - authority lost, act soon; RiseSeconds when it grows) and has no feedback
 /// path: neither the authority nor the inverse depends on the rotor's own thrust, so it cannot chatter. A ship with no
@@ -90,27 +92,38 @@ public static class RotorLimiter
     /// <summary>... with the control surfaces' reach (surfPush / surfPull: see Authority; zero - none, at hover).</summary>
     public static void Targets(int m, int[] rIdx, float[] radius, float[] rpm, float[] rated, Vector3[] arms, Vector3[] dirs, float[] caps,
         bool[] rev, int n, Vector3 gyroReach, Vector3 surfPush, Vector3 surfPull, float rho, float[] authority, float[] budget, float[] target)
+        => Targets(m, rIdx, radius, rpm, rated, null, arms, dirs, caps, rev, n, gyroReach, surfPush, surfPull, rho, authority, budget, target);
+
+    /// <summary>... with each rotor's turn (counter[k]: counter-rotating - its reaction along -axis; null: every one clockwise).
+    /// A rotor turning the other way (its reaction axis against this one's) ANSWERS this one's reaction: its reaction at its
+    /// rating is added to the budget (this rotor's share of it) - a counter-rotating pair, coaxial or tandem, holds itself.</summary>
+    public static void Targets(int m, int[] rIdx, float[] radius, float[] rpm, float[] rated, bool[] counter, Vector3[] arms, Vector3[] dirs, float[] caps,
+        bool[] rev, int n, Vector3 gyroReach, Vector3 surfPush, Vector3 surfPull, float rho, float[] authority, float[] budget, float[] target)
     {
         for (int k = 0; k < m; k++)
         {
             int i = rIdx[k];
             if (i < 0 || i >= n || i >= dirs.Length) { authority[k] = budget[k] = 0f; target[k] = float.PositiveInfinity; continue; }
-            Vector3 a = dirs[i];
+            Vector3 a = RotorKinematics.ReactionAxis(dirs[i], Counter(counter, k));
             authority[k] = Authority(a, arms, caps, rev, n, gyroReach, surfPush, surfPull, out _, out _, out _);
-            // the split: this rotor's reaction at its rating over every rotor's along the same way (itself included)
-            float own = RotorKinematics.ReactionTorque(MathF.Max(rated[k], 0f), radius[k], 1f, rho), all = 0f;
+            // the split: this rotor's reaction at its rating over every rotor's along the same way (itself included); the
+            // rotors whose reaction acts the other way answer it
+            float own = RotorKinematics.ReactionTorque(MathF.Max(rated[k], 0f), radius[k], 1f, rho), all = 0f, against = 0f;
             for (int j = 0; j < m; j++)
             {
                 int ij = rIdx[j];
                 if (ij < 0 || ij >= n || ij >= dirs.Length) continue;
-                float c = Vector3.Dot(dirs[ij], a);
-                if (c > 0f) all += c * RotorKinematics.ReactionTorque(MathF.Max(rated[j], 0f), radius[j], 1f, rho);
+                float c = Vector3.Dot(RotorKinematics.ReactionAxis(dirs[ij], Counter(counter, j)), a);
+                float q = RotorKinematics.ReactionTorque(MathF.Max(rated[j], 0f), radius[j], 1f, rho);
+                if (c > 0f) all += c * q; else if (c < 0f) against -= c * q;
             }
             float share = all > 0f && own > 0f ? Math.Clamp(own / all, 0f, 1f) : 1f;
-            budget[k] = Margin * authority[k] * share;
+            budget[k] = (Margin * authority[k] + (float.IsFinite(against) ? against : 0f)) * share;
             target[k] = RotorKinematics.ThrustForTorque(budget[k], radius[k], rpm[k], rho);
         }
     }
+
+    static bool Counter(bool[] counter, int k) => counter != null && k < counter.Length && counter[k];
 
     /// <summary>One step of a rotor's smoothed cap (N; +infinity: none) toward its target: at once from none (or to none),
     /// else first order - FallSeconds down, RiseSeconds up.</summary>

@@ -47,6 +47,9 @@
 	"scene":0,
 	"scenes":[
 		{
+			"extras":{
+				"aero_tip_cells":7.0
+			},
 			"name":"Scene",
 			"nodes":[
 				0,

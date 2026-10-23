@@ -7,7 +7,8 @@ run (the add-on and its Havok glTF extension need a GPU context). Per block N (c
   <out>/<N>/Models/Deformed/<N>_Deformed.fbx, _LOD1..3, _collision.gltf      (N|Deformed_LODn, N|Collision_Fractured)
   <out>/<N>/Models/NonFractured/Subpart01/<N>_S1_Rotor.fbx, _LOD1..2        (N|Rotor_LODn: origin on the spin axis)
   <out>/<N>/Models/NonFractured/Subpart02/<N>_S2_Fan.fbx, _LOD1..2          (N|Fan_LODn: a turboprop's intake fan)
-  or, for a helicopter rotor split by rotor_split.py: Subpart01/<N>_S1_Hub, Subpart02/<N>_S2_Blade, Subpart03/<N>_S3_Blur
+  or, for a helicopter rotor split by rotor_split.py: Subpart01/<N>_S1_Hub, Subpart02/<N>_S2_Blade, Subpart03/<N>_S3_Blur,
+      and its mirrored blade (rotor_mirror_blade.py) Subpart06/<N>_S6_BladeCCW (Subpart05: the blade-break stubs)
   or, for a ramjet (ramjet_export_prep.py): Subpart01/<N>_S1_Spike, _LOD1..2 (N|Spike_LODn: the translating inlet spike)
 
 Colliders are exported under their "ExportName" (occupancy_* / mountpoints_* keep their prefixes: the content builder
@@ -119,7 +120,7 @@ def run():
             # (2026-10-17, a ramjet - ramjet_export_prep.py: its one subpart is the translating inlet Spike, Subpart01/<N>_S1_Spike;
             #  blocks without an N|Spike_LOD0 collection export exactly as before)
             fan = f"{N}|Fan_LOD0" in bpy.data.collections
-            parts = [(k, g) for k, g in ((1, "Rotor"), (1, "Hub"), (4 if fan else 2, "Blade"), (3, "Blur"), (2, "Fan"), (1, "Spike")) if f"{N}|{g}_LOD0" in bpy.data.collections]
+            parts = [(k, g) for k, g in ((1, "Rotor"), (1, "Hub"), (4 if fan else 2, "Blade"), (3, "Blur"), (2, "Fan"), (1, "Spike"), (6, "BladeCCW")) if f"{N}|{g}_LOD0" in bpy.data.collections]
             for k, g in parts:
                 os.makedirs(os.path.join(m, "NonFractured", f"Subpart0{k}"), exist_ok=True)
                 for n in range(3):

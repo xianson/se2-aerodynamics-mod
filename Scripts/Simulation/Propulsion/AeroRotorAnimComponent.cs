@@ -29,6 +29,11 @@ namespace AeroMod;
 /// turns the spinner and blades about its axis at the governed rpm (idle 75 %, up with the thrust asked) and fades the blades
 /// out as the blur disc fades in (the rotors' fades). Not split (the one vanilla-spun prop subpart) or no blur disc: left as
 /// it is / the blades never fade.
+/// COUNTER-ROTATING (2026-10-23, the main rotor's terminal switch - AeroRotorSpinComponent, published in the rotor record): drawn
+/// as the MIRROR IMAGE of the clockwise rotor (RotorKinematics.MirrorX: every pose the clockwise law's on the mirrored inputs,
+/// mirrored back) with the MIRRORED blade set - three more blade subparts at the same dummies whose entity is named
+/// CcwBladeName (gen_propulsor_defs.py, mirrored in the blade's chord), shown instead of the clockwise three (the hidden set at
+/// opacity 0, as the fade). Old content without that set: the clockwise blades are turned the other way (trailing edge first).
 /// BROKEN BLADES (rotor strikes, 2026-10-17: the server publishes them - ThrustTorque.BladeState): the rotor or prop stands still, its
 /// blades and blur disc hidden, the hub / spinner left as the stub; welded back up, they return.
 /// </summary>
@@ -41,10 +46,12 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     public static float DevSpinScale = 1f;
     /// <summary>The smoothing of the published collective, coning and tilt (s): the server's steps are a frame apart.</summary>
     public const float SmoothSeconds = 0.12f;
-    /// <summary>The blade's tip over its hinge radius when the block's table row has no radius (the main rotors, rotor_rig_v2.py:
-    /// 5 cells / 0.5 cell - 7.5 / 0.75 m on the 1.5 m rotor; the Reversible Rotor is 2.5 / 0.5 cell, so the tip comes from
-    /// PropulsorBlocks' Radius, the tip radius), and the blur disc's cone (deg).</summary>
-    public const float TipOverHinge = 7.5f / 0.75f, BlurConeDeg = 2.5f;
+    /// <summary>The blade's tip over its hinge radius when the block's table row has no radius (the main rotors: 7 cells / 0.5 cell -
+    /// 10.5 / 0.75 m on the 1.5 m rotor since the longer blades of 2026-10-23, 5 cells before; the Reversible Rotor is 2.5 / 0.5
+    /// cell, so the tip comes from PropulsorBlocks' Radius, the tip radius), and the blur disc's cone (deg).</summary>
+    public const float TipOverHinge = 10.5f / 0.75f, BlurConeDeg = 2.5f;
+    /// <summary>The counter-rotating blade set's subpart entity name (gen_propulsor_defs.py: dummies RotorBladeCCW1..3).</summary>
+    public const string CcwBladeName = "RotorBladeCCW";
 
     enum Role { Hub, Blade, Blur }
     /// <summary>The turboprop's parts by their subpart prefab's entity name (gen_propulsor_defs.py writes them).</summary>
@@ -59,6 +66,8 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         public Entity Entity; public RelativeTransform Rest; public Role Role; public object Render;
         public float Shown = -1f; public readonly object[] A1 = new object[1], A2 = new object[2];
         public Vector3 LastPos; public Quaternion LastRot; public bool HasLast;
+        /// <summary>A blade of the counter-rotating (mirrored) set.</summary>
+        public bool Ccw;
     }
     readonly List<Part> _parts = new();
     Part _hub, _blur;
@@ -70,6 +79,8 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     readonly float[] _rec = new float[ThrustTorque.RotorStride];
     Quaternion _blockInGrid = Quaternion.Identity; bool _hasBlockQ;
     float _rpm = -1f, _psi, _coll, _cone, _hinge, _span, _tip; Vector3 _tilt; long _last; bool _matched;
+    /// <summary>Drawn counter-rotating (the record's switch; kept while no record); the mirrored blade set was found.</summary>
+    bool _ccw, _hasCcwSet; AeroPropulsorComponent _propc;
     long _logAt;
 
     // ── in-game checks (harness: aeroget AeroRotorAnimComponent.Summary) ──
@@ -118,6 +129,10 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         if (_matched)
         {
             rpm = _rec[0]; thrust = _rec[1]; maxNow = _rec[2]; rated = _rec[3]; tiltGrid = new Vector3(_rec[4], _rec[5], _rec[6]);
+            _ccw = _rec[8] > 0.5f;
+            // (this client copy's propulsor: its reaction torque and limiter the server's way round - RotorCyclic in both scenes)
+            _propc ??= Entity.TryGet<AeroPropulsorComponent>();
+            if (_propc != null) _propc.CounterRotating = _ccw;
         }
         else
         {
@@ -150,6 +165,11 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
 
         var disc = RotorKinematics.Tilt(_tilt);
         var hubPos = _hub.Rest.Position;
+        // COUNTER-ROTATING: every pose is the clockwise law's in the mirror (x -> -x), mirrored back - the inputs here
+        bool mir = _ccw && !tail;
+        var tiltL = mir ? RotorKinematics.MirrorX(_tilt) : _tilt;
+        var discL = mir ? RotorKinematics.Tilt(tiltL) : disc;
+        var hubL = mir ? RotorKinematics.MirrorX(hubPos) : hubPos;
         float bladeA = _broken ? 0f : RotorKinematics.BladeOpacity(rpm), blurA = _broken ? 0f : RotorKinematics.BlurOpacity(rpm);
         bool log = Log && now - _logAt > System.Diagnostics.Stopwatch.Frequency / 5;
         if (log) _logAt = now;
@@ -162,22 +182,28 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
             switch (p.Role)
             {
                 case Role.Hub:
-                    pos = p.Rest.Position; rot = RotorKinematics.HubRot(disc, _psi, p.Rest.Orientation); alpha = 1f; break;
+                    pos = p.Rest.Position; rot = RotorKinematics.HubRot(discL, _psi, Mir(mir, p.Rest.Orientation)); alpha = 1f; break;
                 case Role.Blade:
                 {
-                    var span = RotorKinematics.SpanDir(p.Rest.Orientation, _psi);
-                    float pitch = RotorKinematics.BladePitch(_coll, _tilt, span) - baked;
-                    RotorKinematics.BladePose(hubPos, disc, _psi, p.Rest.Position, p.Rest.Orientation, _cone, pitch, out pos, out rot);
-                    alpha = bladeA;
-                    var tip = pos + Vector3.Transform(Vector3.UnitZ * (_span > 0f ? _span : 1f), rot);
-                    if (nt == 0) t0 = tip; else if (nt == 1) t1 = tip; else t2 = tip; nt++;
-                    if (log) sb.Append($" b{nt} pitch {(pitch + baked) * 57.2958f:F2}");
+                    var restRot = Mir(mir, p.Rest.Orientation);
+                    var span = RotorKinematics.SpanDir(restRot, _psi);
+                    float pitch = RotorKinematics.BladePitch(_coll, tiltL, span) - baked;
+                    RotorKinematics.BladePose(hubL, discL, _psi, Mir(mir, p.Rest.Position), restRot, _cone, pitch, out pos, out rot);
+                    pos = Mir(mir, pos);
+                    // (the set this turn shows: the mirrored set when counter-rotating and it is there; the other one hidden)
+                    bool shown = p.Ccw == (mir && _hasCcwSet);
+                    alpha = shown ? bladeA : 0f;
+                    var tip = pos + Vector3.Transform(Vector3.UnitZ * (_span > 0f ? _span : 1f), Mir(mir, rot));
+                    if (shown) { if (nt == 0) t0 = tip; else if (nt == 1) t1 = tip; else t2 = tip; nt++; }
+                    if (log && shown) sb.Append($" b{nt} pitch {(pitch + baked) * 57.2958f:F2}");
                     break;
                 }
                 default:
-                    RotorKinematics.BlurPose(hubPos, disc, p.Rest.Position, p.Rest.Orientation, _cone, BlurConeDeg * MathF.PI / 180f, _span, out pos, out rot);
+                    RotorKinematics.BlurPose(hubL, discL, Mir(mir, p.Rest.Position), Mir(mir, p.Rest.Orientation), _cone, BlurConeDeg * MathF.PI / 180f, _span, out pos, out rot);
+                    pos = Mir(mir, pos);
                     alpha = blurA; break;
             }
+            rot = Mir(mir, rot);
             // (the check: last frame's pose is where the engine has the part now - block world x relative)
             if (Log && p.HasLast) CheckPose(p);
             p.Entity.Data.Set(new RelativeTransform(pos, rot));
@@ -203,6 +229,9 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         if (log)
             Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} {(_matched ? "rec" : "local")} rpm {rpm * 100f:F1}% psi {_psi * 57.2958f:F0} T {thrust:F0}/{maxNow:F0} N (rated {rated:F0}) coll {_coll * 57.2958f:F2} cone {_cone * 57.2958f:F2} tilt ({_tilt.X * 57.2958f:F2}, {_tilt.Z * 57.2958f:F2}) deg (grid {tiltGrid.X * 57.2958f:F2}, {tiltGrid.Y * 57.2958f:F2}, {tiltGrid.Z * 57.2958f:F2}) blades {bladeA:F2} blur {blurA:F2}{sb}");
     }
+
+    static Vector3 Mir(bool m, Vector3 v) => m ? RotorKinematics.MirrorX(v) : v;
+    static Quaternion Mir(bool m, Quaternion q) => m ? RotorKinematics.MirrorX(q) : q;
 
     /// <summary>The blade model's own pitch at 75 % radius (rad, rotor_rig_v2.py "baked_pitch75_deg": the main rotors' blade, a
     /// linear twist 8.0 deg at 30 % to 2.6 deg at 95 %; the Reversible Rotor's blade is 4.78 - drawn 0.5 deg low): the collective is
@@ -345,23 +374,31 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
         if (_kind == AeroPropulsorComponent.Kinds.Turboprop) { FindPropParts(kids, row); return; }
         Vector3 c = Vector3.Zero;
         foreach (var k in kids)
-            if (k != null && k.Data.TryGet<RelativeTransform>(out var rt)) { _parts.Add(new Part { Entity = k, Rest = rt }); c += rt.Position; }
-        if (_parts.Count != 5) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children, not a split rotor (5) - not animated"); _parts.Clear(); return; }
+            if (k != null && k.Data.TryGet<RelativeTransform>(out var rt))
+            {
+                // (the counter-rotating blade set by its entity name - at the same dummies as the clockwise blades)
+                bool ccw = k.DebugName != null && k.DebugName.IndexOf(CcwBladeName, StringComparison.Ordinal) >= 0;
+                _parts.Add(new Part { Entity = k, Rest = rt, Ccw = ccw }); if (!ccw) c += rt.Position;
+            }
+        int ccwN = 0; foreach (var p in _parts) if (p.Ccw) ccwN++;
+        if (_parts.Count - ccwN != 5 || (ccwN != 0 && ccwN != 3)) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children ({ccwN} counter-rotating blades), not a split rotor (5, or 8 with the mirrored blades) - not animated"); _parts.Clear(); return; }
         c /= 5f;
         Part a = null, b = null; int blades = 0; float hinge = 0f;
         foreach (var p in _parts)
         {
+            if (p.Ccw) { p.Role = Role.Blade; continue; }
             var d = p.Rest.Position - c; d.Y = 0f;
             if (d.Length() > 0.1f) { p.Role = Role.Blade; blades++; hinge += d.Length(); }
             else if (a == null) a = p; else b = p;
         }
         if (blades != 3 || a == null || b == null) { _parts.Clear(); return; }
+        _hasCcwSet = ccwN == 3;
         if (a.Rest.Position.Y >= b.Rest.Position.Y) { a.Role = Role.Hub; b.Role = Role.Blur; _hub = a; _blur = b; }
         else { b.Role = Role.Hub; a.Role = Role.Blur; _hub = b; _blur = a; }
         _hinge = hinge / 3f;
         // (the tip: the block's table radius - PropulsorBlocks, the rig's tip radius; else the main rotors' ratio)
         _tip = row != null && row.Radius > _hinge ? row.Radius : _hinge * TipOverHinge;
         _span = _tip - _hinge;
-        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
+        if (AeroLog.Detail) Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key} client: hub at {_hub.Rest.Position}, blur at {_blur.Rest.Position}, 3 blades{(_hasCcwSet ? " + 3 mirrored" : "")}, hinge radius {_hinge:F3} m, tip {_tip:F2} m, span {_span:F2} m");
     }
 }

@@ -29,6 +29,8 @@ namespace AeroMod;
 ///              a tail rotor or gyros must answer it - RotorLimiter caps the thrust to what they can hold).
 /// Frame: the block's (VRage: +Y the rotor axis). Blade k is spawned at its hinge, turned (k x 120 deg) about +Y, its span
 /// +Z, its chord X with the leading edge at -X; the rotor turns CLOCKWISE seen from above (about -Y): leading edge first.
+/// A COUNTER-ROTATING rotor (its terminal option, AeroRotorSpinComponent) is the mirror image of this (MirrorX): its reaction
+/// the other way (ReactionAxis), its parts posed by the clockwise law in the mirror, its blades the mirrored models.
 /// </summary>
 public static class RotorKinematics
 {
@@ -212,4 +214,15 @@ public static class RotorKinematics
         pos = hub + Vector3.Transform(restPos - hub + Vector3.UnitY * lift, disc);
         rot = Quaternion.Normalize(disc * restRot);
     }
+
+    // ── counter-rotating (2026-10-23, the user: a terminal option to flip the rotor torque) ──
+    /// <summary>The way a main rotor's reaction torque acts (unit, the block's thrust axis turned to the grid): +axis for the
+    /// clockwise-from-above rotor, -axis for a counter-rotating one - two opposite rotors' reactions cancel.</summary>
+    public static Vector3 ReactionAxis(Vector3 thrustDir, bool counterRotating) => counterRotating ? -thrustDir : thrustDir;
+
+    /// <summary>A counter-rotating rotor is the MIRROR IMAGE of the clockwise one across the block's YZ plane (x -> -x): every pose
+    /// is the clockwise law's on the mirrored inputs, mirrored back. A point / vector mirrored.</summary>
+    public static Vector3 MirrorX(Vector3 v) => new Vector3(-v.X, v.Y, v.Z);
+    /// <summary>A rotation mirrored (M R M with M = diag(-1, 1, 1)): the axis's x kept, y and z negated.</summary>
+    public static Quaternion MirrorX(Quaternion q) => new Quaternion(q.X, -q.Y, -q.Z, q.W);
 }

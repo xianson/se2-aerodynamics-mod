@@ -21,8 +21,9 @@ static class Program
         var rows = PropulsorBlocks.Rows;
         PropulsorBlocks.Row Row(string n) => rows.First(r => r.Name == n);
         var r05 = Row("HelicopterRotor_050"); var r15 = Row("HelicopterRotor_150"); var r25 = Row("HelicopterRotor_250"); var tail = Row("HelicopterTailRotor_050");
-        // 1. thrust ~ disc area (one disc loading), anchored on the 1.5 m = 900 kN (2026-10-18: 1.5x for honest dampeners, from 600); the tip radii are the spec's 2.5 / 7.5 / 12.5 m
-        Check(r05.Radius == 2.5f && r15.Radius == 7.5f && r25.Radius == 12.5f, $"rotor tip radii {r05.Radius} / {r15.Radius} / {r25.Radius} m");
+        // 1. thrust ~ disc area (one disc loading), anchored on the 1.5 m = 900 kN (2026-10-18: 1.5x for honest dampeners, from 600); the tip radii are the spec's 3.5 / 10.5 / 17.5 m
+        //    (2026-10-23, the user: longer blades - the tip at 7 cells, from 5 - thrust kept: the disc loading falls to 0.51x)
+        Check(r05.Radius == 3.5f && r15.Radius == 10.5f && r25.Radius == 17.5f, $"rotor tip radii {r05.Radius} / {r15.Radius} / {r25.Radius} m");
         Check(r15.StaticThrust == 900000f, $"HelicopterRotor_150: {r15.StaticThrust / 1e3f:F0} kN");
         float dl = r15.StaticThrust / (MathF.PI * r15.Radius * r15.Radius);
         foreach (var r in new[] { r05, r25 })
@@ -48,17 +49,19 @@ static class Program
             foreach (float rho in new[] { 1f, 0.89f, 0.5f })
             {
                 float T = r.StaticThrust * rho, share = K.ReactionTorque(T, r.Radius, 1f, rho) / r.Radius / T;
-                Check(share > 0.0285f && share < 0.0315f, $"{r.Name} at rho {rho}: a tail at {r.Radius} m needs {share * 100f:F1} % of its thrust");
+                // (2026-10-23: 2.2 %, from 3 % - the same torque on the longer blades' 1.4x tip radius arm)
+                Check(share > 0.0205f && share < 0.0235f, $"{r.Name} at rho {rho}: a tail at {r.Radius} m needs {share * 100f:F1} % of its thrust");
             }
         Check(K.ReactionTorque(1.25f * r15.StaticThrust, 7.5f, 1f, 1f) > 1.25f * 1.1f * K.ReactionTorque(r15.StaticThrust, 7.5f, 1f, 1f), "reaction: still grows faster than thrust (1.25 x thrust > 1.37 x torque)");
         // 4. the Reversible Rotor (128 kN, 2026-10-18; 85 kN until the rotors went 1.5x): one at a 1.5 m rotor's tip radius holds it at its rating WITH the limiter's
         //    margin (no cap below 100 %); two at the 2.5 m rotor's tip radius hold ~87 % of its rating (the limiter's own targets)
         {
-            float q15 = K.ReactionTorque(r15.StaticThrust, 7.5f, 1f, 1f), q25 = K.ReactionTorque(r25.StaticThrust, 12.5f, 1f, 1f);
-            float held15 = RotorLimiter.Margin * tail.StaticThrust * 7.5f;
-            Check(held15 >= q15 && held15 < 1.25f * q15, $"one Reversible Rotor at 7.5 m: {held15 / 1e3f:F0} kN m (x {RotorLimiter.Margin}) against the 1.5 m rotor's {q15 / 1e3f:F0} kN m at rated");
-            float need = q25 / 12.5f / tail.StaticThrust;
-            Check(need > 1.9f && need < 2.1f, $"the 2.5 m rotor at rated needs {need:F2} Reversible Rotors at 12.5 m ({q25 / 1e3f:F0} kN m) - x {RotorLimiter.Margin}: {need / RotorLimiter.Margin:F2}");
+            float q15 = K.ReactionTorque(r15.StaticThrust, r15.Radius, 1f, 1f), q25 = K.ReactionTorque(r25.StaticThrust, r25.Radius, 1f, 1f);
+            float held15 = RotorLimiter.Margin * tail.StaticThrust * r15.Radius;
+            // (2026-10-23, the longer blades: the tip radius arm is 1.4x, so one holds ~1.57x the reaction - headroom, not a fit)
+            Check(held15 >= q15 && held15 < 1.65f * q15, $"one Reversible Rotor at {r15.Radius} m: {held15 / 1e3f:F0} kN m (x {RotorLimiter.Margin}) against the 1.5 m rotor's {q15 / 1e3f:F0} kN m at rated");
+            float need = q25 / r25.Radius / tail.StaticThrust;
+            Check(need > 1.35f && need < 1.5f, $"the 2.5 m rotor at rated needs {need:F2} Reversible Rotors at {r25.Radius} m ({q25 / 1e3f:F0} kN m) - x {RotorLimiter.Margin}: {need / RotorLimiter.Margin:F2}");
             // the caps themselves (RotorLimiter.Targets, rpm 1, rho 1): the tails pushing +X at (0, 0, z): arm (0, -z, 0) against +Y
             float Cap(PropulsorBlocks.Row r, int tails, float z)
             {
@@ -70,9 +73,9 @@ static class Program
                 RotorLimiter.Targets(1, new[] { 0 }, new[] { r.Radius }, new[] { 1f }, new[] { r.StaticThrust }, arms, dirs, caps, rev, n, Vector3.Zero, 1f, au, bu, tg);
                 return tg[0] / r.StaticThrust;
             }
-            float c15 = Cap(r15, 1, 7.5f), c25 = Cap(r25, 2, 12.5f);
+            float c15 = Cap(r15, 1, r15.Radius), c25 = Cap(r25, 2, r25.Radius);
             Check(c15 >= 1f, $"1.5 m rotor + one Reversible Rotor at its tip radius: cap {c15 * 100f:F0} % of rated - not capped below 100 %");
-            Check(c25 > 0.85f && c25 < 0.89f, $"2.5 m rotor + two Reversible Rotors at its tip radius: cap {c25 * 100f:F1} % of rated (~87 %)");
+            Check(c25 >= 1f, $"2.5 m rotor + two Reversible Rotors at its tip radius: cap {c25 * 100f:F1} % of rated - not capped below 100 % (~87 % before the longer blades)");
         }
         // 5. ThrustForTorque is ReactionTorque's inverse; 0 below the profile torque; none when stopped; never NaN
         {
@@ -131,6 +134,37 @@ static class Program
             Check(tgt[0] == 0f, $"targets: no anti-torque at all - no lift ({tgt[0]})");
             RotorLimiter.Targets(1, new[] { 0 }, new[] { 7.5f }, new[] { 0f }, new[] { 6e5f }, arms, dirs, caps, null, 2, Vector3.Zero, 1f, auth, bud, tgt);
             Check(float.IsPositiveInfinity(tgt[0]), "targets: a stopped rotor - no cap");
+            // COUNTER-ROTATING (2026-10-23): no turns given and every one clockwise are the same; two alike, one counter-rotating
+            // (coaxial: one axis, no tail, no gyros) - their reactions cancel and neither is capped; the counter-rotating one
+            // alone reacts the other way (a tail mounted for a clockwise rotor gives it nothing)
+            float[] bud0 = new float[2], tgt0 = new float[2];
+            RotorLimiter.Targets(2, new[] { 0, 2 }, new[] { 7.5f, 7.5f }, new[] { 1f, 1f }, new[] { 6e5f, 6e5f }, arms, dirs, caps, null, 3, Vector3.Zero, 1f, auth, bud0, tgt0);
+            RotorLimiter.Targets(2, new[] { 0, 2 }, new[] { 7.5f, 7.5f }, new[] { 1f, 1f }, new[] { 6e5f, 6e5f }, new[] { false, false }, arms, dirs, caps, null, 3, Vector3.Zero, Vector3.Zero, Vector3.Zero, 1f, auth, bud, tgt);
+            Check(bud[0] == bud0[0] && tgt[0] == tgt0[0] && tgt[1] == tgt0[1], "counter-rotating: none counter-rotating - as before");
+            var noTail = new[] { 6e5f, 0f, 6e5f };
+            RotorLimiter.Targets(2, new[] { 0, 2 }, new[] { 7.5f, 7.5f }, new[] { 1f, 1f }, new[] { 6e5f, 6e5f }, new[] { false, true }, arms, dirs, noTail, null, 3, Vector3.Zero, Vector3.Zero, Vector3.Zero, 1f, auth, bud, tgt);
+            Check(tgt[0] >= 0.999f * 6e5f && tgt[1] >= 0.999f * 6e5f, $"counter-rotating: a coaxial pair with no tail, no gyros - not capped ({tgt[0] / 1e3f:F0} / {tgt[1] / 1e3f:F0} kN of 600)");
+            RotorLimiter.Targets(2, new[] { 0, 2 }, new[] { 7.5f, 7.5f }, new[] { 1f, 1f }, new[] { 6e5f, 6e5f }, null, arms, dirs, noTail, null, 3, Vector3.Zero, Vector3.Zero, Vector3.Zero, 1f, auth, bud, tgt);
+            Check(tgt[0] == 0f && tgt[1] == 0f, $"counter-rotating: the same pair both clockwise - no lift ({tgt[0]}, {tgt[1]})");
+            RotorLimiter.Targets(1, new[] { 0 }, new[] { 7.5f }, new[] { 1f }, new[] { 6e5f }, new[] { true }, arms, dirs, caps, null, 2, Vector3.Zero, Vector3.Zero, Vector3.Zero, 1f, auth, bud, tgt);
+            Check(auth[0] == 0f && tgt[0] == 0f, $"counter-rotating: alone, the clockwise rotor's tail pushes the wrong way - no authority ({auth[0]})");
+            Vector3 qa = K.ReactionAxis(Vector3.UnitY, false) * K.ReactionTorque(6e5f, 7.5f, 1f, 1f), qb = K.ReactionAxis(Vector3.UnitY, true) * K.ReactionTorque(6e5f, 7.5f, 1f, 1f);
+            Check(qa.Y > 0f && (qa + qb).Length() < 1e-3f, $"counter-rotating: two alike at one thrust - reactions {qa.Y:F0} + {qb.Y:F0} N m cancel");
+        }
+        // 7b. the mirror (a counter-rotating rotor is drawn as the clockwise one mirrored, x -> -x): a mirrored rotation turns
+        //     mirrored vectors as the rotation mirrored; mirrored back is the identity; the mirrored spin turns blade 0 the other way
+        {
+            var q = Quaternion.Normalize(new Quaternion(0.3f, -0.5f, 0.2f, 0.8f)); var v = new Vector3(0.7f, -1.1f, 2.3f);
+            Check((Vector3.Transform(K.MirrorX(v), K.MirrorX(q)) - K.MirrorX(Vector3.Transform(v, q))).Length() < 1e-5f, "mirror: M R M (M v) = M (R v)");
+            var mm = K.MirrorX(K.MirrorX(q));
+            Check(MathF.Abs(mm.X - q.X) + MathF.Abs(mm.Y - q.Y) + MathF.Abs(mm.Z - q.Z) + MathF.Abs(mm.W - q.W) < 1e-7f && K.MirrorX(K.MirrorX(v)) == v, "mirror: twice is none");
+            // blade 0 at rest along +Z: clockwise a small turn takes it toward -X, the mirrored law toward +X (counter-clockwise from above)
+            var hub = Vector3.Zero; var rest = new Vector3(0f, 0f, 0.75f);
+            K.BladePose(hub, Quaternion.Identity, 0.1f, rest, Quaternion.Identity, 0f, 0f, out var pc, out _);
+            K.BladePose(K.MirrorX(hub), Quaternion.Identity, 0.1f, K.MirrorX(rest), K.MirrorX(Quaternion.Identity), 0f, 0f, out var pm, out var rm);
+            pm = K.MirrorX(pm); rm = K.MirrorX(rm);
+            Check(pc.X < -0.05f && pm.X > 0.05f && MathF.Abs(pm.Z - pc.Z) < 1e-5f, $"mirror: blade 0 clockwise to {pc}, counter-rotating to {pm}");
+            Check(MathF.Abs(rm.LengthSquared() - 1f) < 1e-4f, "mirror: the mirrored pose is a rotation");
         }
         // 8. the smoothing: at once from none; first order down (FallSeconds) and up (RiseSeconds, slower); monotonic, no overshoot
         {
@@ -291,7 +325,7 @@ static class Program
             Check(tt.Contains("RotorCyclic.Has(aero, n) ? RotorCyclic.ReactionTorque"), "ThrustTorque: the reaction only for RotorCyclic's rotors");
             // THE STRUCTURE (2026-10-17): the cyclic's force and torque and the reaction - applied to the body at the centre of mass -
             // published at each rotor's block, every step that applied them, as an engine's (off with ThrustLoads); not a contact
-            Check(cyc.Contains("if (applied && k < loadF.Length) { loadF[k] = forceK; loadT[k] = givenK; }") && cyc.Contains("each[k] = dirs[i] * Q;")
+            Check(cyc.Contains("if (applied && k < loadF.Length) { loadF[k] = forceK; loadT[k] = givenK; }") && cyc.Contains("each[k] = ax * Q;") && cyc.Contains("var ax = RotorKinematics.ReactionAxis(dirs[i], p.CounterRotating);")
                   && cyc.Contains("aero.PublishBlockLoad(e, f, hub, t - Vector3.Cross(hub - com, f), true);"),
                   "RotorCyclic: each rotor's cyclic force, the torque it gave and its reaction published at its hub (PublishBlockLoad, isEngine), the ship's moment kept");
             Check(tt.Contains("if (RotorCyclic.Has(aero, n)) RotorCyclic.PublishLoads(aero, com, dirs, n, ApplyForces);"), "ThrustTorque: the rotors' loads published every step, after they were applied");

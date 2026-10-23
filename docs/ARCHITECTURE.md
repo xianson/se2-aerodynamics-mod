@@ -333,6 +333,7 @@ The engine type is always there, so a world saved with the mod still loads witho
 | Thruster: attitude fraction | `AeroThrustSettingsComponent` on the block, id `...b4` | `aero-thrust:1 f` (only off the default 0.5) |
 | Autopilot block: its panel - mode, height and reference, hover speed, protection's limits, unattended (2026-10-19) | `AeroAutopilotComponent` on the block, id `...b8` | `aero-autopilot:1 mode height ref speed prot g aoa floor look unattended` (every autopilot block) |
 | Rotor / prop blades' health (rotor strikes, 2026-10-17) | `AeroRotorStrikeComponent` on the striking propulsors' server blocks, id `...b7` | `aero-blades:1 health` (only below 1: worn or broken - 0) |
+| Main helicopter rotor: counter-rotating (2026-10-23) | `AeroRotorSpinComponent` on the main rotors' server blocks, id `...b9` | `aero-rotorspin:1 1` (only when counter-rotating) |
 
 - **The world settings' carriers** (2026-10-19; `Save/WorldCarriers.cs`, shared with the Orbital Mod; the engine side
   `Runtime/AeroWorldSettingsComponent.cs`): a planetless save (the game's Empty World) holds only the players' bodies, so

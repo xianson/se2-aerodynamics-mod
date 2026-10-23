@@ -69,6 +69,9 @@
 	"scene":0,
 	"scenes":[
 		{
+			"extras":{
+				"aero_tip_cells":7.0
+			},
 			"name":"Scene",
 			"nodes":[
 				0,
@@ -240,14 +243,14 @@
 			"componentType":5126,
 			"count":8,
 			"max":[
-				8.25,
+				11.25,
 				1.5,
-				8.25
+				11.25
 			],
 			"min":[
-				-8.25,
+				-11.25,
 				0,
-				-8.25
+				-11.25
 			],
 			"type":"VEC3"
 		},

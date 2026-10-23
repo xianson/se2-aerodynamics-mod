@@ -646,8 +646,9 @@ public static class ThrustTorque
     /// AABB Min + Max - the index replaced when a rotor is new to it, the values written in place (AeroRotorAnimComponent).</summary>
     internal sealed class RotorTable { public float[] V; public readonly Dictionary<Vector3I, int> Index = new(); }
     /// <summary>A rotor's record: rpm (0..1 governed), thrust (N, this step), its maximum now (N, x rpm^2), rated (N), the
-    /// disc's tilt (grid-local x, y, z: the way the thrust leans, length = angle rad), on (1 / 0).</summary>
-    internal const int RotorStride = 8;
+    /// disc's tilt (grid-local x, y, z: the way the thrust leans, length = angle rad), on (1 / 0), counter-rotating (1 / 0: a main
+    /// rotor's terminal switch, AeroRotorSpinComponent - its client copy drawn mirrored).</summary>
+    internal const int RotorStride = 9;
     /// <summary>One server grid's record: where it is (to match its client copy) and its shares.</summary>
     internal sealed class Published
     {
@@ -825,7 +826,7 @@ public static class ThrustTorque
 
     /// <summary>Server: one rotor's state this step (RotorCyclic.Publish; one grid's rotors from its one attitude job - grown under
     /// the record's lock all the same, as the gears).</summary>
-    internal static void PublishRotor(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float rpm, float thrust, float maxNow, float rated, Vector3 tilt, bool on)
+    internal static void PublishRotor(AeroGridComponent aero, in WorldTransform wt, Vector3I key, float rpm, float thrust, float maxNow, float rated, Vector3 tilt, bool on, bool counterRotating)
     {
         if (!aero.IsServerScene) return;
         var p = Record(aero, wt);
@@ -846,7 +847,7 @@ public static class ThrustTorque
             }
         }
         var v = t.V; int o = i * RotorStride;
-        v[o] = rpm; v[o + 1] = thrust; v[o + 2] = maxNow; v[o + 3] = rated; v[o + 4] = tilt.X; v[o + 5] = tilt.Y; v[o + 6] = tilt.Z; v[o + 7] = on ? 1f : 0f;
+        v[o] = rpm; v[o + 1] = thrust; v[o + 2] = maxNow; v[o + 3] = rated; v[o + 4] = tilt.X; v[o + 5] = tilt.Y; v[o + 6] = tilt.Z; v[o + 7] = on ? 1f : 0f; v[o + 8] = counterRotating ? 1f : 0f;
     }
 
     /// <summary>Server: one reversible thruster's sides this step (ThrustTorque.Apply).</summary>

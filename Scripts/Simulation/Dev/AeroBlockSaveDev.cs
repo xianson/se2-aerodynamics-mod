@@ -18,10 +18,11 @@ namespace AeroMod;
 /// </summary>
 internal static partial class AeroBlockSave
 {
-    // ── counters (per block kind: surface, gear, airbrake, thrust, solid rocket segment, solid rocket nozzle, rotor blades, autopilot) ──
-    public const int KSurface = 0, KGear = 1, KAirbrake = 2, KThrust = 3, KSolid = 4, KSolidNozzle = 5, KBlades = 6, KAutopilot = 7;
-    static readonly int[] _restored = new int[8], _written = new int[8], _legacy = new int[8];
-    static readonly string[] KindNames = { "surface", "gear", "airbrake", "thrust", "solid", "solidnozzle", "blades", "autopilot" };
+    // ── counters (per block kind: surface, gear, airbrake, thrust, solid rocket segment, solid rocket nozzle, rotor blades, autopilot,
+    //    a main rotor's turn) ──
+    public const int KSurface = 0, KGear = 1, KAirbrake = 2, KThrust = 3, KSolid = 4, KSolidNozzle = 5, KBlades = 6, KAutopilot = 7, KRotorSpin = 8;
+    static readonly int[] _restored = new int[9], _written = new int[9], _legacy = new int[9];
+    static readonly string[] KindNames = { "surface", "gear", "airbrake", "thrust", "solid", "solidnozzle", "blades", "autopilot", "rotorspin" };
     static string _last = "none";
 
     /// <summary>Blocks that took their state from their own saved data, this process (both scenes' thruster copies).</summary>
@@ -132,6 +133,7 @@ internal static partial class AeroBlockSave
                     foreach (var ap in AeroAutopilotComponent.All)
                         if (ap.Entity != null && ReferenceEquals(ap.Entity.Data.Scene, scene) && OnGrid(ap.Entity, want, out var g, out int x, out int y, out int z)) hits.Add(new Hit { C = ap, X = x, Y = y, Z = z, Grid = g });
                 break;
+            case "rotorspin": break;   // (a main rotor's turn: counted only - not listed, not set from the harness)
             default:
                 // (both scenes' copies in this list: the server step's own only - the copy the save writes)
                 lock (AeroThrustSettingsComponent.All)

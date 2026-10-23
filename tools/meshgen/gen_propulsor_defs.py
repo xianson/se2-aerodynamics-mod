@@ -77,6 +77,10 @@ DT_BLADE, DT_BLUR = G(SHARED, 0x31), G(SHARED, 0x32)
 # a turboprop's intake fan (2026-10-16, turboprop_rig.py: the stock atmospheric thruster's S1 fan at the intake): a second
 # spinning subpart (Subpart02/<N>_S2_Fan, its own dummy "PropFan" and InfiniteRotationAnimation, the vanilla spin)
 DT_FAN = G(SHARED, 0x33)
+# the counter-rotating blade (2026-10-23, rotor_mirror_blade.py: Subpart06/<N>_S6_BladeCCW): a helicopter rotor spawns both blade
+# sets on the same hinges - RotorBlade1..3 and RotorBladeCCW1..3 - and AeroRotorAnimComponent shows the one its Counter-rotating
+# setting asks for (the CCW subpart's entity is named BLADE_CCW_NAME)
+DT_BLADE_CCW, BLADE_CCW_NAME = G(SHARED, 0x35), "RotorBladeCCW"
 # the blur disc's own TRANSLUCENT material (2026-10-16, the user: "the blurred blades dont look great" - the disc was the
 # blades' opaque paint faded by the engine's dithered entity opacity, a screen-door stipple): a PBRTransparent material whose
 # alpha is a texture (blur_material(): radial - denser at the root, where the blades sweep most of the circle - a faint
@@ -178,7 +182,9 @@ KINDS = {
 # anchored on HelicopterRotor_150 = 600 kN on its 7.5 m blade tips (3.4 kN/m^2), by the tip radii of docs/PROPULSOR_SPECS.md
 # (2.5 / 7.5 / 12.5 m - checked against the spec's rotor_radius below), to the nearest kN: 67 kN / 600 kN / 1.667 MN.
 # (before: 100 kN / 0.9 MN / 2.5 MN - the yaw spin: RotorKinematics.ReactionScale, RotorLimiter)
-ROTOR_TIP = {"HelicopterRotor_050": 2.5, "HelicopterRotor_150": 7.5, "HelicopterRotor_250": 12.5}
+# (2026-10-23, the user: longer blades - the tip at 7 cells, from 5 (rotor_lengthen.py) - "keep thrust the same": the same
+#  ratios, so the same 100 kN / 900 kN / 2.5 MN; the disc loading falls to 0.51x)
+ROTOR_TIP = {"HelicopterRotor_050": 3.5, "HelicopterRotor_150": 10.5, "HelicopterRotor_250": 17.5}
 ROTOR_ANCHOR = ("HelicopterRotor_150", 900e3)   # (2026-10-18, the user: 1.5x for honest dampeners - a hover now costs 2x the planet weight in real thrust; was 600 kN)
 rotor_thrust = lambda N: round(ROTOR_ANCHOR[1] * (ROTOR_TIP[N] / ROTOR_TIP[ROTOR_ANCHOR[0]]) ** 2, -3)
 THRUST = {"Turboprop_050": 76e3, "Turboprop_150": 684e3, "Turboprop_250": 1.9e6,
@@ -247,12 +253,16 @@ def gen_block(N, s, rows):
     gd.model(os.path.join(md, "Fractured", f"{N}_Fractured.model"), m_fr, [lod("Fractured", n, N + "_Fractured") for n in range(4)], mats["Body"], ids[f"Fractured/{N}_Fractured_collision.gltf"], off)
     gd.model(os.path.join(md, "Deformed", f"{N}_Deformed.model"), m_de, [lod("Deformed", n, N + "_Deformed") for n in range(4)], mats["Body"], ids[f"Deformed/{N}_Deformed_collision.gltf"], off)
     m_hub, m_blade, m_blur = (G(sid, 0x104 + i) for i in range(3))
+    m_bladeccw = G(sid, 0x108)
+    ccw = anim and f"NonFractured/Subpart06/{N}_S6_BladeCCW.fbx" in ids
     if anim:
         # (the materials: the spec's Hub / Blade lists when the rig wrote them - rotor_rig.py, the approved kitbash model, 2026-10-16 -
         #  else rotor_split.py's blockout parts)
         gd.model(os.path.join(md, "NonFractured", "Subpart01", f"{N}_S1_Hub.model"), m_hub, [lod("NonFractured/Subpart01", n, N + "_S1_Hub") for n in range(3)], mats.get("Hub", ["BrushedMetal"]), None, (0.0, 0.0, 0.0))
         gd.model(os.path.join(md, "NonFractured", "Subpart02", f"{N}_S2_Blade.model"), m_blade, [lod("NonFractured/Subpart02", n, N + "_S2_Blade") for n in range(3)], mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]), None, (0.0, 0.0, 0.0))
         gd.model(os.path.join(md, "NonFractured", "Subpart03", f"{N}_S3_Blur.model"), m_blur, [lod("NonFractured/Subpart03", n, N + "_S3_Blur") for n in range(3)], [BLUR_MAT], None, (0.0, 0.0, 0.0))
+        if ccw:
+            gd.model(os.path.join(md, "NonFractured", "Subpart06", f"{N}_S6_BladeCCW.model"), m_bladeccw, [lod("NonFractured/Subpart06", n, N + "_S6_BladeCCW") for n in range(3)], mats.get("Blade", ["PaintedMetalDarker", "WarningStripes"]), None, (0.0, 0.0, 0.0))
     else:
         gd.model(os.path.join(md, "NonFractured", "Subpart01", f"{N}_S1_Rotor.model"), m_rot, [lod("NonFractured/Subpart01", n, N + "_S1_Rotor") for n in range(3)], mats["Rotor"], None, (0.0, 0.0, 0.0))
     # a turboprop with the rotors' blur treatment (2026-10-17, turboprop_rig.py / turboprop_export_prep.py): the Rotor subpart is
@@ -288,6 +298,8 @@ def gen_block(N, s, rows):
         dummies.append(gd.dummy("PropFan", P(s["fan"]), DT_FAN))
     if split:   # (after PropFan: the existing dummies keep their keys)
         dummies += [gd.dummy("PropBlade", P(s["blade"]), DT_BLADE), gd.dummy("PropBlur", P(s["blur"]), DT_BLUR)]
+    if ccw:   # (last: the existing dummies keep their keys; the same hinges as RotorBlade1..3)
+        dummies += [gd.dummy(f"RotorBladeCCW{k + 1}", P(b["pos"]), DT_BLADE_CCW, tuple(b["quat"])) for k, b in enumerate(anim["blades"])]
     gd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), gd.partial(gd.BASE_BMD, {"Guid": bmd, "Model": "{G}" + m_nf,
         "Dummies": {"$DeltaEncoded": True, "Keys": [G(sid, 0x41 + i) if i < 3 else G(sid, 0x70 + i) for i in range(len(dummies))],
                     "Changed": [{"Kind": "Insert", "Index": i, "Value": v} for i, v in enumerate(dummies)], "Removed": []},
@@ -325,6 +337,10 @@ def gen_block(N, s, rows):
         plain_subpart("Blade", bpref, bcomp, bmcd, m_blade)
         plain_subpart("Blur", upref, ucomp, umcd, m_blur)
         subs = {DT_ROTOR: spref_s, DT_BLADE: bpref, DT_BLUR: upref}
+        if ccw:
+            cpref_, ccomp_, cmcd_ = (G(sid, 0x66 + i) for i in range(3))
+            plain_subpart("BladeCCW", cpref_, ccomp_, cmcd_, m_bladeccw, name=BLADE_CCW_NAME)
+            subs[DT_BLADE_CCW] = cpref_
     elif split:
         # (2026-10-17, the user: "the same 0.75 blade speed / blur treatment": the mod's governed rpm - idle 75 %, up with the
         #  thrust - turns the spinner and the blades together and fades the blades out / the blur disc in, as the rotors'
@@ -543,7 +559,10 @@ def gen_ramjet(N, s, rows):
 HIDDEN = ("DuctedFanOct_", "DuctedFanSquare_", "DuctedFanD_")
 # one G-menu group per family (the user, 2026-10-17: "can we not have everything in the same block group"): (file tag, menu name,
 # kind-prefix match, group GUID, its subcategory key, order). Turboprops keep the old shared group's GUID (and file), so no stale group.
+# The Reversible Rotor has its own group, listed BEFORE "Helicopter" (family_group takes the first prefix match). Sharing the
+# rotors' group hid it: the G-menu tile shows only BlockKinds[0] (BlockGroupTileModel) (2026-10-23).
 FAMILIES = [("", "Turboprops", "Turboprop", GROUP, G(SHARED, 0x23), 4),
+            ("ReversibleRotors_", "Reversible Rotors", "HelicopterTailRotor", G(SHARED, 0x2c), G(SHARED, 0x2d), 9),
             ("HelicopterRotors_", "Helicopter Rotors", "Helicopter", G(SHARED, 0x24), G(SHARED, 0x25), 5),
             ("DuctedFans_", "Ducted Fans", "DuctedFan", G(SHARED, 0x26), G(SHARED, 0x27), 6),
             ("Ramjets_", "Ramjets", "Ramjet", G(SHARED, 0x28), G(SHARED, 0x29), 7),   # (2026-10-17: the ramjets' own group)
@@ -1211,7 +1230,7 @@ def main():
     blur_material(os.path.join(gd.BLOCKS, "Assets", ROOT_REL))
     coupling_material(os.path.join(gd.BLOCKS, "Assets", ROOT_REL))
     root = os.path.join(gd.BLOCKS, "Assets", ROOT_REL)
-    for nm, dt in (("Rotor", DT_ROTOR), ("RotorBlade", DT_BLADE), ("RotorBlur", DT_BLUR), ("Fan", DT_FAN), ("RamjetSpike", DT_SPIKE)):
+    for nm, dt in (("Rotor", DT_ROTOR), ("RotorBlade", DT_BLADE), ("RotorBlur", DT_BLUR), ("Fan", DT_FAN), ("RamjetSpike", DT_SPIKE), ("RotorBladeCCW", DT_BLADE_CCW)):
         gd.definition(os.path.join(root, f"Propulsor_{nm}DummyTypeDefinition.def"), {"$Bundles": gd.B_VRAGE,
             "$Type": "VRage:Keen.VRage.Core.Model.DummyTypeDefinitionObjectBuilder", "$Value": {"Guid": dt}}, dt, False)
     for tag, gname, _, guid, skey, order in FAMILIES:

@@ -123,6 +123,7 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
         var kind = p.Kind;
         RotorStrike.DiscBasis(kind, out var u0, out var w0);
         Vector3 u = Vector3.Transform(u0, q), w = Vector3.Transform(w0, q), spin = Vector3.Transform(RotorStrike.SpinAxis(kind), q);
+        if (p.CounterRotating) spin = -spin;   // (a counter-rotating main rotor: the mirror image - its blades move, and dump their momentum, the other way)
         Vector3D hub = WorldTransform.Transform((Vector3D)_centre, in gwt) + (Vector3D)(Vector3.Transform(RotorStrike.HubAxis(kind), q) * p.HubOffset);
         float R = p.RotorRadius;
         RotorStrike.TickRays(ref _chord, ref _spoke, R, _from, _to);

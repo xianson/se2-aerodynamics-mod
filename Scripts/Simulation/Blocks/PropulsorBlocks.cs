@@ -11,20 +11,21 @@ namespace AeroMod;
 public static partial class PropulsorBlocks
 {
     static Dictionary<Guid, Row> _byBlock;
-    static HashSet<Guid> _server, _client, _blocks, _rotorClient, _ramjetClient, _strikeServer;
+    static HashSet<Guid> _server, _client, _blocks, _rotorClient, _ramjetClient, _strikeServer, _mainRotorServer;
 
     static void Build()
     {
         if (_byBlock != null) return;
-        var b = new Dictionary<Guid, Row>(); var s = new HashSet<Guid>(); var c = new HashSet<Guid>(); var k = new HashSet<Guid>(); var rc = new HashSet<Guid>(); var jc = new HashSet<Guid>(); var ss = new HashSet<Guid>();
+        var b = new Dictionary<Guid, Row>(); var s = new HashSet<Guid>(); var c = new HashSet<Guid>(); var k = new HashSet<Guid>(); var rc = new HashSet<Guid>(); var jc = new HashSet<Guid>(); var ss = new HashSet<Guid>(); var ms = new HashSet<Guid>();
         foreach (var r in Rows)
         {
             b[r.Block] = r; s.Add(r.Server); c.Add(r.Client); k.Add(r.Block);
             if (AeroPropulsorComponent.Governed(r.Kind)) rc.Add(r.Client);
             if (AeroPropulsorComponent.IsRamjet(r.Kind)) jc.Add(r.Client);
             if (RotorStrike.Strikes(r.Kind)) ss.Add(r.Server);
+            if (AeroPropulsorComponent.HasReaction(r.Kind)) ms.Add(r.Server);
         }
-        _server = s; _client = c; _blocks = k; _rotorClient = rc; _ramjetClient = jc; _strikeServer = ss; _byBlock = b;
+        _server = s; _client = c; _blocks = k; _rotorClient = rc; _ramjetClient = jc; _strikeServer = ss; _mainRotorServer = ms; _byBlock = b;
     }
 
     /// <summary>Server / client prefab GUIDs (EntityInjector) and block definition GUIDs (self-modelled: no hull surface).</summary>
@@ -40,6 +41,9 @@ public static partial class PropulsorBlocks
     /// <summary>The striking propulsors' SERVER prefabs - helicopter rotors, the Reversible Rotor, turboprops (AeroRotorStrikeComponent:
     /// the probes and the blades' saved health; the client copy reads the published state).</summary>
     public static HashSet<Guid> StrikeServerPrefabs { get { Build(); return _strikeServer; } }
+    /// <summary>The MAIN helicopter rotors' SERVER prefabs (PropulsorKinds.HasReaction - not the Reversible Rotor, not the turboprops):
+    /// AeroRotorSpinComponent, the Counter-rotating switch and its save.</summary>
+    public static HashSet<Guid> MainRotorServerPrefabs { get { Build(); return _mainRotorServer; } }
 
     /// <summary>A block's row (null: not a propulsor).</summary>
     internal static Row RowOf(Entity e)

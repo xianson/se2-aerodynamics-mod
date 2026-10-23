@@ -79,6 +79,11 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
     /// <summary>Its rotor-strike side (AeroRotorStrikeComponent: server copies of rotors, the Reversible Rotor and turboprops), and
     /// whether its blades were broken on the last tick (a change writes at once).</summary>
     AeroRotorStrikeComponent _strike; bool _wasBroken;
+    /// <summary>A main rotor's turn (2026-10-23): counter-clockwise seen from above - its reaction the other way (RotorCyclic,
+    /// RotorLimiter), its strikes' blade motion (AeroRotorStrikeComponent). Server: its AeroRotorSpinComponent's switch, every tick;
+    /// client: the server's published record (AeroRotorAnimComponent sets it).</summary>
+    public bool CounterRotating;
+    AeroRotorSpinComponent _spinSwitch;
     /// <summary>A governed propulsor (PropulsorKinds.Governed): its rpm (0..1, server), whether it is driven (on, powered,
     /// working), and its load last step (its thrust / its maximum now, 0..1: RotorCyclic.Publish, server) - a turboprop's rpm
     /// rises with it from idle.</summary>
@@ -168,10 +173,12 @@ public partial class AeroPropulsorComponent : Component, IInSceneListener
         {
             if (!_look.Due()) return;
             _known = PropulsorBlocks.Describe(this); _rev = Entity?.TryGet<ReversibleThrustComponent>(); _strike = Entity?.TryGet<AeroRotorStrikeComponent>();
+            _spinSwitch = Entity?.TryGet<AeroRotorSpinComponent>();
             _look.Done = _known;
             if (!_known) return;
         }
         if (Entity == null || !GridPhysics.Alive(Data)) return;
+        if (_spinSwitch != null) CounterRotating = _spinSwitch.CounterRotating;
         if (Governed(Kind) && _server) StepRotor();
         // ROTOR STRIKES (server: AeroRotorStrikeComponent - its own job probes, repairs and publishes; RotorStrike.cs): broken blades
         bool broken = _strike != null && _strike.Broken, brokeNow = broken != _wasBroken;

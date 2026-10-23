@@ -42,11 +42,13 @@ The prop tips reach 1.2 cells from the axis, inside the disc's ±1.5 cells. This
 
 ## Helicopter rotors: 3 sizes, plus a tail rotor
 
-| Block | Cell | Mast (1 × 1 × 1 cell) | Rotor disc (11 × 11 × 1 cells, on top) | Blade tip radius | Hinge radius |
+| Block | Cell | Mast (1 × 1 × 1 cell) | Rotor disc (15 × 15 × 1 cells, on top) | Blade tip radius | Hinge radius |
 |---|---|---|---|---|---|
-| HelicopterRotor_050 | 0.5 m | 0.5 × 0.5 × 0.5 m | 5.5 m across, 0.5 m deep | 2.5 m (5 cells) | 0.25 m |
-| HelicopterRotor_150 | 1.5 m | 1.5 × 1.5 × 1.5 m | 16.5 m across, 1.5 m deep | 7.5 m (5 cells) | 0.75 m |
-| HelicopterRotor_250 | 2.5 m | 2.5 × 2.5 × 2.5 m | 27.5 m across, 2.5 m deep | 12.5 m (5 cells) | 1.25 m |
+| HelicopterRotor_050 | 0.5 m | 0.5 × 0.5 × 0.5 m | 7.5 m across, 0.5 m deep | 3.5 m (7 cells) | 0.25 m |
+| HelicopterRotor_150 | 1.5 m | 1.5 × 1.5 × 1.5 m | 22.5 m across, 1.5 m deep | 10.5 m (7 cells) | 0.75 m |
+| HelicopterRotor_250 | 2.5 m | 2.5 × 2.5 × 2.5 m | 37.5 m across, 2.5 m deep | 17.5 m (7 cells) | 1.25 m |
+
+Longer blades (2026-10-23, the user): the tip went from 5 to 7 cells, thrust kept. Only the blade's constant-chord middle was stretched; the root grip and the striped tip are unchanged (`tools/meshgen/rotor_lengthen.py` on the export scenes).
 | HelicopterTailRotor_050 | 0.5 m | 0.5 × 0.5 × 0.5 m | 2.5 m across (5 × 5 × 1 cells), 0.5 m deep | 1.25 m (2.5 cells) | 0.25 m |
 
 - **Sizes:** the 1.5 m rotor is designed first. The 2.5 m one is an exact × 5/3 copy, and the 0.5 m one an exact × 1/3 copy.
@@ -57,18 +59,23 @@ The prop tips reach 1.2 cells from the axis, inside the disc's ±1.5 cells. This
   - a swashplate whose stationary disc sits on the gearbox's top rim;
   - a hub with three blade grips and a Jesus nut;
   - 3 blades on flap hinges.
-- **Tail rotor:** the 0.5 m rotor with half-length blades, on a 5 × 5 disc. It's a reversible thruster along its spin axis.
+- **Tail rotor:** the 0.5 m rotor with half-length blades, on a 5 × 5 disc. It's a reversible thruster along its spin axis. Its own G-menu group, "Reversible Rotors" (a group's tile shows only its first block kind).
 - **Animation:** governed RPM, collective pitch, cyclic tilt, blade coning, and a blur disc at speed.
   - The head (hub, swashplate, pitch links) spins as one part.
   - Each blade pitches about its own span at its flap hinge.
   - The blur disc runs from the hinge radius to the tips.
 - **Static thrust:**
-  - 100 kN for HelicopterRotor_050, 900 kN for _150 and 2.5 MN for _250: one disc loading (5.1 kN/m²), by disc area from the 1.5 m rotor's 900 kN on its 7.5 m tips (2026-10-18: 1.5x for honest dampeners, where a hover costs 2x the planet weight in real thrust; was 67 kN / 600 kN / 1.667 MN). RotorKinematics.ReactionScale went 0.42 → 0.344 with it, so a tail at the tip radius still needs 10 % of rated thrust;
-  - 38 kN for the tail rotor (the Reversible Rotor; 2026-10-18 the user lowered the helicopter torque: a tip-radius tail needs 3 % of rated thrust, RotorKinematics.ReactionScale 0.1032; was 128 kN, 85, 60): one of them at the 1.5 m rotor's tip radius behind its mast holds that rotor's reaction torque at its rated thrust with the limiter's 80 % margin to spare (38 kN × 7.5 m × 0.8 = 228 kN m against 202.5), so that rotor is never capped below 100 %. Two at the 2.5 m rotor's tip radius hold about 87 % of its rating; two at about 1.8 × its radius, or three at its tip radius, hold all of it.
+  - 100 kN for HelicopterRotor_050, 900 kN for _150 and 2.5 MN for _250: one disc loading (2.6 kN/m² since the longer blades, 2026-10-23 - was 5.1), by disc area from the 1.5 m rotor's 900 kN on its 10.5 m tips (2026-10-18: 1.5x for honest dampeners, where a hover costs 2x the planet weight in real thrust; was 67 kN / 600 kN / 1.667 MN). RotorKinematics.ReactionScale went 0.42 → 0.344 with it, so a tail at the tip radius still needs 10 % of rated thrust;
+  - 38 kN for the tail rotor (the Reversible Rotor; 2026-10-18 the user lowered the helicopter torque: a tip-radius tail needs 3 % of rated thrust, RotorKinematics.ReactionScale 0.1032; was 128 kN, 85, 60): one of them at the 1.5 m rotor's tip radius behind its mast holds that rotor's reaction torque at its rated thrust with the limiter's 80 % margin to spare (38 kN × 10.5 m × 0.8 = 319 kN m against 203), so that rotor is never capped below 100 %. Two at the 2.5 m rotor's tip radius hold all of it (109 %). (Since the longer blades, 2026-10-23: the torque is unchanged, the tip-radius arm 1.4x, so a tip-radius tail needs 2.2 % of rated thrust.)
 - **Power:** the helicopter rotors draw half the vanilla atmospheric thruster's power per newton (0.79 kW per kN); the Reversible Rotor and the ducted fans draw the vanilla 1.58 kW per kN; the turboprops 0.32 kW per kN (2026-10-17: the kings of subsonic thrust per kW, see "Speed roles").
 - **Structure loads (2026-10-17):** the cyclic's tilt force, the torque it gives and the rotor's reaction torque are applied to the body at the centre of mass, and published at the rotor's hub for the structure (`RotorCyclic.PublishLoads` → `PublishBlockLoad`), with the torque adjusted so the ship's total moment is unchanged. isEngine is true: they are the rotor's thrust tilted and its drive's torque, so they switch off with Structure.ThrustLoads as its axial thrust does. The rotor already has the game's ThrusterComponent, so it is rigid anyway and no rebuild happens. The tilt force is noted for the contact balance (not a contact).
 - **Cyclic trim (2026-10-18):** the cyclic also answers the thrusters' own torque - a rotor whose lift does not pass through the centre of mass, a tail thruster's pitch or roll (`RotorTrim`). Before the thruster solve it is planned against the thrusters' torque at the game's share; while that is within its reach the solve weighs in-plane torque low (it gives the yaw and stays near the game's share), and after the solve the cyclic is given what the solved thrusters left. Before, it answered only the damping or the pilot's turn, and a lone rotor's offset lift is no torque the thrusters can move with the net force kept: an unpiloted helicopter with its centre of mass 0.8 m off the rotor axis pitched over at a steady rate (honest dampeners about 8 deg/s, vanilla about 2) and fell on its per-axis hold (in game: 12.5 m/s² at 66 deg, rotor at 26 %). Now it stays level and hovers at 2 weights / its rotor (3x: 67 %). Not on the ground: a ship at rest held up by something (slow, not turning, thrust and gravity out of balance) is not trimmed, so a parked helicopter spooling up does not tilt its disc into a sideways push. A single tail rotor's yaw thrust is still a real sideways force (about 2 m/s² on the 30 t test helicopter): unpiloted nothing rolls the ship into it, so it drifts; two tails making a yaw couple hold their place. Tests/ThrustTests `TiltHeliChecks`. Hover hold (the autopilot, 2026-10-19: `Scripts/Simulation/Autopilot`) leans it into that thrust and holds its place - Tests/AutopilotSim.
 - **Reaction torque:** calibrated like a real helicopter's. At rated thrust, a tail thruster at the rotor's tip radius needs 10 % of the rotor's thrust; beyond the rating the torque grows faster than the thrust.
+- **Counter-rotating (2026-10-23):** a main rotor's terminal checkbox (`AeroRotorSpinComponent`, saved with the block; host / single player). On, it turns counter-clockwise seen from above:
+  - its reaction torque flips (`RotorKinematics.ReactionAxis`), so an opposite pair (coaxial or tandem) cancels;
+  - the limiter counts the opposite rotor's reaction as anti-torque (`RotorLimiter.Targets`): such a pair needs no tail;
+  - strikes move and dump momentum the other way;
+  - the client draws the mirror image with the mirrored blade set (subparts named `RotorBladeCCW`; without them the normal blades turn backwards).
 - **Controllability limit:** a main rotor's thrust is capped to what the ship can hold against its torque. The cap keeps the reaction within 80 % of the yaw authority about the rotor's axis. Any source of torque counts, each once:
   - reversible thrusters at an arm, both ways;
   - one-way thrusters at an arm that push the countering way;

@@ -38,6 +38,8 @@ public static class AeroBlockSaveForm
     public const int AutopilotFormat = 3;
     public const string SurfaceKey = "aero-surface:", GearKey = "aero-gear:", AirbrakeKey = "aero-airbrake:", ThrustKey = "aero-thrust:";
     public const string SolidNozzleKey = "aero-solidnozzle:", BladesKey = "aero-blades:", AutopilotKey = "aero-autopilot:";
+    /// <summary>A main helicopter rotor's turn (2026-10-23): "aero-rotorspin:1 1" counter-rotating; clockwise (the default) writes none.</summary>
+    public const string RotorSpinKey = "aero-rotorspin:";
     /// <summary>The Enemy switch's owner before, one per grid of the ship (2026-10-19): "aero-enemyprev:1 index owner", its value
     /// THAT grid (an entity reference the save resolves - each grid is a bundle root).</summary>
     public const string EnemyPrevKey = "aero-enemyprev:";
@@ -151,6 +153,18 @@ public static class AeroBlockSaveForm
         string[] w = Values(key, BladesKey, 1);
         if (w == null || !Float(w[1], out float h)) return false;
         health = Math.Clamp(h, 0f, 1f);
+        return true;
+    }
+
+    /// <summary>A main rotor's turn: null when clockwise (the default).</summary>
+    public static string RotorSpin(bool counterRotating) => counterRotating ? RotorSpinKey + Format + " 1" : null;
+
+    public static bool TryReadRotorSpin(string key, out bool counterRotating)
+    {
+        counterRotating = false;
+        string[] w = Values(key, RotorSpinKey, 1);
+        if (w == null) return false;
+        counterRotating = w[1] == "1";
         return true;
     }
 
