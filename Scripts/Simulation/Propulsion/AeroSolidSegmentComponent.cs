@@ -60,7 +60,7 @@ public partial class AeroSolidSegmentComponent : Component, IInSceneListener, ID
     public SolidRocket.Geo Geo => _geo;
 
     /// <summary>Propellant left (kg): the tank's charge (full until its first read).</summary>
-    public float Propellant { get { EnsureRow(); return _charge >= 0f ? _charge : Full; } }
+    public float Propellant { get { EnsureRow(); return _charge >= 0f ? _charge : OnNozzle && _rc == null ? 0f : Full; } }   // (a nozzle with no tank - content older than its scripts: no grain, never a phantom one)
 
     /// <summary>It feeds the chain: working, with its tank (the game drops a non-working block's tank and conveyor link).</summary>
     public bool Feeds => _feeds;
