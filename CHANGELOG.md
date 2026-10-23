@@ -71,6 +71,9 @@ was flown in game for this release. The commit hashes are on the integration bra
 - No magnetic plates: the 0.5 m is the 1 m pad at half size, so every size is a landing-gear pad.
 - The suspension's wheel is its own invisible model (no tyre in the build preview or projections; was the vanilla wheel hidden
   at run time).
+- The pad sits up in the fork, its top just under the crossbar (the ankle 0.2 / 0.4 / 0.63 / 1.0 m above the rod's end; it hung
+  low with a tall gap above it). The gear stands that much shorter.
+- New icons: each pad gear as built (housing, leg, fork and pad, textured); they showed the wheeled gear's icon.
 - Offline: `Tests/GearTests` (the ankle's IK, every variant's definitions and geometry, sag). Not flown in game yet.
 
 ## Unreleased - landing gear stiffness

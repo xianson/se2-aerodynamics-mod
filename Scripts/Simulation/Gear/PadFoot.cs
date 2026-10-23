@@ -6,7 +6,7 @@ namespace AeroMod;
 /// <summary>
 /// A PAD-FOOT gear's foot (2026-10-21, the user: "go back to wheel suspension ... a separate, physics-off landing gear entity where the
 /// invisible wheel is. the landing gear and hinge IK to the wheel contact surface normal"): a vanilla landing-gear mesh as a CLIENT
-/// SUBPART of the gear block (no collider), hinged at its ankle (GearLayout.FootPoint: on the rod's hub; the pads' top-corner ankle
+/// SUBPART of the gear block (no collider), hinged at its ankle (GearLayout.FootPoint: up the fork above the rod's hub, FootRaise; the pads' top-corner ankle
 /// cube's centre, 2026-10-23) and turned to the ground the suspension's HIDDEN wheel touches (FootIk; AeroGearAnimComponent). The
 /// wheel is the vanilla wheel of the housing's size on its own INVISIBLE model (a 1 mm triangle and a collision puck of its radius,
 /// 2026-10-23 - nothing to hide at run time), its bottom on the foot's sole under the pad's centre (tools/meshgen/gen_padgear_defs.py,

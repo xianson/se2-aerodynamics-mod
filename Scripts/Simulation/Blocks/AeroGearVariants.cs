@@ -48,19 +48,19 @@ public static class AeroGearVariants
         // (2026-10-20: the PAD-FOOT gears - the same housings, a vanilla landing-gear model as the foot: one per model, on the housing it
         //  fits; tools/meshgen/gen_padgear_defs.py, its padgear_spec.json - GearTests checks these against it)
         new() { Name = "Retractable Gear (Pad) 0.5 m", Block = new("ae200001-ae00-9e21-0001-000000000001"), CornerModule = new("ae200001-ae00-9e31-0068-000000000001"), WheelRadius = 0.50000f, Duration = 2.5f,
-                RetractTravel = 5.3707f * 0.2f, RetractSpeed = 3f * 0.2f, CollisionOffAt = OffAt * 0.2f, Layout = Pad(Gear(0.2f)),
+                RetractTravel = 5.3707f * 0.2f, RetractSpeed = 3f * 0.2f, CollisionOffAt = OffAt * 0.2f, Layout = Pad(Gear(0.2f), 0.2f),
                 Foot = new PadFootSpec { Model = "LandingGear100", Scale = 0.50000f, Height = 0.43838f,
                                          WheelMass = 150f, RatedLoad = 1500f, Stroke = 0.12500f } },
         new() { Name = "Retractable Gear (Pad) 1 m", Block = new("ae200001-ae00-9e22-0001-000000000001"), CornerModule = new("ae200001-ae00-9e32-0068-000000000001"), WheelRadius = 0.50000f, Duration = 3f,
-                RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Pad(Gear(0.4f)),
+                RetractTravel = 5.3707f * 0.4f, RetractSpeed = 3f * 0.4f, CollisionOffAt = OffAt * 0.4f, Layout = Pad(Gear(0.4f), 0.4f),
                 Foot = new PadFootSpec { Model = "LandingGear100", Scale = 1.00000f, Height = 0.87675f,
                                          WheelMass = 250f, RatedLoad = 5000f, Stroke = 0.25000f } },
         new() { Name = "Retractable Gear (Pad) 1.5 m", Block = new("ae200001-ae00-9e23-0001-000000000001"), CornerModule = new("ae200001-ae00-9e33-0068-000000000001"), WheelRadius = 0.75000f, Duration = 3.5f,
-                RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Pad(Gear(0.6f)),
+                RetractTravel = 5.3707f * 0.6f, RetractSpeed = 3f * 0.6f, CollisionOffAt = OffAt * 0.6f, Layout = Pad(Gear(0.6f), 0.63f),
                 Foot = new PadFootSpec { Model = "LandingGear100", Scale = 1.50000f, Height = 1.31513f,
                                          WheelMass = 600f, RatedLoad = 20000f, Stroke = 0.40000f } },
         new() { Name = "Retractable Gear (Pad) 2.5 m", Block = new("ae200001-ae00-9e24-0001-000000000001"), CornerModule = new("ae200001-ae00-9e34-0068-000000000001"), WheelRadius = 1.25000f, Duration = 4f,
-                RetractTravel = 5.3707f * 1.0f, RetractSpeed = 3f * 1.0f, CollisionOffAt = OffAt * 1.0f, Layout = Pad(Gear(1.0f)),
+                RetractTravel = 5.3707f * 1.0f, RetractSpeed = 3f * 1.0f, CollisionOffAt = OffAt * 1.0f, Layout = Pad(Gear(1.0f), 1.0f),
                 Foot = new PadFootSpec { Model = "LandingGear500", Scale = 0.50000f, Height = 2.18925f,
                                          WheelMass = 1200f, RatedLoad = 60000f, Stroke = 0.60000f } },
     };
@@ -80,7 +80,7 @@ public static class AeroGearVariants
     const float OffAt = 2.713f;
 
     /// <summary>A pad-foot gear's layout: the housing's, with its foot (GearLayout.FootPoint, FootIk).</summary>
-    static GearLayout Pad(GearLayout l) { l.HasFoot = true; return l; }
+    static GearLayout Pad(GearLayout l, float raise) { l.HasFoot = true; l.FootRaise = raise; return l; }   // (raise: gen_padgear_defs.py FOOT_RAISE)
 
     static GearLayout Gear(float s)
     {

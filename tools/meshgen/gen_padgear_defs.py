@@ -31,6 +31,7 @@ ggd.BLOCKS = ROOT
 ROOT_REL = os.path.join("Aero", "PadGear")
 SDK = r"D:\SteamLibrary\steamapps\common\Space Engineers 2 - Mod SDK\GameData\Vanilla\Assets\Blocks"
 BLENDER = r"D:\downloadsarchive\blender-5.0.1-windows-x64\blender.exe"
+MATERIALS = os.path.join(os.path.dirname(os.path.dirname(SDK)), "Content", "BlockMaterials")   # (the vanilla textures: the icons')
 G = ggd.G
 DEFAULT_STIFFNESS, DEFAULT_DAMPING = 0.3, 0.5
 
@@ -96,7 +97,10 @@ def housing(size):
     return out
 
 
-FOOT_DROP = 0.0    # (GearLayout.FootDrop: the ankle on the rod's hub - 2026-10-23, was 0.08 below it)
+FOOT_RAISE = {"050": 0.2, "100": 0.4, "150": 0.63, "250": 1.0}   # (GearLayout.FootRaise: the ankle this far above the rod's hub, block +Y -
+                   #  2026-10-23, the user: "how come this still isn't tight?" - on the hub the pad hung low in the fork with a tall gap
+                   #  under its crossbar; raised, the ankle's top is ~0.4 x its half height under the crossbar (room to tilt 45 deg).
+                   #  The rods' lowest point over the ankle, measured: 0.29 / 0.58 / 0.90 / 1.45 m above the hub)
 FOOT_SIDE = 0.1    # (GearLayout.FootSide: the foot's dummy this far along the hinge axis (+X) from the ankle, its mesh shifted back by
                    #  as much - the same hinge line, but the client tells the foot from the rod (both would spawn at the hub) by where
                    #  each spawned: AeroGearAnimComponent.FindParts, 5 cm)
@@ -107,7 +111,7 @@ DT_FOOT = G("9e20", 0x30)                            # (the foot subpart's dummy
 def layout(v):
     """2026-10-21 (the user: "go back to wheel suspension ... a separate, physics-off landing gear entity where the invisible wheel is.
     the landing gear and hinge IK to the wheel contact surface normal"): the FOOT is a visual subpart of the block (no collider) hinged
-    at its ANKLE - on the rod's hub (block model space, as the dummies) - its mesh's ankle centre there (the pads: the top-corner
+    at its ANKLE - up the fork above the rod's hub, FOOT_RAISE (block model space, as the dummies) - its mesh's ankle centre there (the pads: the top-corner
     cube; the plates: the top centre), hanging along the block's -Y; the suspension's WHEEL is the vanilla wheel of that size, never drawn (AeroHiddenWheelComponent),
     its pivot moved to its centre and its rest moved so its bottom is the foot's sole (gear down, unloaded): the foot stands where
     the wheel touches. The client turns the foot about the ankle to the wheel's ground normal (FootIk)."""
@@ -128,16 +132,15 @@ def layout(v):
     T = (-s * top[0] + side, -s * top[1], -s * top[2])
     hd = housing(v["size"])
     rest_p0, rest_q, travel = hd["Wheel Rest Position"]
-    hub = hd["GearRodHub"][0]; hinge = hd["GearLegHinge"][0]
-    d = tuple(hub[i] - hinge[i] for i in range(3)); dl = math.sqrt(sum(c * c for c in d)); legdir = tuple(c / dl for c in d)
-    ankle = tuple(hub[i] + legdir[i] * FOOT_DROP for i in range(3))
+    hub = hd["GearRodHub"][0]
+    ankle = (hub[0], hub[1] + FOOT_RAISE[v["size"]], hub[2])           # (up the fork, the rod's +Y: block +Y, gear down)
     foot = (ankle[0] + FOOT_SIDE, ankle[1], ankle[2])                 # (the foot's dummy: on the hinge line, FOOT_SIDE along it)
     sole = (ankle[0], ankle[1] - H, ankle[2])
     r = WHEEL_R[v["wheel"]]
     centre = (sole[0], sole[1] + r, sole[2] + pad_dz)              # (the wheel's centre, idle: its bottom on the sole, under the pad's centre)
     up = qrot(rest_q, (0.0, 1.0, 0.0))
     rest_p = tuple(centre[i] + travel / 2 * up[i] for i in range(3))   # (the suspension's idle point is rest - travel/2 x up)
-    return dict(T=T, t0=t0, H=H, size=w, pad_dz=pad_dz, foot_q=foot_q, ankle=ankle, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
+    return dict(T=T, t0=t0, H=H, raise_=FOOT_RAISE[v["size"]], size=w, pad_dz=pad_dz, foot_q=foot_q, ankle=ankle, foot=foot, sole=sole, wheel_r=r, wheel_centre=centre, rest_p=rest_p, rest_q=rest_q, travel=travel)
 
 
 def vanilla_model(v):
@@ -365,8 +368,11 @@ def render_icons(spec):
                    "housing": os.path.join(hdir, f"RetractableGear_{v['size']}.fbx"),
                    "leg": [os.path.join(hdir, "Subpart01", f"RetractableGear_{v['size']}_S1_Leg.fbx"), hd["GearLegHinge"][0]],
                    "rod": [os.path.join(hdir, "Subpart02", f"RetractableGear_{v['size']}_S2_Rod.fbx"), hd["GearRodHub"][0]],
+                   # (the foot as in game: its LOD0 placement (scale, then T + s t0) in the subpart's frame, the subpart at the foot's
+                   #  dummy turned by foot_q)
                    "foot": [os.path.join(SDK, v["dir"], v["lods"][0] + ".fbx"), v["scale"],
-                            [hd["GearRodHub"][0][k] + L["T"][k] + v["scale"] * L["t0"][k] for k in range(3)]]},
+                            [L["T"][k] + v["scale"] * L["t0"][k] for k in range(3)], list(L["foot"]), list(L["foot_q"])],
+                   "materials": MATERIALS},
                   open(job, "w"))
         r = subprocess.run([BLENDER, "-b", "--python", os.path.join(HERE, "padgear_icon.py"), "--", job], capture_output=True, text=True, timeout=600)
         os.remove(job)

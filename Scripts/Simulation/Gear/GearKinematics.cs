@@ -26,16 +26,18 @@ public sealed class GearLayout
     public float StowAngle;
     /// <summary>The hub with the gear down and the suspension unloaded.</summary>
     public Vector3 DeployedHub;
-    /// <summary>A pad-foot gear (2026-10-21): its foot's ankle - on the rod's hub (FootDrop 0 since 2026-10-23: the hinge centred on the
+    /// <summary>A pad-foot gear (2026-10-21): its foot's ankle - FootRaise up the fork above the rod's hub (2026-10-23: the hinge centred on the
     /// pad's ankle, the user; was 0.08 below the hub) with the gear down and unloaded,
     /// where the foot subpart's dummy sits (and so how it is told from the rod) and about which it turns (FootIk).</summary>
     public bool HasFoot;
-    public const float FootDrop = 0f;
+    /// <summary>The ankle this far above the rod's hub, block +Y with the gear down (gen_padgear_defs.py FOOT_RAISE: the pad's top just under
+    /// the fork's crossbar, 2026-10-23 - on the hub it hung low with a tall gap above it).</summary>
+    public float FootRaise;
     /// <summary>The foot's dummy (where its subpart spawns, its origin) is FootSide along the hinge axis from the ankle - on the same
     /// hinge line (its mesh shifted back by as much, gen_padgear_defs.py), so it is not taken for the rod, which spawns at the hub
     /// (FindParts tells them apart by where they spawned).</summary>
     public const float FootSide = 0.1f;
-    public Vector3 AnklePoint => DeployedHub + LegDirection * FootDrop;
+    public Vector3 AnklePoint => DeployedHub + Vector3.UnitY * FootRaise;
     public Vector3 FootPoint => AnklePoint + Vector3.Normalize(HingeAxis) * FootSide;
     /// <summary>The actuator's anchors (with the gear down): on the block, and on the leg.</summary>
     public Vector3 ActuatorBase, ActuatorLegEnd;
