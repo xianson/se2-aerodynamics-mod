@@ -171,6 +171,32 @@ public partial class AeroGridComponent
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, StrongBox<float>> _defThreshold = new System.Runtime.CompilerServices.ConditionalWeakTable<object, StrongBox<float>>();
     sealed class StrongBox<T> { public T Value; public StrongBox(T v) { Value = v; } }
 
+    /// <summary>The block's health integrity below which it stops being FUNCTIONAL (2026-10-23): the game's rule is
+    /// EffectiveBuildProgress (BuildProgress x its health remapped from DestructionThreshold..1 to 0..1) under its definition's
+    /// MinFunctionalBuildProgress (1 when its recipe has no optional components - then any damage stops it). So the line is
+    /// DestructionThreshold + MinFunctionalBuildProgress x (1 - DestructionThreshold), for a fully built block. Per definition,
+    /// cached; NaN if unreadable (HEALTH: said once).</summary>
+    internal static float FunctionalLine(CubeBlockComponent b)
+    {
+        try
+        {
+            var d = BlockDefinition(b);
+            if (d == null) return float.NaN;
+            lock (_defFunctional)
+            {
+                if (_defFunctional.TryGetValue(d, out var box)) return box.Value;
+                float min = d.GetType().GetProperty("MinFunctionalBuildProgress", BindingFlags.Public | BindingFlags.Instance)?.GetValue(d) is float f ? f : float.NaN;
+                float dt = DestructionThreshold(b), line = float.IsNaN(min) ? float.NaN : dt + Math.Clamp(min, 0f, 1f) * (1f - dt);
+                if (float.IsNaN(line)) Log.Default?.Warning($"[AERO] FunctionalLine: {d.GetType().Name}.MinFunctionalBuildProgress not readable - the rotors deal their blades' wear to no block");
+                else Log.Default?.Info($"[AERO] FunctionalLine health: {d.GetType().Name} {b.Entity?.DebugName}: functional down to integrity {line:F3} (min build progress {min:F3}, destruction {dt:F3})");
+                _defFunctional.Add(d, new StrongBox<float>(line));
+                return line;
+            }
+        }
+        catch { return float.NaN; }
+    }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, StrongBox<float>> _defFunctional = new();
+
     /// <summary>The hull's faces for the heat model: its own surface of the blocks' cells (the flight surface is let go
     /// on big grids once their table is in).</summary>
     static HullHeat BuildHeat(ShipStructure st, StructBuildInput build, StructSnap snap)

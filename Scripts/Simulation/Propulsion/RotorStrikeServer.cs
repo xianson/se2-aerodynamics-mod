@@ -338,22 +338,26 @@ public partial class AeroGridComponent
 
     static bool Allowed(IGameplayRules rules, Entity e) => rules == null || rules.CanDamage(new IGameplayRules.DamageContext(e)).Allowed;
 
-    /// <summary>The rotor block keeps at least this share of its health against its blades' wear.</summary>
-    public const float OwnBlockFloor = 0.75f;
+    /// <summary>The rotor block keeps at least this share of its health against its blades' wear, and this margin above the line
+    /// where it stops being functional.</summary>
+    public const float OwnBlockFloor = 0.75f, FunctionalMargin = 0.01f;
 
-    /// <summary>The blades' wear on their block: share of its full health through the game's damage - and NEVER BREAKING IT
-    /// (2026-10-23, the user: "the strike shouldn't end with no rotor head at all"): a block whose critical fracture dies is no
-    /// longer functional, and the game then despawns every conditional subpart - hub, stubs and all (ConditionalSubPartsComponent
-    /// spawns them only while the block is functional). The game deals damage to one fracture at a time until it dies
-    /// (BreakableComponent.DistributeDamageToFractures), and our rotor blocks have two critical fractures, the body's halves, so
-    /// their first dies only past about half the block's health: the blades' wear stops at OwnBlockFloor of it. (The fractures
-    /// themselves can't be read from a mod: BreakableBlockComponent's base is in VRage.Game, not a mod reference.) The head stays,
-    /// with its broken blades; the block still shows the damage, and welding it back repairs the blades.</summary>
+    /// <summary>The blades' wear on their block: share of its full health through the game's damage - and NEVER STOPPING IT
+    /// (2026-10-23, the user: "the strike shouldn't end with no rotor head at all"): a block that is no longer functional has every
+    /// conditional subpart despawned by the game - hub, stubs and all (ConditionalSubPartsComponent spawns them only while the
+    /// block is functional). It stops being functional when its effective build progress drops under its definition's
+    /// MinFunctionalBuildProgress (AeroGridComponent.FunctionalLine: 1 for a recipe without optional components - any damage)
+    /// or a critical fracture dies (the game deals damage one fracture at a time; ours are the body's two halves: the first dies
+    /// only past about half its health - OwnBlockFloor). So the wear stops just above the higher of the two lines; with no room
+    /// (or the line unreadable) the block takes none. The head stays, with its broken blades. Repair: the block damaged and
+    /// welded back to full (AeroRotorStrikeComponent) - grind it a little first when the wear left it whole.</summary>
     static void DamageRotorBlock(CubeBlockComponent b, Entity grid, float share)
     {
         if (b?.Entity == null || !(share > 0f)) return;
-        float full = FullHealth(b);
-        float floor = MathF.Max(DestructionThreshold(b) + 0.05f, OwnBlockFloor);
+        float full = FullHealth(b), line = FunctionalLine(b);
+        if (float.IsNaN(line)) return;
+        float floor = MathF.Max(MathF.Max(DestructionThreshold(b) + 0.05f, OwnBlockFloor), line + FunctionalMargin);
+        if (floor >= 1f) return;
         float hp = MathF.Min(share * full, MathF.Max(b.AbsoluteHealth - floor * full, 0f));
         if (!(hp > 0f)) return;
         grid.TryGet<GridDamageReceiverComponent>()?.DealDamage(b, hp);

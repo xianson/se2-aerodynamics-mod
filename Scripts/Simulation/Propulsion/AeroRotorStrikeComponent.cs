@@ -100,9 +100,13 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
         if (!_rowLooked) { _rowLooked = true; InitBlades(p); }
         if (Health < 1f || (PerBladeOn && AnyWear()))
         {
-            // (welded back to full integrity: every blade whole again, its wear gone)
-            if (RotorStrike.Repaired(0f, _block.HealthIntegrity) >= 1f)
+            // (welded back to full integrity: every blade whole again, its wear gone - only once the block WAS damaged since the
+            //  blades were: the wear may leave the block whole when it has no room above its functional line (DamageRotorBlock),
+            //  and blades must not heal themselves then; grind the block a little and weld it back)
+            if (_block.HealthIntegrity < RotorStrike.RepairIntegrity) _damagedSince = true;
+            if (_damagedSince && RotorStrike.Repaired(0f, _block.HealthIntegrity) >= 1f)
             {
+                _damagedSince = false;
                 for (int k = 0; k < Cuts.Length; k++) { Cuts[k] = 0; Wear[k] = 0f; }
                 bool was = Health < 1f;
                 Health = 1f; LiftShare = 1f;
@@ -327,6 +331,8 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
             LiftImbalanceNm = MathF.Sqrt(mx * mx + my * my);
         }
     }
+    /// <summary>The block's integrity has been under full since the blades were last whole (repair needs a weld back up).</summary>
+    bool _damagedSince;
     readonly float[] _lift = new float[RotorStrike.Blades], _centroid = new float[RotorStrike.Blades], _excess = new float[RotorStrike.Blades];
     /// <summary>The last uneven-lift moment (N m; the readout).</summary>
     public float LiftImbalanceNm;
