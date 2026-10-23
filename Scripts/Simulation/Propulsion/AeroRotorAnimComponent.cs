@@ -50,8 +50,11 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
     /// 10.5 / 0.75 m on the 1.5 m rotor since the longer blades of 2026-10-23, 5 cells before; the Reversible Rotor is 2.5 / 0.5
     /// cell, so the tip comes from PropulsorBlocks' Radius, the tip radius), and the blur disc's cone (deg).</summary>
     public const float TipOverHinge = 10.5f / 0.75f, BlurConeDeg = 2.5f;
-    /// <summary>The counter-rotating blade set's subpart entity name (gen_propulsor_defs.py: dummies RotorBladeCCW1..3).</summary>
-    public const string CcwBladeName = "RotorBladeCCW";
+    /// <summary>The counter-rotating blade set's subpart entity name (gen_propulsor_defs.py: dummies RotorBladeCCW1..3), and the
+    /// part of a child's name that marks it: in game the children are named after their subpart compositions
+    /// ("HelicopterRotor_150_BladeCCW_Client_Composite" - 2026-10-23, the first flight: matching CcwBladeName found none, so
+    /// no rotor animated: blades still, the blur disc on).</summary>
+    public const string CcwBladeName = "RotorBladeCCW", CcwBladeMatch = "BladeCCW";
 
     enum Role { Hub, Blade, Blur }
     /// <summary>The turboprop's parts by their subpart prefab's entity name (gen_propulsor_defs.py writes them).</summary>
@@ -377,12 +380,16 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
             if (k != null && k.Data.TryGet<RelativeTransform>(out var rt))
             {
                 // (the counter-rotating blade set by its entity name - at the same dummies as the clockwise blades)
-                bool ccw = k.DebugName != null && k.DebugName.IndexOf(CcwBladeName, StringComparison.Ordinal) >= 0;
+                bool ccw = k.DebugName != null && k.DebugName.IndexOf(CcwBladeMatch, StringComparison.Ordinal) >= 0;
                 _parts.Add(new Part { Entity = k, Rest = rt, Ccw = ccw }); if (!ccw) c += rt.Position;
             }
         int ccwN = 0; foreach (var p in _parts) if (p.Ccw) ccwN++;
-        if (_parts.Count - ccwN != 5 || (ccwN != 0 && ccwN != 3)) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children ({ccwN} counter-rotating blades), not a split rotor (5, or 8 with the mirrored blades) - not animated"); _parts.Clear(); return; }
-        c /= 5f;
+        // (8 children and none named as the mirrored set: the names did not come through - animate all six blades as one set
+        //  (both drawn, clockwise) rather than leave the rotor still with its blur disc on; said once in the log)
+        bool unnamed = ccwN == 0 && _parts.Count == 8;
+        if (unnamed) Keen.VRage.Library.Diagnostics.Log.Default?.Warning($"[AERO-ROTORANIM] {_key}: 8 children but none named *{CcwBladeMatch}* - both blade sets drawn as one (counter-rotating blades not told apart)");
+        if ((_parts.Count - ccwN != 5 && !unnamed) || (ccwN != 0 && ccwN != 3)) { Keen.VRage.Library.Diagnostics.Log.Default?.Info($"[AERO-ROTORANIM] {_key}: {_parts.Count} children ({ccwN} counter-rotating blades), not a split rotor (5, or 8 with the mirrored blades) - not animated"); _parts.Clear(); return; }
+        c /= unnamed ? 8f : 5f;
         Part a = null, b = null; int blades = 0; float hinge = 0f;
         foreach (var p in _parts)
         {
@@ -391,11 +398,11 @@ public partial class AeroRotorAnimComponent : Component, IInSceneListener
             if (d.Length() > 0.1f) { p.Role = Role.Blade; blades++; hinge += d.Length(); }
             else if (a == null) a = p; else b = p;
         }
-        if (blades != 3 || a == null || b == null) { _parts.Clear(); return; }
+        if (blades != (unnamed ? 6 : 3) || a == null || b == null) { _parts.Clear(); return; }
         _hasCcwSet = ccwN == 3;
         if (a.Rest.Position.Y >= b.Rest.Position.Y) { a.Role = Role.Hub; b.Role = Role.Blur; _hub = a; _blur = b; }
         else { b.Role = Role.Hub; a.Role = Role.Blur; _hub = b; _blur = a; }
-        _hinge = hinge / 3f;
+        _hinge = hinge / blades;
         // (the tip: the block's table radius - PropulsorBlocks, the rig's tip radius; else the main rotors' ratio)
         _tip = row != null && row.Radius > _hinge ? row.Radius : _hinge * TipOverHinge;
         _span = _tip - _hinge;

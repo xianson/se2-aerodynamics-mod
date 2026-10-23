@@ -134,6 +134,17 @@ static class Program
             Check(tgt[0] == 0f, $"targets: no anti-torque at all - no lift ({tgt[0]})");
             RotorLimiter.Targets(1, new[] { 0 }, new[] { 7.5f }, new[] { 0f }, new[] { 6e5f }, arms, dirs, caps, null, 2, Vector3.Zero, 1f, auth, bud, tgt);
             Check(float.IsPositiveInfinity(tgt[0]), "targets: a stopped rotor - no cap");
+            // (2026-10-23, the first flight: the mirrored blades are found by their child's name - in game the subpart composition's,
+            //  as gen_propulsor_defs.py names it; matching the prefab's entity name found none and no rotor animated)
+            {
+                string src = File.ReadAllText(Path.Combine(SimDir(), "Propulsion", "AeroRotorAnimComponent.cs"));
+                var m = System.Text.RegularExpressions.Regex.Match(src, "CcwBladeMatch = \"([^\"]+)\"");
+                string match = m.Success ? m.Groups[1].Value : "(none)";
+                foreach (var size in new[] { "050", "150", "250" })
+                    Check($"HelicopterRotor_{size}_BladeCCW_Client_Composite".Contains(match) && "RotorBladeCCW".Contains(match),
+                        $"counter-rotating blades: '{match}' is in the {size} rotor's mirrored blade composite name and the prefab's entity name");
+                Check(src.Contains("IndexOf(CcwBladeMatch"), "counter-rotating blades: the children are matched by CcwBladeMatch");
+            }
             // COUNTER-ROTATING (2026-10-23): no turns given and every one clockwise are the same; two alike, one counter-rotating
             // (coaxial: one axis, no tail, no gyros) - their reactions cancel and neither is capped; the counter-rotating one
             // alone reacts the other way (a tail mounted for a clockwise rotor gives it nothing)
