@@ -135,6 +135,56 @@ public partial class AeroRotorStrikeComponent : Component, IInSceneListener
     /// <summary>A change of the blades' health (RotorStrikeServer): published on this rotor's next tick.</summary>
     internal void Changed() { _pubAt = 0; }
 
+    // ═══ SHOT AND RAMMED BLADES (2026-10-23, the user: "a collision model so that you can shoot at the blades ... the broken blade
+    //     radius ... and just always have that collision on") ═══
+    // The main rotors' collision model carries a thin disc out to the stubs' end (gen / rotor_blade_disc.py): it does not spin, it
+    // only gives shots and impacts something to hit. The game damages the rotor block for them; the block's damage signal names
+    // the hit as a line in the block's frame (a projectile's path - GridHitReceiverComponent - or an impact's contact and normal -
+    // GridImpactDamageReceiverComponent). Where that line crosses the blade plane, the blade passing there takes the damage as
+    // wear (ShotWearGain x the damage's share of the block's health), and may snap there. The blades' own wear on the block
+    // (DamageRotorBlock) carries no line and is not taken again.
+
+    /// <summary>A shot or impact's wear on the blade it hit: this x the damage's share of the rotor block's full health.</summary>
+    public static float ShotWearGain = 4f;
+    /// <summary>Shots and impacts that reached a blade (the readout).</summary>
+    public int Shots;
+
+    [CubeBlockComponent.OnAfterTakingDamageSignal]
+    private void OnBlockDamaged(BlockDamageInfo info)
+    {
+        if (!PerBladeOn || BreakRow == null || _block == null || !_init || !(info.AbsoluteDamage > 0f)) return;
+        var line = info.FracturingParams?.LineRelativeToBlock;
+        if (!line.HasValue) return;
+        var p = Entity?.TryGet<AeroPropulsorComponent>();
+        var grid = _block.Grid?.Entity;
+        if (p == null || grid == null || !GridPhysics.Alive(grid.Data) || !GridPhysics.Alive(Data)) return;
+        var bw = Data.GetWorldTransform(); var gwt = grid.Data.GetWorldTransform();
+        var l = line.Value;
+        Vector3D from = WorldTransform.Transform((Vector3D)l.From, in bw);
+        Vector3 dir = WorldTransform.TransformDirection(l.Direction, bw);
+        RotorStrike.DiscBasis(p.Kind, out var u0, out var w0);
+        var q = bw.Orientation;
+        Vector3 u = Vector3.Transform(u0, q), w = Vector3.Transform(w0, q), axis = Vector3.Transform(RotorStrike.HubAxis(p.Kind), q);
+        Vector3D hub = WorldTransform.Transform((Vector3D)_centre, in gwt) + (Vector3D)(axis * p.HubOffset);
+        // (where the line crosses the blade plane; along the plane - a graze - its nearest point to the hub's plane is its start)
+        float den = Vector3.Dot(dir, axis);
+        Vector3D at = MathF.Abs(den) > 1e-4f ? from + (Vector3D)(dir * ((float)Vector3D.Dot(hub - from, (Vector3D)axis) / den)) : from;
+        Vector3 d = (Vector3)(at - hub); d -= axis * Vector3.Dot(d, axis);
+        float r = d.Length(), R = p.RotorRadius;
+        if (r < 0.8f * BreakRow.Hinge || r > BreakRow.StubR + 0.25f) return;   // (the mast, or past the disc: not a blade)
+        int blade = BladeAt(MathF.Atan2(Vector3.Dot(d, w), Vector3.Dot(d, u)), r, R);
+        if (blade < 0) return;
+        float full = _block.HealthIntegrity > 1e-4f ? _block.AbsoluteHealth / _block.HealthIntegrity : 0f;
+        if (!(full > 0f)) return;
+        float add = ShotWearGain * info.AbsoluteDamage / full;
+        var before = (RotorStrike.Cut)Cuts[blade];
+        var after = RotorStrike.AfterStrike(before, ref Wear[blade], r, add, BreakRow.SplitR);
+        Cuts[blade] = (byte)after;
+        Recompute(p); Changed(); Shots++;
+        Last = $"shot / impact at r {r:F2} m: blade {blade + 1} {before} -> {after} (wear {Wear[blade]:F2}), lift {LiftShare:F2}";
+        if (after != before) Log.Default?.Info($"[AERO-STRIKE] {p.Kind} {p.Size}: {Last}");
+    }
+
     /// <summary>This tick's rays over the disc; the closest hit not on the rotor itself, fast enough, queued.</summary>
     void Probe(AeroPropulsorComponent p)
     {

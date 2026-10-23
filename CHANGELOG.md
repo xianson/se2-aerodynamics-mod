@@ -9,6 +9,7 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Worn blades lift less; blades that lift unevenly rock the ship once a turn; an unbalanced rotor visibly wobbles.
 - Strikes push the ship off what the blades hit, harder the deeper they dig in; a blade buried deep wears up to 4x faster.
 - The broken blades had no textures (magenta): fixed.
+- Helicopter rotor blades can be shot (and rammed): a solid disc out to the broken-blade radius; hits wear and snap the blade they land on.
 
 ## Unreleased - gravity multiplier setting
 

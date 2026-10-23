@@ -53,6 +53,17 @@
 					"convex":{
 						"mesh":3
 					}
+				},
+				{
+					"collisionSystems":[
+						"System_0"
+					],
+					"collideWithSystems":[
+						"System_0"
+					],
+					"convex":{
+						"mesh":4
+					}
 				}
 			]
 		},
@@ -77,7 +88,8 @@
 				0,
 				1,
 				2,
-				3
+				3,
+				4
 			]
 		}
 	],
@@ -145,6 +157,22 @@
 			},
 			"mesh":3,
 			"name":"mountpoints_HelicopterRotor_100_MZ"
+		},
+		{
+			"extensions":{
+				"MSFT_rigid_bodies":{
+					"rigidBody":{
+						"inverseMass":1
+					},
+					"collider":4,
+					"physicsMaterial":0
+				}
+			},
+			"extras":{
+				"ExportName":"HelicopterRotor_100_BladeDisc"
+			},
+			"mesh":4,
+			"name":"HelicopterRotor_100_BladeDisc"
 		}
 	],
 	"meshes":[
@@ -189,6 +217,17 @@
 						"POSITION":5
 					},
 					"indices":3
+				}
+			]
+		},
+		{
+			"name":"HelicopterRotor_100_BladeDisc.001",
+			"primitives":[
+				{
+					"attributes":{
+						"POSITION":6
+					},
+					"indices":7
 				}
 			]
 		}
@@ -269,6 +308,28 @@
 				-0.5
 			],
 			"type":"VEC3"
+		},
+		{
+			"bufferView":6,
+			"componentType":5126,
+			"count":48,
+			"max":[
+				2.35509991645813,
+				0.5683333277702332,
+				2.35509991645813
+			],
+			"min":[
+				-2.35509991645813,
+				0.41833335161209106,
+				-2.35509991645813
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":7,
+			"componentType":5123,
+			"count":276,
+			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -307,11 +368,23 @@
 			"byteLength":96,
 			"byteOffset":10524,
 			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":576,
+			"byteOffset":10620,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":552,
+			"byteOffset":11196,
+			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":10620,
+			"byteLength":11748,
 			"uri":"HelicopterRotor_100_collision.bin"
 		}
 	]
