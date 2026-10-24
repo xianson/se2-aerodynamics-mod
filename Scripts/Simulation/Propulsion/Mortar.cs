@@ -16,8 +16,8 @@ namespace AeroMod;
 ///          which cuts the mount points on that face; the game re-checks the grid and SPLITS it there if nothing else joins the two
 ///          sides. The charges are spent either way (empty blocks: AeroMortarChargeComponent.Spent).
 ///   THE KICK: only if the split came (the ship grid's split signal, within SplitWaitTicks, a new grid holding a mortar round where
-///          the round was): the round's grid is pushed forward and the ship back, each by the stack's impulse (Impulse), at the
-///          breech's front face - one momentum, nothing created: no split, no impulse.
+///          the round was): the round's grid is pushed forward by the stack's impulse (Impulse) and the ship back by RecoilShare
+///          of it (the rest vented as blast), at the breech's front face - no split, no impulse.
 ///   THE HOLD: the game caps a grid's speed (1,000 m/s), so a light round may take less than its kick (in game 2026-10-23: a 51 kg
 ///          round at 1,000 m/s took 51 of 96 kN s). The rest is STORED (Bank) - the ship has already taken all of it - and tops the
 ///          round back up to the speed it reached (TopUp) as drag and gravity slow it, along its travel, until the store is used,
@@ -78,10 +78,17 @@ public static class Mortar
     /// as a hit). Its velocity then belongs to the new frame: no hit, the held speed at most the new one.</summary>
     public static bool Jumped(double moved, float speed, float dtS) => moved > speed * dtS * 3f + 100f;
 
-    /// <summary>The kick: the round's grid's impulse (N s, along the firing direction - the breech's Down) and the ship's (the opposite).</summary>
+    /// <summary>The ship's recoil, as a share of the round's kick (2026-10-24, the user: "forget the barrel and just set the
+    /// efficiency at like 3:1 ... in favor of the business end instead of recoil"): the rest leaves as blast out the back, as a
+    /// recoilless gun vents it. (Read as 3:1 in momentum: with one momentum each way the round already takes most of the energy -
+    /// the ship / round mass ratio, often 50:1 - so 3:1 in energy would kick a heavy ship harder, not softer.)</summary>
+    public const float RecoilShare = 1f / 3f;
+
+    /// <summary>The kick: the round's grid's impulse (N s, along the firing direction - the breech's Down) and the ship's (the
+    /// opposite, RecoilShare of it).</summary>
     public static void Kick(float impulse, Vector3 fireDir, out Vector3 onRound, out Vector3 onShip)
     {
         var d = fireDir.LengthSquared() > 1e-8f ? Vector3.Normalize(fireDir) : Vector3.Zero;
-        onRound = d * impulse; onShip = -onRound;
+        onRound = d * impulse; onShip = -onRound * RecoilShare;
     }
 }

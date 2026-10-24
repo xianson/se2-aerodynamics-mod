@@ -270,7 +270,7 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         bool mR = GridPhysics.TryGetMassProperties(s.RoundGrid.Data, out float kgR, out _), mS = GridPhysics.TryGetMassProperties(s.ShipGrid.Data, out float kgS, out _);
         float dvR = Vector3.Dot(vr - s.V0Round, d), dvS = Vector3.Dot(vs - s.V0Ship, d);
         LastCheck = $"{s.Name}: round {dvR:F2} m/s x {kgR:F0} kg = {dvR * kgR / 1e3:F2} kN s, ship {dvS:F3} m/s x {kgS:F0} kg = {dvS * kgS / 1e3:F2} kN s, "
-            + $"impulse {s.Impulse / 1e3:F2} kN s{(okR && okS && mR && mS ? "" : " (a read failed)")}";
+            + $"impulse {s.Impulse / 1e3:F2} kN s, recoil {s.Impulse * Mortar.RecoilShare / 1e3:F2} kN s{(okR && okS && mR && mS ? "" : " (a read failed)")}";
         Log.Default?.Info($"[AERO-MORTAR] check: {LastCheck}");
         s.Bank = okR && mR ? Mortar.Bank(s.Impulse, dvR * kgR) : 0f;
         if (s.Bank <= 0f) return true;

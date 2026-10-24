@@ -49,7 +49,9 @@ static class Program
         Check(Near(Mortar.SealMiddle(f, 1, 0.2f), -0.025f) && Near(Mortar.SealMiddle(fd, -1, 0.2f), 1.025f), "the seal's middle: half its thickness in from the front face");
         Check(Near(Mortar.RoundMiddle(f, 1, 1.25f), -0.75f) && Near(Mortar.RoundMiddle(fd, -1, 1.25f), 1.75f), "the round's middle: half its height out from the front face");
         Mortar.Kick(1000f, new Vector3(0, -2, 0), out var r, out var s);
-        Check(Near(r.Y, -1000f) && Near((r + s).Length(), 0f) && Near(r.Length(), 1000f), "the kick: the round forward, the ship back, one momentum");
+        Check(Near(r.Y, -1000f) && Near(r.Length(), 1000f) && Near(s.Y, 1000f * Mortar.RecoilShare) && Near((r + s / Mortar.RecoilShare).Length(), 0f),
+              "the kick: the round forward by the impulse, the ship back by RecoilShare of it");
+        Check(Near(Mortar.RecoilShare, 1f / 3f), "the recoil: a third of the round's kick (the user's 3:1 for the business end)");
         Mortar.Kick(1000f, Vector3.Zero, out r, out s);
         Check(r.Length() == 0f && s.Length() == 0f, "no direction: no kick");
         Check(Mortar.SplitWaitTicks >= 30 && Mortar.KickWaitTicks >= 10, "the waits: the split within a second, the bodies a moment");
