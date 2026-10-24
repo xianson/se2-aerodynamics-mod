@@ -3,6 +3,15 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - mortars
+
+- **Mortars** (G menu > Mortars), 0.5 / 1.5 / 2.5 m: charges (cubes) stack on a breech's back, a round sits on its front, and
+  whatever you build on the round is the payload. Switch the breech off and on to fire: every charge in the stack goes off at
+  once, the round and its payload break away as their own ship and fly forward, and your ship is kicked back by the same momentum.
+  If the round's side is still joined to the ship some other way, nothing is pushed.
+- About 48 / 290 / 1,500 kN s per charge (0.5 / 1.5 / 2.5 m). Fired charges stay as empty blocks; rebuild them to reload.
+- Built from the solid rockets' parts. Offline: `Tests/MortarTests`. Not checked in game yet.
+
 ## Unreleased - airbrake sizes
 
 - Airbrakes (3 x 3 x 3) now come in 0.25, 0.5, 1, 1.5 and 2.5 m blocks. The new sizes are the same airbrake, scaled.

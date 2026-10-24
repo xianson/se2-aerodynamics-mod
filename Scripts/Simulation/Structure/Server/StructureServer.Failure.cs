@@ -44,6 +44,20 @@ public partial class AeroGridComponent
         return _trySetFracture != null ? _breakableField.GetValue(b) : null;
     }
 
+    /// <summary>One fracture piece of a breakable block killed - the first live one in a box of 'extent' about a grid-local point
+    /// (m) - through the game's own fracturing (as SplitFace: the fractured model, debris, the mount points on the dead piece cut, the
+    /// grid's connectivity re-checked and split). The mortar's seal (AeroMortarComponent, 2026-10-23). False: no piece there, the
+    /// fracture binding missing, or the call refused.</summary>
+    internal static bool KillPieceAt(CubeBlockComponent b, Entity grid, Vector3 gridLocal, float extent)
+    {
+        var bb = b != null && grid != null ? Breakable(b) : null;
+        if (bb == null || b.Entity == null) return false;
+        var bwt = b.Entity.Data.GetWorldTransform(); var gwt = grid.Data.GetWorldTransform();
+        Vector3D world = Keen.VRage.Core.WorldTransform.Transform((Vector3D)gridLocal, in gwt);
+        var args = new object[] { (Vector3)Keen.VRage.Core.WorldTransform.TransformInv(world, bwt), extent, 0f };
+        return _trySetFracture.Invoke(bb, args) is true;
+    }
+
     /// <summary>The failing joint's face of a breakable block broken: the fracture pieces under it, looked for a little way in
     /// from the joint, at its middle and across it (TrySetFractureIntegrity kills the first live piece in a box, through the
     /// game's own fracturing: debris, the fractured model, the collider changed, the block's mount points on dead pieces cut,

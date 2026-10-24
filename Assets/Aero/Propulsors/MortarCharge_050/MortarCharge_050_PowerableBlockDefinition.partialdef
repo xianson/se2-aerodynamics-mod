@@ -1,0 +1,29 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "794c5233-6a1c-4932-b37c-03a0e539d069",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-6a05-0001-000000000001",
+      "UIData": {
+        "Name": "Mortar Charge",
+        "Icon": "{G}ef0be23a-bc8c-5b65-973a-8932e624051b"
+      },
+      "PlacerDefinition": "ae200001-ae00-6a00-0050-000000000001",
+      "DisplaySizeOverride": 0.5,
+      "Density": "d8adcfdc-f8e2-467e-9d27-78deae4057da",
+      "Recipe": "63105035-a4df-4b06-8ff2-28b19e684eda",
+      "RecipeEfficiency": "30e09afc-4437-49fe-aff5-54553d05d3c4",
+      "BlockKind": "ae200001-ae00-6a00-0020-000000000001",
+      "PCU": 100,
+      "ConsumedResource": null
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition",
+    "PriorityOverride": false
+  }
+}

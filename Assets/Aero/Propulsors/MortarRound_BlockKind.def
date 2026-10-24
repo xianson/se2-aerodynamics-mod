@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-6c00-0020-000000000001",
+    "Name": "Mortar Round",
+    "Description": "The front half of a mortar: it sits on a mortar breech's front, and whatever you build on its other face is the payload. When the mortar fires, the round and its payload fly off as their own ship.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-6c00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-002e-000000000001"
+      }
+    ]
+  }
+}

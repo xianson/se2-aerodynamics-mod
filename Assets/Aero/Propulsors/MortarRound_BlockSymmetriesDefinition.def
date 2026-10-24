@@ -1,0 +1,26 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PlacementDefinition+BlockSymmetriesDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-6c00-0051-000000000001",
+    "XAxis": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0
+    },
+    "YAxis": {
+      "X": 0,
+      "Y": 0,
+      "Z": 2
+    },
+    "ZAxis": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0
+    }
+  }
+}

@@ -32,7 +32,7 @@ surfaces and retractable gear to helicopter rotors, ramjets and solid rockets.
   and gain from ram air to about 2x at Mach 1.6, and ramjets own Mach 2-6. Jets and ramjets care about the air's angle.
 - **Aircraft parts** (G menu > Aerodynamics > Aircraft Parts): control surfaces, retractable landing gear, clamshell
   airbrakes, turboprops, helicopter rotors with collective / cyclic and real torque, the Reversible Rotor, ramjets,
-  stackable solid rocket motors, and the Autopilot.
+  stackable solid rocket motors, mortars (a payload kicked off the ship by stacked charges), and the Autopilot.
 - **Retractable Gear - Pad Foot:** the retractable gear with a vanilla landing-gear model as its foot. The suspension (airshock,
   oleo, retraction) runs on a hidden wheel; the foot is hinged at the ankle, tilts to the ground under it and folds flat into the
   bay with the leg. No magnet. The feet reuse vanilla meshes as placeholders.

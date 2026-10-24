@@ -224,6 +224,17 @@ public class InjectAeroComponents : Injections
             Add(entity, AeroBlockSave.Info(typeof(AeroSolidNozzleComponent), AeroBlockSave.SolidNozzleId));
             if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroSolidNozzleComponent into solid rocket nozzle prefab '{entity.DebugName}'");
         }
+        // the mortar (2026-10-23): a charge's state (full / spent) and a breech's firing, server only (Propulsion/Mortar.cs)
+        if (MortarBlocks.ChargeServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, AeroBlockSave.Info(typeof(AeroMortarChargeComponent), AeroBlockSave.MortarChargeId));
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroMortarChargeComponent into mortar charge prefab '{entity.DebugName}'");
+        }
+        if (MortarBlocks.BreechServerPrefabs.Contains(entity.Guid))
+        {
+            Add(entity, AeroBlockSave.Info(typeof(AeroMortarComponent), AeroBlockSave.MortarId));
+            if (AeroLog.Detail) Log.Default?.Info($"[AERO] Injected AeroMortarComponent into mortar breech prefab '{entity.DebugName}'");
+        }
         // the exhaust (2026-10-17): the ramjets' blue-violet flame and shock diamonds, the solid nozzles' plume, balloon and smoke trail -
         // the mod's own particle effects, client only (Fx/AeroExhaustComponent; the blocks' own flame definitions carry no effect)
         if (PropulsorBlocks.RamjetClientPrefabs.Contains(entity.Guid) || SolidRocketBlocks.NozzleClientPrefabs.Contains(entity.Guid))

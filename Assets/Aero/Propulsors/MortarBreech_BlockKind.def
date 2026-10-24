@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-6b00-0020-000000000001",
+    "Name": "Mortar Breech",
+    "Description": "The back half of a mortar: charges stack on its back, a mortar round sits on its front. Turn it off and on to fire: the round and whatever is built on it break away forward and your ship is kicked back by the same momentum. Nothing happens if the round's side is still joined to the ship some other way.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-6b00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-002e-000000000001"
+      }
+    ]
+  }
+}

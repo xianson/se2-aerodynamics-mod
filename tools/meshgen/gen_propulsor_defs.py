@@ -66,6 +66,7 @@ ROOT_REL = os.path.join("Aero", "Propulsors")
 EXPORT = r"D:\Blender Brojects\SE2\TurbopropBlock\Export"
 SPEC = r"D:\Blender Brojects\SE2\TurbopropBlock\propulsor_spec.json"
 ICONS = r"D:\Blender Brojects\SE2\TurbopropBlock\Export\Icons"
+MORTAR_ICONS = r"D:\Blender Brojects\SE2\Mortar\Icons"   # (the mortar blocks' icons: Mortar/scripts/render_icons.py)
 CS_OUT = r"C:\Users\slob\Documents\SpaceEngineers2\Mods\Aerodynamics Mod\Scripts\Simulation\Blocks\PropulsorBlocks.g.cs"
 # (2026-10-23: an optional first argument - the mod folder to write into, e.g. a worktree; default the live mod, as before)
 import sys
@@ -192,6 +193,14 @@ KINDS = {
                       "Solid propellant for a solid rocket motor. Stack segments of the same size straight on top of a solid rocket nozzle; a segment that is not in such a stack does nothing. Each one adds about 8 s of burn and gets lighter as it burns. It cannot be refilled."),
     "SolidNozzle_": ("5f00", "Solid Rocket Nozzle", "SolidNozzle", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
                      "The nozzle of a solid rocket motor: the segments of its size stacked on its top face are its propellant. Turn it on to ignite: it burns until the stack is empty and cannot be shut down. Thrust Override (before ignition) sets its power, 50-100 %. Works in air and in space."),
+    # the MORTAR (2026-10-23, gen_mortar - the user: "like a bullet casing ... the casing should kick the original grid back, and the
+    # split grid forward. If a split doesn't happen, then no impulse"): charges stacked on a breech on a round, the payload on the round
+    "MortarCharge_": ("6a00", "Mortar Charge", "MortarCharge", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
+                      "One charge for a mortar. Stack charges of the same size straight on the back of a mortar breech: when it fires, every charge in the stack goes off at once, and more charges give a bigger kick. A fired charge stays as an empty block."),
+    "MortarBreech_": ("6b00", "Mortar Breech", "MortarBreech", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
+                      "The back half of a mortar: charges stack on its back, a mortar round sits on its front. Turn it off and on to fire: the round and whatever is built on it break away forward and your ship is kicked back by the same momentum. Nothing happens if the round's side is still joined to the ship some other way."),
+    "MortarRound_": ("6c00", "Mortar Round", "MortarRound", "Up", None, ((0, 0, 0), (0, 0, 2), (0, 0, 0)),
+                     "The front half of a mortar: it sits on a mortar breech's front, and whatever you build on its other face is the payload. When the mortar fires, the round and its payload fly off as their own ship."),
 }
 # per block: static thrust (N) and PCU - the tuning table
 # the helicopter rotors (2026-10-17, the user: "rotor thrust proportional to disc area"): one disc loading for every size,
@@ -606,7 +615,8 @@ FAMILIES = [("", "Turboprops", "Turboprop", GROUP, G(SHARED, 0x23), 4),
             ("HelicopterRotors_", "Helicopter Rotors", "Helicopter", G(SHARED, 0x24), G(SHARED, 0x25), 5),
             ("DuctedFans_", "Ducted Fans", "DuctedFan", G(SHARED, 0x26), G(SHARED, 0x27), 6),
             ("Ramjets_", "Ramjets", "Ramjet", G(SHARED, 0x28), G(SHARED, 0x29), 7),   # (2026-10-17: the ramjets' own group)
-            ("SolidRockets_", "Solid Rockets", "Solid", G(SHARED, 0x2a), G(SHARED, 0x2b), 8)]   # (2026-10-17: segments and nozzles)
+            ("SolidRockets_", "Solid Rockets", "Solid", G(SHARED, 0x2a), G(SHARED, 0x2b), 8),   # (2026-10-17: segments and nozzles)
+            ("Mortars_", "Mortars", "Mortar", G(SHARED, 0x2e), G(SHARED, 0x2f), 10)]   # (2026-10-23: charges, breeches, rounds)
 family_group = lambda prefix: next(f[3] for f in FAMILIES if prefix.startswith(f[2]))
 
 
@@ -1038,6 +1048,107 @@ def write_solid_cs(rows):
     open(SOLID_CS_OUT, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
 
 
+# ── THE MORTAR (2026-10-23) ──
+# The user: "something parallel to the srb ... like a mortar? For instantaneous impulse ... just 1 charge, segmented like solids ... all at
+# once ... have the head and segments be cube dims ... like a bullet casing ... the casing should kick the original grid back, and the
+# split grid forward. If a split doesn't happen, then no impulse ... empty blocks if they are spent". The kit: D:/Blender Brojects/SE2/
+# Mortar (the approved solid rocket parts cut and dropped as rigid groups), rigged by mortar_rig.py (mortar_spec.json). Three kinds
+# per size, each a PLAIN powerable block (the segments' base: breakable, its on / off switch; no conveyor, no tank - the charge's state
+# is the mod's, AeroMortarChargeComponent, saved with the block):
+#   a CHARGE (a cube): MORTAR_PROP_SHARE of a segment's propellant until it is fired, then an empty block (rebuild it to reload);
+#   a BREECH (a half cube): the charges stack on its back (Up) face; switched off -> on it FIRES (AeroMortarComponent): the round's
+#           side is cut off - its SEAL, a fracture piece of its own at the front (Down) face (mortar_rig.py), killed through the game's
+#           fracturing, which cuts that face's mount points; the game splits the grid - and only if it did, the ship is pushed back
+#           and the round's grid forward by the stack's impulse (its propellant x MORTAR_IMPULSE_PER_KG), at the breech;
+#   a ROUND (a half cube): on the breech's front; the payload is built on its other face.
+MORTAR_SPEC = r"D:\Blender Brojects\SE2\Mortar\mortar_spec.json"
+MORTAR_CS_OUT = os.path.join(os.path.dirname(CS_OUT), "MortarBlocks.g.cs")
+MORTAR_PROP_SHARE = 0.1          # (a charge's propellant: this share of a solid segment's of its size, per volume - a cube is half a segment)
+MORTAR_IMPULSE_PER_KG = 2450.0   # (N s per kg of charge: a gun propellant's effective exhaust speed, ~ the solids' Isp x g0)
+mortar_propellant = lambda s: round(solid_propellant(s) * MORTAR_PROP_SHARE / 2, 1)
+MORTAR_SEAL = lambda cell: max(0.08 * cell, 0.1)   # (the breech's seal thickness, m - mortar_rig.py SEAL_K / SEAL_MIN)
+
+
+def gen_mortar(N, s, rows):
+    """A MORTAR block (see above): our model, the breakable set (the breech: only its casing piece is critical - its seal breaks off
+    and the breech stays), the icon, on the segments' base with nothing added."""
+    kind = s["kind"]; prefix = {"mortar_charge": "MortarCharge_", "mortar_breech": "MortarBreech_", "mortar_round": "MortarRound_"}[kind]
+    ksid, kname, _, _, _, _, _ = KINDS[prefix]
+    size = s["size"]; sid = ksid[:2] + SIZE_SID[size]
+    dest_rel = os.path.join(ROOT_REL, N); d = os.path.join(gd.BLOCKS, "Assets", dest_rel); src = os.path.join(EXPORT, N, "Models")
+    ids = copy_models(N, dest_rel, d, src)
+    lod = lambda var, n, stem: ids[f"{var}/{stem}{'_LOD%d' % n if n else ''}.fbx"]
+    mats = s["materials"]["Body"]; md = os.path.join(d, "Models"); off = (OFF, OFF, OFF)
+    missing = [m for m in mats if m not in gd.MATERIALS]
+    if missing: raise SystemExit(f"{N}: materials without a GUID: {missing}")
+    m_nf, m_fr, m_de = (G(sid, 0x100 + i) for i in range(3))
+    gd.model(os.path.join(md, "NonFractured", f"{N}.model"), m_nf, [lod("NonFractured", n, N) for n in range(4)], mats, ids[f"NonFractured/{N}_collision.gltf"], off)
+    gd.model(os.path.join(md, "Fractured", f"{N}_Fractured.model"), m_fr, [lod("Fractured", n, N + "_Fractured") for n in range(4)], mats, ids[f"Fractured/{N}_Fractured_collision.gltf"], off)
+    gd.model(os.path.join(md, "Deformed", f"{N}_Deformed.model"), m_de, [lod("Deformed", n, N + "_Deformed") for n in range(4)], mats, ids[f"Deformed/{N}_Deformed_collision.gltf"], off)
+    icon_rel = os.path.join(dest_rel, "Icon", f"{N}_Icon.png"); icon = os.path.join(gd.BLOCKS, "Assets", icon_rel)
+    os.makedirs(os.path.dirname(icon), exist_ok=True); shutil.copy(os.path.join(MORTAR_ICONS, f"{N}_Icon.png"), icon)
+    gd.write(icon + ".meta", gd.asset_meta(file_id(icon_rel), ("P_PNG", 2), f"{N}_Icon.png"))
+    fbd, bind, spref, cpref, scomp, ccomp = G(sid, 0x1), G(sid, 0x10), G(sid, 0x11), G(sid, 0x12), G(sid, 0x13), G(sid, 0x14)
+    bmd, brk = G(sid, 0x15), G(sid, 0x16)
+    gd.definition(os.path.join(d, f"{N}_BlockModelDefinition.partialdef"), gd.partial(gd.BASE_BMD, {"Guid": bmd, "Model": "{G}" + m_nf,
+        "FractureModel": "{G}" + m_fr, "DamagedModel": "{G}" + m_de, "BuildProgressModels": [
+            {"Key": G(sid, 0x48), "Value": {"BuildRatioLowerBound": 0, "Model": "{G}" + m_fr, "PartChanges": {"_data": []}}},
+            {"Key": G(sid, 0x49), "Value": {"BuildRatioLowerBound": 1, "Model": "{G}" + m_nf, "PartChanges": {"_data": []}}}]},
+        "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition"), bmd, True)
+    crit = [{"Id": "Fracture_01"}] if kind == "mortar_breech" else [{"Id": "Fracture_01"}, {"Id": "Fracture_02"}]
+    gd.definition(os.path.join(d, f"{N}_BreakableBlockDefinition.partialdef"), gd.partial(gd.BASE_BRK, {"Guid": brk,
+        "CriticalFractures": {"$DeltaEncoded": True, "Removed": [], "Added": crit}},
+        "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.BreakableBlockDefinition"), brk, True)
+    B = gd.BASE
+    gd.definition(os.path.join(d, f"{N}.partialdef"), gd.partial(B["binding"], {"Guid": bind, "ServerComposite": scomp, "ClientPrefab": cpref},
+        "VRage:Keen.VRage.Multiplayer.Data.PrefabBindingDefinition", gd.B_VRAGE), bind, True)
+    gd.definition(os.path.join(d, f"{N}_Server.partialdef"), gd.partial(B["server"], {"Guid": spref, "_entity": {"Definition": scomp}},
+        "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinition", gd.B_VRAGE), spref, True)
+    gd.definition(os.path.join(d, f"{N}_ServerComposition.partialdef"), gd.partial(B["scomp"], {"Guid": scomp,
+        "Components": {"$DeltaEncoded": True, "Keys": gd.SKEYS, "Changed": [
+            {"Kind": "Update", "Index": 2, "Value": {"Definition": bmd}}, {"Kind": "Update", "Index": 3, "Value": {"Definition": brk}},
+            {"Kind": "Update", "Index": 4, "Value": {"Definition": fbd}}], "Removed": []}},
+        "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), scomp, True)
+    gd.definition(os.path.join(d, f"{N}_Client.partialdef"), gd.partial(B["client"], {"Guid": cpref, "_entity": {"Definition": ccomp}},
+        "VRage:Keen.VRage.Core.Game.Definitions.PrefabDefinition", gd.B_VRAGE), cpref, True)
+    gd.definition(os.path.join(d, f"{N}_ClientComposition.partialdef"), gd.partial(B["ccomp"], {"Guid": ccomp,
+        "Components": {"$DeltaEncoded": True, "Keys": gd.CKEYS, "Changed": [
+            {"Kind": "Update", "Index": 3, "Value": {"Definition": bmd}}, {"Kind": "Update", "Index": 4, "Value": {"Definition": brk}},
+            {"Kind": "Update", "Index": 5, "Value": {"Definition": fbd}}], "Removed": []}},
+        "VRage:Keen.VRage.DCS.Definitions.EntityCompositeDefinition"), ccomp, True)
+    gd.definition(os.path.join(d, f"{N}_PowerableBlockDefinition.partialdef"), gd.partial(B["fbd"], {"Guid": fbd,
+        "UIData": {"Name": kname, "Icon": "{G}" + file_id(icon_rel)}, "PlacerDefinition": G(ksid, 0x50), "DisplaySizeOverride": s["box_m"][0],
+        "Density": DENSITY, "Recipe": SOLID_TANK_RECIPE[size], "RecipeEfficiency": RECIPE_EFF, "BlockKind": G(ksid, 0x20), "PCU": PCU[size],
+        "ConsumedResource": None},
+        "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.PowerableBlockDefinition"), fbd, True)
+    prop = mortar_propellant(size) if kind == "mortar_charge" else 0.0
+    rows.append((N, kind, size, fbd, spref, cpref, prop, s["box_m"]))
+    print(f"{N}: {kind} {s['cells_vrage']} cells" + (f", {prop} kg of charge ({prop * MORTAR_IMPULSE_PER_KG / 1e3:.0f} kN s)" if prop else ""))
+
+
+def write_mortar_cs(rows):
+    lines = ["// GENERATED by tools/meshgen/gen_propulsor_defs.py (gen_mortar) - do not edit (re-run it: the content and this table together).",
+             "#pragma warning disable", "using System;", "using System.Collections.Generic;", "", "namespace AeroMod;", "",
+             "/// <summary>The MORTAR blocks (AeroMortarComponent / AeroMortarChargeComponent; game-free): name, kind, size, block definition GUID,",
+             "/// server / client prefabs (EntityInjector), a full charge's propellant (kg; 0 on the breech and the round), the block's box (m)",
+             "/// and the breech's seal - its front fracture piece - thickness (m); the impulse per kg of charge (N s).</summary>",
+             "public static partial class MortarBlocks", "{",
+             f"    public const float ImpulsePerKg = {MORTAR_IMPULSE_PER_KG}f;",
+             "    public enum Kind { Charge, Breech, Round }",
+             "    public sealed class Row",
+             "    {",
+             "        public readonly string Name, Size; public readonly Kind Kind; public readonly Guid Block, Server, Client; public readonly float Propellant, Seal; public readonly Vector3 Box;",
+             "        public Row(string name, Kind kind, string size, Guid block, Guid server, Guid client, float propellant, Vector3 box, float seal)",
+             "        { Name = name; Kind = kind; Size = size; Block = block; Server = server; Client = client; Propellant = propellant; Box = box; Seal = seal; }",
+             "    }",
+             "    public static readonly List<Row> Rows = new()", "    {"]
+    K = {"mortar_charge": "Kind.Charge", "mortar_breech": "Kind.Breech", "mortar_round": "Kind.Round"}
+    for N, kind, sz, fbd, sp, cp, prop, box in rows:
+        lines.append(f'        new("{N}", {K[kind]}, "{sz}", new("{fbd}"), new("{sp}"), new("{cp}"), {prop}f, new Vector3({box[0]}f, {box[1]}f, {box[2]}f), {round(MORTAR_SEAL(box[0]), 4)}f),')
+    lines += ["    };", "}", ""]
+    open(MORTAR_CS_OUT, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
+
+
 # ── THE EXHAUST (2026-10-17, the user's approved design): the ramjets' and solid rocket nozzles' own particle effects ──
 # OPTION 1 as COPIES: each effect and emitter is a WHOLE definition of ours, copied from a vanilla one (its JSON from the game's
 # compiled Content - the same format - with its $Bundles stamp kept: the type's schema), retinted / retimed; every reference in it is
@@ -1299,6 +1410,9 @@ def main():
     solid = json.load(open(SOLID_SPEC)); srows = []
     for N in sorted(solid): gen_solid(N, solid[N], srows)
     write_solid_cs(srows)
+    mortar = json.load(open(MORTAR_SPEC)) if os.path.exists(MORTAR_SPEC) else {}; mrows = []
+    for N in sorted(mortar): gen_mortar(N, mortar[N], mrows)
+    if mrows: write_mortar_cs(mrows)
     gen_exhaust()   # (the ramjets' and solid nozzles' exhaust effects + ExhaustBlocks.g.cs)
     kinds()
     blur_material(os.path.join(gd.BLOCKS, "Assets", ROOT_REL))

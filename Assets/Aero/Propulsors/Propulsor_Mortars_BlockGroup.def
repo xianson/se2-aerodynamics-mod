@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockGroupDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-7f00-002e-000000000001",
+    "Name": "Mortars",
+    "Order": 10,
+    "Subcategories": [
+      {
+        "Key": "ae200001-ae00-7f00-002f-000000000001",
+        "Value": "ae200001-ae00-0000-0002-000000000001"
+      }
+    ],
+    "BlockKinds": []
+  }
+}

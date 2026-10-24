@@ -1,0 +1,20 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "Game2:Keen.Game2.Simulation.StreamedUI.Categories.BlockKindDefinitionObjectBuilder",
+  "$Value": {
+    "Guid": "ae200001-ae00-6a00-0020-000000000001",
+    "Name": "Mortar Charge",
+    "Description": "One charge for a mortar. Stack charges of the same size straight on the back of a mortar breech: when it fires, every charge in the stack goes off at once, and more charges give a bigger kick. A fired charge stays as an empty block.",
+    "OrderingPriority": 0,
+    "BlockGroups": [
+      {
+        "Key": "ae200001-ae00-6a00-0022-000000000001",
+        "Value": "ae200001-ae00-7f00-002e-000000000001"
+      }
+    ]
+  }
+}

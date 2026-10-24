@@ -40,6 +40,8 @@ internal static partial class AeroBlockSave   // (the dev counters and requests:
     internal static readonly System.Guid BladesId = new("ae205e77-1a65-4c0d-9b1e-0000000000b7");   // (2026-10-17: rotor strikes - the blades' health)
     internal static readonly System.Guid AutopilotId = new("ae205e77-1a65-4c0d-9b1e-0000000000b8");   // (2026-10-19: the Autopilot block's panel)
     internal static readonly System.Guid RotorSpinId = new("ae205e77-1a65-4c0d-9b1e-0000000000b9");   // (2026-10-23: a main rotor's turn)
+    internal static readonly System.Guid MortarChargeId = new("ae205e77-1a65-4c0d-9b1e-0000000000ba");   // (2026-10-23: a mortar charge spent,
+    internal static readonly System.Guid MortarId = new("ae205e77-1a65-4c0d-9b1e-0000000000bb");         //  a breech fired)
 
     /// <summary>The build info a saving component is injected with (its fixed id, a fresh default builder).</summary>
     internal static Keen.VRage.DCS.Builders.EntityBuilder.ComponentBuildInfo Info(System.Type component, System.Guid id)

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The mortar's game-free core (Propulsion/Mortar.cs, 2026-10-23): the impulse, the breech's face / seal / round places, the
+       equal and opposite kick, the charge stack (the solid rockets' FindStack with mortar charges); the generated table
+       (MortarBlocks.g.cs); the content gen_propulsor_defs.py gen_mortar and mortar_rig.py wrote (the breech's seal: a fracture piece
+       of its own under the front mount slab, only its casing critical; the mount faces); and the firing component's rules in its
+       source (a flip fires, charges and a round needed, the kick only after the split). -->
+  <ItemGroup>
+    <Compile Include="$(Sim)\Propulsion\Mortar.cs" />
+    <Compile Include="$(Sim)\Propulsion\SolidRocket.cs" />
+    <Compile Include="$(Sim)\Propulsion\DutyCycle.cs" />
+    <Compile Include="$(Sim)\Blocks\MortarBlocks.g.cs" />
+    <Compile Include="$(Sim)\Blocks\SolidRocketBlocks.g.cs" />
+  </ItemGroup>
+</Project>

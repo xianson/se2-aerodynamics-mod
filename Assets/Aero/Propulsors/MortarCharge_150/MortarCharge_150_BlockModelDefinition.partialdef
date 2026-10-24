@@ -1,0 +1,42 @@
+{
+  "$Bundles": {
+    "Game2": "2.0.1.1811",
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.0.1.1811"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Definitions.PartialDefinitionDiff",
+  "$Value": {
+    "BaseDefinition": "f104e970-bdcc-4a09-892d-8cc96e039998",
+    "PartialDefinitionKind": "Copy",
+    "Manipulator": {
+      "Guid": "ae200001-ae00-6a15-0015-000000000001",
+      "Model": "{G}ae200001-ae00-6a15-0100-000000000001",
+      "FractureModel": "{G}ae200001-ae00-6a15-0101-000000000001",
+      "DamagedModel": "{G}ae200001-ae00-6a15-0102-000000000001",
+      "BuildProgressModels": [
+        {
+          "Key": "ae200001-ae00-6a15-0048-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 0,
+            "Model": "{G}ae200001-ae00-6a15-0101-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        },
+        {
+          "Key": "ae200001-ae00-6a15-0049-000000000001",
+          "Value": {
+            "BuildRatioLowerBound": 1,
+            "Model": "{G}ae200001-ae00-6a15-0100-000000000001",
+            "PartChanges": {
+              "_data": []
+            }
+          }
+        }
+      ]
+    },
+    "DefinitionType": "Game2:Keen.Game2.Simulation.WorldObjects.CubeBlocks.Models.BlockModelComponentDefinition",
+    "PriorityOverride": false
+  }
+}
