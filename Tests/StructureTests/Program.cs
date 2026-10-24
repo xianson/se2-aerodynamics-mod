@@ -2313,9 +2313,14 @@ static class Program
             L.ThrBlock.Add(t1); L.ThrF.Add(up * shared * 0.5f); L.ThrF0.Add(up * shared * 0.5f);
             L.ThrBlock.Add(t2); L.ThrF.Add(up * shared * 0.5f); L.ThrF0.Add(up * shared * 0.5f);
             L.LoadBlock.Add(noz); L.LoadF.Add(up * rocketNow); L.LoadP.Add(s.Center[noz]); L.LoadT.Add(Vector3.Zero); L.LoadEngine.Add(true);
-            StructureEval.Apply(s, sh.H, L);
-            Vector3 F = Vector3.Zero; for (int i = 0; i < s.Count; i++) F += s.ExtForce[i];
+            float share = StructureEval.ThrustLoadShare; StructureEval.ThrustLoadShare = 1f;
+            Vector3 F = Vector3.Zero;
+            try { StructureEval.Apply(s, sh.H, L); for (int i = 0; i < s.Count; i++) F += s.ExtForce[i]; }
+            finally { StructureEval.ThrustLoadShare = share; }
             Check(MathF.Abs(F.Y - gameF) < 1f, $"impulse loads (c): the ship carries the game's whole thrust once - thrusters {thrusters / 1000f:F0} kN + rocket {rocketNow / 1000f:F0} kN (base + steering) = {F.Y / 1000f:F1} kN of {gameF / 1000f:F1}");
+            StructureEval.Apply(s, sh.H, L); F = Vector3.Zero; for (int i = 0; i < s.Count; i++) F += s.ExtForce[i];
+            Check(MathF.Abs(StructureEval.ThrustLoadShare - 1f / 3f) < 1e-6f && MathF.Abs(F.Y - gameF / 3f) < 1f,
+                  $"impulse loads (c): the structure carries Structure.ThrustLoadShare (default 1/3) of the thrust, the game's and the rocket's alike ({F.Y / 1000f:F1} kN of {gameF / 1000f:F1})");
             bool tl = StructureEval.ThrustLoads; StructureEval.ThrustLoads = false;
             try { StructureEval.Apply(s, sh.H, L); F = Vector3.Zero; for (int i = 0; i < s.Count; i++) F += s.ExtForce[i]; Check(F.Length() < 1f, $"impulse loads (c): the rocket's thrust is an engine's - off with ThrustLoads ({F.Length():F1} N)"); }
             finally { StructureEval.ThrustLoads = tl; }
@@ -2333,7 +2338,8 @@ static class Program
             var force = new Vector3(1200f, 0f, -300f); var given = new Vector3(-2500f, 0f, 9000f); var reaction = new Vector3(0f, 4000f, 0f);
             var L = new StructureEval.Loads { AeroCom = com, CellSize = 0.25f, CellOffset = 0.5f };
             L.LoadBlock.Add(rotor); L.LoadF.Add(force); L.LoadP.Add(hub); L.LoadT.Add(given + reaction - Vector3.Cross(hub - com, force)); L.LoadEngine.Add(true);
-            StructureEval.Apply(s, sh.H, L);
+            float share = StructureEval.ThrustLoadShare; StructureEval.ThrustLoadShare = 1f;   // (the whole load: where it lands is what is checked)
+            try { StructureEval.Apply(s, sh.H, L); } finally { StructureEval.ThrustLoadShare = share; }
             Vector3 F = Vector3.Zero, M = Vector3.Zero;
             for (int i = 0; i < s.Count; i++) { F += s.ExtForce[i]; M += Vector3.Cross(s.Center[i] - com, s.ExtForce[i]) + s.ExtMoment[i]; }
             Check((F - force).Length() < 1e-2f && (M - (given + reaction)).Length() < 1e-1f, $"impulse loads (d): a rotor's cyclic and reaction at its hub - the ship's force and moment as applied (moment off by {(M - (given + reaction)).Length():E2} N m)");

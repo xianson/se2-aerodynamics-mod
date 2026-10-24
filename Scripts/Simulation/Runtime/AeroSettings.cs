@@ -234,6 +234,9 @@ public static partial class AeroSettings
         B("Structure.ThrustLoads", "world", false, () => StructureEval.ThrustLoads, v => StructureEval.ThrustLoads = v,
             "Engine thrust loads the structure (engine mounts, and the push through the ship). Off: engines never strain or break a ship.")
             .Ui("Engine mount loads", GStructure, Advanced);
+        F("Structure.ThrustLoadShare", "world", 0, 1, false, () => StructureEval.ThrustLoadShare, v => StructureEval.ThrustLoadShare = (float)v,
+            "The share of engine thrust the structure carries: every strain thrust puts on mounts and through the ship scales with it (1: the full thrust).")
+            .Ui("Engine load share", GStructure, Advanced, "×", 0.05);
         B("Structure.EntryLoads", "world", false, () => StructureEval.EntryLoads, v => StructureEval.EntryLoads = v,
             "A re-entry flown on rails by the Orbital mod loads the structure with its braking (up to ~5 g), pressed onto the windward faces as the air would: the nose and heat shield carry it. Off: a railed entry heats the hull but never strains it.")
             .Ui("Re-entry braking loads", GStructure, Advanced);

@@ -43,6 +43,11 @@ public static class StructureEval
     /// <summary>Diagnostics: contact cells that fell in a block's cells, and those that did not.</summary>
     public static int ContactMapped, ContactMissed;
     public static bool ThrustLoads = true;
+    /// <summary>The share of the engines' thrust the structure carries (2026-10-24, the user: "structural loading by thrust
+    /// needs to be reduced by like 2/3" - players' RCS on conveyor junctions and 2.5 m hydrogen thrusters on conveyors tore
+    /// their mounts). Every load thrust makes scales with it: the mounts, and the push through the ship (the free-body
+    /// solve's acceleration is the loads' own sum). The game's and the mod engines' thrust alike (Structure.ThrustLoadShare).</summary>
+    public static float ThrustLoadShare = 1f / 3f;
     /// <summary>The gyros' torque in the loads (off: as if they made none - for A/B).</summary>
     public static bool GyroLoads = true;
     /// <summary>A RAILED RE-ENTRY'S BRAKING loads the structure (2026-10-14, the user: "should a railed re-entry load the
@@ -261,15 +266,17 @@ public static class StructureEval
             for (int k = 0; k < nf; k++) { int i = faces[k]; float w = hh.FaceWind[i]; int b = hh.FaceBlock[i]; st.ExtMoment[b] += dm * (w / sw); }
         }
         else if (st.Root >= 0) { st.ExtForce[st.Root] += bodyF; st.ExtMoment[st.Root] += bodyM + Vector3.Cross(com - st.Center[st.Root], bodyF); }
-        if (ThrustLoads) for (int k = 0; k < L.ThrBlock.Count; k++) { int b = L.ThrBlock[k]; if (b >= 0 && b < n) st.ExtForce[b] += L.ThrF[k]; }
+        float ts = ThrustLoadShare;
+        if (ThrustLoads) for (int k = 0; k < L.ThrBlock.Count; k++) { int b = L.ThrBlock[k]; if (b >= 0 && b < n) st.ExtForce[b] += L.ThrF[k] * ts; }
         // extra block loads (PublishBlockLoad: forces nothing else here carries - a rotor's cyclic, a mod engine's thrust)
         for (int k = 0; k < L.LoadBlock.Count; k++)
         {
             if (L.LoadEngine[k] && !ThrustLoads) continue;
             int b = L.LoadBlock[k]; if (b < 0) b = st.BlockAt(L.LoadP[k]);   // (a block not in the structure's index yet: by its point)
             if (b < 0 || b >= n) continue;
-            var f = L.LoadF[k];
-            st.ExtForce[b] += f; st.ExtMoment[b] += Vector3.Cross(L.LoadP[k] - st.Center[b], f) + L.LoadT[k];
+            float e = L.LoadEngine[k] ? ts : 1f;
+            var f = L.LoadF[k] * e;
+            st.ExtForce[b] += f; st.ExtMoment[b] += Vector3.Cross(L.LoadP[k] - st.Center[b], f) + L.LoadT[k] * e;
         }
         // contacts (collisions, the ground): at the block in the contact's cell (else none - a point in no block's cells)
         for (int k = 0; k < L.ContactP.Count; k++)

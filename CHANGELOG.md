@@ -3,12 +3,20 @@
 Numbers below come from the commits' own measurements (AeroBench on the dumped ships, the offline suites); nothing here
 was flown in game for this release. The commit hashes are on the integration branch.
 
+## Unreleased - engine loads a third
+
+- Engines strain a ship a third as much: the structure carries a third of their thrust (mounts and the push through the
+  ship). Thrusters on conveyor junctions, and 2.5 m hydrogen thrusters on conveyors, tore their mounts off at full thrust.
+- New world setting **Engine load share** (`Structure.ThrustLoadShare`, Structure and damage, advanced; 1 = the old full load).
+- Air, gyro and impact loads are unchanged. Not checked in game yet.
+
 ## Unreleased - mortars
 
 - **Mortars** (G menu > Mortars), 0.5 / 1.5 / 2.5 m: charges (cubes) stack on a breech's back, a round sits on its front, and
   whatever you build on the round is the payload. Switch the breech off and on to fire: every charge in the stack goes off at
-  once, the round and its payload break away as their own ship and fly forward, and your ship is kicked back by the same momentum.
-  If the round's side is still joined to the ship some other way, nothing is pushed.
+  once, the round and its payload break away as their own ship and fly forward, and your ship is kicked back by a third of the
+  round's kick (the rest vents out the back as blast). If the round's side is still joined to the ship some other way, nothing
+  is pushed.
 - About 48 / 290 / 1,500 kN s per charge (0.5 / 1.5 / 2.5 m). Fired charges stay as empty blocks; rebuild them to reload.
 - Built from the solid rockets' parts. Offline: `Tests/MortarTests`.
 - The 0.5 m breech is a full cube (two barrel segments): a half cube there was one cell, and firing freed it from the charges too.
