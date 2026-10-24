@@ -1,0 +1,36 @@
+{
+  "$Bundles": {
+    "System.Runtime": "1.0.0.0",
+    "VRage": "2.3.0.2070"
+  },
+  "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTextureModel",
+  "$Value": {
+    "PresetReference": "{G}b8c12ad6-a10b-4fdb-bbc0-8f2d655380f0",
+    "Rotation": "None",
+    "Flip": "None",
+    "PresetModel": {
+      "TextureSourceModels": [
+        {
+          "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture",
+          "Texture": "{G}871f6e35-34ff-50fd-a73c-0b5dde4aa651"
+        },
+        {
+          "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture",
+          "Texture": "{G}871f6e35-34ff-50fd-a73c-0b5dde4aa651"
+        },
+        {
+          "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture",
+          "Texture": "{G}871f6e35-34ff-50fd-a73c-0b5dde4aa651"
+        },
+        {
+          "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture",
+          "Texture": "{G}36969a3c-73b6-51b9-bd31-b27aac667b48"
+        },
+        {
+          "$Type": "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture",
+          "Texture": null
+        }
+      ]
+    }
+  }
+}

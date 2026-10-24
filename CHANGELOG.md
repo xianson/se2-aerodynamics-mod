@@ -25,6 +25,8 @@ was flown in game for this release. The commit hashes are on the integration bra
 - A light payload hits the game's 1,000 m/s speed limit: the kick it couldn't take is stored and keeps it at that speed against
   drag and gravity until the store runs out, it hits something, or 2 minutes pass (in game, 0.5 m at 4 km up: 1,000 m/s for 3 s).
 - Fixed: a mortar fired from a moving ship never kicked (its round was looked for where it had been when it fired).
+- New look: a straight octagon just inside the end caps (no taper, no pillar clamps), black trim top and bottom, red and
+  black hazard stripes on the round's split line, and a flat payload face on the round (was a conveyor socket).
 
 ## Unreleased - airbrake sizes
 

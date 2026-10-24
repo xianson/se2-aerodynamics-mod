@@ -116,7 +116,7 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":124,
+			"count":132,
 			"max":[
 				0.23000000417232513,
 				0.10499999672174454,
@@ -132,20 +132,20 @@
 		{
 			"bufferView":1,
 			"componentType":5123,
-			"count":771,
+			"count":819,
 			"type":"SCALAR"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":100,
+			"count":107,
 			"max":[
 				0.23000000417232513,
 				0.10499999672174454,
 				0.23000000417232513
 			],
 			"min":[
-				-0.13049793243408203,
+				-0.13200001418590546,
 				-0.10499999672174454,
 				-0.23000000417232513
 			],
@@ -154,39 +154,39 @@
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":633,
+			"count":657,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":1488,
+			"byteLength":1584,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1542,
-			"byteOffset":1488,
+			"byteLength":1638,
+			"byteOffset":1584,
 			"target":34963
 		},
 		{
 			"buffer":0,
-			"byteLength":1200,
-			"byteOffset":3032,
+			"byteLength":1284,
+			"byteOffset":3224,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1266,
-			"byteOffset":4232,
+			"byteLength":1314,
+			"byteOffset":4508,
 			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":5500,
+			"byteLength":5824,
 			"uri":"MortarRound_050_Deformed_collision.bin"
 		}
 	]

@@ -116,7 +116,7 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":100,
+			"count":106,
 			"max":[
 				0.3914928436279297,
 				0.35499998927116394,
@@ -132,13 +132,13 @@
 		{
 			"bufferView":1,
 			"componentType":5123,
-			"count":627,
+			"count":663,
 			"type":"SCALAR"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":124,
+			"count":133,
 			"max":[
 				0.7300000190734863,
 				0.35499998927116394,
@@ -154,39 +154,39 @@
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":771,
+			"count":825,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":1200,
+			"byteLength":1272,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1254,
-			"byteOffset":1200,
+			"byteLength":1326,
+			"byteOffset":1272,
 			"target":34963
 		},
 		{
 			"buffer":0,
-			"byteLength":1488,
-			"byteOffset":2456,
+			"byteLength":1596,
+			"byteOffset":2600,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1542,
-			"byteOffset":3944,
+			"byteLength":1650,
+			"byteOffset":4196,
 			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":5488,
+			"byteLength":5848,
 			"uri":"MortarRound_150_Deformed_collision.bin"
 		}
 	]

@@ -7,6 +7,10 @@
   "$Value": {
     "MaterialAssignments": [
       {
+        "MaterialName": "AeroMortarHazard",
+        "MaterialReference": "ae200001-ae00-7f00-005a-000000000001"
+      },
+      {
         "MaterialName": "AeroSolidCoupling",
         "MaterialReference": "ae200001-ae00-7f00-0051-000000000001"
       },
@@ -27,20 +31,8 @@
         "MaterialReference": "c3e749ff-35ff-469c-b7ae-84a5a5d829b3"
       },
       {
-        "MaterialName": "AtlasDecal_Trims01",
-        "MaterialReference": "35d26308-2dc4-4b01-af36-0c713d10e571"
-      },
-      {
-        "MaterialName": "AtlasDecal_Trims03",
-        "MaterialReference": "6166bee4-12a2-4d4f-82c8-0b481aa5823f"
-      },
-      {
         "MaterialName": "FracturedMaterial01",
         "MaterialReference": "0f2772fd-72d6-4ee9-9211-38d1781ba8b9"
-      },
-      {
-        "MaterialName": "MetalDull",
-        "MaterialReference": "0e9e7d42-9533-47ed-b814-cf4be55b6aa8"
       },
       {
         "MaterialName": "PaintedMetalColorable",
@@ -56,15 +48,13 @@
       {
         "AssetReference": "{G}09c60282-bca6-5e81-8960-9a90156e1230",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidCoupling",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
           "AtlasDecal_Stickers02",
-          "AtlasDecal_Trims01",
-          "AtlasDecal_Trims03",
           "FracturedMaterial01",
-          "MetalDull",
           "PaintedMetalColorable",
           "PaintedMetalDarker"
         ],
@@ -85,15 +75,13 @@
       {
         "AssetReference": "{G}1bc0055d-e95e-5cab-b748-dda7fe219173",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidCoupling",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
           "AtlasDecal_Stickers02",
-          "AtlasDecal_Trims01",
-          "AtlasDecal_Trims03",
           "FracturedMaterial01",
-          "MetalDull",
           "PaintedMetalColorable",
           "PaintedMetalDarker"
         ],
@@ -114,15 +102,13 @@
       {
         "AssetReference": "{G}e8c310a1-80ae-5278-9f37-f87d495a3a3e",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidCoupling",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
           "AtlasDecal_Stickers02",
-          "AtlasDecal_Trims01",
-          "AtlasDecal_Trims03",
           "FracturedMaterial01",
-          "MetalDull",
           "PaintedMetalColorable",
           "PaintedMetalDarker"
         ],
@@ -143,15 +129,13 @@
       {
         "AssetReference": "{G}2affdc8a-db56-5779-ab17-6fad448b24f6",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidCoupling",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
           "AtlasDecal_Stickers02",
-          "AtlasDecal_Trims01",
-          "AtlasDecal_Trims03",
           "FracturedMaterial01",
-          "MetalDull",
           "PaintedMetalColorable",
           "PaintedMetalDarker"
         ],

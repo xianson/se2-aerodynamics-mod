@@ -7,6 +7,10 @@
   "$Value": {
     "MaterialAssignments": [
       {
+        "MaterialName": "AeroMortarHazard",
+        "MaterialReference": "ae200001-ae00-7f00-005a-000000000001"
+      },
+      {
         "MaterialName": "AeroSolidTrim01",
         "MaterialReference": "ae200001-ae00-7f00-0053-000000000001"
       },
@@ -40,6 +44,7 @@
       {
         "AssetReference": "{G}ae415a41-0b76-5590-9c1e-0e629156d36a",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
@@ -65,6 +70,7 @@
       {
         "AssetReference": "{G}00a5b9ba-3694-5234-bd60-07b7606f2213",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
@@ -90,6 +96,7 @@
       {
         "AssetReference": "{G}dd2e7586-4701-5b93-9289-a9fd0b423bdd",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",
@@ -115,6 +122,7 @@
       {
         "AssetReference": "{G}b0e3322f-60de-52ba-91a1-a63f2422a3da",
         "UsedMaterials": [
+          "AeroMortarHazard",
           "AeroSolidTrim01",
           "AeroSolidTrim03",
           "AtlasDecal_Parts02",

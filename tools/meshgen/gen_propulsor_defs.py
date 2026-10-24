@@ -747,13 +747,18 @@ RED_MATS = [
      "228c51e1-b649-426a-8808-a2167e436e0f", "bda5f0d7-995e-496e-9f90-ab0edc5226ea", "a72989ed-ec9e-43af-aa65-31d6a495de5e"),
     ("AeroSolidTrim01", G(SHARED, 0x53), "a6685c78-d6e4-42f9-a5ce-f683973a5401", 1, 0.05, 1,     # (vanilla AtlasDecal_Trims01)
      "f6eee20d-9593-4858-abf9-3b8f1b594ef9", "095e0037-2239-4937-af0b-d59060114351", "0c943f35-536e-4d73-8237-708fcd29e9eb"),
+    # (the mortar's split line, 2026-10-24, the user: "slashed red and black hazard lines": vanilla WarningStripes - a plain PBR
+    #  material, no parallax (displacement None) - its yellow made red; Mortar/scripts/build_octbody.py)
+    ("AeroMortarHazard", G(SHARED, 0x5a), "28b46a4e-18ee-459f-a3b1-f268e7a20801", 1, None, None,
+     "7fe7e2a9-0fb4-497d-a6e1-529b9347ace0", "d4fb4bf9-3b55-4068-8e87-a7ef575f1bb5", None),
 ]
+RED_SRC = {"AeroMortarHazard": r"D:\Blender Brojects\SE2\Mortar\HazardMaterial"}   # (else COUPLING_SRC)
 COUPLING_MAT, COUPLING_MAT_GUID = RED_MATS[0][0], RED_MATS[0][1]
 for _m in RED_MATS: gd.MATERIALS.setdefault(_m[0], _m[1])
 
 
 def coupling_material(root):
-    """The solid rockets' red materials (RED_MATS): each a PBRParallax copy of a vanilla material (its state, emissivity,
+    """The solid rockets' red materials (RED_MATS; the mortar's hazard stripes a plain PBR one): each a PBRParallax copy of a vanilla material (its state, emissivity,
     parallax and its normal / extensions / displacement textures), with our ColorMetal texture packed (as blur_material) from
     the modeller's albedo (RGB) and metal (the vanilla cm alpha) PNGs, copied into the Blocks assets."""
     ST = "VRage:Keen.VRage.ContentPipeline.Textures.Composite.CompositeTexturePresetModel+SourceTexture"
@@ -763,7 +768,7 @@ def coupling_material(root):
         srcs = {}
         for nm in ("albedo", "metal"):
             f = f"{name}_{nm}.png"
-            shutil.copyfile(os.path.join(COUPLING_SRC, f), os.path.join(d, f))
+            shutil.copyfile(os.path.join(RED_SRC.get(name, COUPLING_SRC), f), os.path.join(d, f))
             srcs[nm] = file_id(os.path.join(rel, f)); gd.write(os.path.join(d, f) + ".meta", gd.file_meta(srcs[nm]))
         f = f"{name}_cm.comptex"; cm = file_id(os.path.join(rel, f))
         gd.write(os.path.join(d, f), {"$Bundles": {"System.Runtime": "1.0.0.0", "VRage": "2.3.0.2070"},
@@ -772,6 +777,12 @@ def coupling_material(root):
                        "PresetModel": {"TextureSourceModels": [{"$Type": ST, "Texture": ("{G}" + srcs[c]) if c else None}
                                                                for c in ("albedo", "albedo", "albedo", "metal", None)]}}})
         gd.write(os.path.join(d, f) + ".meta", gd.asset_meta(cm, ("P_TEXTURE", 5), f"{name}_cm.dds"))
+        if disp is None:   # (a plain PBR copy: no parallax)
+            gd.definition(os.path.join(d, f"{name}.def"), {"$Bundles": {"System.Runtime": "1.0.0.0", "VRage": "2.0.1.2878"},
+                "$Type": "VRage:Keen.VRage.Core.Render.Materials.Templates.PBRMaterialDefinitionObjectBuilder",
+                "$Value": {"Guid": guid, "DefaultState": state, "PinTextures": False, "ColorMetalTexture": "{G}" + cm,
+                           "NormalRoughnessTexture": "{G}" + nr, "ExtensionsTexture": "{G}" + add, "EmissivityMultiplier": emis}}, guid, False)
+            continue
         gd.definition(os.path.join(d, f"{name}.def"), {"$Bundles": {"System.Runtime": "1.0.0.0", "VRage": "2.0.1.2878"},
             "$Type": "VRage:Keen.VRage.Core.Render.Materials.Templates.PBRParallaxMaterialDefinitionObjectBuilder",
             "$Value": {"Guid": guid, "DefaultState": state, "PinTextures": False, "ColorMetalTexture": "{G}" + cm,

@@ -194,7 +194,7 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":140,
+			"count":156,
 			"max":[
 				1.2300000190734863,
 				0.6050000190734863,
@@ -210,7 +210,7 @@
 		{
 			"bufferView":1,
 			"componentType":5123,
-			"count":900,
+			"count":996,
 			"type":"SCALAR"
 		},
 		{
@@ -271,44 +271,44 @@
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":1680,
+			"byteLength":1872,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1800,
-			"byteOffset":1680,
+			"byteLength":1992,
+			"byteOffset":1872,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":96,
-			"byteOffset":3480,
+			"byteOffset":3864,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":72,
-			"byteOffset":3576,
+			"byteOffset":3960,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":96,
-			"byteOffset":3648,
+			"byteOffset":4032,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":96,
-			"byteOffset":3744,
+			"byteOffset":4128,
 			"target":34962
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":3840,
+			"byteLength":4224,
 			"uri":"MortarRound_250_collision.bin"
 		}
 	]
