@@ -96,7 +96,8 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         Vector3 faceAt = With(across, a, front), roundAt = With(across, a, Mortar.RoundMiddle(front, s, roundH));
         if (kg <= 0f) { Refuse("no charges on its back face (stack charges of its size straight on it)"); return; }
         if (!HasRound(grid, roundAt)) { Refuse("no mortar round of its size on its front face"); return; }
-        // 2. the seal
+        // 2. the seal - the split signal watched FIRST: the game may split the grid inside the fracture call
+        Watching(grid);
         bool killed = false;
         try { killed = AeroGridComponent.KillPieceAt(_cb, grid, sealAt, Row.Seal * 0.8f); }
         catch (Exception e) { Refuse("the seal would not break: " + (e.InnerException ?? e).Message); return; }
@@ -110,7 +111,6 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         _roundAt = WorldTransform.Transform((Vector3D)roundAt, in gwt);
         _faceAt = WorldTransform.Transform((Vector3D)faceAt, in gwt);
         _dir = (Vector3)(WorldTransform.Transform((Vector3D)(faceAt + dirLocal), in gwt) - _faceAt);
-        Watching(grid);
         Status = $"fired: {_stack.Count} charges, {kg:F0} kg, {_impulse / 1e3:F0} kN s - waiting for the split";
         Last = $"{Row.Name}: {Status}";
         Log.Default?.Info($"[AERO-MORTAR] {Last}");

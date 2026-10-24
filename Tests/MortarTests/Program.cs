@@ -167,6 +167,8 @@ static class Program
         int iTake = m.IndexOf("_piece = TakeSplit("), iImp = m.IndexOf("TryApplyImpulse(onRound");
         Check(iTake > 0 && iImp > iTake && m.IndexOf("TryApplyImpulse(") == iImp, "the impulse only after the split (no split: no impulse)");
         Check(m.Contains("foreach (var c in _stack) c.Spend();"), "the charges spent when it fires");
+        int iWatch = m.IndexOf("Watching(grid);");
+        Check(iWatch > 0 && iWatch < iSeal && m.IndexOf("Watching(grid);", iWatch + 1) < 0, "the split signal watched before the seal breaks (the game may split inside the fracture call)");
         string inj = File.ReadAllText(Path.Combine(sim, "Injection", "EntityInjector.cs"));
         Check(inj.Contains("MortarBlocks.ChargeServerPrefabs") && inj.Contains("MortarBlocks.BreechServerPrefabs"), "injected into the charges' and breeches' server prefabs");
         string save = File.ReadAllText(Path.Combine(sim, "Blocks", "AeroBlockSave.cs"));
