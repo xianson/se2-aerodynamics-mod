@@ -82,15 +82,6 @@ public partial class AeroMortarChargeComponent : Component, IInSceneListener, ID
         }
     }
 
-    /// <summary>The place, now (the breech asks as it fires: the cached one may be up to GeoTicks old).</summary>
-    internal void Refresh()
-    {
-        if (_cb == null || Row == null) return;
-        var bb = _cb.AABB;
-        var up = Base6Directions.GetVector(_cb.BlockOrientation.TransformDirection(Base6Directions.Direction.Up));
-        _geo = SolidRocket.Geo.Of(bb.Min, bb.Max, up, Row.Size); GridEntity = _cb.Grid?.Entity;
-    }
-
     public const string SaveKey = "aero-mortarcharge:";
 
     /// <summary>Spent when saved: spent again.</summary>

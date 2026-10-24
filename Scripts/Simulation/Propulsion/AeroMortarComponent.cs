@@ -82,11 +82,8 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         // 1. the stack (this grid's charges of its size) and the round
         _cands.Clear();
         lock (AeroMortarChargeComponent.All)
-            foreach (var c in AeroMortarChargeComponent.All)
-            {
-                c.Refresh();
-                if (ReferenceEquals(c.GridEntity, grid) && !c.Spent) _cands.Add(c);
-            }
+            foreach (var c in AeroMortarChargeComponent.All)   // (their cached places - at most GeoTicks old: never written from here,
+                if (ReferenceEquals(c.GridEntity, grid) && !c.Spent) _cands.Add(c);   //  their own job may be running)
         SolidRocket.FindStack(in me, _cands, _stack);
         float kg = SolidRocket.Total(_stack);
         int a = me.Axis, s = me.Sign;
@@ -182,7 +179,9 @@ public partial class AeroMortarComponent : Component, IInSceneListener
 
     // the ship grids' split signal (subscribed once per grid that fires; the splits kept a short while for the breeches to claim)
     static readonly object _lock = new();
-    static readonly List<(Entity original, Entity piece, int age)> _splits = new();
+    static readonly List<(Entity original, Entity piece, long at)> _splits = new();
+    /// <summary>How long a split waits to be claimed (ms): a watched grid keeps reporting every split of its own (structural breaks too).</summary>
+    const long SplitKeepMs = 5000;
     static readonly HashSet<Entity> _watched = new();
     static CubeGridComponent.SplitGridSpawnedSignal.ExternalApi _onSplit;
 
@@ -200,20 +199,29 @@ public partial class AeroMortarComponent : Component, IInSceneListener
     static void OnSplit(Entity original, Entity piece)
     {
         if (original == null || piece == null) return;
-        lock (_lock) { if (_splits.Count < 64) _splits.Add((original, piece, 0)); }
+        long now = Environment.TickCount64;
+        lock (_lock)
+        {
+            Prune(now);
+            if (_splits.Count < 64) _splits.Add((original, piece, now));
+        }
+    }
+
+    static void Prune(long now)
+    {
+        for (int i = _splits.Count - 1; i >= 0; i--) if (now - _splits[i].at > SplitKeepMs) _splits.RemoveAt(i);
     }
 
     /// <summary>A split of this ship grid since it fired whose new grid holds the round (a mortar round of this size with its middle
-    /// within a quarter cell of where the round was); claimed (taken off the list). Old ones (over SplitWaitTicks claims) dropped.</summary>
+    /// within a quarter cell of where the round was); claimed (taken off the list). Splits older than SplitKeepMs dropped.</summary>
     Entity TakeSplit(Entity ship, Vector3D roundWorld)
     {
         lock (_lock)
         {
+            Prune(Environment.TickCount64);
             for (int i = _splits.Count - 1; i >= 0; i--)
             {
-                var (o, p, age) = _splits[i];
-                if (age > Mortar.SplitWaitTicks * 4) { _splits.RemoveAt(i); continue; }
-                _splits[i] = (o, p, age + 1);
+                var (o, p, _) = _splits[i];
                 if (!ReferenceEquals(o, ship) || !GridPhysics.Alive(p.Data)) continue;
                 var pwt = p.Data.GetWorldTransform();
                 var local = (Vector3)WorldTransform.TransformInv(roundWorld, pwt);
