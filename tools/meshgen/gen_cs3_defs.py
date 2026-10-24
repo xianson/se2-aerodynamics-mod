@@ -284,7 +284,9 @@ def placement():
 
 
 def main():
-    manifest = json.load(open(r"C:\Users\slob\AppData\Local\Temp\claude\D--aero\825c4945-9ced-4158-adbf-cbb8be91082b\scratchpad\fbx_manifest.json"))
+    # (the exported FBX's objects and their materials, per file - read from the 2026-10-12 export once; kept here since 2026-10-23:
+    #  it lived in that session's scratchpad, a temp folder that could go)
+    manifest = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cs3_fbx_manifest.json")))
     for size in SIZES:   # (a scaled copy holds the large one's objects and materials: its entries under its own names)
         if not any(k.startswith(size + "\\") for k in manifest):
             manifest.update({k.replace("Large", size): v for k, v in list(manifest.items()) if k.startswith("Large\\")})
