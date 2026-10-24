@@ -164,8 +164,15 @@ static class Program
         Check(m.Contains("if (on && _wasOff && !Fired) Fire();") && m.Contains("_wasOff = !_pb.Enabled;"), "a flip off -> on fires (one placed or loaded switched on does not)");
         int iCharges = m.IndexOf("no charges on its back face"), iRound = m.IndexOf("no mortar round of its size"), iSeal = m.IndexOf("KillPieceAt(");
         Check(iCharges > 0 && iRound > 0 && iSeal > iCharges && iSeal > iRound, "no charges or no round: refused before anything breaks");
-        int iTake = m.IndexOf("_piece = TakeSplit("), iImp = m.IndexOf("TryApplyImpulse(onRound");
-        Check(iTake > 0 && iImp > iTake && m.IndexOf("TryApplyImpulse(") == iImp, "the impulse only after the split (no split: no impulse)");
+        int iClaim = m.IndexOf("if (s.RoundGrid == null)"), iImp = m.IndexOf("TryApplyImpulse(onRound");
+        Check(iClaim > 0 && iImp > iClaim && m.IndexOf("TryApplyImpulse(") == iImp && m.Contains("fired - no split (the round's side is still joined to the ship): no kick"),
+              "the impulse only after the split is claimed (no split: no impulse)");
+        Check(m.Contains("if (Holds(p, s.RoundAt, s.Size)) { s.RoundGrid = p; s.ShipGrid = o; }") && m.Contains("else if (Holds(o, s.RoundAt, s.Size) && !Holds(p, s.RoundAt, s.Size)) { s.RoundGrid = o; s.ShipGrid = p; }"),
+              "either side of the split may be the new grid: the round's side is whichever holds the round");
+        int iFired = m.IndexOf("Fired = true;");
+        Check(iFired > 0 && iFired < iSeal && m.IndexOf("c.Unspend();") > iSeal, "fired and spent before the seal breaks (a rebuilt side keeps them), put back if it would not break");
+        Check(File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroMortarChargeComponent.cs")).Contains("AeroMortarComponent.StepShots();") && m.Contains("StepShots();\r\n        if (Entity == null") | m.Contains("StepShots();\n        if (Entity == null"),
+              "the shots move on from every breech's and charge's step, before anything else (a breech rebuilt in the new grid)");
         Check(m.Contains("foreach (var c in _stack) c.Spend();"), "the charges spent when it fires");
         int iWatch = m.IndexOf("Watching(grid);");
         Check(iWatch > 0 && iWatch < iSeal && m.IndexOf("Watching(grid);", iWatch + 1) < 0, "the split signal watched before the seal breaks (the game may split inside the fracture call)");

@@ -45,6 +45,8 @@ public partial class AeroMortarChargeComponent : Component, IInSceneListener, ID
 
     /// <summary>Fired with its breech: spent for good (its mass told to the grid on its next step).</summary>
     internal void Spend() { if (Spent) return; Spent = true; _massDirty = true; }
+    /// <summary>Its breech's seal would not break after all: full again (marked spent first - Fire).</summary>
+    internal void Unspend() { if (!Spent) return; Spent = false; _massDirty = true; }
 
     void IInSceneListener.OnAddedToScene() { lock (All) All.Add(this); _look.Reset(); _geoIn = 0; _massDirty = true; }
     void IInSceneListener.OnBeforeRemovedFromScene() { lock (All) All.Remove(this); }
@@ -58,6 +60,7 @@ public partial class AeroMortarChargeComponent : Component, IInSceneListener, ID
 
     void Tick()
     {
+        AeroMortarComponent.StepShots();   // (a shot in flight moves on even when its breech was rebuilt in the new grid)
         if (Entity == null || !GridPhysics.Alive(Data)) return;
         if (!_look.Done)
         {
