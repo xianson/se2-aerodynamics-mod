@@ -9,7 +9,7 @@ namespace AeroMod;
 /// the original grid back, and the split grid forward. If a split doesn't happen, then no impulse ... empty blocks if they are spent".
 ///
 /// The blocks (gen_propulsor_defs.py gen_mortar; one size each: 0.5 / 1.5 / 2.5 m): CHARGES (cubes) stacked on the BACK (Up) face of a
-/// BREECH (a half cube) on a ROUND (a half cube) on its FRONT (Down) face; the payload is built on the round's other face.
+/// BREECH (a half cube; the 0.5 m one a whole cube, each piece a cell) on a ROUND (a half cube) on its FRONT (Down) face; the payload is built on the round's other face.
 ///   FIRING (AeroMortarComponent, server): the breech's switch flipped off -> on (only a flip: a breech placed or loaded switched on does
 ///          nothing) with charges behind it and a round in front: the breech's SEAL - a fracture piece of its own at its front face
 ///          (mortar_rig.py) - is killed through the game's own fracturing (AeroGridComponent.KillPieceAt, the structure's split path),

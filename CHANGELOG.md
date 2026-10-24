@@ -11,8 +11,9 @@ was flown in game for this release. The commit hashes are on the integration bra
   If the round's side is still joined to the ship some other way, nothing is pushed.
 - About 48 / 290 / 1,500 kN s per charge (0.5 / 1.5 / 2.5 m). Fired charges stay as empty blocks; rebuild them to reload.
 - Built from the solid rockets' parts. Offline: `Tests/MortarTests`.
-- Checked in game (1.5 and 2.5 m): the round and payload split off and the momenta match the impulse both ways. The 0.5 m
-  breech is one cell high: firing also frees the breech from the charges (its model needs a second cell).
+- The 0.5 m breech is a full cube (two barrel segments): a half cube there was one cell, and firing freed it from the charges too.
+- Checked in game at all three sizes: the round and payload split off and the breech stays on the ship. At 1.5 and 2.5 m the
+  momenta match the impulse both ways; a light 0.5 m payload hits the game's 1,000 m/s speed limit, so it gets less.
 
 ## Unreleased - airbrake sizes
 

@@ -10,7 +10,7 @@ piece of its own, the face toward the round) - the grid parts there; the ship is
   MortarCharge_250   MORTAR_Charge_250    (60, 12)   2.5   1 x 1 x 1        0 .. 2.5
   MortarBreech_250   MORTAR_Breech_250    (0, 12)    2.5   1 x 1 x 0.5      1.25 .. 2.5
   MortarRound_250    MORTAR_Round_250     (0, 12)    2.5   1 x 1 x 0.5      0 .. 1.25
-  (the 150 and 050: the 250's x0.6 / x0.2, centres y + 8 / + 14)
+  (the 150 and 050: the 250's x0.6 / x0.2, centres y + 8 / + 14; the 050 breech a whole cube: 0 .. 0.5, its segment twice)
 
 Block frame (Blender, metres): up +Z (the stack axis: the charges above, the round below - the mortar fires DOWN, -Z, VRage Down),
 "forward" +Y; origin = the box's centre; VRage = (x, z, -y) (+0.125 LOD0 model offset in the definitions). Mount faces: top and
@@ -18,7 +18,7 @@ bottom of every block (never the sides), as the solid segments'.
 
 Output collections (solid_rig.py's): Body_LOD0..3, Collision (hull, occupancy, mountpoints), Fractured_LOD0..3 / Deformed_LOD0..3 /
 Collision_Fractured - the body's halves by x, except the BREECH's: Fracture_01 the casing above the seal, Fracture_02 the SEAL (the
-bottom SEAL_K x the cell, at least SEAL_MIN, of the half cube: the face toward the round), Ref.
+bottom cell and 2 cm, or the 0.5 m cube's lower half: the face toward the round), Ref.
 
   blender -b <copy of Mortar_kit.blend> -P mortar_rig.py -- <out.blend> <spec.json> <BlockName>
 """
@@ -28,18 +28,18 @@ from mathutils import Matrix, Vector
 OUT, SPEC, N = sys.argv[sys.argv.index("--") + 1:][:3]
 BLOCKS = {  # name: (collection, (cx, cy), cell m, cells across (x = y), cells high, box z lo (kit), nozzle? - never)
     **{f"MortarCharge_{z}": (f"MORTAR_Charge_{z}", (60.0, 12.0 + dy), c, 1, 1, 0.0, False) for z, c, dy in (("250", 2.5, 0.0), ("150", 1.5, 8.0), ("050", 0.5, 14.0))},
-    **{f"MortarBreech_{z}": (f"MORTAR_Breech_{z}", (0.0, 12.0 + dy), c, 1, 0.5, c / 2, False) for z, c, dy in (("250", 2.5, 0.0), ("150", 1.5, 8.0), ("050", 0.5, 14.0))},
+    **{f"MortarBreech_{z}": (f"MORTAR_Breech_{z}", (0.0, 12.0 + dy), c, 1, h, c - h * c, False) for z, c, dy, h in (("250", 2.5, 0.0, 0.5), ("150", 1.5, 8.0, 0.5), ("050", 0.5, 14.0, 1))},
     **{f"MortarRound_{z}": (f"MORTAR_Round_{z}", (0.0, 12.0 + dy), c, 1, 0.5, 0.0, False) for z, c, dy in (("250", 2.5, 0.0), ("150", 1.5, 8.0), ("050", 0.5, 14.0))},
 }
-SEAL_K = 0.08   # (the 0.5 m breech's seal - one cell high, no room for SEAL_CELL: its bottom 0.08 cell, at least SEAL_MIN)
-SEAL_MIN = 0.1
 # The game gives each mount-face CELL to the first fracture piece a cell-sized box at it touches
 # (BlockMountPointsGenerator.AssignMountPointSurfelsToFractures): the seal must hold the whole front cell and the casing none of it, so
 # the seal plane is a cell and 2 cm in (in game 2026-10-23: a 0.2 m seal on the 2.5 m breech left its front mounts to the casing - no
 # split; the one-cell 0.5 m breech gave both faces to one piece - it came off both ways). Each piece's hull is the body CLAMPED to its
 # side of the plane (2 cm in: hull_mesh's margin), not its faces' hull - a tall face would carry the casing's hull down to the front.
+# The 0.5 m breech is a whole cube (build_sizes.py): a half cube there is ONE cell, both faces' - its seal is its lower half (the plane
+# at its middle: each hull 2 cm off it, the front cell the seal's, the back cell the casing's).
 SEAL_CELL = 0.27
-seal_of = lambda S, H: SEAL_CELL if H >= SEAL_CELL + 0.25 else max(SEAL_K * S, SEAL_MIN)   # (m)
+seal_of = lambda S, H: min(SEAL_CELL, H / 2)   # (m)
 COLL, (CX, CY), S, CW, CH, ZLO, NOZZLE = BLOCKS[N]
 W, H = CW * S, CH * S
 SEAL_Z = -H / 2 + seal_of(S, H)                    # (the breech's seal plane, block z)
@@ -204,7 +204,7 @@ def hull_mesh(name, meshes, lo=None, hi=None, m=0.02):
 
 def halves(me):
     """The fracture pieces: the body's halves by x - the BREECH's: the casing (Fracture_01) and its SEAL (Fracture_02: the faces below
-    the seal plane, the bottom SEAL_K x the cell - the face toward the round)."""
+    the seal plane - the face toward the round)."""
     out = []
     seal = N.startswith("MortarBreech")
     for first in (True, False):

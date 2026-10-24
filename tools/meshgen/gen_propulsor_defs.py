@@ -1056,7 +1056,7 @@ def write_solid_cs(rows):
 # per size, each a PLAIN powerable block (the segments' base: breakable, its on / off switch; no conveyor, no tank - the charge's state
 # is the mod's, AeroMortarChargeComponent, saved with the block):
 #   a CHARGE (a cube): MORTAR_PROP_SHARE of a segment's propellant until it is fired, then an empty block (rebuild it to reload);
-#   a BREECH (a half cube): the charges stack on its back (Up) face; switched off -> on it FIRES (AeroMortarComponent): the round's
+#   a BREECH (a half cube; the 0.5 m one a whole cube - a half is one cell there): the charges stack on its back (Up) face; switched off -> on it FIRES (AeroMortarComponent): the round's
 #           side is cut off - its SEAL, a fracture piece of its own at the front (Down) face (mortar_rig.py), killed through the game's
 #           fracturing, which cuts that face's mount points; the game splits the grid - and only if it did, the ship is pushed back
 #           and the round's grid forward by the stack's impulse (its propellant x MORTAR_IMPULSE_PER_KG), at the breech;
@@ -1066,9 +1066,9 @@ MORTAR_CS_OUT = os.path.join(os.path.dirname(CS_OUT), "MortarBlocks.g.cs")
 MORTAR_PROP_SHARE = 0.1          # (a charge's propellant: this share of a solid segment's of its size, per volume - a cube is half a segment)
 MORTAR_IMPULSE_PER_KG = 2450.0   # (N s per kg of charge: a gun propellant's effective exhaust speed, ~ the solids' Isp x g0)
 mortar_propellant = lambda s: round(solid_propellant(s) * MORTAR_PROP_SHARE / 2, 1)
-# (the breech's seal thickness, m - mortar_rig.py seal_of: a cell and 2 cm - the game gives the front mount cell to the seal alone -
-#  where the half cube has room for it and its back cell, else SEAL_K / SEAL_MIN)
-MORTAR_SEAL = lambda cell: 0.27 if cell / 2 >= 0.27 + 0.25 else max(0.08 * cell, 0.1)
+# (the breech's seal thickness, m, from its height - mortar_rig.py seal_of: a cell and 2 cm - the game gives the front mount cell to the
+#  seal alone - or half the 0.5 m breech, a whole cube: one cell each)
+MORTAR_SEAL = lambda h: min(0.27, h / 2)
 
 
 def gen_mortar(N, s, rows):
@@ -1148,7 +1148,7 @@ def write_mortar_cs(rows):
              "    public static readonly List<Row> Rows = new()", "    {"]
     K = {"mortar_charge": "Kind.Charge", "mortar_breech": "Kind.Breech", "mortar_round": "Kind.Round"}
     for N, kind, sz, fbd, sp, cp, prop, box in rows:
-        lines.append(f'        new("{N}", {K[kind]}, "{sz}", new("{fbd}"), new("{sp}"), new("{cp}"), {prop}f, new Vector3({box[0]}f, {box[1]}f, {box[2]}f), {round(MORTAR_SEAL(box[0]), 4)}f),')
+        lines.append(f'        new("{N}", {K[kind]}, "{sz}", new("{fbd}"), new("{sp}"), new("{cp}"), {prop}f, new Vector3({box[0]}f, {box[1]}f, {box[2]}f), {round(MORTAR_SEAL(box[1]), 4)}f),')
     lines += ["    };", "}", ""]
     open(MORTAR_CS_OUT, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
 

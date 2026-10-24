@@ -107,7 +107,7 @@
 					"attributes":{
 						"POSITION":2
 					},
-					"indices":3
+					"indices":1
 				}
 			]
 		}
@@ -116,15 +116,15 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":192,
+			"count":180,
 			"max":[
 				0.23000000417232513,
-				0.10499999672174454,
+				0.23000000417232513,
 				0.23000000417232513
 			],
 			"min":[
 				-0.23000000417232513,
-				-0.032176673412323,
+				0.019999999552965164,
 				-0.23000000417232513
 			],
 			"type":"VEC3"
@@ -132,61 +132,49 @@
 		{
 			"bufferView":1,
 			"componentType":5123,
-			"count":1212,
+			"count":1092,
 			"type":"SCALAR"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":176,
+			"count":180,
 			"max":[
 				0.23000000417232513,
-				-0.02700003981590271,
+				-0.019999999552965164,
 				0.23000000417232513
 			],
 			"min":[
 				-0.23000000417232513,
-				-0.10499999672174454,
+				-0.23000000417232513,
 				-0.23000000417232513
 			],
 			"type":"VEC3"
-		},
-		{
-			"bufferView":3,
-			"componentType":5123,
-			"count":1428,
-			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":2304,
+			"byteLength":2160,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":2424,
-			"byteOffset":2304,
+			"byteLength":2184,
+			"byteOffset":2160,
 			"target":34963
 		},
 		{
 			"buffer":0,
-			"byteLength":2112,
-			"byteOffset":4728,
+			"byteLength":2160,
+			"byteOffset":4344,
 			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":2856,
-			"byteOffset":6840,
-			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":9696,
+			"byteLength":6504,
 			"uri":"MortarBreech_050_Fractured_collision.bin"
 		}
 	]

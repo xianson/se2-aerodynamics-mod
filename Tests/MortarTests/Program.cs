@@ -93,12 +93,14 @@ static class Program
         foreach (var r in rows)
         {
             float cellM = r.Box.X;
-            Check(Near(r.Box.X, r.Box.Z) && (r.Kind == MortarBlocks.Kind.Charge ? Near(r.Box.Y, cellM) : Near(r.Box.Y, cellM / 2f)), $"{r.Name}: a cube / a half cube ({r.Box})");
+            bool cube = r.Kind == MortarBlocks.Kind.Charge || r.Kind == MortarBlocks.Kind.Breech && r.Size == "050";   // (a half cube is one cell at 0.5 m)
+            Check(Near(r.Box.X, r.Box.Z) && (cube ? Near(r.Box.Y, cellM) : Near(r.Box.Y, cellM / 2f)), $"{r.Name}: a cube / a half cube ({r.Box})");
             var seg = SolidRocketBlocks.Rows.FirstOrDefault(s => !s.Nozzle && s.Size == r.Size);
             if (r.Kind == MortarBlocks.Kind.Charge)
                 Check(seg != null && Near(r.Propellant, seg.Propellant * 0.1f / 2f, 1e-2f), $"{r.Name}: a tenth of a segment's propellant per volume ({r.Propellant} kg)");
             else Check(r.Propellant == 0f, $"{r.Name}: no charge of its own");
-            Check(r.Seal >= 0.1f - 1e-4f && r.Seal < r.Box.Y / 2f, $"{r.Name}: the seal {r.Seal} m - at least 10 cm, under half the breech");
+            Check(r.Seal >= 0.1f - 1e-4f && r.Seal <= r.Box.Y / 2f + 1e-4f, $"{r.Name}: the seal {r.Seal} m - at least 10 cm, at most half the breech");
+            if (r.Kind == MortarBlocks.Kind.Breech) Check(r.Box.Y >= 0.5f - 1e-3f, $"{r.Name}: at least 2 cells high - its front and back mount cells two cells, one per piece");
         }
     }
 
@@ -156,7 +158,6 @@ static class Program
             Check(a2.max[1] < 0f && a2.max[1] - a2.min[1] <= r.Seal + 1e-3f, $"{r.Name}: the seal is a thin piece at the front ({a2.min[1]:F3} .. {a2.max[1]:F3})");
             float y0 = -r.Box.Y / 2f, y1 = r.Box.Y / 2f, q = 0.25f - 0.001f, hx = r.Box.X / 2f;
             var front = (new[] { -hx, y0 + 0.001f, -hx }, new[] { hx, y0 + q, hx }); var back = (new[] { -hx, y1 - q, -hx }, new[] { hx, y1 - 0.001f, hx });
-            if (r.Box.Y < 0.5f - 1e-3f) { Console.WriteLine($"KNOWN {r.Name}: one cell high - its front and back mount cells are one cell, one piece holds both faces (firing frees the breech both ways)"); continue; }
             Check(Overlap(front, a2) && !Overlap(front, a1), $"{r.Name}: the front mount CELL touches the seal only (the game gives it to the seal)");
             Check(Overlap(back, a1) && !Overlap(back, a2), $"{r.Name}: the back mount CELL touches the casing only");
         }
