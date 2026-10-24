@@ -38,7 +38,14 @@ public partial class AeroMortarComponent : Component, IInSceneListener
 
     /// <summary>Diagnostics (aeroget AeroMortarComponent.Summary): shots, splits and kicks, fizzles (no split), refusals; the last.</summary>
     public static int Shots, Kicks, Fizzles, Refused; public static string Last = "-";
+    /// <summary>The last kick as measured (aeroget AeroMortarComponent.LastCheck): each grid's speed change along the shot and its mass,
+    /// a few steps after the impulse - the momenta should match the impulse, opposite.</summary>
+    public static string LastCheck = "-";
     public static string Summary => $"shots {Shots} kicks {Kicks} fizzles {Fizzles} refused {Refused}; in flight {_shots.Count}; last: {Last}";
+    /// <summary>DEV (harness: aeroset AeroMortarComponent.DevFlip N): a new value flips every breech's switch off, then on the next
+    /// tick (the player's off -> on, on the server thread).</summary>
+    public static int DevFlip;
+    int _devSeen; bool _devOn;
     /// <summary>This breech's state for the harness.</summary>
     public string Status { get; private set; } = "ready";
 
@@ -63,8 +70,10 @@ public partial class AeroMortarComponent : Component, IInSceneListener
             Row = MortarBlocks.RowOf(_cb);
             _look.Done = Row != null && _cb != null && _pb != null;
             if (!_look.Done) return;
-            _wasOff = !_pb.Enabled;
+            _wasOff = !_pb.Enabled; _devSeen = DevFlip;
         }
+        if (_devOn) { _devOn = false; _pb.Enabled = true; }
+        else if (_devSeen != DevFlip) { _devSeen = DevFlip; _pb.Enabled = false; _devOn = true; }
         bool on = _pb.Enabled;
         if (on && _wasOff && !Fired) Fire();
         _wasOff = !on;
@@ -169,6 +178,7 @@ public partial class AeroMortarComponent : Component, IInSceneListener
     {
         public string Name, Size; public Entity Ship, RoundGrid, ShipGrid; public float Impulse; public long Started, Split;
         public Vector3D RoundAt, FaceAt; public Vector3 Dir;
+        public long Kicked; public Vector3 V0Round, V0Ship;
     }
     static readonly List<Shot> _shots = new();
     static long _stepped;
@@ -191,6 +201,7 @@ public partial class AeroMortarComponent : Component, IInSceneListener
     /// <summary>One shot: its split claimed (either side may be the new grid), then the kick; true: done.</summary>
     static bool StepShot(Shot s, long now)
     {
+        if (s.Kicked != 0) return now - s.Kicked >= CheckMs && Check(s);
         if (s.RoundGrid == null)
         {
             for (int i = _splits.Count - 1; i >= 0; i--)
@@ -213,16 +224,37 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         }
         // (both bodies take it the same step: one momentum - a new grid's body comes a step or two after it)
         Mortar.Kick(s.Impulse, s.Dir, out var onRound, out var onShip);
-        if (GridPhysics.Alive(s.RoundGrid.Data) && GridPhysics.Alive(s.ShipGrid.Data) && RigidBodyDataFunctions.TryApplyImpulse(onRound, s.FaceAt, s.RoundGrid))
+        if (GridPhysics.Alive(s.RoundGrid.Data) && GridPhysics.Alive(s.ShipGrid.Data))
         {
-            RigidBodyDataFunctions.TryApplyImpulse(onShip, s.FaceAt, s.ShipGrid);
-            Kicks++; Last = $"{s.Name}: fired - the round away, {s.Impulse / 1e3:F0} kN s";
-            Log.Default?.Info($"[AERO-MORTAR] {Last}");
-            return true;
+            AeroPhysics.TryGetVelocity(s.RoundGrid, out s.V0Round, out _); AeroPhysics.TryGetVelocity(s.ShipGrid, out s.V0Ship, out _);
+            if (RigidBodyDataFunctions.TryApplyImpulse(onRound, s.FaceAt, s.RoundGrid))
+            {
+                RigidBodyDataFunctions.TryApplyImpulse(onShip, s.FaceAt, s.ShipGrid);
+                Kicks++; Last = $"{s.Name}: fired - the round away, {s.Impulse / 1e3:F0} kN s";
+                Log.Default?.Info($"[AERO-MORTAR] {Last}");
+                s.Kicked = now;
+                return false;
+            }
         }
         if (now - s.Split < Mortar.KickWaitTicks * 1000L / 60) return false;
         Fizzles++; Last = $"{s.Name}: fired - split, but the round's grid took no impulse: no kick";
         Log.Default?.Info($"[AERO-MORTAR] {Last}");
+        return true;
+    }
+
+    /// <summary>How long after the kick its check reads the grids (ms: a few steps - the engine applies an impulse in its next step).</summary>
+    const long CheckMs = 100;
+
+    /// <summary>The kick measured: each grid's speed change along the shot (world m/s), its mass, its momentum; true (done).</summary>
+    static bool Check(Shot s)
+    {
+        var d = s.Dir.LengthSquared() > 1e-6f ? Vector3.Normalize(s.Dir) : Vector3.Zero;
+        bool okR = AeroPhysics.TryGetVelocity(s.RoundGrid, out var vr, out _), okS = AeroPhysics.TryGetVelocity(s.ShipGrid, out var vs, out _);
+        bool mR = GridPhysics.TryGetMassProperties(s.RoundGrid.Data, out float kgR, out _), mS = GridPhysics.TryGetMassProperties(s.ShipGrid.Data, out float kgS, out _);
+        float dvR = Vector3.Dot(vr - s.V0Round, d), dvS = Vector3.Dot(vs - s.V0Ship, d);
+        LastCheck = $"{s.Name}: round {dvR:F2} m/s x {kgR:F0} kg = {dvR * kgR / 1e3:F2} kN s, ship {dvS:F3} m/s x {kgS:F0} kg = {dvS * kgS / 1e3:F2} kN s, "
+            + $"impulse {s.Impulse / 1e3:F2} kN s{(okR && okS && mR && mS ? "" : " (a read failed)")}";
+        Log.Default?.Info($"[AERO-MORTAR] check: {LastCheck}");
         return true;
     }
 

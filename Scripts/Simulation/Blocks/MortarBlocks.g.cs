@@ -21,13 +21,13 @@ public static partial class MortarBlocks
     public static readonly List<Row> Rows = new()
     {
         new("MortarBreech_050", Kind.Breech, "050", new("ae200001-ae00-6b05-0001-000000000001"), new("ae200001-ae00-6b05-0011-000000000001"), new("ae200001-ae00-6b05-0012-000000000001"), 0.0f, new Vector3(0.5f, 0.25f, 0.5f), 0.1f),
-        new("MortarBreech_150", Kind.Breech, "150", new("ae200001-ae00-6b15-0001-000000000001"), new("ae200001-ae00-6b15-0011-000000000001"), new("ae200001-ae00-6b15-0012-000000000001"), 0.0f, new Vector3(1.5f, 0.75f, 1.5f), 0.12f),
-        new("MortarBreech_250", Kind.Breech, "250", new("ae200001-ae00-6b25-0001-000000000001"), new("ae200001-ae00-6b25-0011-000000000001"), new("ae200001-ae00-6b25-0012-000000000001"), 0.0f, new Vector3(2.5f, 1.25f, 2.5f), 0.2f),
+        new("MortarBreech_150", Kind.Breech, "150", new("ae200001-ae00-6b15-0001-000000000001"), new("ae200001-ae00-6b15-0011-000000000001"), new("ae200001-ae00-6b15-0012-000000000001"), 0.0f, new Vector3(1.5f, 0.75f, 1.5f), 0.27f),
+        new("MortarBreech_250", Kind.Breech, "250", new("ae200001-ae00-6b25-0001-000000000001"), new("ae200001-ae00-6b25-0011-000000000001"), new("ae200001-ae00-6b25-0012-000000000001"), 0.0f, new Vector3(2.5f, 1.25f, 2.5f), 0.27f),
         new("MortarCharge_050", Kind.Charge, "050", new("ae200001-ae00-6a05-0001-000000000001"), new("ae200001-ae00-6a05-0011-000000000001"), new("ae200001-ae00-6a05-0012-000000000001"), 19.6f, new Vector3(0.5f, 0.5f, 0.5f), 0.1f),
-        new("MortarCharge_150", Kind.Charge, "150", new("ae200001-ae00-6a15-0001-000000000001"), new("ae200001-ae00-6a15-0011-000000000001"), new("ae200001-ae00-6a15-0012-000000000001"), 117.3f, new Vector3(1.5f, 1.5f, 1.5f), 0.12f),
-        new("MortarCharge_250", Kind.Charge, "250", new("ae200001-ae00-6a25-0001-000000000001"), new("ae200001-ae00-6a25-0011-000000000001"), new("ae200001-ae00-6a25-0012-000000000001"), 618.4f, new Vector3(2.5f, 2.5f, 2.5f), 0.2f),
+        new("MortarCharge_150", Kind.Charge, "150", new("ae200001-ae00-6a15-0001-000000000001"), new("ae200001-ae00-6a15-0011-000000000001"), new("ae200001-ae00-6a15-0012-000000000001"), 117.3f, new Vector3(1.5f, 1.5f, 1.5f), 0.27f),
+        new("MortarCharge_250", Kind.Charge, "250", new("ae200001-ae00-6a25-0001-000000000001"), new("ae200001-ae00-6a25-0011-000000000001"), new("ae200001-ae00-6a25-0012-000000000001"), 618.4f, new Vector3(2.5f, 2.5f, 2.5f), 0.27f),
         new("MortarRound_050", Kind.Round, "050", new("ae200001-ae00-6c05-0001-000000000001"), new("ae200001-ae00-6c05-0011-000000000001"), new("ae200001-ae00-6c05-0012-000000000001"), 0.0f, new Vector3(0.5f, 0.25f, 0.5f), 0.1f),
-        new("MortarRound_150", Kind.Round, "150", new("ae200001-ae00-6c15-0001-000000000001"), new("ae200001-ae00-6c15-0011-000000000001"), new("ae200001-ae00-6c15-0012-000000000001"), 0.0f, new Vector3(1.5f, 0.75f, 1.5f), 0.12f),
-        new("MortarRound_250", Kind.Round, "250", new("ae200001-ae00-6c25-0001-000000000001"), new("ae200001-ae00-6c25-0011-000000000001"), new("ae200001-ae00-6c25-0012-000000000001"), 0.0f, new Vector3(2.5f, 1.25f, 2.5f), 0.2f),
+        new("MortarRound_150", Kind.Round, "150", new("ae200001-ae00-6c15-0001-000000000001"), new("ae200001-ae00-6c15-0011-000000000001"), new("ae200001-ae00-6c15-0012-000000000001"), 0.0f, new Vector3(1.5f, 0.75f, 1.5f), 0.27f),
+        new("MortarRound_250", Kind.Round, "250", new("ae200001-ae00-6c25-0001-000000000001"), new("ae200001-ae00-6c25-0011-000000000001"), new("ae200001-ae00-6c25-0012-000000000001"), 0.0f, new Vector3(2.5f, 1.25f, 2.5f), 0.27f),
     };
 }

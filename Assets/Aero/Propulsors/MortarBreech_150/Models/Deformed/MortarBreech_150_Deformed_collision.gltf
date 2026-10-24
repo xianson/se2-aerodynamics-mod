@@ -107,7 +107,7 @@
 					"attributes":{
 						"POSITION":2
 					},
-					"indices":3
+					"indices":1
 				}
 			]
 		}
@@ -124,7 +124,7 @@
 			],
 			"min":[
 				-0.7300000190734863,
-				-0.28499990701675415,
+				-0.08499999344348907,
 				-0.7300000190734863
 			],
 			"type":"VEC3"
@@ -138,24 +138,18 @@
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":88,
+			"count":164,
 			"max":[
-				0.7049999237060547,
-				-0.27299994230270386,
-				0.7050004005432129
+				0.7300000190734863,
+				-0.125,
+				0.7300000190734863
 			],
 			"min":[
-				-0.7049999237060547,
+				-0.7300000190734863,
 				-0.35499998927116394,
-				-0.7049994468688965
+				-0.7300000190734863
 			],
 			"type":"VEC3"
-		},
-		{
-			"bufferView":3,
-			"componentType":5123,
-			"count":660,
-			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -173,20 +167,14 @@
 		},
 		{
 			"buffer":0,
-			"byteLength":1056,
+			"byteLength":1968,
 			"byteOffset":4056,
 			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":1320,
-			"byteOffset":5112,
-			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":6432,
+			"byteLength":6024,
 			"uri":"MortarBreech_150_Deformed_collision.bin"
 		}
 	]

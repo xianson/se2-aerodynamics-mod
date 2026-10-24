@@ -1066,7 +1066,9 @@ MORTAR_CS_OUT = os.path.join(os.path.dirname(CS_OUT), "MortarBlocks.g.cs")
 MORTAR_PROP_SHARE = 0.1          # (a charge's propellant: this share of a solid segment's of its size, per volume - a cube is half a segment)
 MORTAR_IMPULSE_PER_KG = 2450.0   # (N s per kg of charge: a gun propellant's effective exhaust speed, ~ the solids' Isp x g0)
 mortar_propellant = lambda s: round(solid_propellant(s) * MORTAR_PROP_SHARE / 2, 1)
-MORTAR_SEAL = lambda cell: max(0.08 * cell, 0.1)   # (the breech's seal thickness, m - mortar_rig.py SEAL_K / SEAL_MIN)
+# (the breech's seal thickness, m - mortar_rig.py seal_of: a cell and 2 cm - the game gives the front mount cell to the seal alone -
+#  where the half cube has room for it and its back cell, else SEAL_K / SEAL_MIN)
+MORTAR_SEAL = lambda cell: 0.27 if cell / 2 >= 0.27 + 0.25 else max(0.08 * cell, 0.1)
 
 
 def gen_mortar(N, s, rows):
@@ -1078,7 +1080,9 @@ def gen_mortar(N, s, rows):
     dest_rel = os.path.join(ROOT_REL, N); d = os.path.join(gd.BLOCKS, "Assets", dest_rel); src = os.path.join(EXPORT, N, "Models")
     ids = copy_models(N, dest_rel, d, src)
     lod = lambda var, n, stem: ids[f"{var}/{stem}{'_LOD%d' % n if n else ''}.fbx"]
-    mats = s["materials"]["Body"]; md = os.path.join(d, "Models"); off = (OFF, OFF, OFF)
+    # (the LOD0 offset per axis: OFF on an even cell count, 0 on an odd one - the half cubes' height; OFF there gives the block an extra
+    #  cell: in game 2026-10-23 the 0.5 m breech took 2 cells, the 1.5 m 4, the 2.5 m 6)
+    mats = s["materials"]["Body"]; md = os.path.join(d, "Models"); off = tuple(OFF if c % 2 == 0 else 0.0 for c in s["cells_vrage"])
     missing = [m for m in mats if m not in gd.MATERIALS]
     if missing: raise SystemExit(f"{N}: materials without a GUID: {missing}")
     m_nf, m_fr, m_de = (G(sid, 0x100 + i) for i in range(3))

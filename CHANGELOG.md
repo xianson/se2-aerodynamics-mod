@@ -10,7 +10,9 @@ was flown in game for this release. The commit hashes are on the integration bra
   once, the round and its payload break away as their own ship and fly forward, and your ship is kicked back by the same momentum.
   If the round's side is still joined to the ship some other way, nothing is pushed.
 - About 48 / 290 / 1,500 kN s per charge (0.5 / 1.5 / 2.5 m). Fired charges stay as empty blocks; rebuild them to reload.
-- Built from the solid rockets' parts. Offline: `Tests/MortarTests`. Not checked in game yet.
+- Built from the solid rockets' parts. Offline: `Tests/MortarTests`.
+- Checked in game (1.5 and 2.5 m): the round and payload split off and the momenta match the impulse both ways. The 0.5 m
+  breech is one cell high: firing also frees the breech from the charges (its model needs a second cell).
 
 ## Unreleased - airbrake sizes
 

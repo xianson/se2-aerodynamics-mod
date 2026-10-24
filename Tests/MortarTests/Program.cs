@@ -148,10 +148,17 @@ static class Program
             Check(f1.HasValue && f2.HasValue, $"{r.Name}: two fracture pieces");
             if (!f1.HasValue || !f2.HasValue) continue;
             var m = Acc(nf, mz.Value); var p = Acc(nf, pz.Value); var a1 = Acc(fr, f1.Value); var a2 = Acc(fr, f2.Value);
-            // (the model's Y is the block's Up: the round's side is -Y)
+            // (the model's Y is the block's Up: the round's side is -Y. The game gives each mount-face CELL to the first piece a
+            //  cell-sized box there touches - BlockMountPointsGenerator.AssignMountPointSurfelsToFractures: the front cell must touch the
+            //  seal only, the back cell the casing only; in game 2026-10-23 a 0.2 m seal left the 2.5 m breech's front to its casing)
             Check(Overlap(m, a2) && !Overlap(m, a1), $"{r.Name}: the front mount slab is the SEAL's only (killing it frees that face)");
             Check(Overlap(p, a1) && !Overlap(p, a2), $"{r.Name}: the back mount slab is the casing's (the charges stay on)");
             Check(a2.max[1] < 0f && a2.max[1] - a2.min[1] <= r.Seal + 1e-3f, $"{r.Name}: the seal is a thin piece at the front ({a2.min[1]:F3} .. {a2.max[1]:F3})");
+            float y0 = -r.Box.Y / 2f, y1 = r.Box.Y / 2f, q = 0.25f - 0.001f, hx = r.Box.X / 2f;
+            var front = (new[] { -hx, y0 + 0.001f, -hx }, new[] { hx, y0 + q, hx }); var back = (new[] { -hx, y1 - q, -hx }, new[] { hx, y1 - 0.001f, hx });
+            if (r.Box.Y < 0.5f - 1e-3f) { Console.WriteLine($"KNOWN {r.Name}: one cell high - its front and back mount cells are one cell, one piece holds both faces (firing frees the breech both ways)"); continue; }
+            Check(Overlap(front, a2) && !Overlap(front, a1), $"{r.Name}: the front mount CELL touches the seal only (the game gives it to the seal)");
+            Check(Overlap(back, a1) && !Overlap(back, a2), $"{r.Name}: the back mount CELL touches the casing only");
         }
         string grp = Path.Combine(dir, "Propulsor_Mortars_BlockGroup.def");
         Check(File.Exists(grp) && File.ReadAllText(grp).Contains("\"Mortars\""), "the G-menu group Mortars");

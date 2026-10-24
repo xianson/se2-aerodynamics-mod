@@ -31,11 +31,18 @@ BLOCKS = {  # name: (collection, (cx, cy), cell m, cells across (x = y), cells h
     **{f"MortarBreech_{z}": (f"MORTAR_Breech_{z}", (0.0, 12.0 + dy), c, 1, 0.5, c / 2, False) for z, c, dy in (("250", 2.5, 0.0), ("150", 1.5, 8.0), ("050", 0.5, 14.0))},
     **{f"MortarRound_{z}": (f"MORTAR_Round_{z}", (0.0, 12.0 + dy), c, 1, 0.5, 0.0, False) for z, c, dy in (("250", 2.5, 0.0), ("150", 1.5, 8.0), ("050", 0.5, 14.0))},
 }
-SEAL_K = 0.08   # (the breech's seal: its bottom 0.08 cell - 0.2 m at 2.5 m - a fracture piece of its own; at least SEAL_MIN)
-SEAL_MIN = 0.1  # (m: the mount slab is 5 cm and the pieces' hulls stay 2 cm inside the box - a thinner seal leaves the face's mount
-                #  group to the casing piece, and the game holds a block on by any live piece's group: no split)
+SEAL_K = 0.08   # (the 0.5 m breech's seal - one cell high, no room for SEAL_CELL: its bottom 0.08 cell, at least SEAL_MIN)
+SEAL_MIN = 0.1
+# The game gives each mount-face CELL to the first fracture piece a cell-sized box at it touches
+# (BlockMountPointsGenerator.AssignMountPointSurfelsToFractures): the seal must hold the whole front cell and the casing none of it, so
+# the seal plane is a cell and 2 cm in (in game 2026-10-23: a 0.2 m seal on the 2.5 m breech left its front mounts to the casing - no
+# split; the one-cell 0.5 m breech gave both faces to one piece - it came off both ways). Each piece's hull is the body CLAMPED to its
+# side of the plane (2 cm in: hull_mesh's margin), not its faces' hull - a tall face would carry the casing's hull down to the front.
+SEAL_CELL = 0.27
+seal_of = lambda S, H: SEAL_CELL if H >= SEAL_CELL + 0.25 else max(SEAL_K * S, SEAL_MIN)   # (m)
 COLL, (CX, CY), S, CW, CH, ZLO, NOZZLE = BLOCKS[N]
 W, H = CW * S, CH * S
+SEAL_Z = -H / 2 + seal_of(S, H)                    # (the breech's seal plane, block z)
 ZC = ZLO + H / 2                                   # the box centre's kit z
 K = S / 2.5
 DISPLACE = dict(strength=0.075, size=0.25, depth=4)
@@ -202,7 +209,7 @@ def halves(me):
     seal = N.startswith("MortarBreech")
     for first in (True, False):
         bm = bmesh.new(); bm.from_mesh(me)
-        side = (lambda f: f.calc_center_median().z > -H / 2 + max(SEAL_K * S, SEAL_MIN)) if seal else (lambda f: f.calc_center_median().x < 0)
+        side = (lambda f: f.calc_center_median().z > SEAL_Z) if seal else (lambda f: f.calc_center_median().x < 0)
         bmesh.ops.delete(bm, geom=[f for f in bm.faces if side(f) != first], context="FACES")
         h = me.copy(); bm.to_mesh(h); bm.free(); out.append(h)
     return out
@@ -273,8 +280,12 @@ for f in mount_faces:
     else: a.z, b.z = blo.z, blo.z + t
     ex = f"mountpoints_{N}_{f[0].replace('+', 'P').replace('-', 'M')}{f[1]}"
     add(cc, f"mountpoints_{N}_{f}", box_mesh(f"mountpoints_{N}_{f}", a, b), ex); mounts[f] = (a.copy(), b.copy())
-for pn, me in zip(PIECES, halves(body0)):
-    add(cf, pn + "_Collision", hull_mesh(pn + "_Collision", [me], blo, bhi), pn)
+if N.startswith("MortarBreech"):   # (the casing above the seal plane, the seal below it: the body's hull clamped to each side)
+    for pn, lo_, hi_ in (("Fracture_01", Vector((blo.x, blo.y, SEAL_Z)), bhi), ("Fracture_02", blo, Vector((bhi.x, bhi.y, SEAL_Z)))):
+        add(cf, pn + "_Collision", hull_mesh(pn + "_Collision", [body0], lo_, hi_), pn)
+else:
+    for pn, me in zip(PIECES, halves(body0)):
+        add(cf, pn + "_Collision", hull_mesh(pn + "_Collision", [me], blo, bhi), pn)
 
 rc = coll("Ref")
 o = O.new("Ref_Box", box_mesh("Ref_Box", blo, bhi, faces=False)); rc.objects.link(o)
