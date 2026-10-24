@@ -53,6 +53,18 @@ static class Program
         Mortar.Kick(1000f, Vector3.Zero, out r, out s);
         Check(r.Length() == 0f && s.Length() == 0f, "no direction: no kick");
         Check(Mortar.SplitWaitTicks >= 30 && Mortar.KickWaitTicks >= 10, "the waits: the split within a second, the bodies a moment");
+        // the hold: the game's speed cap cut the kick (in game: 51 kg at 1,000 m/s took 51 of 96 kN s) - the rest stored, topped up
+        Check(Near(Mortar.Bank(96040f, 51340f), 44700f) && Mortar.Bank(96040f, 95500f) == 0f && Mortar.Bank(96040f, 97000f) == 0f, "the store: the momentum the round did not take, none for a read's noise or an overshoot");
+        Check(Mortar.Bank(0f, -5f) == 0f && Mortar.Bank(float.NaN, 0f) == 0f && Near(Mortar.Bank(1000f, -500f), 1000f), "the store: never more than the impulse, none from nonsense");
+        Check(Near(Mortar.TopUp(990f, 1000f, 51f, 44700f), 510f) && Near(Mortar.TopUp(100f, 1000f, 51f, 300f), 300f), "the top-up: back to the held speed, at most the store");
+        Check(Mortar.TopUp(1000f, 1000f, 51f, 44700f) == 0f && Mortar.TopUp(1001f, 1000f, 51f, 44700f) == 0f && Mortar.TopUp(990f, 1000f, 0f, 44700f) == 0f && Mortar.TopUp(990f, 1000f, 51f, 0f) == 0f,
+              "no top-up at or over the held speed, without a mass or an empty store");
+        Check(!Mortar.Hit(new Vector3(0, 0, -1000), new Vector3(0, -1, -950), 1000f), "drag and gravity are no hit (50 m/s lost in a step, a slight droop)");
+        Check(Mortar.Hit(new Vector3(0, 0, -1000), new Vector3(0, 0, -600), 1000f) && Mortar.Hit(new Vector3(0, 0, -1000), new Vector3(300, 0, -950), 1000f),
+              "a hit: a quarter of the speed gone in a step, or a sharp turn");
+        Check(!Mortar.Jumped(17.0, 1000f, 0.0167f) && !Mortar.Jumped(120.0, 1000f, 0.05f) && Mortar.Jumped(10000.0, 1000f, 0.0167f) && Mortar.Jumped(250.0, 0f, 0.0167f),
+              "a jump: moved far beyond its flight (a frame hand-over, a teleport) - not a step's flight or a slow step's");
+        Check(Mortar.HoldMaxMs >= 60000, "the hold lasts long enough for a climb (gravity alone takes ~90 s to use 45 kN s on 51 kg)");
     }
 
     static void Stack()
@@ -182,6 +194,15 @@ static class Program
         Check(File.ReadAllText(Path.Combine(sim, "Propulsion", "AeroMortarChargeComponent.cs")).Contains("AeroMortarComponent.StepShots();") && m.Contains("StepShots();\r\n        if (Entity == null") | m.Contains("StepShots();\n        if (Entity == null"),
               "the shots move on from every breech's and charge's step, before anything else (a breech rebuilt in the new grid)");
         Check(m.Contains("foreach (var c in _stack) c.Spend();"), "the charges spent when it fires");
+        int iHold = m.IndexOf("s.Bank = okR && mR ? Mortar.Bank("), iTop = m.IndexOf("Mortar.TopUp(");
+        Check(iHold > iImp && iTop > iHold && m.Contains("if (s.Held != 0) return HoldStep(s, now);") && m.Contains("Mortar.Hit(s.PrevV, v, s.Hold)"),
+              "the hold only after the kick is measured short, topped up from the store, ended by a hit");
+        int iPlace = m.IndexOf("if (GridPhysics.Alive(s.Ship.Data)) { var wt = s.Ship.Data.GetWorldTransform(); Place(s, in wt); }"), iClaim2 = m.IndexOf("if (Holds(p, s.RoundAt, s.Size))");
+        Check(iPlace > 0 && iPlace < iClaim2 && !m.Contains("RoundAt = WorldTransform.Transform((Vector3D)roundAt"),
+              "the round's and the face's places follow the ship grid until the kick (a moving ship: in game a falling one's round went unclaimed)");
+        int iJump = m.IndexOf("if (Mortar.Jumped("), iHit = m.IndexOf("if (Mortar.Hit(s.PrevV, v, s.Hold))");
+        Check(iJump > 0 && iJump < iHit && m.Contains("{ s.PrevV = v; s.Hold = MathF.Min(s.Hold, v.Length()); }"),
+              "a jump (a frame hand-over) re-bases the hold before the hit check: no hit, the held speed at most the new frame's");
         int iWatch = m.IndexOf("Watching(grid);");
         Check(iWatch > 0 && iWatch < iSeal && m.IndexOf("Watching(grid);", iWatch + 1) < 0, "the split signal watched before the seal breaks (the game may split inside the fracture call)");
         string inj = File.ReadAllText(Path.Combine(sim, "Injection", "EntityInjector.cs"));

@@ -13,7 +13,10 @@ was flown in game for this release. The commit hashes are on the integration bra
 - Built from the solid rockets' parts. Offline: `Tests/MortarTests`.
 - The 0.5 m breech is a full cube (two barrel segments): a half cube there was one cell, and firing freed it from the charges too.
 - Checked in game at all three sizes: the round and payload split off and the breech stays on the ship. At 1.5 and 2.5 m the
-  momenta match the impulse both ways; a light 0.5 m payload hits the game's 1,000 m/s speed limit, so it gets less.
+  momenta match the impulse both ways.
+- A light payload hits the game's 1,000 m/s speed limit: the kick it couldn't take is stored and keeps it at that speed against
+  drag and gravity until the store runs out, it hits something, or 2 minutes pass (in game, 0.5 m at 4 km up: 1,000 m/s for 3 s).
+- Fixed: a mortar fired from a moving ship never kicked (its round was looked for where it had been when it fired).
 
 ## Unreleased - airbrake sizes
 

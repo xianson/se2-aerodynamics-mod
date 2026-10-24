@@ -37,11 +37,11 @@ public partial class AeroMortarComponent : Component, IInSceneListener
     readonly List<AeroMortarChargeComponent> _cands = new(), _stack = new();
 
     /// <summary>Diagnostics (aeroget AeroMortarComponent.Summary): shots, splits and kicks, fizzles (no split), refusals; the last.</summary>
-    public static int Shots, Kicks, Fizzles, Refused; public static string Last = "-";
+    public static int Shots, Kicks, Fizzles, Refused, Sustains; public static string Last = "-";
     /// <summary>The last kick as measured (aeroget AeroMortarComponent.LastCheck): each grid's speed change along the shot and its mass,
     /// a few steps after the impulse - the momenta should match the impulse, opposite.</summary>
     public static string LastCheck = "-";
-    public static string Summary => $"shots {Shots} kicks {Kicks} fizzles {Fizzles} refused {Refused}; in flight {_shots.Count}; last: {Last}";
+    public static string Summary => $"shots {Shots} kicks {Kicks} holds {Sustains} fizzles {Fizzles} refused {Refused}; in flight {_shots.Count}; last: {Last}";
     /// <summary>DEV (harness: aeroset AeroMortarComponent.DevFlip N): a new value flips every breech's switch off, then on the next
     /// tick (the player's off -> on, on the server thread).</summary>
     public static int DevFlip;
@@ -126,9 +126,9 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         var shot = new Shot
         {
             Name = Row.Name, Size = Row.Size, Ship = grid, Impulse = Mortar.Impulse(kg), Started = Environment.TickCount64,
-            RoundAt = WorldTransform.Transform((Vector3D)roundAt, in gwt), FaceAt = WorldTransform.Transform((Vector3D)faceAt, in gwt),
+            RoundLocal = roundAt, FaceLocal = faceAt, DirLocal = dirLocal,
         };
-        shot.Dir = (Vector3)(WorldTransform.Transform((Vector3D)(faceAt + dirLocal), in gwt) - shot.FaceAt);
+        Place(shot, in gwt);
         lock (_lock) _shots.Add(shot);
         Status = $"fired: {_stack.Count} charges, {kg:F0} kg, {shot.Impulse / 1e3:F0} kN s - waiting for the split";
         Last = $"{Row.Name}: {Status}";
@@ -177,8 +177,10 @@ public partial class AeroMortarComponent : Component, IInSceneListener
     sealed class Shot
     {
         public string Name, Size; public Entity Ship, RoundGrid, ShipGrid; public float Impulse; public long Started, Split;
-        public Vector3D RoundAt, FaceAt; public Vector3 Dir;
+        public Vector3D RoundAt, FaceAt; public Vector3 Dir;   // (world, from the ship grid's places below - Place)
+        public Vector3 RoundLocal, FaceLocal, DirLocal;
         public long Kicked; public Vector3 V0Round, V0Ship;
+        public float Bank, Hold, Used; public long Held, ToppedAt, PrevAt; public Vector3 PrevV; public Vector3D PrevPos;   // (the hold: Mortar.Bank)
     }
     static readonly List<Shot> _shots = new();
     static long _stepped;
@@ -198,10 +200,22 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         }
     }
 
+    /// <summary>The shot's world points from its grid-local ones and the ship grid's transform now.</summary>
+    static void Place(Shot s, in WorldTransform wt)
+    {
+        s.RoundAt = WorldTransform.Transform((Vector3D)s.RoundLocal, in wt); s.FaceAt = WorldTransform.Transform((Vector3D)s.FaceLocal, in wt);
+        s.Dir = (Vector3)(WorldTransform.Transform((Vector3D)(s.FaceLocal + s.DirLocal), in wt) - s.FaceAt);
+    }
+
     /// <summary>One shot: its split claimed (either side may be the new grid), then the kick; true: done.</summary>
     static bool StepShot(Shot s, long now)
     {
-        if (s.Kicked != 0) return now - s.Kicked >= CheckMs && Check(s);
+        if (s.Held != 0) return HoldStep(s, now);
+        if (s.Kicked != 0) return now - s.Kicked >= CheckMs && Check(s, now);
+        // (the points follow the ship grid until the kick: a moving ship flies on in the step or two before the split - in game
+        //  2026-10-24 one falling at 80 m/s had left its round's fire-time world point 1.3 m behind: no claim, no kick. The split's two
+        //  sides still coincide when it is claimed and kicked; if the game rebuilt that grid, the last places stand)
+        if (GridPhysics.Alive(s.Ship.Data)) { var wt = s.Ship.Data.GetWorldTransform(); Place(s, in wt); }
         if (s.RoundGrid == null)
         {
             for (int i = _splits.Count - 1; i >= 0; i--)
@@ -242,11 +256,14 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         return true;
     }
 
-    /// <summary>How long after the kick its check reads the grids (ms: a few steps - the engine applies an impulse in its next step).</summary>
-    const long CheckMs = 100;
+    /// <summary>How long after the kick its check reads the grids (ms: two steps - the engine applies an impulse in its next step). Short:
+    /// the store is what the round did not take by then, and drag eats into it meanwhile (in game 2026-10-24, 4 km up: 1,000 -> 868 m/s
+    /// in 100 ms - the store refunded the air's share too).</summary>
+    const long CheckMs = 40;
 
-    /// <summary>The kick measured: each grid's speed change along the shot (world m/s), its mass, its momentum; true (done).</summary>
-    static bool Check(Shot s)
+    /// <summary>The kick measured: each grid's speed change along the shot (world m/s), its mass, its momentum; then the hold if the
+    /// round took less than the impulse (the game's speed cap: Mortar.Bank) - false while it holds, true: done.</summary>
+    static bool Check(Shot s, long now)
     {
         var d = s.Dir.LengthSquared() > 1e-6f ? Vector3.Normalize(s.Dir) : Vector3.Zero;
         bool okR = AeroPhysics.TryGetVelocity(s.RoundGrid, out var vr, out _), okS = AeroPhysics.TryGetVelocity(s.ShipGrid, out var vs, out _);
@@ -255,6 +272,46 @@ public partial class AeroMortarComponent : Component, IInSceneListener
         LastCheck = $"{s.Name}: round {dvR:F2} m/s x {kgR:F0} kg = {dvR * kgR / 1e3:F2} kN s, ship {dvS:F3} m/s x {kgS:F0} kg = {dvS * kgS / 1e3:F2} kN s, "
             + $"impulse {s.Impulse / 1e3:F2} kN s{(okR && okS && mR && mS ? "" : " (a read failed)")}";
         Log.Default?.Info($"[AERO-MORTAR] check: {LastCheck}");
+        s.Bank = okR && mR ? Mortar.Bank(s.Impulse, dvR * kgR) : 0f;
+        if (s.Bank <= 0f) return true;
+        s.Hold = vr.Length(); s.PrevV = vr; s.Held = s.PrevAt = now; s.PrevPos = s.RoundGrid.Data.GetWorldTransform().Position;
+        Sustains++; Last = $"{s.Name}: the round capped at {s.Hold:F0} m/s - {s.Bank / 1e3:F2} kN s stored to hold it there";
+        Log.Default?.Info($"[AERO-MORTAR] {Last}");
+        return false;
+    }
+
+    /// <summary>How often the hold tops the round up (ms: every other step - the engine applies an impulse in its next step, so a
+    /// read the step after may not show it yet).</summary>
+    const long TopUpEveryMs = 30;
+
+    /// <summary>One step of the hold: the round topped back up to its held speed from the store, along its travel, at its centre of
+    /// mass; true: done (the store used, a hit, the round gone, or HoldMaxMs).</summary>
+    static bool HoldStep(Shot s, long now)
+    {
+        string end;
+        if (!GridPhysics.Alive(s.RoundGrid.Data) || !AeroPhysics.TryGetVelocity(s.RoundGrid, out var v, out _)
+            || !GridPhysics.TryGetMassProperties(s.RoundGrid.Data, out float kg, out var com)) { end = "the round is gone"; goto done; }
+        var wt = s.RoundGrid.Data.GetWorldTransform();
+        if (Mortar.Jumped(Vector3D.Distance(wt.Position, s.PrevPos), MathF.Max(v.Length(), s.PrevV.Length()), (now - s.PrevAt) / 1e3f))
+        { s.PrevV = v; s.Hold = MathF.Min(s.Hold, v.Length()); }   // (moved to another frame: its velocity is that frame's)
+        s.PrevPos = wt.Position; s.PrevAt = now;
+        if (Mortar.Hit(s.PrevV, v, s.Hold)) end = "it hit something";
+        else if (now - s.Held > Mortar.HoldMaxMs) end = "time up";
+        else
+        {
+            s.PrevV = v;
+            float sp = v.Length(), j = now - s.ToppedAt >= TopUpEveryMs ? Mortar.TopUp(sp, s.Hold, kg, s.Bank) : 0f;
+            if (j > 0f && sp > 1f)
+            {
+                if (RigidBodyDataFunctions.TryApplyImpulse(v * (j / sp), WorldTransform.Transform((Vector3D)com, in wt), s.RoundGrid))
+                { s.Bank -= j; s.Used += j; s.ToppedAt = now; }
+            }
+            if (s.Bank > s.Impulse * 1e-3f) return false;
+            end = "the store used";
+        }
+        done:
+        Last = $"{s.Name}: held {s.Hold:F0} m/s for {(now - s.Held) / 1e3:F1} s - {s.Used / 1e3:F2} kN s used, {s.Bank / 1e3:F2} dropped ({end})";
+        Log.Default?.Info($"[AERO-MORTAR] {Last}");
         return true;
     }
 
